@@ -1,0 +1,2578 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "contact": {
+      "name": "Google",
+      "url": "https://google.com",
+      "x-twitter": "youtube"
+    },
+    "description": "The Gmail API lets you view and manage Gmail mailbox data like threads, messages, and labels.",
+    "license": {
+      "name": "Creative Commons Attribution 3.0",
+      "url": "http://creativecommons.org/licenses/by/3.0/"
+    },
+    "termsOfService": "https://developers.google.com/terms/",
+    "title": "Gmail API",
+    "version": "v1",
+    "x-apiClientRegistration": {
+      "url": "https://console.developers.google.com"
+    },
+    "x-apisguru-categories": [
+      "analytics",
+      "media"
+    ],
+    "x-logo": {
+      "url": "https://api.apis.guru/v2/cache/logo/https_www.google.com_images_branding_googlelogo_2x_googlelogo_color_272x92dp.png"
+    },
+    "x-origin": [
+      {
+        "format": "google",
+        "url": "https://gmail.googleapis.com/$discovery/rest?version=v1",
+        "version": "v1"
+      }
+    ],
+    "x-providerName": "googleapis.com",
+    "x-serviceName": "gmail",
+    "x-vendored-from": "https://api.apis.guru/v2/specs/googleapis.com/gmail/v1/openapi.json",
+    "x-vendored-note": "Trimmed by src/providers/google/specs/vendor.ts. Committed deliberately: a spec decides which paths are called with the operator token, so it must be reviewable rather than fetched at connect time."
+  },
+  "servers": [
+    {
+      "url": "https://gmail.googleapis.com/"
+    }
+  ],
+  "paths": {
+    "/gmail/v1/users/{userId}/drafts": {
+      "get": {
+        "description": "Lists the drafts in the user's mailbox.",
+        "operationId": "gmail.users.drafts.list",
+        "parameters": [
+          {
+            "description": "The user's email address. The special value `me` can be used to indicate the authenticated user.",
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Include drafts from `SPAM` and `TRASH` in the results.",
+            "in": "query",
+            "name": "includeSpamTrash",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Maximum number of drafts to return. This field defaults to 100. The maximum allowed value for this field is 500.",
+            "in": "query",
+            "name": "maxResults",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Page token to retrieve a specific page of results in the list.",
+            "in": "query",
+            "name": "pageToken",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only return draft messages matching the specified query. Supports the same query format as the Gmail search box. For example, `\"from:someuser@example.com rfc822msgid: is:unread\"`.",
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "Oauth2": [
+              "https://mail.google.com/"
+            ],
+            "Oauth2c": [
+              "https://mail.google.com/"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.compose"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.compose"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.readonly"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.readonly"
+            ]
+          }
+        ],
+        "tags": [
+          "users"
+        ]
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/alt"
+        },
+        {
+          "$ref": "#/components/parameters/fields"
+        }
+      ]
+    },
+    "/gmail/v1/users/{userId}/drafts/send": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/alt"
+        },
+        {
+          "$ref": "#/components/parameters/fields"
+        }
+      ],
+      "post": {
+        "description": "Sends the specified, existing draft to the recipients in the `To`, `Cc`, and `Bcc` headers.",
+        "operationId": "gmail.users.drafts.send",
+        "parameters": [
+          {
+            "description": "The user's email address. The special value `me` can be used to indicate the authenticated user.",
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "message/cpim": {
+              "schema": {
+                "$ref": "#/components/schemas/Draft"
+              }
+            },
+            "message/delivery-status": {
+              "schema": {
+                "$ref": "#/components/schemas/Draft"
+              }
+            },
+            "message/disposition-notification": {
+              "schema": {
+                "$ref": "#/components/schemas/Draft"
+              }
+            },
+            "message/external-body": {
+              "schema": {
+                "$ref": "#/components/schemas/Draft"
+              }
+            },
+            "message/feedback-report": {
+              "schema": {
+                "$ref": "#/components/schemas/Draft"
+              }
+            },
+            "message/global": {
+              "schema": {
+                "$ref": "#/components/schemas/Draft"
+              }
+            },
+            "message/global-delivery-status": {
+              "schema": {
+                "$ref": "#/components/schemas/Draft"
+              }
+            },
+            "message/global-disposition-notification": {
+              "schema": {
+                "$ref": "#/components/schemas/Draft"
+              }
+            },
+            "message/global-headers": {
+              "schema": {
+                "$ref": "#/components/schemas/Draft"
+              }
+            },
+            "message/http": {
+              "schema": {
+                "$ref": "#/components/schemas/Draft"
+              }
+            },
+            "message/imdn+xml": {
+              "schema": {
+                "$ref": "#/components/schemas/Draft"
+              }
+            },
+            "message/news": {
+              "schema": {
+                "$ref": "#/components/schemas/Draft"
+              }
+            },
+            "message/partial": {
+              "schema": {
+                "$ref": "#/components/schemas/Draft"
+              }
+            },
+            "message/rfc822": {
+              "schema": {
+                "$ref": "#/components/schemas/Draft"
+              }
+            },
+            "message/s-http": {
+              "schema": {
+                "$ref": "#/components/schemas/Draft"
+              }
+            },
+            "message/sip": {
+              "schema": {
+                "$ref": "#/components/schemas/Draft"
+              }
+            },
+            "message/sipfrag": {
+              "schema": {
+                "$ref": "#/components/schemas/Draft"
+              }
+            },
+            "message/tracking-status": {
+              "schema": {
+                "$ref": "#/components/schemas/Draft"
+              }
+            },
+            "message/vnd.si.simp": {
+              "schema": {
+                "$ref": "#/components/schemas/Draft"
+              }
+            },
+            "message/vnd.wfa.wsc": {
+              "schema": {
+                "$ref": "#/components/schemas/Draft"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "Oauth2": [
+              "https://mail.google.com/"
+            ],
+            "Oauth2c": [
+              "https://mail.google.com/"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.addons.current.action.compose"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.addons.current.action.compose"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.compose"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.compose"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ]
+          }
+        ],
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/gmail/v1/users/{userId}/drafts/{id}": {
+      "delete": {
+        "description": "Immediately and permanently deletes the specified draft. Does not simply trash it.",
+        "operationId": "gmail.users.drafts.delete",
+        "parameters": [
+          {
+            "description": "The user's email address. The special value `me` can be used to indicate the authenticated user.",
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The ID of the draft to delete.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "Oauth2": [
+              "https://mail.google.com/"
+            ],
+            "Oauth2c": [
+              "https://mail.google.com/"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.addons.current.action.compose"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.addons.current.action.compose"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.compose"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.compose"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ]
+          }
+        ],
+        "tags": [
+          "users"
+        ]
+      },
+      "get": {
+        "description": "Gets the specified draft.",
+        "operationId": "gmail.users.drafts.get",
+        "parameters": [
+          {
+            "description": "The user's email address. The special value `me` can be used to indicate the authenticated user.",
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The ID of the draft to retrieve.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The format to return the draft in.",
+            "in": "query",
+            "name": "format",
+            "schema": {
+              "enum": [
+                "minimal",
+                "full",
+                "raw",
+                "metadata"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "Oauth2": [
+              "https://mail.google.com/"
+            ],
+            "Oauth2c": [
+              "https://mail.google.com/"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.compose"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.compose"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.readonly"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.readonly"
+            ]
+          }
+        ],
+        "tags": [
+          "users"
+        ]
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/alt"
+        },
+        {
+          "$ref": "#/components/parameters/fields"
+        }
+      ]
+    },
+    "/gmail/v1/users/{userId}/labels": {
+      "get": {
+        "description": "Lists all labels in the user's mailbox.",
+        "operationId": "gmail.users.labels.list",
+        "parameters": [
+          {
+            "description": "The user's email address. The special value `me` can be used to indicate the authenticated user.",
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "Oauth2": [
+              "https://mail.google.com/"
+            ],
+            "Oauth2c": [
+              "https://mail.google.com/"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.labels"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.labels"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.metadata"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.metadata"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.readonly"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.readonly"
+            ]
+          }
+        ],
+        "tags": [
+          "users"
+        ]
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/alt"
+        },
+        {
+          "$ref": "#/components/parameters/fields"
+        }
+      ],
+      "post": {
+        "description": "Creates a new label.",
+        "operationId": "gmail.users.labels.create",
+        "parameters": [
+          {
+            "description": "The user's email address. The special value `me` can be used to indicate the authenticated user.",
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Label"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "Oauth2": [
+              "https://mail.google.com/"
+            ],
+            "Oauth2c": [
+              "https://mail.google.com/"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.labels"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.labels"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ]
+          }
+        ],
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/gmail/v1/users/{userId}/labels/{id}": {
+      "delete": {
+        "description": "Immediately and permanently deletes the specified label and removes it from any messages and threads that it is applied to.",
+        "operationId": "gmail.users.labels.delete",
+        "parameters": [
+          {
+            "description": "The user's email address. The special value `me` can be used to indicate the authenticated user.",
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The ID of the label to delete.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "Oauth2": [
+              "https://mail.google.com/"
+            ],
+            "Oauth2c": [
+              "https://mail.google.com/"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.labels"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.labels"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ]
+          }
+        ],
+        "tags": [
+          "users"
+        ]
+      },
+      "get": {
+        "description": "Gets the specified label.",
+        "operationId": "gmail.users.labels.get",
+        "parameters": [
+          {
+            "description": "The user's email address. The special value `me` can be used to indicate the authenticated user.",
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The ID of the label to retrieve.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "Oauth2": [
+              "https://mail.google.com/"
+            ],
+            "Oauth2c": [
+              "https://mail.google.com/"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.labels"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.labels"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.metadata"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.metadata"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.readonly"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.readonly"
+            ]
+          }
+        ],
+        "tags": [
+          "users"
+        ]
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/alt"
+        },
+        {
+          "$ref": "#/components/parameters/fields"
+        }
+      ],
+      "put": {
+        "description": "Updates the specified label.",
+        "operationId": "gmail.users.labels.update",
+        "parameters": [
+          {
+            "description": "The user's email address. The special value `me` can be used to indicate the authenticated user.",
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The ID of the label to update.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Label"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "Oauth2": [
+              "https://mail.google.com/"
+            ],
+            "Oauth2c": [
+              "https://mail.google.com/"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.labels"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.labels"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ]
+          }
+        ],
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/gmail/v1/users/{userId}/messages": {
+      "get": {
+        "description": "Lists the messages in the user's mailbox.",
+        "operationId": "gmail.users.messages.list",
+        "parameters": [
+          {
+            "description": "The user's email address. The special value `me` can be used to indicate the authenticated user.",
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Include messages from `SPAM` and `TRASH` in the results.",
+            "in": "query",
+            "name": "includeSpamTrash",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Only return messages with labels that match all of the specified label IDs. Messages in a thread might have labels that other messages in the same thread don't have. To learn more, see [Manage labels on messages and threads](https://developers.google.com/gmail/api/guides/labels#manage_labels_on_messages_threads).",
+            "explode": true,
+            "in": "query",
+            "name": "labelIds",
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "style": "form"
+          },
+          {
+            "description": "Maximum number of messages to return. This field defaults to 100. The maximum allowed value for this field is 500.",
+            "in": "query",
+            "name": "maxResults",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Page token to retrieve a specific page of results in the list.",
+            "in": "query",
+            "name": "pageToken",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only return messages matching the specified query. Supports the same query format as the Gmail search box. For example, `\"from:someuser@example.com rfc822msgid: is:unread\"`. Parameter cannot be used when accessing the api using the gmail.metadata scope.",
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "Oauth2": [
+              "https://mail.google.com/"
+            ],
+            "Oauth2c": [
+              "https://mail.google.com/"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.metadata"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.metadata"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.readonly"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.readonly"
+            ]
+          }
+        ],
+        "tags": [
+          "users"
+        ]
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/alt"
+        },
+        {
+          "$ref": "#/components/parameters/fields"
+        }
+      ]
+    },
+    "/gmail/v1/users/{userId}/messages/batchModify": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/alt"
+        },
+        {
+          "$ref": "#/components/parameters/fields"
+        }
+      ],
+      "post": {
+        "description": "Modifies the labels on the specified messages.",
+        "operationId": "gmail.users.messages.batchModify",
+        "parameters": [
+          {
+            "description": "The user's email address. The special value `me` can be used to indicate the authenticated user.",
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchModifyMessagesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "Oauth2": [
+              "https://mail.google.com/"
+            ],
+            "Oauth2c": [
+              "https://mail.google.com/"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ]
+          }
+        ],
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/gmail/v1/users/{userId}/messages/{id}": {
+      "get": {
+        "description": "Gets the specified message.",
+        "operationId": "gmail.users.messages.get",
+        "parameters": [
+          {
+            "description": "The user's email address. The special value `me` can be used to indicate the authenticated user.",
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The ID of the message to retrieve. This ID is usually retrieved using `messages.list`. The ID is also contained in the result when a message is inserted (`messages.insert`) or imported (`messages.import`).",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The format to return the message in.",
+            "in": "query",
+            "name": "format",
+            "schema": {
+              "enum": [
+                "minimal",
+                "full",
+                "raw",
+                "metadata"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "When given and format is `METADATA`, only include headers specified.",
+            "explode": true,
+            "in": "query",
+            "name": "metadataHeaders",
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "Oauth2": [
+              "https://mail.google.com/"
+            ],
+            "Oauth2c": [
+              "https://mail.google.com/"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.addons.current.message.action"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.addons.current.message.action"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.addons.current.message.metadata"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.addons.current.message.metadata"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.addons.current.message.readonly"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.addons.current.message.readonly"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.metadata"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.metadata"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.readonly"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.readonly"
+            ]
+          }
+        ],
+        "tags": [
+          "users"
+        ]
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/alt"
+        },
+        {
+          "$ref": "#/components/parameters/fields"
+        }
+      ]
+    },
+    "/gmail/v1/users/{userId}/messages/{id}/modify": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/alt"
+        },
+        {
+          "$ref": "#/components/parameters/fields"
+        }
+      ],
+      "post": {
+        "description": "Modifies the labels on the specified message.",
+        "operationId": "gmail.users.messages.modify",
+        "parameters": [
+          {
+            "description": "The user's email address. The special value `me` can be used to indicate the authenticated user.",
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The ID of the message to modify.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModifyMessageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "Oauth2": [
+              "https://mail.google.com/"
+            ],
+            "Oauth2c": [
+              "https://mail.google.com/"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ]
+          }
+        ],
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/gmail/v1/users/{userId}/messages/{id}/trash": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/alt"
+        },
+        {
+          "$ref": "#/components/parameters/fields"
+        }
+      ],
+      "post": {
+        "description": "Moves the specified message to the trash.",
+        "operationId": "gmail.users.messages.trash",
+        "parameters": [
+          {
+            "description": "The user's email address. The special value `me` can be used to indicate the authenticated user.",
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The ID of the message to Trash.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "Oauth2": [
+              "https://mail.google.com/"
+            ],
+            "Oauth2c": [
+              "https://mail.google.com/"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ]
+          }
+        ],
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/gmail/v1/users/{userId}/messages/{id}/untrash": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/alt"
+        },
+        {
+          "$ref": "#/components/parameters/fields"
+        }
+      ],
+      "post": {
+        "description": "Removes the specified message from the trash.",
+        "operationId": "gmail.users.messages.untrash",
+        "parameters": [
+          {
+            "description": "The user's email address. The special value `me` can be used to indicate the authenticated user.",
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The ID of the message to remove from Trash.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "Oauth2": [
+              "https://mail.google.com/"
+            ],
+            "Oauth2c": [
+              "https://mail.google.com/"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ]
+          }
+        ],
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/gmail/v1/users/{userId}/messages/{messageId}/attachments/{id}": {
+      "get": {
+        "description": "Gets the specified message attachment.",
+        "operationId": "gmail.users.messages.attachments.get",
+        "parameters": [
+          {
+            "description": "The user's email address. The special value `me` can be used to indicate the authenticated user.",
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The ID of the message containing the attachment.",
+            "in": "path",
+            "name": "messageId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The ID of the attachment.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "Oauth2": [
+              "https://mail.google.com/"
+            ],
+            "Oauth2c": [
+              "https://mail.google.com/"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.addons.current.message.action"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.addons.current.message.action"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.addons.current.message.readonly"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.addons.current.message.readonly"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.readonly"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.readonly"
+            ]
+          }
+        ],
+        "tags": [
+          "users"
+        ]
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/alt"
+        },
+        {
+          "$ref": "#/components/parameters/fields"
+        }
+      ]
+    },
+    "/gmail/v1/users/{userId}/profile": {
+      "get": {
+        "description": "Gets the current user's Gmail profile.",
+        "operationId": "gmail.users.getProfile",
+        "parameters": [
+          {
+            "description": "The user's email address. The special value `me` can be used to indicate the authenticated user.",
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "Oauth2": [
+              "https://mail.google.com/"
+            ],
+            "Oauth2c": [
+              "https://mail.google.com/"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.compose"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.compose"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.metadata"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.metadata"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.readonly"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.readonly"
+            ]
+          }
+        ],
+        "tags": [
+          "users"
+        ]
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/alt"
+        },
+        {
+          "$ref": "#/components/parameters/fields"
+        }
+      ]
+    },
+    "/gmail/v1/users/{userId}/settings/filters": {
+      "get": {
+        "description": "Lists the message filters of a Gmail user.",
+        "operationId": "gmail.users.settings.filters.list",
+        "parameters": [
+          {
+            "description": "User's email address. The special value \"me\" can be used to indicate the authenticated user.",
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "Oauth2": [
+              "https://mail.google.com/"
+            ],
+            "Oauth2c": [
+              "https://mail.google.com/"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.readonly"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.readonly"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.settings.basic"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.settings.basic"
+            ]
+          }
+        ],
+        "tags": [
+          "users"
+        ]
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/alt"
+        },
+        {
+          "$ref": "#/components/parameters/fields"
+        }
+      ],
+      "post": {
+        "description": "Creates a filter. Note: you can only create a maximum of 1,000 filters.",
+        "operationId": "gmail.users.settings.filters.create",
+        "parameters": [
+          {
+            "description": "User's email address. The special value \"me\" can be used to indicate the authenticated user.",
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Filter"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.settings.basic"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.settings.basic"
+            ]
+          }
+        ],
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/gmail/v1/users/{userId}/settings/filters/{id}": {
+      "delete": {
+        "description": "Immediately and permanently deletes the specified filter.",
+        "operationId": "gmail.users.settings.filters.delete",
+        "parameters": [
+          {
+            "description": "User's email address. The special value \"me\" can be used to indicate the authenticated user.",
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The ID of the filter to be deleted.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.settings.basic"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.settings.basic"
+            ]
+          }
+        ],
+        "tags": [
+          "users"
+        ]
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/alt"
+        },
+        {
+          "$ref": "#/components/parameters/fields"
+        }
+      ]
+    },
+    "/gmail/v1/users/{userId}/threads": {
+      "get": {
+        "description": "Lists the threads in the user's mailbox.",
+        "operationId": "gmail.users.threads.list",
+        "parameters": [
+          {
+            "description": "The user's email address. The special value `me` can be used to indicate the authenticated user.",
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Include threads from `SPAM` and `TRASH` in the results.",
+            "in": "query",
+            "name": "includeSpamTrash",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Only return threads with labels that match all of the specified label IDs.",
+            "explode": true,
+            "in": "query",
+            "name": "labelIds",
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "style": "form"
+          },
+          {
+            "description": "Maximum number of threads to return. This field defaults to 100. The maximum allowed value for this field is 500.",
+            "in": "query",
+            "name": "maxResults",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Page token to retrieve a specific page of results in the list.",
+            "in": "query",
+            "name": "pageToken",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Only return threads matching the specified query. Supports the same query format as the Gmail search box. For example, `\"from:someuser@example.com rfc822msgid: is:unread\"`. Parameter cannot be used when accessing the api using the gmail.metadata scope.",
+            "in": "query",
+            "name": "q",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "Oauth2": [
+              "https://mail.google.com/"
+            ],
+            "Oauth2c": [
+              "https://mail.google.com/"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.metadata"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.metadata"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.readonly"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.readonly"
+            ]
+          }
+        ],
+        "tags": [
+          "users"
+        ]
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/alt"
+        },
+        {
+          "$ref": "#/components/parameters/fields"
+        }
+      ]
+    },
+    "/gmail/v1/users/{userId}/threads/{id}": {
+      "get": {
+        "description": "Gets the specified thread.",
+        "operationId": "gmail.users.threads.get",
+        "parameters": [
+          {
+            "description": "The user's email address. The special value `me` can be used to indicate the authenticated user.",
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The ID of the thread to retrieve.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The format to return the messages in.",
+            "in": "query",
+            "name": "format",
+            "schema": {
+              "enum": [
+                "full",
+                "metadata",
+                "minimal"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "When given and format is METADATA, only include headers specified.",
+            "explode": true,
+            "in": "query",
+            "name": "metadataHeaders",
+            "schema": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "Oauth2": [
+              "https://mail.google.com/"
+            ],
+            "Oauth2c": [
+              "https://mail.google.com/"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.addons.current.message.action"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.addons.current.message.action"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.addons.current.message.metadata"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.addons.current.message.metadata"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.addons.current.message.readonly"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.addons.current.message.readonly"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.metadata"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.metadata"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.readonly"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.readonly"
+            ]
+          }
+        ],
+        "tags": [
+          "users"
+        ]
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/alt"
+        },
+        {
+          "$ref": "#/components/parameters/fields"
+        }
+      ]
+    },
+    "/gmail/v1/users/{userId}/threads/{id}/modify": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/alt"
+        },
+        {
+          "$ref": "#/components/parameters/fields"
+        }
+      ],
+      "post": {
+        "description": "Modifies the labels applied to the thread. This applies to all messages in the thread.",
+        "operationId": "gmail.users.threads.modify",
+        "parameters": [
+          {
+            "description": "The user's email address. The special value `me` can be used to indicate the authenticated user.",
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The ID of the thread to modify.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModifyThreadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "Oauth2": [
+              "https://mail.google.com/"
+            ],
+            "Oauth2c": [
+              "https://mail.google.com/"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ]
+          }
+        ],
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/gmail/v1/users/{userId}/threads/{id}/trash": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/alt"
+        },
+        {
+          "$ref": "#/components/parameters/fields"
+        }
+      ],
+      "post": {
+        "description": "Moves the specified thread to the trash. Any messages that belong to the thread are also moved to the trash.",
+        "operationId": "gmail.users.threads.trash",
+        "parameters": [
+          {
+            "description": "The user's email address. The special value `me` can be used to indicate the authenticated user.",
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The ID of the thread to Trash.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "Oauth2": [
+              "https://mail.google.com/"
+            ],
+            "Oauth2c": [
+              "https://mail.google.com/"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ]
+          }
+        ],
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/gmail/v1/users/{userId}/threads/{id}/untrash": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/alt"
+        },
+        {
+          "$ref": "#/components/parameters/fields"
+        }
+      ],
+      "post": {
+        "description": "Removes the specified thread from the trash. Any messages that belong to the thread are also removed from the trash.",
+        "operationId": "gmail.users.threads.untrash",
+        "parameters": [
+          {
+            "description": "The user's email address. The special value `me` can be used to indicate the authenticated user.",
+            "in": "path",
+            "name": "userId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The ID of the thread to remove from Trash.",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "Oauth2": [
+              "https://mail.google.com/"
+            ],
+            "Oauth2c": [
+              "https://mail.google.com/"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/gmail.modify"
+            ]
+          }
+        ],
+        "tags": [
+          "users"
+        ]
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "_.xgafv": {
+        "description": "V1 error format.",
+        "in": "query",
+        "name": "$.xgafv",
+        "schema": {
+          "enum": [
+            "1",
+            "2"
+          ],
+          "type": "string"
+        }
+      },
+      "access_token": {
+        "description": "OAuth access token.",
+        "in": "query",
+        "name": "access_token",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "alt": {
+        "description": "Data format for response.",
+        "in": "query",
+        "name": "alt",
+        "schema": {
+          "enum": [
+            "json",
+            "media",
+            "proto"
+          ],
+          "type": "string"
+        }
+      },
+      "callback": {
+        "description": "JSONP",
+        "in": "query",
+        "name": "callback",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "fields": {
+        "description": "Selector specifying which fields to include in a partial response.",
+        "in": "query",
+        "name": "fields",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "key": {
+        "description": "API key. Your API key identifies your project and provides you with API access, quota, and reports. Required unless you provide an OAuth 2.0 token.",
+        "in": "query",
+        "name": "key",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "oauth_token": {
+        "description": "OAuth 2.0 token for the current user.",
+        "in": "query",
+        "name": "oauth_token",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "prettyPrint": {
+        "description": "Returns response with indentations and line breaks.",
+        "in": "query",
+        "name": "prettyPrint",
+        "schema": {
+          "type": "boolean"
+        }
+      },
+      "quotaUser": {
+        "description": "Available to use for quota purposes for server-side applications. Can be any arbitrary string assigned to a user, but should not exceed 40 characters.",
+        "in": "query",
+        "name": "quotaUser",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "uploadType": {
+        "description": "Legacy upload protocol for media (e.g. \"media\", \"multipart\").",
+        "in": "query",
+        "name": "uploadType",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "upload_protocol": {
+        "description": "Upload protocol for media (e.g. \"raw\", \"multipart\").",
+        "in": "query",
+        "name": "upload_protocol",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "schemas": {
+      "BatchModifyMessagesRequest": {
+        "properties": {
+          "addLabelIds": {
+            "description": "A list of label IDs to add to messages.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "ids": {
+            "description": "The IDs of the messages to modify. There is a limit of 1000 ids per request.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "removeLabelIds": {
+            "description": "A list of label IDs to remove from messages.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "Draft": {
+        "description": "A draft email in the user's mailbox.",
+        "properties": {
+          "id": {
+            "description": "The immutable ID of the draft.",
+            "type": "string"
+          },
+          "message": {
+            "$ref": "#/components/schemas/Message",
+            "description": "The message content of the draft."
+          }
+        },
+        "type": "object"
+      },
+      "Filter": {
+        "description": "Resource definition for Gmail filters. Filters apply to specific messages instead of an entire email thread.",
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/FilterAction",
+            "description": "Action that the filter performs."
+          },
+          "criteria": {
+            "$ref": "#/components/schemas/FilterCriteria",
+            "description": "Matching criteria for the filter."
+          },
+          "id": {
+            "description": "The server assigned ID of the filter.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "FilterAction": {
+        "description": "A set of actions to perform on a message.",
+        "properties": {
+          "addLabelIds": {
+            "description": "List of labels to add to the message.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "forward": {
+            "description": "Email address that the message should be forwarded to.",
+            "type": "string"
+          },
+          "removeLabelIds": {
+            "description": "List of labels to remove from the message.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "FilterCriteria": {
+        "description": "Message matching criteria.",
+        "properties": {
+          "excludeChats": {
+            "description": "Whether the response should exclude chats.",
+            "type": "boolean"
+          },
+          "from": {
+            "description": "The sender's display name or email address.",
+            "type": "string"
+          },
+          "hasAttachment": {
+            "description": "Whether the message has any attachment.",
+            "type": "boolean"
+          },
+          "negatedQuery": {
+            "description": "Only return messages not matching the specified query. Supports the same query format as the Gmail search box. For example, `\"from:someuser@example.com rfc822msgid: is:unread\"`.",
+            "type": "string"
+          },
+          "query": {
+            "description": "Only return messages matching the specified query. Supports the same query format as the Gmail search box. For example, `\"from:someuser@example.com rfc822msgid: is:unread\"`.",
+            "type": "string"
+          },
+          "size": {
+            "description": "The size of the entire RFC822 message in bytes, including all headers and attachments.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "sizeComparison": {
+            "description": "How the message size in bytes should be in relation to the size field.",
+            "enum": [
+              "unspecified",
+              "smaller",
+              "larger"
+            ],
+            "type": "string"
+          },
+          "subject": {
+            "description": "Case-insensitive phrase found in the message's subject. Trailing and leading whitespace are be trimmed and adjacent spaces are collapsed.",
+            "type": "string"
+          },
+          "to": {
+            "description": "The recipient's display name or email address. Includes recipients in the \"to\", \"cc\", and \"bcc\" header fields. You can use simply the local part of the email address. For example, \"example\" and \"example@\" both match \"example@gmail.com\". This field is case-insensitive.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Label": {
+        "description": "Labels are used to categorize messages and threads within the user's mailbox. The maximum number of labels supported for a user's mailbox is 10,000.",
+        "properties": {
+          "color": {
+            "$ref": "#/components/schemas/LabelColor",
+            "description": "The color to assign to the label. Color is only available for labels that have their `type` set to `user`."
+          },
+          "id": {
+            "description": "The immutable ID of the label.",
+            "type": "string"
+          },
+          "labelListVisibility": {
+            "description": "The visibility of the label in the label list in the Gmail web interface.",
+            "enum": [
+              "labelShow",
+              "labelShowIfUnread",
+              "labelHide"
+            ],
+            "type": "string"
+          },
+          "messageListVisibility": {
+            "description": "The visibility of messages with this label in the message list in the Gmail web interface.",
+            "enum": [
+              "show",
+              "hide"
+            ],
+            "type": "string"
+          },
+          "messagesTotal": {
+            "description": "The total number of messages with the label.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "messagesUnread": {
+            "description": "The number of unread messages with the label.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "name": {
+            "description": "The display name of the label.",
+            "type": "string"
+          },
+          "threadsTotal": {
+            "description": "The total number of threads with the label.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "threadsUnread": {
+            "description": "The number of unread threads with the label.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "type": {
+            "description": "The owner type for the label. User labels are created by the user and can be modified and deleted by the user and can be applied to any message or thread. System labels are internally created and cannot be added, modified, or deleted. System labels may be able to be applied to or removed from messages and threads under some circumstances but this is not guaranteed. For example, users can apply and remove the `INBOX` and `UNREAD` labels from messages and threads, but cannot apply or remove the `DRAFTS` or `SENT` labels from messages or threads.",
+            "enum": [
+              "system",
+              "user"
+            ],
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "LabelColor": {
+        "properties": {
+          "backgroundColor": {
+            "description": "The background color represented as hex string #RRGGBB (ex #000000). This field is required in order to set the color of a label. Only the following predefined set of color values are allowed: \\#000000, #434343, #666666, #999999, #cccccc, #efefef, #f3f3f3, #ffffff, \\#fb4c2f, #ffad47, #fad165, #16a766, #43d692, #4a86e8, #a479e2, #f691b3, \\#f6c5be, #ffe6c7, #fef1d1, #b9e4d0, #c6f3de, #c9daf8, #e4d7f5, #fcdee8, \\#efa093, #ffd6a2, #fce8b3, #89d3b2, #a0eac9, #a4c2f4, #d0bcf1, #fbc8d9, \\#e66550, #ffbc6b, #fcda83, #44b984, #68dfa9, #6d9eeb, #b694e8, #f7a7c0, \\#cc3a21, #eaa041, #f2c960, #149e60, #3dc789, #3c78d8, #8e63ce, #e07798, \\#ac2b16, #cf8933, #d5ae49, #0b804b, #2a9c68, #285bac, #653e9b, #b65775, \\#822111, #a46a21, #aa8831, #076239, #1a764d, #1c4587, #41236d, #83334c \\#464646, #e7e7e7, #0d3472, #b6cff5, #0d3b44, #98d7e4, #3d188e, #e3d7ff, \\#711a36, #fbd3e0, #8a1c0a, #f2b2a8, #7a2e0b, #ffc8af, #7a4706, #ffdeb5, \\#594c05, #fbe983, #684e07, #fdedc1, #0b4f30, #b3efd3, #04502e, #a2dcc1, \\#c2c2c2, #4986e7, #2da2bb, #b99aff, #994a64, #f691b2, #ff7537, #ffad46, \\#662e37, #ebdbde, #cca6ac, #094228, #42d692, #16a765",
+            "type": "string"
+          },
+          "textColor": {
+            "description": "The text color of the label, represented as hex string. This field is required in order to set the color of a label. Only the following predefined set of color values are allowed: \\#000000, #434343, #666666, #999999, #cccccc, #efefef, #f3f3f3, #ffffff, \\#fb4c2f, #ffad47, #fad165, #16a766, #43d692, #4a86e8, #a479e2, #f691b3, \\#f6c5be, #ffe6c7, #fef1d1, #b9e4d0, #c6f3de, #c9daf8, #e4d7f5, #fcdee8, \\#efa093, #ffd6a2, #fce8b3, #89d3b2, #a0eac9, #a4c2f4, #d0bcf1, #fbc8d9, \\#e66550, #ffbc6b, #fcda83, #44b984, #68dfa9, #6d9eeb, #b694e8, #f7a7c0, \\#cc3a21, #eaa041, #f2c960, #149e60, #3dc789, #3c78d8, #8e63ce, #e07798, \\#ac2b16, #cf8933, #d5ae49, #0b804b, #2a9c68, #285bac, #653e9b, #b65775, \\#822111, #a46a21, #aa8831, #076239, #1a764d, #1c4587, #41236d, #83334c \\#464646, #e7e7e7, #0d3472, #b6cff5, #0d3b44, #98d7e4, #3d188e, #e3d7ff, \\#711a36, #fbd3e0, #8a1c0a, #f2b2a8, #7a2e0b, #ffc8af, #7a4706, #ffdeb5, \\#594c05, #fbe983, #684e07, #fdedc1, #0b4f30, #b3efd3, #04502e, #a2dcc1, \\#c2c2c2, #4986e7, #2da2bb, #b99aff, #994a64, #f691b2, #ff7537, #ffad46, \\#662e37, #ebdbde, #cca6ac, #094228, #42d692, #16a765",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "Message": {
+        "description": "An email message.",
+        "properties": {
+          "historyId": {
+            "description": "The ID of the last history record that modified this message.",
+            "format": "uint64",
+            "type": "string"
+          },
+          "id": {
+            "description": "The immutable ID of the message.",
+            "type": "string"
+          },
+          "internalDate": {
+            "description": "The internal message creation timestamp (epoch ms), which determines ordering in the inbox. For normal SMTP-received email, this represents the time the message was originally accepted by Google, which is more reliable than the `Date` header. However, for API-migrated mail, it can be configured by client to be based on the `Date` header.",
+            "format": "int64",
+            "type": "string"
+          },
+          "labelIds": {
+            "description": "List of IDs of labels applied to this message.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "payload": {
+            "$ref": "#/components/schemas/MessagePart",
+            "description": "The parsed email structure in the message parts."
+          },
+          "raw": {
+            "description": "The entire email message in an RFC 2822 formatted and base64url encoded string. Returned in `messages.get` and `drafts.get` responses when the `format=RAW` parameter is supplied.",
+            "format": "byte",
+            "type": "string"
+          },
+          "sizeEstimate": {
+            "description": "Estimated size in bytes of the message.",
+            "format": "int32",
+            "type": "integer"
+          },
+          "snippet": {
+            "description": "A short part of the message text.",
+            "type": "string"
+          },
+          "threadId": {
+            "description": "The ID of the thread the message belongs to. To add a message or draft to a thread, the following criteria must be met: 1. The requested `threadId` must be specified on the `Message` or `Draft.Message` you supply with your request. 2. The `References` and `In-Reply-To` headers must be set in compliance with the [RFC 2822](https://tools.ietf.org/html/rfc2822) standard. 3. The `Subject` headers must match. ",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "MessagePart": {
+        "description": "A single MIME message part.",
+        "properties": {
+          "body": {
+            "$ref": "#/components/schemas/MessagePartBody",
+            "description": "The message part body for this part, which may be empty for container MIME message parts."
+          },
+          "filename": {
+            "description": "The filename of the attachment. Only present if this message part represents an attachment.",
+            "type": "string"
+          },
+          "headers": {
+            "description": "List of headers on this message part. For the top-level message part, representing the entire message payload, it will contain the standard RFC 2822 email headers such as `To`, `From`, and `Subject`.",
+            "items": {
+              "$ref": "#/components/schemas/MessagePartHeader"
+            },
+            "type": "array"
+          },
+          "mimeType": {
+            "description": "The MIME type of the message part.",
+            "type": "string"
+          },
+          "partId": {
+            "description": "The immutable ID of the message part.",
+            "type": "string"
+          },
+          "parts": {
+            "description": "The child MIME message parts of this part. This only applies to container MIME message parts, for example `multipart/*`. For non- container MIME message part types, such as `text/plain`, this field is empty. For more information, see RFC 1521.",
+            "items": {
+              "type": "object",
+              "additionalProperties": true,
+              "description": "A nested MessagePart. Structure omitted: it recurses."
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "MessagePartBody": {
+        "description": "The body of a single MIME message part.",
+        "properties": {
+          "attachmentId": {
+            "description": "When present, contains the ID of an external attachment that can be retrieved in a separate `messages.attachments.get` request. When not present, the entire content of the message part body is contained in the data field.",
+            "type": "string"
+          },
+          "data": {
+            "description": "The body data of a MIME message part as a base64url encoded string. May be empty for MIME container types that have no message body or when the body data is sent as a separate attachment. An attachment ID is present if the body data is contained in a separate attachment.",
+            "format": "byte",
+            "type": "string"
+          },
+          "size": {
+            "description": "Number of bytes for the message part data (encoding notwithstanding).",
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "MessagePartHeader": {
+        "properties": {
+          "name": {
+            "description": "The name of the header before the `:` separator. For example, `To`.",
+            "type": "string"
+          },
+          "value": {
+            "description": "The value of the header after the `:` separator. For example, `someuser@example.com`.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ModifyMessageRequest": {
+        "properties": {
+          "addLabelIds": {
+            "description": "A list of IDs of labels to add to this message. You can add up to 100 labels with each update.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "removeLabelIds": {
+            "description": "A list IDs of labels to remove from this message. You can remove up to 100 labels with each update.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "ModifyThreadRequest": {
+        "properties": {
+          "addLabelIds": {
+            "description": "A list of IDs of labels to add to this thread. You can add up to 100 labels with each update.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "removeLabelIds": {
+            "description": "A list of IDs of labels to remove from this thread. You can remove up to 100 labels with each update.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "Oauth2": {
+        "description": "Oauth 2.0 implicit authentication",
+        "flows": {
+          "implicit": {
+            "authorizationUrl": "https://accounts.google.com/o/oauth2/auth",
+            "scopes": {
+              "https://mail.google.com/": "Read, compose, send, and permanently delete all your email from Gmail",
+              "https://www.googleapis.com/auth/gmail.addons.current.action.compose": "Manage drafts and send emails when you interact with the add-on",
+              "https://www.googleapis.com/auth/gmail.addons.current.message.action": "View your email messages when you interact with the add-on",
+              "https://www.googleapis.com/auth/gmail.addons.current.message.metadata": "View your email message metadata when the add-on is running",
+              "https://www.googleapis.com/auth/gmail.addons.current.message.readonly": "View your email messages when the add-on is running",
+              "https://www.googleapis.com/auth/gmail.compose": "Manage drafts and send emails",
+              "https://www.googleapis.com/auth/gmail.insert": "Add emails into your Gmail mailbox",
+              "https://www.googleapis.com/auth/gmail.labels": "See and edit your email labels",
+              "https://www.googleapis.com/auth/gmail.metadata": "View your email message metadata such as labels and headers, but not the email body",
+              "https://www.googleapis.com/auth/gmail.modify": "Read, compose, and send emails from your Gmail account",
+              "https://www.googleapis.com/auth/gmail.readonly": "View your email messages and settings",
+              "https://www.googleapis.com/auth/gmail.send": "Send email on your behalf",
+              "https://www.googleapis.com/auth/gmail.settings.basic": "See, edit, create, or change your email settings and filters in Gmail",
+              "https://www.googleapis.com/auth/gmail.settings.sharing": "Manage your sensitive mail settings, including who can manage your mail"
+            }
+          }
+        },
+        "type": "oauth2"
+      },
+      "Oauth2c": {
+        "description": "Oauth 2.0 authorizationCode authentication",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "https://accounts.google.com/o/oauth2/auth",
+            "scopes": {
+              "https://mail.google.com/": "Read, compose, send, and permanently delete all your email from Gmail",
+              "https://www.googleapis.com/auth/gmail.addons.current.action.compose": "Manage drafts and send emails when you interact with the add-on",
+              "https://www.googleapis.com/auth/gmail.addons.current.message.action": "View your email messages when you interact with the add-on",
+              "https://www.googleapis.com/auth/gmail.addons.current.message.metadata": "View your email message metadata when the add-on is running",
+              "https://www.googleapis.com/auth/gmail.addons.current.message.readonly": "View your email messages when the add-on is running",
+              "https://www.googleapis.com/auth/gmail.compose": "Manage drafts and send emails",
+              "https://www.googleapis.com/auth/gmail.insert": "Add emails into your Gmail mailbox",
+              "https://www.googleapis.com/auth/gmail.labels": "See and edit your email labels",
+              "https://www.googleapis.com/auth/gmail.metadata": "View your email message metadata such as labels and headers, but not the email body",
+              "https://www.googleapis.com/auth/gmail.modify": "Read, compose, and send emails from your Gmail account",
+              "https://www.googleapis.com/auth/gmail.readonly": "View your email messages and settings",
+              "https://www.googleapis.com/auth/gmail.send": "Send email on your behalf",
+              "https://www.googleapis.com/auth/gmail.settings.basic": "See, edit, create, or change your email settings and filters in Gmail",
+              "https://www.googleapis.com/auth/gmail.settings.sharing": "Manage your sensitive mail settings, including who can manage your mail"
+            },
+            "tokenUrl": "https://accounts.google.com/o/oauth2/token"
+          }
+        },
+        "type": "oauth2"
+      }
+    }
+  }
+}

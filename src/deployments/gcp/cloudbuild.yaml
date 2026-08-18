@@ -1,0 +1,31 @@
+# Cloud Build config for the deployed target's image.
+#
+# It exists so `gcloud builds submit` can name a Dockerfile that is not at the
+# context root — `--tag` alone always builds `./Dockerfile`, and moving the
+# Dockerfile to the repository root to satisfy that would put deployment
+# machinery in front of everyone who only ever runs locally.
+#
+# Invoked by `lanes link deploy`, which supplies _IMAGE:
+#
+#   gcloud builds submit \
+#     --config src/deployments/gcp/cloudbuild.yaml \
+#     --substitutions _IMAGE=<region>-docker.pkg.dev/<project>/lanes-link/<service>:<tag> .
+#
+# The build context is the repository root, and `.dockerignore` there decides
+# what reaches the builder. `data/` must not — see the note in that file.
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --file
+      - src/deployments/gcp/Dockerfile
+      - --tag
+      - ${_IMAGE}
+      - .
+
+images:
+  - ${_IMAGE}
+
+options:
+  logging: CLOUD_LOGGING_ONLY

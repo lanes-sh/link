@@ -1,0 +1,132 @@
+import type { Principal } from '#auth';
+import type { Config } from '#profile';
+import type { ProviderRegistry } from '#registry';
+import type { Dispatcher } from '#dispatch';
+import type { PolicyDocument } from '#policy';
+import { allowedConnections } from '#policy';
+
+/**
+ * What this principal can see, and therefore what gets registered at all.
+ *
+ * The server is a pure function of resolved policy: a capability the principal
+ * cannot reach on any connection is not registered, and one it can reach on some
+ * connections advertises exactly those in its `connection` enum. A client
+ * therefore cannot discover a connection it has no grant for.
+ *
+ * Discovery filtering and invocation enforcement share one implementation
+ * (`allowedConnections`, which calls the same `evaluate` the dispatcher uses).
+ * If they were computed separately they could drift, and a leak in discovery is
+ * still a leak.
+ */
+
+/** Everything one profile contributes to the endpoint. */
+export interface ProfileRuntime {
+  readonly config: Config;
+  readonly registry: ProviderRegistry;
+  readonly dispatcher: Dispatcher;
+  readonly policy: PolicyDocument;
+  readonly floor?: PolicyDocument | undefined;
+  /**
+   * Re-read the skills into `registry`, if they have changed on the store.
+   *
+   * Optional because only a served endpoint has one — a registry built to read
+   * manifests has nothing to refresh. Cheap and idempotent; the endpoint decides
+   * how often to ask (ADR-014).
+   */
+  refreshSkills?(): Promise<void>;
+}
+
+export interface BuildServerOptions {
+  /**
+   * Every profile this endpoint serves, keyed by name.
+   *
+   * One port, several profiles, and `profile` injected into each tool beside
+   * `connection`. What this trades away is worth naming: a token used to open
+   * exactly one profile, so a leaked one reached exactly one set of accounts.
+   * Now a single token reaches all of them and the *caller* chooses, which makes
+   * cross-profile access a matter of what the model decides to pass. Policy is
+   * still enforced per profile, and every call records which one.
+   */
+  readonly profiles: ReadonlyMap<string, ProfileRuntime>;
+  readonly principal: Principal;
+  /** Self-reported by the client. Recorded in audit; never used to authorize. */
+  readonly clientLabel?: string | undefined;
+  readonly version?: string;
+}
+
+/** One profile as the map the builder wants. */
+export function oneProfile(
+  name: string,
+  runtime: ProfileRuntime,
+): ReadonlyMap<string, ProfileRuntime> {
+  return new Map([[name, runtime]]);
+}
+
+function connectionsOf(runtime: ProfileRuntime): string[] {
+  return runtime.config.connections.map((connection) => `${connection.provider}.${connection.id}`);
+}
+
+/**
+ * What each profile exposes of one capability, merged.
+ *
+ * A capability is registered once even when several profiles offer it — two
+ * mailboxes are still one `gmail.users.messages.list` tool — with the profile
+ * chosen per call. `reachable` stays per profile because the connection enum
+ * must not imply that an account of one profile can be used through another.
+ */
+export interface MergedCapability {
+  readonly reachable: Map<string, string[]>;
+  readonly capability: ReturnType<ProviderRegistry['capabilities']>[number]['capability'];
+  readonly discovered: ReturnType<ProviderRegistry['capabilities']>[number]['discovered'];
+}
+
+export function mergeCapabilities(options: BuildServerOptions): Map<string, MergedCapability> {
+  const merged = new Map<string, MergedCapability>();
+
+  for (const [name, runtime] of options.profiles) {
+    const connections = connectionsOf(runtime);
+
+    for (const { id, capability, discovered } of runtime.registry.capabilities()) {
+      const reachable = allowedConnections(
+        id,
+        connections,
+        options.principal.id,
+        runtime.policy,
+        runtime.floor,
+      );
+      if (reachable.length === 0) continue;
+
+      const existing = merged.get(id);
+      if (existing) {
+        existing.reachable.set(name, reachable);
+        continue;
+      }
+
+      merged.set(id, { reachable: new Map([[name, reachable]]), capability, discovered });
+    }
+  }
+
+  return merged;
+}
+
+/** Which capability ids this principal can reach, across every profile served. */
+export function visibleCapabilities(options: BuildServerOptions): string[] {
+  return [...mergeCapabilities(options).keys()];
+}
+
+/**
+ * Say which accounts are reachable, grouped by profile.
+ *
+ * Grouped rather than flattened because the two arguments are not independent:
+ * `profile: personal` with a connection belonging to `work` is refused, and a
+ * flat list would read as though any pairing were valid.
+ */
+export function describeWithConnections(
+  description: string,
+  reachable: ReadonlyMap<string, readonly string[]>,
+): string {
+  const lines = [...reachable].map(
+    ([profile, connections]) => `  ${profile}: ${connections.join(', ')}`,
+  );
+  return `${description}\n\nAvailable connections, by profile:\n${lines.join('\n')}`;
+}

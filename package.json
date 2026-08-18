@@ -1,0 +1,62 @@
+{
+  "name": "lanes-link",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A self-hosted MCP gateway for your accounts, memory, skills, and secrets",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lanes-sh/link.git"
+  },
+  "type": "module",
+  "bin": {
+    "lanes": "./src/cli/lanes.ts"
+  },
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "lanes": "bun run ./src/cli/lanes.ts",
+    "audit": "bun pm scan",
+    "vendor:google": "bun run ./src/providers/google/specs/vendor.ts"
+  },
+  "imports": {
+    "#audit": "./src/audit/index.ts",
+    "#audit/*": "./src/audit/*",
+    "#auth": "./src/auth/index.ts",
+    "#cli/*": "./src/cli/*",
+    "#connectivity": "./src/connectivity/index.ts",
+    "#connectivity/*": "./src/connectivity/*",
+    "#connectivity/mail": "./src/connectivity/mail/index.ts",
+    "#connectivity/transports": "./src/connectivity/transports/index.ts",
+    "#deployments/*": "./src/deployments/*",
+    "#dispatch": "./src/dispatch/index.ts",
+    "#policy": "./src/policy/index.ts",
+    "#profile": "./src/profile/index.ts",
+    "#providers/*": "./src/providers/*",
+    "#registry": "./src/registry/index.ts",
+    "#secrets": "./src/secrets/index.ts",
+    "#secrets/*": "./src/secrets/*",
+    "#server": "./src/server/index.ts",
+    "#server/endpoint.ts": "./src/server/endpoint.ts",
+    "#server/mcp": "./src/server/mcp/index.ts",
+    "#stores/blobs": "./src/stores/blobs/index.ts",
+    "#stores/blobs/*": "./src/stores/blobs/*",
+    "#stores/state": "./src/stores/state/index.ts",
+    "#stores/state/*": "./src/stores/state/*"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/client": "2.0.0",
+    "@modelcontextprotocol/core": "2.0.0",
+    "@modelcontextprotocol/server": "2.0.0",
+    "@rgrove/parse-xml": "4.2.3",
+    "mcp-from-openapi": "2.5.1",
+    "nodemailer": "9.0.3",
+    "postal-mime": "2.7.5",
+    "yaml": "2.9.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5"
+  }
+}

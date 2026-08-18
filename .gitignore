@@ -1,0 +1,59 @@
+# ---------------------------------------------------------------------------
+# Credentials and owner data. This file exists BEFORE the first commit on
+# purpose: this repo holds live OAuth refresh tokens, and a credential
+# committed once is in the history forever. The config loader's
+# secret-shaped-value validator is the second line of defence; this is the
+# first. Assume the repo could become public at any moment.
+# ---------------------------------------------------------------------------
+
+# Real profile configs. Only *.example.yaml is ever committed.
+profiles/*.yaml
+!profiles/*.example.yaml
+config/*.yaml
+!config/*.example.yaml
+lanes-link.yaml
+
+# Local state: sqlite databases, encrypted credential stores, blobs.
+data/
+
+# Encryption keys and anything credential-shaped.
+*.key
+*.pem
+*.enc
+*.p12
+.env
+.env.*
+!.env.example
+
+# ---------------------------------------------------------------------------
+# Build and tooling
+# ---------------------------------------------------------------------------
+node_modules/
+dist/
+build/
+*.tsbuildinfo
+coverage/
+
+# Compiled `lanes` binary from `bun build --compile`
+/lanes
+
+# ---------------------------------------------------------------------------
+# Machine-local tooling state
+# ---------------------------------------------------------------------------
+.lanes/
+.claude/settings.local.json
+
+# Worktrees live inside the repo, so git sees them as untracked files on the
+# branch they were made from. Both spellings: `.claude/worktrees/` is where the
+# harness puts them, `.worktrees/` is the hand-made convention.
+.claude/worktrees/
+
+# ---------------------------------------------------------------------------
+# OS and editor
+# ---------------------------------------------------------------------------
+.DS_Store
+*.swp
+.idea/
+.vscode/
+!.vscode/extensions.json
+.worktrees/

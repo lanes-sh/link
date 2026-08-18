@@ -1,0 +1,17 @@
+[install]
+# Supply chain: this repository holds live OAuth refresh tokens, so a
+# dependency compromise is a live threat. The common attack is to publish a
+# compromised version and yank it within hours; a release-age floor keeps a
+# version that young out of the lockfile entirely.
+#
+# 604800 seconds = 7 days.
+#
+# An urgent security fix can be pulled in ahead of the window by installing an
+# exact version explicitly, or by adding the package to minimumReleaseAgeExcludes.
+minimumReleaseAge = 604800
+minimumReleaseAgeExcludes = []
+
+# Pin exact versions rather than ranges, so the lockfile is the only thing
+# that decides what gets installed. Bun does not run dependency lifecycle
+# scripts unless a package is listed in trustedDependencies; keep that empty.
+exact = true

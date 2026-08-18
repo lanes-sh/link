@@ -1,0 +1,45 @@
+# The build context for src/deployments/gcp/Dockerfile is this directory.
+#
+# The first block is a security control, not an image-size optimisation. `data/`
+# holds the encrypted credential store *and* the key that opens it, and `*.key`
+# catches the same file wherever else it lands. A credential baked into an image
+# is pushed to a registry, cached on every builder that touched it, and readable
+# by anyone who can pull the tag — and the deployed target does not want them
+# anyway, because it reads credentials from Secret Manager.
+data/
+*.key
+*.pem
+*.enc
+*.p12
+.env
+.env.*
+
+# Not needed at runtime, and `.git` in particular carries every branch.
+.git/
+.gitignore
+.worktrees/
+node_modules/
+**/node_modules/
+coverage/
+dist/
+build/
+*.tsbuildinfo
+
+# Tests, docs, and tooling: the image runs the endpoint and nothing else.
+#
+# `instructions/` is what the CLI installs into a client — a skill and an agent
+# definition. The endpoint describes itself from code (`server/mcp/instructions.ts`)
+# precisely so a deployed revision does not need these files.
+**/*.test.ts
+**/*.test.json
+docs/
+instructions/
+**/README.md
+.lanes/
+.claude/
+.vscode/
+.idea/
+.DS_Store
+
+# The compiled binary from `bun build --compile`, if one was made locally.
+/lanes

@@ -1,0 +1,381 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "contact": {
+      "name": "Google",
+      "url": "https://google.com",
+      "x-twitter": "youtube"
+    },
+    "description": "Reads and writes Google Docs documents.",
+    "license": {
+      "name": "Creative Commons Attribution 3.0",
+      "url": "http://creativecommons.org/licenses/by/3.0/"
+    },
+    "termsOfService": "https://developers.google.com/terms/",
+    "title": "Google Docs API",
+    "version": "v1",
+    "x-apiClientRegistration": {
+      "url": "https://console.developers.google.com"
+    },
+    "x-apisguru-categories": [
+      "analytics",
+      "media"
+    ],
+    "x-logo": {
+      "url": "https://api.apis.guru/v2/cache/logo/https_www.google.com_images_branding_googlelogo_2x_googlelogo_color_272x92dp.png"
+    },
+    "x-origin": [
+      {
+        "converter": {
+          "url": "https://github.com/mermade/oas-kit",
+          "version": "7.0.4"
+        },
+        "format": "google",
+        "url": "https://docs.googleapis.com/$discovery/rest?version=v1",
+        "version": "v1"
+      }
+    ],
+    "x-providerName": "googleapis.com",
+    "x-serviceName": "docs",
+    "x-vendored-from": "https://api.apis.guru/v2/specs/googleapis.com/docs/v1/openapi.json",
+    "x-vendored-note": "Trimmed by src/providers/google/specs/vendor.ts. Committed deliberately: a spec decides which paths are called with the operator token, so it must be reviewable rather than fetched at connect time."
+  },
+  "servers": [
+    {
+      "url": "https://docs.googleapis.com/"
+    }
+  ],
+  "paths": {
+    "/v1/documents/{documentId}": {
+      "get": {
+        "description": "Gets the latest version of the specified document.",
+        "operationId": "docs.documents.get",
+        "parameters": [
+          {
+            "description": "The ID of the document to retrieve.",
+            "in": "path",
+            "name": "documentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The suggestions view mode to apply to the document. This allows viewing the document with all suggestions inline, accepted or rejected. If one is not specified, DEFAULT_FOR_CURRENT_ACCESS is used.",
+            "in": "query",
+            "name": "suggestionsViewMode",
+            "schema": {
+              "enum": [
+                "DEFAULT_FOR_CURRENT_ACCESS",
+                "SUGGESTIONS_INLINE",
+                "PREVIEW_SUGGESTIONS_ACCEPTED",
+                "PREVIEW_WITHOUT_SUGGESTIONS"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/documents"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/documents"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/documents.readonly"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/documents.readonly"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/drive"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/drive"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/drive.file"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/drive.file"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/drive.readonly"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/drive.readonly"
+            ]
+          }
+        ],
+        "tags": [
+          "documents"
+        ]
+      },
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/alt"
+        },
+        {
+          "$ref": "#/components/parameters/fields"
+        }
+      ]
+    },
+    "/v1/documents/{documentId}:batchUpdate": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/alt"
+        },
+        {
+          "$ref": "#/components/parameters/fields"
+        }
+      ],
+      "post": {
+        "description": "Applies one or more updates to the document. Each request is validated before being applied. If any request is not valid, then the entire request will fail and nothing will be applied. Some requests have replies to give you some information about how they are applied. Other requests do not need to return information; these each return an empty reply. The order of replies matches that of the requests. For example, suppose you call batchUpdate with four updates, and only the third one returns information. The response would have two empty replies, the reply to the third request, and another empty reply, in that order. Because other users may be editing the document, the document might not exactly reflect your changes: your changes may be altered with respect to collaborator changes. If there are no collaborators, the document should reflect your changes. In any case, the updates in your request are guaranteed to be applied together atomically.",
+        "operationId": "docs.documents.batchUpdate",
+        "parameters": [
+          {
+            "description": "The ID of the document to update.",
+            "in": "path",
+            "name": "documentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchUpdateDocumentRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/documents"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/documents"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/drive"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/drive"
+            ]
+          },
+          {
+            "Oauth2": [
+              "https://www.googleapis.com/auth/drive.file"
+            ],
+            "Oauth2c": [
+              "https://www.googleapis.com/auth/drive.file"
+            ]
+          }
+        ],
+        "tags": [
+          "documents"
+        ]
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "_.xgafv": {
+        "description": "V1 error format.",
+        "in": "query",
+        "name": "$.xgafv",
+        "schema": {
+          "enum": [
+            "1",
+            "2"
+          ],
+          "type": "string"
+        }
+      },
+      "access_token": {
+        "description": "OAuth access token.",
+        "in": "query",
+        "name": "access_token",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "alt": {
+        "description": "Data format for response.",
+        "in": "query",
+        "name": "alt",
+        "schema": {
+          "enum": [
+            "json",
+            "media",
+            "proto"
+          ],
+          "type": "string"
+        }
+      },
+      "callback": {
+        "description": "JSONP",
+        "in": "query",
+        "name": "callback",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "fields": {
+        "description": "Selector specifying which fields to include in a partial response.",
+        "in": "query",
+        "name": "fields",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "key": {
+        "description": "API key. Your API key identifies your project and provides you with API access, quota, and reports. Required unless you provide an OAuth 2.0 token.",
+        "in": "query",
+        "name": "key",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "oauth_token": {
+        "description": "OAuth 2.0 token for the current user.",
+        "in": "query",
+        "name": "oauth_token",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "prettyPrint": {
+        "description": "Returns response with indentations and line breaks.",
+        "in": "query",
+        "name": "prettyPrint",
+        "schema": {
+          "type": "boolean"
+        }
+      },
+      "quotaUser": {
+        "description": "Available to use for quota purposes for server-side applications. Can be any arbitrary string assigned to a user, but should not exceed 40 characters.",
+        "in": "query",
+        "name": "quotaUser",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "uploadType": {
+        "description": "Legacy upload protocol for media (e.g. \"media\", \"multipart\").",
+        "in": "query",
+        "name": "uploadType",
+        "schema": {
+          "type": "string"
+        }
+      },
+      "upload_protocol": {
+        "description": "Upload protocol for media (e.g. \"raw\", \"multipart\").",
+        "in": "query",
+        "name": "upload_protocol",
+        "schema": {
+          "type": "string"
+        }
+      }
+    },
+    "schemas": {
+      "BatchUpdateDocumentRequest": {
+        "description": "Request message for BatchUpdateDocument.",
+        "properties": {
+          "requests": {
+            "description": "A list of updates to apply to the document.",
+            "items": {
+              "$ref": "#/components/schemas/Request"
+            },
+            "type": "array"
+          },
+          "writeControl": {
+            "$ref": "#/components/schemas/WriteControl",
+            "description": "Provides control over how write requests are executed."
+          }
+        },
+        "type": "object"
+      },
+      "Request": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "A single update to apply to a document. Structure omitted: it expands to megabytes when inlined. Pass the object as documented at https://developers.google.com/workspace."
+      },
+      "WriteControl": {
+        "description": "Provides control over how write requests are executed.",
+        "properties": {
+          "requiredRevisionId": {
+            "description": "The optional revision ID of the document the write request is applied to. If this is not the latest revision of the document, the request is not processed and returns a 400 bad request error. When a required revision ID is returned in a response, it indicates the revision ID of the document after the request was applied.",
+            "type": "string"
+          },
+          "targetRevisionId": {
+            "description": "The optional target revision ID of the document the write request is applied to. If collaborator changes have occurred after the document was read using the API, the changes produced by this write request are applied against the collaborator changes. This results in a new revision of the document that incorporates both the collaborator changes and the changes in the request, with the Docs server resolving conflicting changes. When using target revision ID, the API client can be thought of as another collaborator of the document. The target revision ID can only be used to write to recent versions of a document. If the target revision is too far behind the latest revision, the request is not processed and returns a 400 bad request error. The request should be tried again after retrieving the latest version of the document. Usually a revision ID remains valid for use as a target revision for several minutes after it's read, but for frequently edited documents this window might be shorter.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "Oauth2": {
+        "description": "Oauth 2.0 implicit authentication",
+        "flows": {
+          "implicit": {
+            "authorizationUrl": "https://accounts.google.com/o/oauth2/auth",
+            "scopes": {
+              "https://www.googleapis.com/auth/documents": "See, edit, create, and delete all your Google Docs documents",
+              "https://www.googleapis.com/auth/documents.readonly": "See all your Google Docs documents",
+              "https://www.googleapis.com/auth/drive": "See, edit, create, and delete all of your Google Drive files",
+              "https://www.googleapis.com/auth/drive.file": "See, edit, create, and delete only the specific Google Drive files you use with this app",
+              "https://www.googleapis.com/auth/drive.readonly": "See and download all your Google Drive files"
+            }
+          }
+        },
+        "type": "oauth2"
+      },
+      "Oauth2c": {
+        "description": "Oauth 2.0 authorizationCode authentication",
+        "flows": {
+          "authorizationCode": {
+            "authorizationUrl": "https://accounts.google.com/o/oauth2/auth",
+            "scopes": {
+              "https://www.googleapis.com/auth/documents": "See, edit, create, and delete all your Google Docs documents",
+              "https://www.googleapis.com/auth/documents.readonly": "See all your Google Docs documents",
+              "https://www.googleapis.com/auth/drive": "See, edit, create, and delete all of your Google Drive files",
+              "https://www.googleapis.com/auth/drive.file": "See, edit, create, and delete only the specific Google Drive files you use with this app",
+              "https://www.googleapis.com/auth/drive.readonly": "See and download all your Google Drive files"
+            },
+            "tokenUrl": "https://accounts.google.com/o/oauth2/token"
+          }
+        },
+        "type": "oauth2"
+      }
+    }
+  }
+}

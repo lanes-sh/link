@@ -1,0 +1,310 @@
+import { describe, expect, test } from 'bun:test';
+import { MAX_INSTRUCTIONS, serverInstructions } from './instructions.ts';
+import { allocatePort, startStdioHarness } from '../harness.ts';
+import type { MergedCapability } from './visibility.ts';
+
+/**
+ * What a client is told before it calls anything.
+ *
+ * Two things are being checked, and they fail for different reasons. The
+ * composition tests below say the right facts are assembled; the wire test at
+ * the bottom says they actually arrive — `instructions` is a `ServerOptions`
+ * field, and putting it in the `Implementation` argument beside `name` compiles,
+ * runs, and silently sends nothing.
+ */
+
+/** A capability reachable on the given profiles. Only `reachable` is read here. */
+function reaching(reachable: Record<string, string[]>): MergedCapability {
+  return {
+    reachable: new Map(Object.entries(reachable)),
+    capability: undefined,
+    discovered: undefined,
+  };
+}
+
+describe('the facts under the prose', () => {
+  test('lists every profile served, with its connections', () => {
+    const text = serverInstructions(
+      ['personal', 'work'],
+      new Map([
+        ['a.read', reaching({ personal: ['example.a'], work: ['example.w'] })],
+        ['a.write', reaching({ personal: ['example.b'] })],
+      ]),
+    );
+
+    expect(text).toContain('personal: example.a, example.b');
+    expect(text).toContain('work: example.w');
+  });
+
+  test('a profile the principal cannot reach is not announced', () => {
+    // Discovery filtering already dropped it from every tool. Naming it here
+    // would describe a door that does not open.
+    const text = serverInstructions(
+      ['personal', 'locked'],
+      new Map([['a.read', reaching({ personal: ['example.a'] })]]),
+    );
+
+    expect(text).toContain('personal:');
+    expect(text).not.toContain('locked');
+  });
+
+  test('profiles keep the order they are served in, not the order found', () => {
+    const text = serverInstructions(
+      ['personal', 'work'],
+      // `work` appears first among the capabilities.
+      new Map([
+        ['a.read', reaching({ work: ['example.w'] })],
+        ['a.write', reaching({ personal: ['example.a'] })],
+      ]),
+    );
+
+    expect(text.indexOf('personal:')).toBeLessThan(text.indexOf('work:'));
+  });
+
+  test('names the owner-layer providers that are reachable, and no others', () => {
+    const text = serverInstructions(
+      ['personal'],
+      new Map([
+        ['memory.search', reaching({ personal: ['memory.owner'] })],
+        ['example.echo', reaching({ personal: ['example.a'] })],
+      ]),
+    );
+
+    expect(text).toContain('memory');
+    expect(text).not.toContain('vault');
+  });
+
+  test('says so plainly when nothing is reachable', () => {
+    // A fresh workspace and a principal granted nothing both land here, and a
+    // heading with nothing under it reads like a bug in the endpoint.
+    const text = serverInstructions(['personal'], new Map());
+
+    expect(text).toContain('Nothing is reachable');
+    expect(text).not.toContain('Reachable now');
+  });
+});
+
+describe('the habits it teaches', () => {
+  const text = serverInstructions(
+    ['personal'],
+    new Map([['example.echo', reaching({ personal: ['example.a'] })]]),
+  );
+
+  test('states the profile rule as a rule, not as advice', () => {
+    expect(text).toContain('Do not default to whichever is listed first');
+  });
+
+  test('covers each thing a client would otherwise have to guess', () => {
+    // The unconditional half: routing, attachments, and what a refusal means
+    // apply to every endpoint regardless of what it is granted.
+    for (const habit of ['profile', 'connection', 'attachments', 'refused']) {
+      expect(text).toContain(habit);
+    }
+  });
+
+  test('does not teach habits for tools this principal has none of', () => {
+    // It used to. Every client was told to consult memory, invoke skills and
+    // guard vault values, on an endpoint granting none of the three — which is
+    // the ordinary shape of a workspace that connected one mailbox. Prose the
+    // tool list contradicts is worse than no prose: an agent resolves the
+    // contradiction by guessing, which is the whole bug this file exists to
+    // stop.
+    expect(text).not.toContain('Memory is worth consulting');
+    expect(text).not.toContain('Skills are the owner');
+    expect(text).not.toContain('Vault values are credentials');
+  });
+
+  test('teaches them when the principal does have them', () => {
+    const granted = serverInstructions(
+      ['personal'],
+      new Map([
+        ['memory.search', reaching({ personal: ['memory.owner'] })],
+        ['skills.manage.list', reaching({ personal: ['skills.owner'] })],
+        ['vault.put', reaching({ personal: ['vault.owner'] })],
+      ]),
+    );
+
+    expect(granted).toContain('Memory is worth consulting');
+    expect(granted).toContain('Skills are the owner');
+    expect(granted).toContain('Vault values are credentials');
+  });
+
+  /**
+   * The observed failure, not a predicted one: asked to connect a second
+   * mailbox, a client with no setup surface and no skill said it could not and
+   * then invented the procedure. It had no way to know what answers that.
+   */
+  test('points at the setup surface when there is one', () => {
+    const granted = serverInstructions(
+      ['personal'],
+      new Map([
+        ['gmail.send', reaching({ personal: ['gmail.a'] })],
+        ['setup.overview', reaching({ personal: ['setup.main'] })],
+      ]),
+    );
+
+    expect(granted).toContain('setup_overview');
+    expect(granted).toContain('inventing it is not');
+  });
+
+  test('says nothing about setup when there is no surface to point at', () => {
+    expect(text).not.toContain('setup_overview');
+  });
+
+  test('does not call the setup surface the owner\'s own material', () => {
+    // It is in RESERVED_PROVIDER_IDS beside memory, skills and vault, and used
+    // to be swept into a trailing line naming all four as the owner's material.
+    // It holds none: it describes what the others are.
+    const granted = serverInstructions(
+      ['personal'],
+      new Map([['setup.overview', reaching({ personal: ['setup.main'] })]]),
+    );
+
+    expect(granted).not.toContain("owner's own material");
+  });
+
+  test('stays inside its budget however large the workspace is', () => {
+    // The prose is fixed; the connection listing is not. Measuring only the
+    // fixture above meant the budget was met by workspaces that happened to be
+    // small — three profiles of ten accounts passed 2,000 characters silently.
+    // Beyond a point the listing is summarised instead, which loses nothing an
+    // agent cannot get exactly: every tool carries the connections it accepts in
+    // its own `connection` enum.
+    const profiles = ['personal', 'work', 'clients', 'archive', 'shared'];
+    const reachable = new Map(
+      profiles.map((profile) => [
+        profile,
+        Array.from({ length: 20 }, (_, i) => `provider${i}.account_${profile}_${i}`),
+      ]),
+    );
+    const merged = new Map([
+      ['x.y', { reachable, capability: undefined, discovered: undefined }],
+    ]) as never;
+
+    const large = serverInstructions(profiles, merged);
+
+    expect(large.length).toBeLessThan(MAX_INSTRUCTIONS);
+    // Still says what is reachable, and where the exact list is.
+    expect(large).toContain('100 connections');
+    expect(large).toContain('`connection`');
+  });
+
+  test('holds however large the workspace is, including the prose', () => {
+    // "However large" was not what the test above measured. The summary drops
+    // the connections but still named every profile, so twenty profiles put it
+    // back over — and the prose is now assembled per principal, so the worst
+    // case is every owner-layer provider granted at the same time. Both at once
+    // is the case that has to hold.
+    const profiles = Array.from({ length: 20 }, (_, i) => `a-fairly-long-profile-name-${i}`);
+    const reachable = new Map(
+      profiles.map((profile) => [
+        profile,
+        Array.from({ length: 20 }, (_, i) => `provider${i}.account_${profile}_${i}`),
+      ]),
+    );
+    const first = profiles[0] as string;
+
+    const worst = serverInstructions(
+      profiles,
+      new Map([
+        ['x.y', { reachable, capability: undefined, discovered: undefined }],
+        ['memory.search', reaching({ [first]: ['memory.owner'] })],
+        ['skills.manage.list', reaching({ [first]: ['skills.owner'] })],
+        ['vault.put', reaching({ [first]: ['vault.owner'] })],
+        ['setup.overview', reaching({ [first]: ['setup.main'] })],
+      ]),
+    );
+
+    expect(worst.length).toBeLessThan(MAX_INSTRUCTIONS);
+    // Degraded to a count rather than truncated: the names are the nicety, the
+    // number is the fact, and every tool carries its own connection enum.
+    expect(worst).toContain('20 profiles');
+  });
+
+  test('stays inside its budget', () => {
+    // This is in the system prompt of every session against this endpoint, so
+    // the cost is paid per request forever. The number is arbitrary; needing to
+    // raise it is the prompt to ask whether the paragraph belongs in the skill
+    // instead, where it is loaded only when relevant.
+    expect(text.length).toBeLessThan(MAX_INSTRUCTIONS);
+  });
+
+  /**
+   * The budget must not spend itself on prose and leave nothing for the facts.
+   *
+   * A fully set-up workspace grants all four owner-layer providers, so its prose
+   * is the longest there is — and a reserve guessed in advance meant the listing
+   * could not fit behind it *at any workspace size*. A single profile with two
+   * mailboxes was told "1 profiles" with a hundred characters of the ceiling
+   * unspent. The guard is that the small workspace keeps its names.
+   */
+  test('spends what is left on the facts, not on a reserve', () => {
+    const granted = serverInstructions(
+      ['personal'],
+      new Map([
+        ['gmail.send', reaching({ personal: ['gmail.a', 'gmail.b'] })],
+        ['memory.search', reaching({ personal: ['memory.owner'] })],
+        ['skills.manage.list', reaching({ personal: ['skills.owner'] })],
+        ['vault.put', reaching({ personal: ['vault.owner'] })],
+        ['setup.overview', reaching({ personal: ['setup.main'] })],
+      ]),
+    );
+
+    expect(granted.length).toBeLessThan(MAX_INSTRUCTIONS);
+    // All four habits, and still the accounts by name.
+    expect(granted).toContain('Memory is worth consulting');
+    expect(granted).toContain('setup_overview');
+    expect(granted).toContain('Reachable now, by profile:');
+    expect(granted).toContain('personal: gmail.a, gmail.b');
+  });
+
+  test('never degrades to a form longer than the one it rejected', () => {
+    // The count form is shorter than naming twenty profiles and longer than
+    // naming one, so choosing it unmeasured overran the budget in one direction
+    // and wasted it in the other — and printed "1 profiles" doing it.
+    for (const count of [1, 2, 5, 20]) {
+      const profiles = Array.from({ length: count }, (_, i) => `p${i}`);
+      const reachable = new Map(
+        profiles.map((profile) => [
+          profile,
+          Array.from({ length: 30 }, (_, i) => `provider${i}.a_very_long_account_name_${i}`),
+        ]),
+      );
+
+      const text = serverInstructions(
+        profiles,
+        new Map([
+          ['x.y', { reachable, capability: undefined, discovered: undefined }],
+          ['memory.search', reaching({ [profiles[0] as string]: ['memory.owner'] })],
+          ['skills.manage.list', reaching({ [profiles[0] as string]: ['skills.owner'] })],
+          ['vault.put', reaching({ [profiles[0] as string]: ['vault.owner'] })],
+          ['setup.overview', reaching({ [profiles[0] as string]: ['setup.main'] })],
+        ]),
+      );
+
+      expect(text.length).toBeLessThan(MAX_INSTRUCTIONS);
+      expect(text).not.toContain('1 profiles');
+    }
+  });
+});
+
+describe('reaching the client', () => {
+  test('initialize carries them', async () => {
+    const harness = await startStdioHarness({
+      profile: 'personal',
+      port: allocatePort(),
+      policy: `  allow:\n    - "example.*"`,
+    });
+
+    try {
+      const instructions = harness.client.getInstructions();
+
+      expect(instructions).toBeDefined();
+      expect(instructions).toContain('Do not default to whichever is listed first');
+      // The generated half, from this harness's own two connections.
+      expect(instructions).toContain('personal: example.a, example.b');
+    } finally {
+      await harness.stop();
+    }
+  });
+});

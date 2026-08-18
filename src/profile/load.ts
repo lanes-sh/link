@@ -1,0 +1,199 @@
+import { parse as parseYaml } from 'yaml';
+import { z } from 'zod';
+import {
+  SUPPORTED_CONTRACT,
+  configSchema,
+  type Config,
+  type PolicyRuleConfig,
+} from './schema.ts';
+import { findSecrets, formatSecretFindings } from './secret-detection.ts';
+
+export class ConfigError extends Error {
+  readonly findings: readonly string[];
+
+  constructor(message: string, findings: readonly string[] = []) {
+    super(message);
+    this.name = 'ConfigError';
+    this.findings = findings;
+  }
+}
+
+export interface LoadedConfig {
+  readonly config: Config;
+  readonly source: string;
+  /** `provider.id` for every declared connection, in declaration order. */
+  readonly connectionKeys: readonly string[];
+}
+
+/**
+ * Validate a raw parsed config.
+ *
+ * Order matters and is not arbitrary:
+ *
+ *  1. Contract major, before anything else. An unrecognised major means we do
+ *     not know what the rest of the document means, so no further rule can be
+ *     trusted to be reading what the operator wrote.
+ *  2. Secret detection, on the RAW object rather than the parsed one. Zod
+ *     strips unknown keys, so a credential parked under a misspelled key would
+ *     survive schema validation invisibly.
+ *  3. Schema shape.
+ *  4. Referential integrity, which needs a well-formed document to check.
+ */
+export function validateConfig(raw: unknown, source = '<config>'): Config {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw new ConfigError(`${source}: expected a YAML mapping at the top level`);
+  }
+
+  assertSupportedContract(raw, source);
+
+  const secrets = findSecrets(raw);
+  if (secrets.length > 0) {
+    throw new ConfigError(
+      `${source}: ${formatSecretFindings(secrets)}`,
+      secrets.map((finding) => finding.path),
+    );
+  }
+
+  const parsed = configSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new ConfigError(`${source}:\n${formatZodIssues(parsed.error)}`);
+  }
+
+  assertReferentialIntegrity(parsed.data, source);
+  return parsed.data;
+}
+
+/**
+ * An unknown contract major is rejected outright, never loaded best-effort.
+ *
+ * This file governs authorization. Guessing at a schema we do not implement
+ * risks reading a document as more permissive than the operator wrote it, and
+ * refusing to start is always the safer failure.
+ */
+function assertSupportedContract(raw: object, source: string): void {
+  const contract = (raw as { contract?: unknown }).contract;
+
+  if (typeof contract !== 'number' || !Number.isInteger(contract)) {
+    throw new ConfigError(
+      `${source}: "contract" is required and must be an integer. This binary implements contract ${SUPPORTED_CONTRACT}.`,
+    );
+  }
+
+  if (contract !== SUPPORTED_CONTRACT) {
+    const direction = contract > SUPPORTED_CONTRACT ? 'newer than' : 'older than';
+    throw new ConfigError(
+      `${source}: contract ${contract} is ${direction} the contract this binary implements (${SUPPORTED_CONTRACT}). ` +
+        `Refusing to load rather than guessing at what the document means. ` +
+        (contract > SUPPORTED_CONTRACT
+          ? 'Upgrade lanes-link.'
+          : 'Migrate the config, or use a matching lanes-link version.'),
+    );
+  }
+}
+
+function formatZodIssues(error: z.ZodError): string {
+  return error.issues
+    .map((issue) => {
+      const path = issue.path.length > 0 ? issue.path.join('.') : '<root>';
+      return `  ${path}: ${issue.message}`;
+    })
+    .join('\n');
+}
+
+/**
+ * Cross-references, all of which fail rather than degrade.
+ *
+ * A policy rule naming a connection that does not exist is the important one:
+ * left to resolve silently it grants nothing, which looks identical to a
+ * working rule until the day someone relies on it.
+ */
+function assertReferentialIntegrity(config: Config, source: string): void {
+  const problems: string[] = [];
+
+  const targetNames = new Set(Object.keys(config.targets));
+  if (targetNames.size === 0) {
+    problems.push('targets: at least one target must be declared');
+  }
+  if (!targetNames.has(config.instance.default_target)) {
+    problems.push(
+      `instance.default_target: "${config.instance.default_target}" is not a declared target (have: ${[...targetNames].join(', ') || 'none'})`,
+    );
+  }
+
+  // Only what holds for every platform. What one platform needs and the next
+  // has no concept of — a GCP project, an AWS role ARN — is refused by the
+  // driver that needs it, the way an adapter-specific field is refused by the
+  // code that opens the adapter rather than by this file.
+  for (const [name, target] of Object.entries(config.targets)) {
+    if (!target.deploy) continue;
+    for (const field of ['region', 'service'] as const) {
+      if (!target.deploy[field]) {
+        problems.push(`targets.${name}.deploy.${field}: required for a deployable target`);
+      }
+    }
+  }
+
+  // Connection ids are unique per provider, so `gmail.main` and
+  // `icloud_mail.main` can coexist.
+  const connectionKeys = new Set<string>();
+  const providerNames = new Set(config.connections.map((connection) => connection.provider));
+
+  config.connections.forEach((connection, index) => {
+    const key = `${connection.provider}.${connection.id}`;
+    if (connectionKeys.has(key)) {
+      problems.push(`connections[${index}]: duplicate connection "${key}"`);
+    }
+    connectionKeys.add(key);
+  });
+
+  const checkRules = (rules: readonly PolicyRuleConfig[], field: 'allow' | 'deny'): void => {
+    rules.forEach((rule, index) => {
+      const where = `policy.${field}[${index}]`;
+      if (rule.capability === '*') return;
+
+      // A rule naming a provider with no connection is almost always a typo,
+      // and one that fails open-looking: it reads as a grant while matching
+      // nothing. Worth saying, but not fatal for a `deny` — denying something
+      // you have not connected yet is a perfectly reasonable thing to write
+      // ahead of time.
+      const providerOfCapability = rule.capability.split('.')[0] ?? '';
+      if (field === 'allow' && !providerNames.has(providerOfCapability)) {
+        problems.push(
+          `${where}: "${rule.capability}" names provider "${providerOfCapability}", which has no connection` +
+            (providerNames.size > 0 ? ` (have: ${[...providerNames].join(', ')})` : ''),
+        );
+      }
+    });
+  };
+
+  checkRules(config.policy.allow, 'allow');
+  checkRules(config.policy.deny, 'deny');
+
+  if (problems.length > 0) {
+    throw new ConfigError(`${source}:\n${problems.map((p) => `  ${p}`).join('\n')}`, problems);
+  }
+}
+
+export function parseConfig(text: string, source = '<config>'): LoadedConfig {
+  let raw: unknown;
+  try {
+    raw = parseYaml(text);
+  } catch (error) {
+    throw new ConfigError(`${source}: could not parse YAML — ${(error as Error).message}`);
+  }
+
+  const config = validateConfig(raw, source);
+  return {
+    config,
+    source,
+    connectionKeys: config.connections.map((c) => `${c.provider}.${c.id}`),
+  };
+}
+
+export async function loadConfigFile(path: string): Promise<LoadedConfig> {
+  const file = Bun.file(path);
+  if (!(await file.exists())) {
+    throw new ConfigError(`${path}: no such config file`);
+  }
+  return parseConfig(await file.text(), path);
+}
