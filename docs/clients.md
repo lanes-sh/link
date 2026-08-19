@@ -99,6 +99,9 @@ thing this client cannot be given.
 
 These need a [deployment](deploy.md) — there is no address they can be given that reaches a laptop.
 
+`cloud` in these commands is a target name — whatever your deployment is called. `lanes link target
+list` shows yours.
+
 Add a custom connector by URL, using the address `lanes link outputs --target cloud` prints. The
 client registers itself, a browser opens on your endpoint's own approval page, and you paste that
 target's token once — from `lanes link outputs --show --target cloud`. Same flow on a laptop and on a

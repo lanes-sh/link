@@ -41,3 +41,37 @@ export async function deployedUrl(declared: DeployConfig | undefined): Promise<s
     return null;
   }
 }
+
+/**
+ * Which service a target deploys to, from config alone.
+ *
+ * Separate from the two functions above because it answers a different question
+ * at a different cost. They ask the platform where a service *ended up*, which
+ * is a subprocess and a network call; this reads what the profile already
+ * declares, which is free and always available.
+ *
+ * That difference is exactly why `status` needs it. `status` promises to answer
+ * without depending on anything being up, so it cannot ask for an address — but
+ * printing a loopback URL for a deployed target, which is what it used to do, is
+ * worse than printing no URL at all. Naming the service is the honest answer a
+ * config-only command can give.
+ */
+export function deploymentIdentity(
+  declared: DeployConfig | undefined,
+): DeploymentIdentity | null {
+  if (!declared) return null;
+
+  return {
+    platform: declared.platform,
+    service: declared.service,
+    region: declared.region,
+    ...(declared.project !== undefined ? { project: declared.project } : {}),
+  };
+}
+
+export interface DeploymentIdentity {
+  readonly platform: string;
+  readonly service: string;
+  readonly region: string;
+  readonly project?: string;
+}

@@ -41,6 +41,11 @@ ${style.bold('Profiles')}
   ${PROGRAM} profile list [--json]
   ${PROGRAM} profile default <name>
 
+${style.bold('Targets')}
+  ${PROGRAM} target list [--urls]      where this profile can run, and which one is in play
+  ${PROGRAM} target show [<name>]      one target's adapters, and the address it answers on
+  ${PROGRAM} target use <name>         make one the profile's default_target
+
 ${style.bold('Permissions')}
   ${PROGRAM} policy list
   ${PROGRAM} policy allow <capability>  e.g. gmail.* or gmail.send_message
@@ -69,6 +74,7 @@ ${style.bold('Deploying')}
   ${PROGRAM} deploy [--dry-run]         set up, build, and roll a revision
   ${PROGRAM} deploy --non-interactive   take the stored answers, never prompt
   ${PROGRAM} deploy --access iam|public who gets past the platform's own door
+  ${PROGRAM} deploy --target <name>     deploy a second one, under its own name
   ${PROGRAM} secrets list               credential references in this target
   ${PROGRAM} secrets set <ref>          store one value, read from stdin
   ${PROGRAM} secrets push --from local --to cloud
@@ -87,7 +93,7 @@ ${style.bold('Attachments')}
 
 ${style.bold('Global flags')}
   --profile <name>               overrides LANES_LINK_PROFILE and the workspace default
-  --target <name>                overrides instance.default_target
+  --target <name>                overrides LANES_LINK_TARGET and instance.default_target
   --connection <id>              which memory/skills/vault connection, if a profile has several
   --yes                          skip the confirmation a destructive command would ask for
   --json                         machine-readable output, where a command offers it

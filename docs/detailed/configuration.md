@@ -146,6 +146,56 @@ beside it (ADR-020). A profile written before that keeps its `database:` key and
 
 Credentials follow the target, because each target has its own credential store.
 
+### More than one deployment
+
+`local` and `cloud` are conventions, not keywords — nothing reserves either name, and a profile may
+declare as many targets as it has places to run. A second deployment is named on the deploy that
+creates it (`lanes link deploy --target staging`), which surveys for what it does not know and
+writes the block below.
+
+```yaml
+contract: 1
+
+instance:
+  profile: personal
+  default_target: local
+
+targets:
+  local:
+    credentials: { adapter: file }
+    storage: { adapter: filesystem }
+
+  cloud:
+    credentials: { adapter: gcp-secret-manager, project: my-project }
+    storage: { adapter: gcs, bucket: your-bucket }
+    vault: { adapter: secret }
+    deploy:
+      platform: cloudrun
+      project: my-project
+      region: europe-west1
+      service: my-service
+      access: public
+
+  staging:
+    credentials: { adapter: gcp-secret-manager, project: my-other-project }
+    storage: { adapter: gcs, bucket: your-other-bucket }
+    vault: { adapter: secret }
+    deploy:
+      platform: cloudrun
+      project: my-other-project
+      region: europe-west1
+      service: my-other-service
+      access: public
+```
+
+`lanes link target list` prints what a profile declares and which target is in play;
+`lanes link target use <name>` rewrites `instance.default_target`. Once two targets declare a
+`deploy` block, a bare `lanes link deploy` asks which you meant rather than picking.
+
+Each target's credential store is its own, so a connection authorised against `cloud` is absent from
+`staging` — `lanes link secrets push --from cloud --to staging` copies them across instead of
+re-running every consent.
+
 Two cloud blob adapters, and the difference is setup rather than capability. `gcs` authenticates
 as the identity already present — the service account `lanes link deploy` grants `objectAdmin`, or
 your own gcloud credentials locally — so the bucket needs **no credential of its own**. `s3` needs
@@ -177,7 +227,7 @@ unreadable while appearing to work. Mint one with `lanes link vault key generate
 |---|---|
 | `LANES_LINK_HOME` | Workspace root. Otherwise the nearest ancestor holding `lanes-link.yaml`, else `~/.lanes-link`. |
 | `LANES_LINK_PROFILE` | Profile, below `--profile` and above the workspace default. |
-| `LANES_LINK_TARGET` | Target, for the container entrypoint. |
+| `LANES_LINK_TARGET` | Target, below `--target` and above `instance.default_target`. Not read by `deploy`. Also how the container entrypoint selects its adapter set. |
 | `LANES_LINK_HOST` / `PORT` | Bind address and port in a container. |
 | `LANES_LINK_CREDENTIAL_KEY` | base64 32-byte key for the encrypted credential store. |
 | `LANES_LINK_VAULT_KEY` | base64 32-byte key for the vault. **A different key, deliberately** — one master secret reused across purposes turns any single compromise into a total one. |

@@ -563,13 +563,15 @@ Workspace root resolves from `LANES_LINK_HOME`, else the nearest ancestor direct
 
 Profile resolves from `--profile <name>`, then `LANES_LINK_PROFILE`, then `default_profile` in the workspace file, then an error listing available profiles. A profile name maps to `profiles/<name>.yaml`.
 
-Target resolves from `--target <name>`, defaulting to `instance.default_target`. `lanes link start` implies `local`; `lanes link deploy` implies `cloud`.
+Target resolves from `--target <name>`, then `LANES_LINK_TARGET`, then `instance.default_target`. `lanes link deploy` resolves it differently — the one target declaring a `deploy` block, else `cloud` — and deliberately does not read the environment variable, because it is the one command that may name a target which does not exist yet.
 
 **Every command prints the resolved profile and target before acting**, read-only commands included. This is the primary guard against operating on the wrong instance, and it costs one line.
 
-Do not implement a sticky `lanes link use` that persists a current selection. Persisted context state is the standard way operators run destructive commands against the wrong target. `export LANES_LINK_PROFILE=work` gives the same convenience while remaining visible in the shell.
+Do not implement a sticky `lanes link use` that persists a *hidden* current selection. Persisted context state is the standard way operators run destructive commands against the wrong target, and the version that bites is the one nothing prints. What is offered instead is visible in both directions: `export LANES_LINK_PROFILE=work` / `export LANES_LINK_TARGET=cloud` for a shell, and `lanes link profile default <name>` / `lanes link target use <name>` for a value written into a config file that `check` validates.
 
 Profile management: `lanes link profile add <name> [--default]`, `lanes link profile list`, `lanes link profile remove <name>`, `lanes link profile default <name>`.
+
+Target management: `lanes link target list [--urls]`, `lanes link target show [<name>]`, `lanes link target use <name>`. Listing must not refuse when the resolved target is undeclared — that is precisely the state an operator runs it to diagnose.
 
 ### Command groups
 
@@ -601,7 +603,7 @@ lanes link policy allow "gmail.*" gmail.main
 lanes link policy deny  gmail.send gmail.main
 lanes link connection add gmail.side --display-name "Side projects"   # scripting escape hatch
 lanes link provider enable gmail --oauth-app google                   # scripting escape hatch
-lanes link target set cloud --project P --region R --service S
+lanes link target use cloud                                           # instance.default_target
 ```
 
 Each validates the resulting document before writing, so the file is never left invalid. Connection arguments use the `provider.id` notation used everywhere else.

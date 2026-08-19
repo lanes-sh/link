@@ -48,11 +48,16 @@ export {
   profilePath,
   readWorkspace,
   resolveSelection,
-  resolveDeployTarget,
-  resolveTarget,
   resolveWorkspaceRoot,
   workspacePath,
 } from './workspace.ts';
+export {
+  TARGET_ENV,
+  askedTarget,
+  resolveDeployTarget,
+  resolveTarget,
+  undeclaredTarget,
+} from './targets.ts';
 export {
   isRemoteWorkspace,
   readWorkspaceFile,

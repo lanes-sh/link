@@ -6,6 +6,7 @@ import { homedir } from 'node:os';
 import { parse as parseYaml } from 'yaml';
 import { ConfigError } from './load.ts';
 import { workspaceSchema, type Config, type WorkspaceConfig } from './schema.ts';
+import { askedTarget } from './targets.ts';
 
 /**
  * Workspace and profile resolution.
@@ -18,10 +19,18 @@ import { workspaceSchema, type Config, type WorkspaceConfig } from './schema.ts'
  *     work.yaml
  *   data/               local state per profile, gitignored
  *
- * There is deliberately no sticky `lanes link use` that persists a current selection.
- * Persisted context state is the standard way operators run destructive
- * commands against the wrong target; `export LANES_LINK_PROFILE=work` gives the
- * same convenience while staying visible in the shell.
+ * There is deliberately no sticky `lanes link use` that persists a *hidden*
+ * current selection. Persisted context state is the standard way operators run
+ * destructive commands against the wrong target, and the version of it that
+ * bites is the dotfile nothing prints.
+ *
+ * So both ways of not retyping a flag are visible ones.
+ * `export LANES_LINK_PROFILE=work` and `export LANES_LINK_TARGET=cloud` live in
+ * the shell, where `env` shows them; `default_profile` and
+ * `instance.default_target` live in files the operator reads and `check`
+ * validates, written by `lanes link profile default` and `lanes link target
+ * use`. Every command prints which of the four it landed on and where that came
+ * from — see `announce`.
  */
 
 export const WORKSPACE_FILE = 'lanes-link.yaml';
@@ -41,8 +50,14 @@ export interface Resolution {
    * every other command that is the local target. Printing "config-default"
    * beside a target the config does not default to would be a lie on the one
    * line that exists to say how the command got here.
+   *
+   * `environment` is `LANES_LINK_TARGET`, and it earns its own name for the
+   * same reason: a target chosen by a variable exported in another terminal an
+   * hour ago is the one an operator is most likely to be surprised by, and the
+   * fix — `unset` — is not the fix for a config default. `deploy` never
+   * produces it; `resolveDeployTarget` says why.
    */
-  readonly targetSource: 'flag' | 'config-default' | 'deployable';
+  readonly targetSource: 'flag' | 'environment' | 'config-default' | 'deployable';
 }
 
 export interface ResolveOptions {
@@ -192,6 +207,11 @@ export async function resolveSelection(options: ResolveOptions = {}): Promise<Re
     );
   }
 
+  // Provisional: the config has not been read yet, so `instance.default_target`
+  // is not available to fall back to. `resolveTarget` settles it, from the same
+  // helper, so the two cannot disagree about what beats what.
+  const asked = askedTarget(options.targetFlag, env);
+
   const path = profilePath(workspaceRoot, profile);
   if (!(await workspaceFiles(workspaceRoot).has(`profiles/${profile}.yaml`))) {
     const available = await listProfiles(workspaceRoot);
@@ -205,73 +225,10 @@ export async function resolveSelection(options: ResolveOptions = {}): Promise<Re
     workspaceRoot,
     profile,
     profilePath: path,
-    target: options.targetFlag ?? '',
+    target: asked.target ?? '',
     profileSource,
-    targetSource: options.targetFlag ? 'flag' : 'config-default',
+    targetSource: asked.source ?? 'config-default',
   };
-}
-
-/**
- * Fill in the target once the profile's config has been loaded.
- *
- * `allowUndeclared` is for the one command whose job is to create the target it
- * was given — `deploy`, on a first run. Every other command naming a target that
- * does not exist has made a typo, and the list of what does exist is the useful
- * answer; refusing there is what stops `--target clod` opening the default one.
- */
-export function resolveTarget(
-  config: Config,
-  targetFlag?: string,
-  options: { allowUndeclared?: boolean } = {},
-): { target: string; source: 'flag' | 'config-default' } {
-  const target = targetFlag ?? config.instance.default_target;
-  if (options.allowUndeclared !== true && !(target in config.targets)) {
-    throw new ConfigError(
-      `Target "${target}" is not declared in this profile (have: ${Object.keys(config.targets).join(', ') || 'none'})`,
-    );
-  }
-  return { target, source: targetFlag ? 'flag' : 'config-default' };
-}
-
-/**
- * The target a deploy means, when nobody said.
- *
- * `--target cloud` was required on every deploy, and the reason was an accident:
- * an absent flag falls back to `instance.default_target`, which is `local` —
- * a target that by definition is not deployed anywhere. So the one command whose
- * subject is never ambiguous was the one command that made you say it, and the
- * default it would otherwise have taken was not merely unhelpful but wrong.
- *
- * The rule is what someone would say out loud: deploy the target that has a
- * deployment. One is the answer; none means the first run, which conventionally
- * creates `cloud` and is what every example in the docs names; several is a
- * genuine question, and asking beats rolling a revision to whichever came first
- * in a YAML mapping.
- *
- * `--target` still wins, which is how you deploy the second one.
- */
-export const CONVENTIONAL_DEPLOY_TARGET = 'cloud';
-
-export function resolveDeployTarget(
-  config: Config,
-  targetFlag?: string,
-): { target: string; source: 'flag' | 'deployable' } {
-  if (targetFlag) return { target: targetFlag, source: 'flag' };
-
-  // `deploy` alone: the legacy `cloudrun:` spelling is normalised into it by the
-  // loader, so exactly one shape reaches here.
-  const deployable = Object.entries(config.targets)
-    .filter(([, declared]) => declared.deploy !== undefined)
-    .map(([name]) => name);
-
-  if (deployable.length > 1) {
-    throw new ConfigError(
-      `This profile declares ${deployable.length} deployable targets (${deployable.join(', ')}). ` +
-        'Name the one you mean with --target.',
-    );
-  }
-
-  return { target: deployable[0] ?? CONVENTIONAL_DEPLOY_TARGET, source: 'deployable' };
 }
 
 /**

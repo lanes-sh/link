@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { Config } from '#profile';
-import { endpointUrl } from './endpoint-url.ts';
+import { deploymentIdentity, endpointUrl } from './endpoint-url.ts';
 
 /**
  * Which address a command hands to an agent.
@@ -50,5 +50,47 @@ describe('the endpoint address for a target', () => {
     const declared = { platform: 'nowhere', region: 'r', service: 's', access: 'public' };
 
     expect(await endpointUrl(config('cloud', declared), 'cloud')).toBe('http://127.0.0.1:7337/mcp');
+  });
+});
+
+describe('which service a target deploys to', () => {
+  // `status` promises to answer without depending on anything being up, so it
+  // cannot ask the platform for an address. It used to print the local URL
+  // regardless, which named a loopback port with nothing behind it. This is what
+  // it prints instead, and it comes from the file rather than the network.
+  test('a target with no deployment has no identity', () => {
+    expect(deploymentIdentity(undefined)).toBeNull();
+  });
+
+  test('a deployed target names its service without asking anyone', () => {
+    expect(
+      deploymentIdentity({
+        platform: 'cloudrun',
+        region: 'europe-west1',
+        service: 'my-service',
+        access: 'public',
+        project: 'my-project',
+      } as never),
+    ).toEqual({
+      platform: 'cloudrun',
+      region: 'europe-west1',
+      service: 'my-service',
+      project: 'my-project',
+    });
+  });
+
+  test('an absent project is absent rather than undefined', () => {
+    // `exactOptionalPropertyTypes` is on, and a key present with an undefined
+    // value serialises into `--json` as `"project": null`. A reader cannot tell
+    // that apart from a project that is genuinely null.
+    const identity = deploymentIdentity({
+      platform: 'cloudrun',
+      region: 'r',
+      service: 's',
+      access: 'iam',
+    } as never);
+
+    expect(identity).not.toBeNull();
+    expect('project' in identity!).toBe(false);
   });
 });
