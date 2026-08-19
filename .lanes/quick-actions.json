@@ -1,0 +1,10 @@
+{
+  "entries": [
+    {
+      "name": "Start Lanes Link Local",
+      "prompt": "lanes link start",
+      "type": "terminal",
+      "category": "general"
+    }
+  ]
+}

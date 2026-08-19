@@ -40,7 +40,6 @@ coverage/
 # ---------------------------------------------------------------------------
 # Machine-local tooling state
 # ---------------------------------------------------------------------------
-.lanes/
 .claude/settings.local.json
 
 # Worktrees live inside the repo, so git sees them as untracked files on the

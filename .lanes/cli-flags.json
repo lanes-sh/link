@@ -1,0 +1,24 @@
+{
+  "entries": [
+    {
+      "flag": "--dangerously-skip-permissions",
+      "value": "",
+      "kind": "flag"
+    },
+    {
+      "flag": "--enable-auto-mode",
+      "value": "",
+      "kind": "flag"
+    },
+    {
+      "flag": "CLAUDE_CODE_NO_FLICKER",
+      "value": "1",
+      "kind": "env"
+    },
+    {
+      "flag": "CLAUDE_CODE_SCROLL_SPEED",
+      "value": "3",
+      "kind": "env"
+    }
+  ]
+}
