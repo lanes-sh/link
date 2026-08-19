@@ -294,8 +294,17 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
       // advertised, so a call naming one is rejected by the protocol layer
       // before dispatch — and would otherwise leave no trace. The 2026-07-28
       // envelope requires the method and target in headers and rejects any
-      // request whose headers and body disagree, so reading them here is
-      // sound without parsing (and consuming) the body.
+      // request whose headers and body disagree, so reading them here is exact
+      // without parsing (and consuming) the body.
+      //
+      // **Only for an envelope client.** A 2025-era request carries neither
+      // header, and `createMcpHandler` above is built without a `legacy`
+      // option — whose default is `'stateless'`, so those requests are served
+      // rather than refused. This check short-circuits and the refusal goes
+      // unrecorded. That is the second documented exception to
+      // `audit.every-invocation` in `docs/detailed/security.md`, asserted in
+      // `index.test.ts`. Closing it means cloning and parsing the body when the
+      // header is absent, which is what `stdio.ts` does for want of headers.
       //
       // `prompts/get` is included because a prompt is named exactly as a tool
       // is — `skills_review-diff` — so the same lookup is exact. `resources/read`

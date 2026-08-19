@@ -383,6 +383,60 @@ describe('audit over the wire', () => {
     }
   });
 
+  test('a pre-envelope call to a hidden tool leaves no trace — a known gap', async () => {
+    // Asserting the gap rather than hiding it, the way `resources.test.ts` does
+    // for `resources/read`.
+    //
+    // The test above works because the edge reads `mcp-method` and `mcp-name`,
+    // which the 2026-07-28 envelope requires and validates against the body. A
+    // 2025-era client sends neither, and `createMcpHandler` is constructed
+    // without a `legacy` option — whose default is `'stateless'`, so those
+    // requests are *served*, not refused. The header read short-circuits, the
+    // legacy leg answers `-32602 Tool ... not found`, and nothing is recorded.
+    //
+    // Documented as the second exception to `audit.every-invocation` in
+    // `docs/detailed/security.md`. Closing it means reading the body at the edge
+    // — `request.clone()` and a parse — which is what `stdio.ts` already does
+    // because a pipe has no headers to read instead.
+    //
+    // Change this expectation when it is closed; do not delete it.
+    const harness = startHarness({
+      profile: 'legacy_denials',
+      port: allocatePort(),
+      policy: `  allow:\n    - "example.get_note"`,
+    });
+
+    try {
+      const response = await fetch(new URL(harness.server.url).origin + '/mcp', {
+        method: 'POST',
+        // No `mcp-protocol-version`, no `mcp-method`, no `mcp-name`: this is
+        // exactly the shape a 2025-era client puts on the wire.
+        headers: {
+          'content-type': 'application/json',
+          accept: 'application/json, text/event-stream',
+          authorization: `Bearer ${TEST_TOKEN}`,
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: { name: 'example_set_note', arguments: { key: 'k', value: 'v' } },
+        }),
+      });
+
+      // Served rather than rejected — the legacy leg is on by default.
+      expect(response.status).toBe(200);
+      expect(await response.text()).toContain('not found');
+
+      // And this is the gap: the same probe that produces a row above produces
+      // none here.
+      expect(await harness.audit.tail({ deniedOnly: true })).toHaveLength(0);
+      expect(await harness.audit.tail()).toHaveLength(0);
+    } finally {
+      await harness.stop();
+    }
+  });
+
   test('an advertised call is not mistaken for a refusal', async () => {
     const harness = startHarness({
       profile: 'allowed',

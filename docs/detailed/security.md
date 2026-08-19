@@ -92,27 +92,47 @@ limitation. `RESERVED` names a compatibility slot with no implementation.
 | `credentials.encrypted-at-rest` | ENFORCED (file adapter) | nothing readable on disk; tamper detection |
 | `profile.isolated` | ENFORCED | cross-profile token, state, and audit tests |
 | `limits.per-profile` | ENFORCED per instance | rate limit tests |
-| `audit.every-invocation` | ENFORCED **with one documented exception** | see below |
+| `audit.every-invocation` | ENFORCED **with two documented exceptions** | see below |
 | `credentials.plaintext-in-use` | NOT-GUARANTEED | inherent |
 | `provider.sandboxed` | NOT-GUARANTEED | provider code is trusted |
 | `egress.controlled` | NOT-GUARANTEED | follows from the above |
 | `policy.approval_required` | RESERVED | the model carries the state; no engine, and it fails closed |
 | `delegation.external-clients` | RESERVED | the principal parameter; nothing more |
 
-### The documented exception to `audit.every-invocation`
+### The documented exceptions to `audit.every-invocation`
 
 Every call that reaches dispatch is audited, allowed or denied. A call naming a **capability that
-policy filtering hid** is also audited, via `Dispatcher.recordRefusal`.
+policy filtering hid** is also audited, via `Dispatcher.recordRefusal`. Two cases are not.
 
-**Not audited:** a call to an advertised tool whose *arguments* fail schema validation — including a
-`connection` value outside the advertised enum. The protocol layer rejects it before dispatch runs.
-The caller gets a clear error naming the permitted options, and nothing is invoked, but no audit row
-is written.
+**Not audited: arguments that fail schema validation.** A call to an advertised tool whose
+*arguments* are rejected — including a `connection` value outside the advertised enum. The protocol
+layer rejects it before dispatch runs. The caller gets a clear error naming the permitted options,
+and nothing is invoked, but no audit row is written.
 
-This was found by end-to-end verification rather than reasoned about in advance, and it is recorded
-here rather than papered over. Closing it would mean either dropping the enum from the tool schema —
-which is what makes connections undiscoverable in the first place — or parsing the request body at
-the edge. Neither trade is currently worth it.
+Closing it would mean either dropping the enum from the tool schema — which is what makes connections
+undiscoverable in the first place — or parsing the request body at the edge. Neither trade is
+currently worth it.
+
+**Not audited: a pre-envelope HTTP call to a hidden capability.** The refusal record for a
+policy-filtered capability is written at the HTTP edge, which identifies the call by reading
+`Mcp-Method` and `Mcp-Name`. The 2026-07-28 envelope requires both and rejects any request whose
+headers and body disagree, so for an envelope client the header read is exact. A 2025-era client
+sends neither header, and the endpoint still serves those requests — `createMcpHandler` is
+constructed without a `legacy` option, and its default is `'stateless'`. So the refusal check
+short-circuits, the legacy leg answers `-32602 Tool … not found`, and no row is written.
+
+What that costs: an authenticated caller can enumerate which capabilities exist without leaving a
+refusal trace, by speaking the older protocol. It is not reachable unauthenticated, and nothing is
+invoked either way.
+
+Closing it means reading the body at the edge for requests that arrive without the headers — a
+`request.clone()` and a parse — which is precisely what `serveOverStdio` already does, because a pipe
+has no headers to read instead. The alternative, `legacy: 'reject'`, closes it by refusing every
+pre-envelope client, and several of the clients in [`docs/clients.md`](../clients.md) have not moved.
+
+Both were found by end-to-end verification rather than reasoned about in advance, and both are
+recorded here rather than papered over. `src/server/index.test.ts` asserts the second one directly,
+next to the test that shows the envelope path recording the same probe.
 
 ## Upstream credentials
 

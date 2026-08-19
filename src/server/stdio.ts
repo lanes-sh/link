@@ -114,9 +114,11 @@ export function serveOverStdio(options: StdioOptions): StdioSurface {
  * code runs — and it would otherwise leave no trace at all, which is what
  * `audit.every-invocation` in `docs/detailed/security.md` promises it does not.
  *
- * HTTP reads the method and target from the 2026-07-28 headers, which is sound
- * without parsing the body. There are no headers on a pipe, so this reads the
- * body — cheap here, because the transport has already parsed it into a message.
+ * HTTP reads the method and target from the 2026-07-28 headers, which is exact
+ * for an envelope client and blind to a 2025-era one — a documented gap over
+ * there, and not one here. There are no headers on a pipe, so this reads the
+ * body unconditionally, which is cheap because the transport has already parsed
+ * it into a message.
  */
 function recordRefusal(
   message: JSONRPCMessage,
