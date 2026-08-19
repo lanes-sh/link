@@ -161,18 +161,18 @@ targets:
     storage:     { adapter: filesystem, path: ./data/personal/files }
   cloud:
     database:    { adapter: postgres, url_ref: cloud/database_url }
-    credentials: { adapter: gcp-secret-manager, project: lanes-link-demo }
+    credentials: { adapter: gcp-secret-manager, project: my-project }
     storage:
       adapter: s3
-      bucket: lanes-link-demo-files
+      bucket: my-project-files
       endpoint: https://abcdefgh.storage.supabase.co/storage/v1/s3
       access_key_id_ref: cloud/s3_access_key_id
       secret_access_key_ref: cloud/s3_secret_access_key
     deploy:
       platform: cloudrun
-      project: lanes-link-demo
+      project: my-project
       region: europe-west1
-      service: lanes-link-demo
+      service: my-project
       access: iam
 
 limits:

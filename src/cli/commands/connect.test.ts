@@ -52,7 +52,7 @@ describe('reuseStoredCredential', () => {
 describe('idFromAccount', () => {
   test('an email becomes its local part', () => {
     expect(idFromAccount('ada.lovelace@example.com')).toBe('ada_lovelace');
-    expect(idFromAccount('r.shaw@lanes.sh')).toBe('r_shaw');
+    expect(idFromAccount('r.shaw@example.com')).toBe('r_shaw');
   });
 
   test('a workspace name becomes a slug', () => {
@@ -61,7 +61,7 @@ describe('idFromAccount', () => {
   });
 
   test('the result is always a legal connection id', () => {
-    for (const account of ['UPPER@X.COM', '  spaces  ', '···', 'a@b', '💥@x.com']) {
+    for (const account of ['UPPER@X.EXAMPLE', '  spaces  ', '···', 'a@b', '💥@x.com']) {
       expect(idFromAccount(account)).toMatch(/^[a-z0-9][a-z0-9_]*$/);
     }
   });
@@ -69,8 +69,8 @@ describe('idFromAccount', () => {
   test('two accounts sharing a local part do not collide', () => {
     // Same name at two domains is the realistic case, and silently reusing the
     // id would point the second connection at the first one's credential.
-    expect(idFromAccount('sam@work.com', ['sam'])).toBe('sam2');
-    expect(idFromAccount('sam@other.com', ['sam', 'sam2'])).toBe('sam3');
+    expect(idFromAccount('sam@work.example', ['sam'])).toBe('sam2');
+    expect(idFromAccount('sam@other.example', ['sam', 'sam2'])).toBe('sam3');
   });
 
   test('an unusable account still yields something', () => {
@@ -80,8 +80,8 @@ describe('idFromAccount', () => {
 
 describe('pluck', () => {
   test('reads a dotted path', () => {
-    expect(pluck({ user: { emailAddress: 'a@b.com' } }, 'user.emailAddress')).toBe('a@b.com');
-    expect(pluck({ emailAddress: 'a@b.com' }, 'emailAddress')).toBe('a@b.com');
+    expect(pluck({ user: { emailAddress: 'a@b.example' } }, 'user.emailAddress')).toBe('a@b.example');
+    expect(pluck({ emailAddress: 'a@b.example' }, 'emailAddress')).toBe('a@b.example');
   });
 
   test('steps through the first array element', () => {
@@ -119,12 +119,12 @@ describe('resolveAccount', () => {
         accessToken: async () => 'tok',
         fetch: (async (_url: string, init?: RequestInit) => {
           expect((init?.headers as Record<string, string>)['authorization']).toBe('Bearer tok');
-          return new Response(JSON.stringify({ emailAddress: 'me@gmail.com' }));
+          return new Response(JSON.stringify({ emailAddress: 'me@example.com' }));
         }) as unknown as typeof fetch,
       },
     );
 
-    expect(account).toBe('me@gmail.com');
+    expect(account).toBe('me@example.com');
   });
 
   test('reads a tool identity through a JSON text block', async () => {

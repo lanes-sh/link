@@ -493,7 +493,7 @@ describe('sending', () => {
     ]);
 
     const send: Sender = async () => ({
-      messageId: '<generated@icloud.com>',
+      messageId: '<generated@example.com>',
       raw: new TextEncoder().encode('Subject: Hi\r\n\r\nBody\r\n'),
     });
 
@@ -538,7 +538,7 @@ describe('sending', () => {
     let handed: OutgoingMessage | undefined;
     const { connector } = sendingConnector(async ({ message }) => {
       handed = message;
-      return { messageId: '<generated@icloud.com>', raw: new TextEncoder().encode('raw') };
+      return { messageId: '<generated@example.com>', raw: new TextEncoder().encode('raw') };
     });
 
     const result = await connector.invoke(
@@ -584,7 +584,7 @@ describe('sending', () => {
 
     annotations.length = 0;
     const { connector } = sendingConnector(async () => ({
-      messageId: '<generated@icloud.com>',
+      messageId: '<generated@example.com>',
       raw: new TextEncoder().encode('raw'),
     }));
 
@@ -619,7 +619,7 @@ describe('sending', () => {
     // put the whole base64 blob in the log.
     annotations.length = 0;
     const { connector } = sendingConnector(async () => ({
-      messageId: '<generated@icloud.com>',
+      messageId: '<generated@example.com>',
       raw: new TextEncoder().encode('raw'),
     }));
 
@@ -647,7 +647,7 @@ describe('sending', () => {
     let handed: { from: string; fromName?: string | undefined } | undefined;
     const { connector } = sendingConnector(async ({ from, fromName }) => {
       handed = { from, fromName };
-      return { messageId: '<x@icloud.com>', raw: new TextEncoder().encode('raw') };
+      return { messageId: '<x@example.com>', raw: new TextEncoder().encode('raw') };
     });
 
     const named = {
@@ -671,7 +671,7 @@ describe('sending', () => {
     let handed: string | undefined;
     const { connector } = sendingConnector(async ({ fromName }) => {
       handed = fromName;
-      return { messageId: '<x@icloud.com>', raw: new TextEncoder().encode('raw') };
+      return { messageId: '<x@example.com>', raw: new TextEncoder().encode('raw') };
     });
 
     await connector.invoke(
@@ -688,7 +688,7 @@ describe('sending', () => {
     let handed: { fromName?: string | undefined } | undefined;
     const { connector } = sendingConnector(async ({ fromName }) => {
       handed = { fromName };
-      return { messageId: '<x@icloud.com>', raw: new TextEncoder().encode('raw') };
+      return { messageId: '<x@example.com>', raw: new TextEncoder().encode('raw') };
     });
 
     await connector.invoke(SEND as never, { to: ['sam@example.com'], subject: 'Hi' }, CONTEXT as never);
@@ -714,7 +714,7 @@ describe('sending', () => {
     let handed: OutgoingMessage | undefined;
     const { connector } = sendingConnector(async ({ message }) => {
       handed = message;
-      return { messageId: '<generated@icloud.com>', raw: new TextEncoder().encode('raw') };
+      return { messageId: '<generated@example.com>', raw: new TextEncoder().encode('raw') };
     });
 
     const result = await connector.invoke(

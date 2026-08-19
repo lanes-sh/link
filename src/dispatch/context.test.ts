@@ -56,7 +56,7 @@ describe('resolveSecretRefs', () => {
 describe('the scoped store enforces it', () => {
   const store = createMemoryCredentials({
     'icloud/ada': 'ada@example.com:app-specific',
-    'icloud/sam': 'sam@icloud.com:app-specific',
+    'icloud/sam': 'sam@example.com:app-specific',
     'profile/token': 'the-endpoint-token',
   });
 

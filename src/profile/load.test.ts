@@ -207,10 +207,10 @@ describe('referential integrity', () => {
     // rule covering both.
     const yaml = VALID.replace(
       '  - id: a\n    provider: example\n    account: Scratch',
-      '  - id: work\n    provider: example\n    account: me@work.com\n  - id: home\n    provider: example\n    account: me@home.com',
+      '  - id: work\n    provider: example\n    account: me@work.example\n  - id: home\n    provider: example\n    account: me@home.example',
     );
     const { config } = parseConfig(yaml);
-    expect(config.connections.map((c) => c.account)).toEqual(['me@work.com', 'me@home.com']);
+    expect(config.connections.map((c) => c.account)).toEqual(['me@work.example', 'me@home.example']);
     expect(config.policy.allow).toEqual([{ capability: 'example.*' }]);
   });
 

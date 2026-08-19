@@ -38,15 +38,15 @@ const OBJECTS = `projects/_/buckets/${BUCKET}/objects/`;
 
 const cloudrun = {
   platform: 'cloudrun',
-  project: 'personal-lanes',
+  project: 'my-project',
   region: 'europe-west1',
   service: 'lanes-link',
   access: 'public',
-  service_account: 'lanes-link-run@personal-lanes.iam.gserviceaccount.com',
+  service_account: 'lanes-link-run@my-project.iam.gserviceaccount.com',
 } as const satisfies DeployConfig;
 
 const target: TargetConfig = {
-  credentials: { adapter: 'gcp-secret-manager', project: 'personal-lanes' },
+  credentials: { adapter: 'gcp-secret-manager', project: 'my-project' },
   storage: { adapter: 'gcs', bucket: BUCKET },
   vault: { adapter: 'secret' },
   deploy: cloudrun,

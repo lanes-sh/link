@@ -43,6 +43,26 @@ talking to their server.
 writes credentials. Running it changes something outside the repository that a `git checkout`
 cannot undo. Get to a green `bun test` unattended, then stop and ask.
 
+## Never write a real address, project, or bucket into this repository
+
+This repository is public. The shortest path to a passing test or a convincing doc example is
+to paste the account you are actually working with, and that account is the operator's — a
+live mailbox, a real Google Cloud project, a storage bucket in a global namespace. It reads as
+harmless while you are writing it and it is indexed forever once pushed.
+
+It has already happened once: forty-five occurrences across thirteen files had to be scrubbed
+before the first public push, and because they were also in the commit history, the fix was to
+discard eighty-nine commits.
+
+Use a domain nobody can register — `example.com`, `example.org`, `example.net`, or anything
+under `.test`, `.example`, `.invalid`. For a project, bucket, or service account in a doc
+example, use a name that reads as a placeholder: `my-project`, `your-bucket`, `<project-id>`.
+Prose about a domain is fine (`a personal @gmail.com cannot enrol`) — it is an address *at* one
+that is not.
+
+`src/architecture.test.ts` fails the build on both. It reads every `.ts`, `.md`, `.json`, and
+`.yaml` file in the repository, so there is nowhere to put one where the check does not look.
+
 ## Where things are
 
 One package, one `src/`, thirteen components. Cross-component imports go through the
@@ -50,10 +70,11 @@ package.json `imports` map: `#policy`, `#stores/state`, `#providers/google/gmail
 are no workspace packages and no `apps/` or `packages/` — see the layout table in
 [`docs/detailed/architecture.md`](docs/detailed/architecture.md).
 
-`src/architecture.test.ts` asserts the three rules the layout expresses: dependency
-direction between components, no vendor name in the code a request passes through, and a
-file-size budget. It replaces what thirteen `package.json` files used to enforce. Read it
-before deciding a rule is in your way.
+`src/architecture.test.ts` asserts the four rules the layout expresses: dependency
+direction between components, no vendor name in the code a request passes through, a
+file-size budget, and no real identifiers anywhere a reader can see. It replaces what
+thirteen `package.json` files used to enforce. Read it before deciding a rule is in your
+way.
 
 ## Adding an operation to a Google provider
 

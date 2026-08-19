@@ -278,3 +278,150 @@ describe('file size', () => {
     expect([...KNOWN_LONG].filter((known) => !paths.has(known))).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 4. Somebody's real name
+// ---------------------------------------------------------------------------
+
+/**
+ * No real person's address, and no real cloud resource, in a public repository.
+ *
+ * This one is here because it already happened. Forty-five occurrences of the
+ * owner's own email addresses, a second person's name, a live Google Cloud
+ * project id and two globally-unique storage bucket names had to be scrubbed out
+ * of thirteen files the week this went public. None of it was pasted carelessly:
+ * writing the address you are actually testing with is the shortest path to a
+ * passing test, and until this repository had an audience nothing was wrong with
+ * it.
+ *
+ * So the rule is about the *domain*, not about spotting a name. `example.com`,
+ * `example.org`, `example.net` and anything under `.test`, `.example` or
+ * `.invalid` are reserved by RFC 2606 and RFC 6761 — they cannot be registered,
+ * so an address at one cannot reach a person, cannot be credential-stuffed, and
+ * cannot be indexed into somebody's inbox. Every other domain might belong to
+ * someone.
+ *
+ * Prose is exempt by construction rather than by allowlist: a sentence about
+ * `@gmail.com` as a *kind* of account has no local part in front of the `@`, so
+ * it does not match, while the same domain with a name attached does. Explaining
+ * what a domain means stays possible; addressing a made-up person at it does not.
+ * (This comment is itself subject to the rule, which is why it does not spell
+ * one out.)
+ */
+const ADDRESS = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+
+/** RFC 2606 and RFC 6761: registered to nobody, ever. */
+const RESERVED_DOMAIN = /^(example\.(com|org|net)|.+\.(test|example|invalid)|localhost)$/i;
+
+/**
+ * A service account is a machine, not a person.
+ *
+ * `lanes-link-run@my-project.iam.gserviceaccount.com` names no inbox, and the
+ * shape is Google's rather than ours — `provision.ts` has to explain that
+ * passing the whole address where an id belongs produces
+ * `foo@bar.iam...@project.iam...`, which needs the literal to be legible. What
+ * *did* leak here was the project id in the middle, and that is the placeholder
+ * rule below, not this one.
+ */
+const MACHINE_DOMAIN = /\.iam(\.gserviceaccount\.com)?$/i;
+
+/**
+ * Vendored from Google by `bun run vendor:google`, and their examples are theirs.
+ *
+ * `gmail.v1.json` documents a search using an address at a registrable domain.
+ * Editing it would be overwritten by the next vendor run, and a spec fetched from
+ * Google is not where a leak of ours would land.
+ */
+const NOT_OURS = 'providers/google/specs/';
+
+/** Every file a reader of the published repository can open. */
+async function publishedFiles(): Promise<string[]> {
+  const root = join(SRC, '..');
+  const skip = new Set(['node_modules', '.git', '.worktrees', 'dist', 'build', 'coverage', 'data']);
+  const found: string[] = [];
+
+  const walk = async (directory: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      if (skip.has(entry.name)) continue;
+      const full = join(directory, entry.name);
+      if (entry.isDirectory()) await walk(full);
+      else if (/\.(ts|md|json|ya?ml)$/.test(entry.name) && !entry.name.endsWith('.d.ts')) {
+        found.push(full);
+      }
+    }
+  };
+
+  await walk(root);
+  return found.sort();
+}
+
+/**
+ * A deployment example names a real project until it names a placeholder.
+ *
+ * The bucket names are the reason this is separate from the address rule. A GCS
+ * bucket name is one global namespace, so publishing the real one tells a reader
+ * exactly which bucket to probe — and the deploy survey's own naming convention
+ * then implies the project id from it. A project id is global in the same way.
+ *
+ * `service` is deliberately absent: a Cloud Run service name is scoped to its
+ * project rather than to the world, and it is derived from the profile name by
+ * `defaultServiceName`, so it was never the thing that leaked.
+ *
+ * Only fenced blocks in documentation are read. Prose is full of sentences like
+ * "the thesis driving this project: curated memory", which is a colon and a word
+ * and nothing to do with a deployment. The code is excluded too — it takes these
+ * from config, and the tests need concrete strings to assert against.
+ */
+const DEPLOYMENT_VALUE = /^\s*(?:-\s*)?(project|bucket|service_account):\s*([^\s#{]+)/;
+const PLACEHOLDER = /^(your-|example-|my-|lanes-link-demo|<|\$|\{)/i;
+
+describe('no real identifiers', () => {
+  test('every email address is at a domain reserved for documentation', async () => {
+    const violations: string[] = [];
+
+    for (const path of await publishedFiles()) {
+      const shown = relative(SRC, path);
+      if (shown.includes(NOT_OURS)) continue;
+
+      for (const [index, line] of (await readFile(path, 'utf8')).split('\n').entries()) {
+        for (const address of line.match(ADDRESS) ?? []) {
+          const domain = address.slice(address.indexOf('@') + 1);
+          if (RESERVED_DOMAIN.test(domain) || MACHINE_DOMAIN.test(domain)) continue;
+          violations.push(`${shown}:${index + 1} — ${address} is at a registrable domain`);
+        }
+      }
+    }
+
+    expect(violations).toEqual([]);
+  });
+
+  test('a deployment example in the docs names a placeholder, not a real resource', async () => {
+    const violations: string[] = [];
+
+    for (const path of await publishedFiles()) {
+      const shown = relative(SRC, path);
+      if (!shown.includes('docs/')) continue;
+
+      let fenced = false;
+
+      for (const [index, line] of (await readFile(path, 'utf8')).split('\n').entries()) {
+        if (line.trimStart().startsWith('```')) {
+          fenced = !fenced;
+          continue;
+        }
+        if (!fenced) continue;
+
+        const match = line.match(DEPLOYMENT_VALUE);
+        if (!match) continue;
+
+        const [, key, value] = match as unknown as [string, string, string];
+        // A service account carries its project in the middle, so judge that.
+        const subject = key === 'service_account' ? (value.split('@')[1] ?? value) : value;
+        if (PLACEHOLDER.test(subject)) continue;
+        violations.push(`${shown}:${index + 1} — ${key}: ${value} does not read as a placeholder`);
+      }
+    }
+
+    expect(violations).toEqual([]);
+  });
+});

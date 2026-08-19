@@ -68,7 +68,7 @@ targets:
   cloud:
     credentials:
       adapter: gcp-secret-manager
-      project: lanes-link-a1b2c3
+      project: my-project
     storage:
       # Everything the endpoint remembers: the config it reads, its state, the
       # audit log, memory, skills, attachments. `adapter: filesystem` would
@@ -79,7 +79,7 @@ targets:
       # creates and grants. Use `adapter: s3` with an endpoint and two
       # credential refs for R2, MinIO, Supabase Storage, or AWS.
       adapter: gcs
-      bucket: lanes-link-a1b2c3
+      bucket: my-project
     vault:
       # One sealed entry in Secret Manager, under its own key. Not the bucket:
       # LANES_LINK_VAULT_KEY already comes from Secret Manager, so putting the
@@ -91,14 +91,14 @@ targets:
       # driver. The block used to be named `cloudrun`, which meant the name of a
       # key chose a vendor — that spelling still loads and is read as this one.
       platform: cloudrun
-      project: lanes-link-a1b2c3
+      project: my-project
       region: europe-west1
       service: lanes-link-personal-mcp
       # Who gets past the platform's own door. See "Who can reach it" below.
       # `iam` is the default and is not the one an MCP client can use; a target
       # that declares `auth.authorization` wants `public` and gates internally.
       access: public
-      service_account: lanes-link-personal-mcp-run@lanes-link-a1b2c3.iam.gserviceaccount.com
+      service_account: lanes-link-personal-mcp-run@my-project.iam.gserviceaccount.com
 
 auth:
   mode: bearer
@@ -112,7 +112,7 @@ auth:
 connections:
   - id: main
     provider: gmail
-    account: you@gmail.com
+    account: you@example.com
 
 policy:
   allow: [gmail.*]
@@ -340,7 +340,7 @@ Your options are exactly two, and both are legitimate:
 
 ```console
 $ gcloud run services update lanes-link-personal-mcp \
-    --min-instances=1 --region europe-west1 --project lanes-link-a1b2c3
+    --min-instances=1 --region europe-west1 --project my-project
 ```
 
 Leave CPU allocation at "CPU only during requests". The server is stateless and does no background
