@@ -127,11 +127,36 @@ $ lanes link deploy                        # again, so the revision sees them
 $ lanes link outputs --target cloud        # the URL an agent needs
 ```
 
-**No `--target` on `deploy`.** It deploys the target that declares a deployment — one is the answer,
-none means a first run and creates `cloud`, and several is a real question it asks rather than
-guesses. It used to be required, and the reason was an accident: an absent flag fell back to
-`instance.default_target`, which is `local` — a target that is by definition not deployed. The
-commands around it keep the flag, because `connect` and `outputs` are just as usable against `local`.
+### More than one deployment
+
+`cloud` is a target name rather than a keyword. A second deployment is named on the deploy that
+creates it, and everything downstream takes the same flag:
+
+```console
+$ lanes link deploy --target staging       # surveys, writes targets.staging, rolls a revision
+$ lanes link target list                   # what this profile declares, and which is in play
+$ lanes link secrets push --from cloud --to staging
+$ lanes link outputs --target staging
+```
+
+The revision carries its own name — the rollout sets `LANES_LINK_TARGET=<target>` on the service, so
+a `staging` container opens `staging`'s adapters. Give each its own project and bucket unless you
+intend them to share a credential store; the survey proposes fresh names, so pressing return through
+it is the safe answer.
+
+Once two targets declare a `deploy` block, a bare `lanes link deploy` refuses and asks which you
+meant. Rolling a revision to whichever came first in a YAML mapping is the one answer that cannot be
+right on purpose.
+
+**`deploy` needs no `--target` when there is one deployment to mean.** It deploys the target that
+declares one; none means a first run and creates `cloud`; several is a real question it asks rather
+than guesses. It used to be *required*, and the reason was an accident: an absent flag fell back to
+`instance.default_target`, which is `local` — a target that is by definition not deployed.
+
+You still name one to deploy a second — see [More than one deployment](#more-than-one-deployment).
+`deploy` is also the only command that may name a target which does not exist yet, since creating it
+is what a first deploy is for; that is why it does not read `LANES_LINK_TARGET`, where a typo would
+be surveyed and rolled out rather than refused.
 
 `lanes link deploy` runs `check`, asks for anything the config does not say yet and writes the
 answers into your profile, creates the project-level resources on a first run, gets the credential

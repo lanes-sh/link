@@ -16,6 +16,7 @@ import {
   tokenShow,
 } from './commands/operate.ts';
 import { profileAdd, profileDefault, profileList } from './commands/profile.ts';
+import { targetList, targetShow, targetUse } from './commands/target.ts';
 import { setupPlan } from './commands/setup.ts';
 import { mcpAdd, mcpList, mcpStdio, skillDocument } from './commands/mcp.ts';
 import { deploy } from '#deployments/deploy.ts';
@@ -101,6 +102,20 @@ export async function run(argv: readonly string[]): Promise<void> {
           return profileDefault(rest[0]);
         default:
           throw new Error(`Unknown: ${PROGRAM} profile ${second}`);
+      }
+
+    case 'target':
+      switch (second) {
+        case 'list':
+        case undefined:
+          return targetList({ ...global, json, urls: flags['urls'] === true });
+        case 'use':
+          if (!rest[0]) throw new Error(`Usage: ${PROGRAM} target use <name>`);
+          return targetUse(rest[0], global);
+        case 'show':
+          return targetShow(rest[0], { ...global, json });
+        default:
+          throw new Error(`Unknown: ${PROGRAM} target ${second}`);
       }
 
     case 'policy':

@@ -31,9 +31,31 @@ $ lanes link outputs --target cloud        # the URL your agent needs
 to write a credential. The second deploy is what gets a revision to pick up the accounts you just
 authorised.
 
+`cloud` there is a name, not a keyword — it is what the first deploy calls the target it creates.
+`lanes link target list` shows what your profile declares and which one commands are using.
+
 Already built a workspace locally? `lanes link secrets push --from local --to cloud` migrates it
 instead of the `connect` step. It copies and never deletes, and skips anything the destination
 already holds unless you pass `--overwrite`.
+
+## A second one
+
+Name it, and everything downstream takes the same flag:
+
+```console
+$ lanes link deploy --target staging       # its own project, bucket, and service
+$ lanes link outputs --target staging
+```
+
+Tired of typing it? `export LANES_LINK_TARGET=staging` for the shell, or
+`lanes link target use staging` to make it this profile's default. Every command prints which target
+it resolved and where that came from, so neither can act on you silently.
+
+## Which profiles it serves
+
+`lanes link deploy` uploads **every** profile in your workspace unless you name one with
+`--profile`, and the endpoint serves all of them under one token. Pass `--profile personal` if you
+want just the one; use a second workspace if you want a boundary that holds.
 
 ## Two answers in the first run decide whether an agent can reach it
 

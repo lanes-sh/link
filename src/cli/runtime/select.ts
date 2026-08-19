@@ -1,10 +1,10 @@
 import { generateProfileToken, ownerPrincipal } from '#auth';
 import type { SecretStore } from '#secrets';
 import {
-  ConfigError,
   loadProfileConfig,
   resolveSelection,
   resolveTarget,
+  undeclaredTarget,
   type Config,
   type Resolution,
 } from '#profile';
@@ -28,21 +28,32 @@ export interface GlobalFlags {
 
 export async function resolveProfile(
   flags: GlobalFlags,
-  /** `deploy` creates the target it is given; see `resolveTarget`. */
-  options: { allowUndeclaredTarget?: boolean } = {},
+  options: {
+    /** `deploy` creates the target it is given; see `resolveTarget`. */
+    allowUndeclaredTarget?: boolean;
+    /** Injected by tests. Both resolutions must read the same one. */
+    env?: Record<string, string | undefined>;
+  } = {},
 ): Promise<{
   resolution: Resolution;
   config: Config;
   target: string;
 }> {
+  // Spread rather than assigned: `exactOptionalPropertyTypes` makes an explicit
+  // `env: undefined` a different type from an absent one, and the absent one is
+  // what means "read the real environment".
+  const env = options.env !== undefined ? { env: options.env } : {};
+
   const selection = await resolveSelection({
     profileFlag: flags.profile,
     targetFlag: flags.target,
+    ...env,
   });
 
   const { config } = await loadProfileConfig(selection.workspaceRoot, selection.profile);
   const { target, source } = resolveTarget(config, flags.target, {
     allowUndeclared: options.allowUndeclaredTarget === true,
+    ...env,
   });
 
   return {
@@ -66,11 +77,7 @@ export async function openSecretStoreFor(
   target: string,
 ): Promise<SecretStore> {
   const declared = config.targets[target];
-  if (!declared) {
-    throw new ConfigError(
-      `Target "${target}" is not declared in this profile (have: ${Object.keys(config.targets).join(', ') || 'none'})`,
-    );
-  }
+  if (!declared) throw undeclaredTarget(target, config);
   return openSecrets({ declared, config, root, target });
 }
 

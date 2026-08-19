@@ -173,6 +173,42 @@ credential store, so what one holds is invisible to another — but they now sha
 token, so an agent holding that token can reach either by asking. **If you need a boundary that
 holds against the agent itself, use a second workspace**, which shares nothing at all.
 
+## Where a profile runs
+
+A **target** names an adapter set — a credential store and a blob store, and optionally a
+deployment. Connections, providers, policy and limits are declared once and apply to every target,
+so moving between them changes where the bytes go and nothing above them.
+
+```console
+$ lanes link target list
+profile personal (workspace-default)  target local (config-default)  ~/.lanes-link
+
+       cloud    gcp-secret-manager  gcs         cloudrun  my-service  europe-west1
+       staging  gcp-secret-manager  gcs         —
+  * →  local    file                filesystem  —
+
+  *  instance.default_target — what commands run against
+  →  what this shell resolves to right now
+```
+
+Two markers, because two things choose and they can disagree. `*` is the profile's
+`instance.default_target`; `→` is what *this shell* resolves to, which `LANES_LINK_TARGET` or
+`--target` may have moved. When they differ, the listing says which variable did it.
+
+```console
+$ lanes link target use cloud       # rewrite instance.default_target, for good
+$ export LANES_LINK_TARGET=cloud    # or just for this shell
+$ lanes link target show cloud      # adapters, deployment, and the address it answers on
+```
+
+`target list` reads the file and asks nobody; `--urls` adds one platform lookup per deployable
+target. `target show` always asks, because it is one target and you named it.
+
+Note what `--target` does *not* do: it never points the CLI at a running endpoint. Every command
+opens that target's stores directly, so `lanes link connect gmail --target cloud` runs the browser
+consent on your machine and writes the refresh token into the deployment's credential store. The
+deployed revision picks it up when it next boots, which is what the second `deploy` below is for.
+
 ## Resolution order
 
 **Workspace root:** `LANES_LINK_HOME` → nearest ancestor containing `lanes-link.yaml` → `~/.lanes-link`
@@ -180,16 +216,31 @@ holds against the agent itself, use a second workspace**, which shares nothing a
 **Profile:** `--profile` → `LANES_LINK_PROFILE` → `default_profile` → an error listing what exists.
 Never a silent pick: the wrong guess operates on the wrong accounts.
 
-**Target:** `--target` → `instance.default_target`
+**Target:** `--target` → `LANES_LINK_TARGET` → `instance.default_target`
 
 `deploy` alone resolves it differently: `--target` → the one target declaring a `deploy` block →
 `cloud`. `instance.default_target` is where commands *run*, which is the local target — never an
 answer to "deploy what", so falling back to it made the one unambiguous command the one that
 insisted you say it. Several deployable targets is a real question and is asked rather than guessed.
 
-There is deliberately **no sticky `lanes link use`**. Persisted context state is the standard way operators
-run destructive commands against the wrong target; `export LANES_LINK_PROFILE=work` gives the same
-convenience while staying visible in the shell.
+**`deploy` does not read `LANES_LINK_TARGET` either**, for the same reason and one more: it is the
+only command that may name a target which does not exist yet, so an exported typo would not be
+refused — it would be surveyed, written into your profile, and rolled out as a new service. An
+environment variable must not be able to name a Cloud Run service into existence.
+
+There is deliberately **no sticky `lanes link use`** — no hidden per-shell file recording a current
+selection. Persisted context state is the standard way operators run destructive commands against
+the wrong target, and the version that bites is the one nothing prints.
+
+Both ways of not retyping a flag are therefore visible ones:
+
+| | Profile | Target | Where it lives |
+|---|---|---|---|
+| This shell | `LANES_LINK_PROFILE` | `LANES_LINK_TARGET` | your environment, where `env` shows it |
+| This workspace | `lanes link profile default <name>` | `lanes link target use <name>` | a config file `check` validates |
+
+Every command prints which one it landed on, and where that came from — the parenthesised source on
+the first line is `flag`, `environment`, `config-default`, or `workspace-default`.
 
 ## Permissions
 
@@ -295,9 +346,9 @@ $ lanes link deploy                        # again, so the revision sees them
 $ lanes link outputs --target cloud        # the deployed URL an agent needs
 ```
 
-`deploy` takes no `--target`: it deploys the target that has a deployment, and there is only ever
-one worth meaning. The commands around it do take one, because `connect` and `outputs` are just as
-usable against `local`.
+`deploy` needs no `--target` when there is one deployment to mean: it deploys the target that has
+one, creates `cloud` when none does, and *asks* rather than guessing when several do. Naming one is
+how you deploy a second — see below.
 
 The first `deploy` writes the target if there is not one, and creates the project resources it
 names. `connect` comes after it rather than before, because a credential store it has not created
@@ -306,6 +357,47 @@ reconcile the accounts you just authorised.
 
 `lanes link secrets push --from local --to cloud` migrates a setup you already built locally,
 instead of the `connect` step.
+
+### More than one deployment
+
+`cloud` is a target name, not a keyword — nothing in the code reserves it, and a profile may declare
+as many deployable targets as you like. The second one is named on the deploy that creates it:
+
+```console
+$ lanes link deploy --target staging      # surveys and writes targets.staging, then rolls it
+$ lanes link target list                  # what this profile declares, and which is in play
+$ lanes link connect gmail --target staging
+$ lanes link outputs --target staging
+```
+
+Once two targets declare a deployment, a bare `lanes link deploy` refuses and asks which you meant —
+rolling a revision to whichever came first in a YAML mapping is the one answer that cannot be right
+on purpose.
+
+Each target has its own credential store, so a connection authorised against one is absent from the
+other. `lanes link secrets push --from cloud --to staging` copies them instead of re-running every
+consent.
+
+### Which profiles a deploy uploads
+
+`deploy` uploads the workspace config the revision will read, and **the scope is the `--profile`
+flag rather than the resolved profile**:
+
+| Invocation | Uploads |
+|---|---|
+| `lanes link deploy --profile work` | `profiles/work.yaml` alone |
+| `LANES_LINK_PROFILE=work lanes link deploy` | **every** profile in the workspace |
+| `lanes link deploy` (profile from `default_profile`) | **every** profile in the workspace |
+
+That is surprising, and it is the behaviour rather than a description of a bug being fixed: the flag
+is read directly, so a profile resolved any other way leaves the scope undefined and the whole
+workspace travels. The endpoint then serves every profile whose YAML is in the bucket, under one
+token (ADR-009).
+
+No credential ever travels — `data/` is never uploaded and each target has its own store, so a
+connection you have not migrated reconciles as `unauthorized` rather than silently working. If you
+want one profile deployed, pass `--profile` explicitly; if you want a boundary that holds, use a
+second workspace.
 
 ```console
 $ lanes link secrets list --target cloud     # reference names only; no command prints a value
@@ -338,7 +430,7 @@ rules:
 
 ```
 --profile <name>    overrides LANES_LINK_PROFILE and the workspace default
---target  <name>    overrides instance.default_target
+--target  <name>    overrides LANES_LINK_TARGET and instance.default_target
 --connection <id>   which memory/skills/vault connection, when a profile has several
 --yes               skip the confirmation a destructive command would otherwise ask for
 --port    <n>       override the configured port (start only)

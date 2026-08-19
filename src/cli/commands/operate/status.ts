@@ -3,6 +3,7 @@ import { oneProfile, visibleCapabilities } from '#server/mcp';
 import { toPolicyDocument } from '#registry';
 import { announce, emit, heading, print, style, table } from '../../output.ts';
 import { openRuntime, ownerPrincipal, type GlobalFlags } from '../../runtime.ts';
+import { deploymentIdentity } from '../../endpoint-url.ts';
 
 /** `lanes link status` — connections, what is reachable through them, and where. */
 
@@ -16,6 +17,19 @@ export interface StatusFlags extends GlobalFlags {
  * `status` answers from config, the database, and policy — no network call. A
  * health probe would make the command that tells you what is configured depend
  * on something being up, and `outputs --json` already reports liveness.
+ *
+ * Which is why a deployed target prints its *identity* rather than its address.
+ * This used to print `http://<host>:<port>/mcp` unconditionally, so
+ * `status --target cloud` named a loopback port with nothing behind it — the
+ * bug `endpoint-url.ts` records having already fixed in `mcp add`. Reaching for
+ * `endpointUrl` here would fix the lie by surrendering the property above: it
+ * shells out to `gcloud`, costs seconds, needs the CLI installed and
+ * authenticated, and swallows every failure back into loopback — so on a fresh
+ * machine or in CI it would print the same wrong answer, more slowly.
+ *
+ * A deployment's address is the platform's to assign and `outputs --target` is
+ * the command that asks. Which service it is, though, is in the config, and a
+ * config-only command can say that much honestly.
  */
 export async function status(flags: StatusFlags): Promise<void> {
   const runtime = await openRuntime(flags);
@@ -53,7 +67,13 @@ export async function status(flags: StatusFlags): Promise<void> {
       .filter((id) => !connected.has(id))
       .sort();
 
-    const endpoint = `http://${runtime.config.instance.host}:${runtime.config.instance.port}/mcp`;
+    // Null rather than a different shape: `endpoint` stays a string-or-null so a
+    // consumer that reads it keeps working, and `deployment` carries what
+    // replaces it. Silently turning a string into an object would be a cost
+    // paid by every reader for the benefit of none.
+    const local = `http://${runtime.config.instance.host}:${runtime.config.instance.port}/mcp`;
+    const deployment = deploymentIdentity(runtime.config.targets[runtime.target]?.deploy);
+    const endpoint = deployment ? null : local;
 
     return emit(
       flags.json,
@@ -62,6 +82,7 @@ export async function status(flags: StatusFlags): Promise<void> {
         profiles: await listProfiles(runtime.resolution.workspaceRoot),
         target: runtime.target,
         endpoint,
+        deployment,
         connections,
         capabilities,
         notConnected,
@@ -92,7 +113,18 @@ export async function status(flags: StatusFlags): Promise<void> {
         }
 
         heading('Endpoint');
-        print(`  ${endpoint}  ${style.dim('(when running)')}`);
+        if (!deployment) {
+          print(`  ${local}  ${style.dim('(when running)')}`);
+        } else {
+          const { platform, service, region } = deployment;
+          print(`  ${platform} service ${style.bold(service)} in ${region}`);
+          print(
+            style.dim(
+              '  the address is the platform\'s to assign — run: ' +
+                `lanes link outputs --target ${runtime.target}`,
+            ),
+          );
+        }
       },
     );
   } finally {

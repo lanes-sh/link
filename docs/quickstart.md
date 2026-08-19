@@ -68,6 +68,11 @@ the next step hands it over for you.
 Every command prints the profile and target it resolved before it acts — that first line is how you
 know you are operating on the instance you meant.
 
+A **target** is where the profile runs: `local` keeps credentials in an encrypted file and data in a
+directory, and a deployed target keeps them in your cloud instead. Everything above them —
+connections, permissions, limits — is declared once and applies to both. `lanes link target list`
+shows what you have.
+
 ## 5. Register it with your agents
 
 In another shell:
