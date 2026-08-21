@@ -7,6 +7,7 @@ import {
 } from '#connectivity';
 import { CredentialOAuthProvider } from '#connectivity/auth/index.ts';
 import { WORKSPACE_SKILL_DIR, layout, type Config, type DeployConfig, type TargetConfig } from '#profile';
+import { ownClientRefsFor } from '#registry';
 import { encodeRef } from './adapters/gcp-secret-manager.ts';
 import { provisionSteps } from './gcp/provision.ts';
 import { openStorage } from './target.ts';
@@ -392,5 +393,61 @@ describe('the credentials a revision rotates, against what it is bound to', () =
       expect(step.argv[0]).toBe('secrets');
       expect(step.argv).not.toContain('projects');
     }
+  });
+});
+
+describe('the client a revision signs a refresh with, where the profile holds one', () => {
+  const manifestOf = (broker?: object) =>
+    defineProvider({
+      id: 'vendor_mail',
+      name: 'Vendor Mail',
+      connector: { kind: 'http', base_url: 'https://api.test', openapi: './t.json' },
+      auth: {
+        kind: 'oauth',
+        registration: 'manual',
+        app: 'vendor',
+        scopes: ['a'],
+        authorize_url: 'https://accounts.example.com/o/oauth2/v2/auth',
+        token_url: 'https://oauth2.example.com/token',
+        ...(broker ? { broker } : {}),
+      },
+      ...(broker
+        ? {}
+        : {
+            setup: {
+              prompts: [
+                { key: 'client_id', label: 'Client id', credential_ref: 'vendor/client_id' },
+              ],
+            },
+          }),
+    });
+
+  const declaredApps = {
+    vendor: { client_id_ref: 'vendor/client_id', client_secret_ref: 'vendor/client_secret' },
+  };
+
+  test('a declared client is readable, because the refresh path signs with it', () => {
+    // It was not, and the failure was silent in the worst way: the adapter
+    // answers null only on a 404, so an *unbound* secret is a 403 that throws.
+    // The revision served until its access token expired and then failed every
+    // call, an hour after reporting healthy.
+    expect(ownClientRefsFor(manifestOf(), declaredApps)).toEqual([
+      'vendor/client_id',
+      'vendor/client_secret',
+    ]);
+  });
+
+  test('a profile that declares none binds none', () => {
+    // Which is every profile that authorises against a broker.
+    expect(ownClientRefsFor(manifestOf({ url: 'https://api.example.com/b', operator: 'X' }), {})).toEqual([]);
+  });
+
+  test('readable is not rotatable: a revision never rewrites the operator’s client', () => {
+    // ADR-026's line. Sharing one entry across a vendor's providers is exactly
+    // why: rewriting it would break every other connection authorised against it.
+    const brokered = manifestOf({ url: 'https://api.example.com/b', operator: 'X' });
+
+    expect(rotatableCredentialRefs(brokered, CONNECTION)).toEqual(['vendor_mail/ada_lovelace']);
+    expect(rotatableCredentialRefs(manifestOf(), CONNECTION)).toEqual(['vendor_mail/ada_lovelace']);
   });
 });

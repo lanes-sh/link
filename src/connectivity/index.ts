@@ -53,6 +53,7 @@ export { defineLocalProvider, defineProviderWithCapabilities } from './provider.
 export type {
   ProviderManifest,
   ConnectorConfig,
+  AuthBroker,
   AuthConfig,
   SetupDeclaration,
   SetupPrompt,

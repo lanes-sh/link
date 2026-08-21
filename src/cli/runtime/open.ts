@@ -232,6 +232,7 @@ export async function openRuntime(flags: GlobalFlags): Promise<Runtime> {
       profile: config.instance.profile,
       profiles: await listProfiles(root),
       catalogue: PROVIDER_MANIFESTS,
+      ownClients: Object.keys(config.oauth_apps),
       reachable,
     },
   });

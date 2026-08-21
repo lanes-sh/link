@@ -45,6 +45,16 @@ export interface SetupNeeds {
    * anyone wants — so a non-interactive run has to be told the name up front.
    */
   readonly needsId: boolean;
+  /**
+   * The client comes from a broker, so there is nothing here to supply.
+   *
+   * Distinct from an empty `requirements`: a provider that needs nothing and a
+   * provider whose client somebody else operates read the same in a list of
+   * requirements and mean different things to a person deciding what to do
+   * next. A form built from this would render a required field for a value
+   * `connect` will never ask for.
+   */
+  readonly brokered: boolean;
 }
 
 /**
@@ -74,10 +84,23 @@ export function setupRequirements(
   manifest: ProviderManifest,
   connectionId: string | undefined,
   profile: string,
+  options: {
+    /** `oauth_apps` entries this profile declares — the clients that are its own. */
+    readonly ownClients?: readonly string[];
+  } = {},
 ): SetupNeeds {
   const prompts = manifest.setup?.prompts ?? [];
 
-  const shared = prompts.filter((prompt) => prompt.scope === 'shared');
+  // A shared prompt exists to collect a client the operator registers. When a
+  // broker supplies one and this profile has not declared its own, there is
+  // nothing to collect — the prompts stay in the manifest because `--own-client`
+  // still needs them, but they are not what this connect will ask for.
+  const brokered =
+    manifest.auth.kind === 'oauth' &&
+    manifest.auth.broker !== undefined &&
+    !(manifest.auth.app !== undefined && (options.ownClients ?? []).includes(manifest.auth.app));
+
+  const shared = brokered ? [] : prompts.filter((prompt) => prompt.scope === 'shared');
   const perConnection = prompts.filter((prompt) => prompt.scope === 'connection');
 
   const requirements: SetupRequirement[] = [];
@@ -115,5 +138,9 @@ export function setupRequirements(
     }
   }
 
-  return { requirements, needsId: perConnection.length > 0 && connectionId === undefined };
+  return {
+    requirements,
+    needsId: perConnection.length > 0 && connectionId === undefined,
+    brokered,
+  };
 }

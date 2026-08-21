@@ -12,6 +12,28 @@ import { credentialRef, identifier } from './primitives.ts';
 
 export const authNoneSchema = z.object({ kind: z.literal('none') });
 
+/**
+ * A client somebody else operates, so the operator does not have to register one.
+ *
+ * An installed application cannot hold a confidential client: whatever ships in
+ * the binary is readable by whoever runs it. That leaves exactly two honest
+ * arrangements, and this declares the second — the operator registers their own,
+ * or somebody runs one and performs the exchange on their behalf. The secret
+ * lives behind these endpoints and never reaches this machine.
+ *
+ * Vendor-free by construction. The URL is data a provider supplies, so nothing
+ * in this component learns whose client is behind it, or whose broker.
+ */
+export const authBrokerSchema = z.object({
+  /** Base URL. `<url>/config`, `<url>/exchange`, `<url>/refresh`. */
+  url: z.url(),
+  /** Who runs it, named in the sentence shown before consent. */
+  operator: z.string().min(1),
+  docs_url: z.url().optional(),
+});
+
+export type AuthBroker = z.infer<typeof authBrokerSchema>;
+
 export const authOAuthSchema = z.object({
   kind: z.literal('oauth'),
   /**
@@ -24,6 +46,17 @@ export const authOAuthSchema = z.object({
   registration: z.enum(['dynamic', 'manual']).default('dynamic'),
   /** Which `oauth_apps` entry holds the client, for `manual`. Shared across providers of a vendor. */
   app: identifier.optional(),
+  /**
+   * Where to authorise when the profile declares no `oauth_apps` entry of its own.
+   *
+   * Additive rather than a third `registration` value, because the manifest is
+   * not what chooses. `registration: manual` stays true either way — the vendor
+   * does require a pre-registered client — and `app` still names the entry that
+   * overrides this. What decides is the profile: declaring the entry means "my
+   * own client", leaving it out means "the one the broker operates". A manifest
+   * that claimed one or the other would be wrong half the time.
+   */
+  broker: authBrokerSchema.optional(),
   scopes: z.array(z.string()).default([]),
   /**
    * Usually discovered from the resource's metadata; set only to override.

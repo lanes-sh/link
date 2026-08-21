@@ -26,6 +26,7 @@ export {
   formatPlan,
   planIsNoop,
   planReconcile,
+  ownClientRefsFor,
   rotatableCredentialRefsFor,
   type AuthenticatingProviders,
   type ReconcileAction,

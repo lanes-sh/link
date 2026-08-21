@@ -43,7 +43,7 @@ damaging single mistake available.
 
 | | **Credentials** (`SecretStore`) | **Vault items** (M3) |
 |---|---|---|
-| What | refresh tokens, OAuth app secrets, the profile token | the owner's own passwords, API keys |
+| What | refresh tokens, the profile token, and an OAuth client secret where the operator registered one of their own | the owner's own passwords, API keys |
 | Authorises | the system itself | nothing — they are data the owner stores |
 | Agent-reachable | **never, in any form** | yes, under policy, default deny |
 | Store | encrypted file, its own key | separate store, **separate key** |
@@ -93,11 +93,40 @@ limitation. `RESERVED` names a compatibility slot with no implementation.
 | `profile.isolated` | ENFORCED | cross-profile token, state, and audit tests |
 | `limits.per-profile` | ENFORCED per instance | rate limit tests |
 | `audit.every-invocation` | ENFORCED **with two documented exceptions** | see below |
+| `credentials.client-secret-never-local` | ENFORCED (hosted client) | there is no client secret on the machine to hold. `resolveSecretRefs` grants no client reference at all for a connection authorised this way, asserted in `src/dispatch/context.test.ts` |
+| `credentials.exchange-is-local` | **NOT-GUARANTEED for a connection authorised against the hosted client** | see below |
 | `credentials.plaintext-in-use` | NOT-GUARANTEED | inherent |
 | `provider.sandboxed` | NOT-GUARANTEED | provider code is trusted |
 | `egress.controlled` | NOT-GUARANTEED | follows from the above |
 | `policy.approval_required` | RESERVED | the model carries the state; no engine, and it fails closed |
 | `delegation.external-clients` | RESERVED | the principal parameter; nothing more |
+
+### What `credentials.exchange-is-local` gives up
+
+Since [ADR-028](adr/028-a-hosted-oauth-client-is-the-default.md) a Google connection authorises,
+by default, against an OAuth client Lanes operates rather than one the operator registers. That
+removes a nine-step console walkthrough and the seven-day refresh-token expiry that comes with an
+unpublished project. It also moves one step off this machine, and the honest statement of that is
+worth more than the convenience:
+
+- The **authorization code** is sent to the Lanes API, because redeeming it needs the client
+  secret and that secret is deliberately not here.
+- The **refresh token** comes back through the Lanes API, and passes through it again on every
+  later refresh.
+- An **identity assertion** (a Google `id_token`, obtained from the `openid` and `email` scopes
+  the flow adds for this purpose) is sent with each refresh, so the API can attribute and
+  rate-limit per account. It is stored beside the tokens and never decoded here.
+
+Everything else is unchanged: the browser still talks to Google directly, the redirect still lands
+on a loopback listener this process opened, the endpoint still never participates, and the tokens
+still live in whichever credential store the config names.
+
+**Nothing in this repository can verify what the Lanes API does with what it sees.** That is the
+whole of the trade, and it is why this is a row in the table rather than a paragraph in a guide.
+An operator who does not want to make it runs `lanes link connect <provider> --own-client` once
+per profile, which registers a client of their own and keeps the exchange between this machine and
+Google. Declaring `oauth_apps` in a profile is the same choice expressed in config, and a profile
+that declares it is never moved off it.
 
 ### The documented exceptions to `audit.every-invocation`
 

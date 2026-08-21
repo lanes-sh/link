@@ -79,3 +79,53 @@ describe('defineProvider cross-field rules', () => {
     expect(() => provider({ kind: 'bearer' })).not.toThrow();
   });
 });
+
+describe('a broker as the other answer to "where does the client come from"', () => {
+  const broker = { url: 'https://api.example.com/v1/auth/link/vendor', operator: 'Someone' };
+  const oauth = (extra: Record<string, unknown> = {}) => ({
+    kind: 'oauth',
+    registration: 'manual',
+    app: 'vendor',
+    scopes: ['a'],
+    authorize_url: 'https://accounts.example.com/o/oauth2/v2/auth',
+    token_url: 'https://oauth2.example.com/token',
+    ...extra,
+  });
+
+  test('setup prompts stop being mandatory once a broker can supply the client', () => {
+    // Without a broker this is the error that says a manual registration with
+    // no prompts leaves nobody able to learn what to provide. With one, there
+    // is simply nothing to provide.
+    expect(() => provider(oauth())).toThrow(/must declare setup prompts/);
+    expect(() => provider(oauth({ broker }))).not.toThrow();
+  });
+
+  test('a broker still names the oauth_apps entry that overrides it', () => {
+    // Without `app` there is no way for a profile to say "use mine instead",
+    // which would make the broker the only option rather than the default.
+    expect(() => provider(oauth({ broker, app: undefined }))).toThrow(/registration "manual"/);
+    expect(() => provider(oauth({ broker, registration: 'dynamic' }))).toThrow(/"app"/);
+  });
+
+  test('a broker needs the authorize url, because the browser still goes to the vendor', () => {
+    expect(() => provider(oauth({ broker, authorize_url: undefined }))).toThrow(/authorize_url/);
+  });
+
+  test('an mcp connector is refused, because the SDK owns its exchange', () => {
+    // Discovered at definition rather than after the operator has already
+    // approved a consent screen.
+    expect(() =>
+      defineProvider({
+        id: 'vendor_mcp',
+        name: 'Vendor',
+        connector: { kind: 'mcp', endpoint: 'https://mcp.example.com/sse' },
+        auth: oauth({ broker }),
+      }),
+    ).toThrow(/cannot route it through a broker/);
+  });
+
+  test('tokens still land per provider, not under the app the broker names', () => {
+    const gmailish = provider(oauth({ broker }), 'vendor_mail');
+    expect(credentialRefForConnection(gmailish, 'main')).toBe('vendor_mail/main');
+  });
+});

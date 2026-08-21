@@ -100,6 +100,8 @@ ${style.bold('Global flags')}
   --non-interactive              never prompt: connect refuses with what to store,
                                  deploy takes the answers its config already holds
   --accept-broad-scopes          agree in advance to scopes broader than a provider needs
+  --own-client                   register your own OAuth client instead of using the
+                                 one this project operates (connect only)
   --port <n>                     override the configured port (start only)
 
 Every command prints the resolved profile and target before acting.

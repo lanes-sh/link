@@ -270,6 +270,10 @@ export class Dispatcher {
         audit: auditLogger,
         log: createProviderLogger(this.#deps.log, providerId, declared.id),
         signal: request.signal ?? new AbortController().signal,
+        // Which vendors this profile registered a client of its own for. A
+        // provider that could be brokered but is not reads its client from the
+        // store, so it has to be able to.
+        ownClients: Object.keys(this.#deps.config.oauth_apps),
         ...(entry.manifest.connector.kind === 'local' ? {} : { authorize }),
       });
 

@@ -376,3 +376,52 @@ describe('the SDK-driven callback listener', () => {
     }
   });
 });
+
+describe('the exchange is a seam', () => {
+  test('an injected exchange is used, and the token endpoint is never called', async () => {
+    // The point of the seam: a brokered provider has no client secret to post,
+    // so the flow must be able to redeem the code somewhere else entirely while
+    // the listener, PKCE, and the state check stay exactly as they are.
+    let redeemed: { code: string; redirectUri: string; codeVerifier: string } | undefined;
+    const tokenEndpoint = mockTokenEndpoint({});
+
+    const tokens = await runOAuthFlow({
+      authorizeUrl: 'https://accounts.example.com/authorize',
+      clientId: 'cid',
+      scopes: ['scope.a'],
+      openBrowser: browserThatApproves(),
+      fetch: tokenEndpoint.fetch,
+      exchange: async (input) => {
+        redeemed = {
+          code: input.code,
+          redirectUri: input.redirectUri,
+          codeVerifier: input.codeVerifier,
+        };
+        return { refreshToken: 'rt', accessToken: 'at', expiresIn: 60, scope: 'scope.a' };
+      },
+    });
+
+    expect(tokens.accessToken).toBe('at');
+    expect(tokenEndpoint.calls).toHaveLength(0);
+    expect(redeemed?.code).toBe('auth-code-1');
+    expect(redeemed?.redirectUri).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/callback$/);
+    // The verifier is the one the flow generated, so PKCE still binds the code
+    // to this process rather than to whoever supplied the exchange.
+    expect(redeemed?.codeVerifier).toMatch(/^[\w-]{43}$/);
+  });
+
+  test('a flow with neither an exchange nor a client to redeem with refuses', async () => {
+    const error = await runOAuthFlow({
+      authorizeUrl: 'https://accounts.example.com/authorize',
+      clientId: 'cid',
+      scopes: ['scope.a'],
+      openBrowser: browserThatApproves(),
+    }).then(
+      () => undefined,
+      (caught: unknown) => caught as Error,
+    );
+
+    expect(error).toBeInstanceOf(OAuthError);
+    expect(error?.message).toMatch(/tokenUrl and clientSecret/);
+  });
+});

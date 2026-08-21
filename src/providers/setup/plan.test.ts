@@ -97,3 +97,61 @@ describe('planAll', () => {
     expect(ids).toEqual([...ids].sort());
   });
 });
+
+describe('a provider whose client somebody else operates', () => {
+  const broker = { url: 'https://api.example.com/v1/auth/link/vendor', operator: 'Someone' };
+
+  const brokered = defineProvider({
+    id: 'vendor_mail',
+    name: 'Vendor Mail',
+    description: 'Mail.',
+    connector: { kind: 'http', base_url: 'https://api.test', openapi: './t.json' },
+    auth: {
+      kind: 'oauth',
+      registration: 'manual',
+      app: 'vendor',
+      scopes: ['a'],
+      authorize_url: 'https://accounts.example.com/o/oauth2/v2/auth',
+      token_url: 'https://oauth2.example.com/token',
+      broker,
+    },
+    setup: {
+      steps: ['Create a project', 'Copy the client id and secret'],
+      prompts: [
+        { key: 'client_id', label: 'Client id', credential_ref: 'vendor/client_id' },
+        { key: 'client_secret', label: 'Client secret', secret: true, credential_ref: 'vendor/client_secret' },
+      ],
+    },
+  });
+
+  test('needs nothing, and says the difference between that and needing nothing', () => {
+    const plan = planFor(brokered, { profile: 'personal', connections: [] });
+
+    expect(plan.requires).toEqual([]);
+    expect(plan.brokered).toBe(true);
+    expect(plan.clientOperator).toBe('Someone');
+    expect(plan.ownClientCommand).toBe(
+      'lanes link connect vendor_mail --profile personal --own-client',
+    );
+  });
+
+  test('a profile that has registered its own client is asked for it, as before', () => {
+    // Declaring the oauth_apps entry is the opt-out. Someone who has already
+    // taken it must not be told they need nothing and then asked for two values.
+    const plan = planFor(brokered, {
+      profile: 'personal',
+      connections: [],
+      ownClients: ['vendor'],
+    });
+
+    expect(plan.brokered).toBe(false);
+    expect(plan.requires.map((r) => r.ref)).toEqual(['vendor/client_id', 'vendor/client_secret']);
+    expect(plan.ownClientCommand).toBeUndefined();
+  });
+
+  test('the console walkthrough survives in the data for whoever still needs it', () => {
+    // Suppressing it is a rendering decision. A console with a disclosure and a
+    // terminal that heads it "or register your own" both need it present.
+    expect(planFor(brokered, { profile: 'personal', connections: [] }).steps).toHaveLength(2);
+  });
+});

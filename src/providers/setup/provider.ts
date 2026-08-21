@@ -49,6 +49,15 @@ export interface SetupProviderOptions {
   readonly profile: string;
   /** Sibling profile names on this endpoint. Names only; already at `/health`. */
   readonly profiles?: readonly string[];
+  /**
+   * `oauth_apps` entries this profile declares.
+   *
+   * Configuration, not a credential: it names which vendors this profile holds
+   * a client of its own for, never whether the client is stored. Reporting a
+   * provider as needing nothing when the profile has in fact registered one
+   * would send the owner to a command that then asks for two values.
+   */
+  readonly ownClients?: readonly string[];
   /** Every provider this build ships. Shipped code, identical for every caller. */
   readonly catalogue?: readonly ProviderManifest[];
   /**
@@ -71,6 +80,7 @@ export function createSetupProvider(options: SetupProviderOptions): ProviderDefi
   const context = () => ({
     profile: options.profile,
     connections: reachable().map((connection) => connection.key),
+    ...(options.ownClients ? { ownClients: options.ownClients } : {}),
   });
 
   return defineLocalProvider({
@@ -253,9 +263,20 @@ function renderProvider(plan: ProviderPlan): string {
     }
   }
 
-  if (plan.steps.length > 0) {
+  // A console walkthrough is withheld from this surface when it does not apply.
+  // A model handed nine steps it has no reason to relay will relay them, and
+  // the owner ends up registering a client they did not need.
+  if (plan.steps.length > 0 && !plan.brokered) {
     lines.push('', 'The owner does this first, in the vendor’s own console:');
     plan.steps.forEach((step, index) => lines.push(`  ${index + 1}. ${step}`));
+  }
+
+  if (plan.brokered) {
+    lines.push(
+      '',
+      `There is nothing to register: the OAuth client is operated by ${plan.clientOperator}, ` +
+        'and its secret never reaches this machine. The command below is the whole of it.',
+    );
   }
 
   // Labels, never the credential references they resolve to. The command below
@@ -277,6 +298,16 @@ function renderProvider(plan: ProviderPlan): string {
   }
 
   lines.push('', 'The command:', `  ${plan.command}`);
+
+  if (plan.brokered && plan.ownClientCommand) {
+    lines.push(
+      '',
+      'If the owner would rather use an OAuth client they register themselves — some ' +
+        'organisations require it — the same command takes --own-client and then asks for ' +
+        `the client id and secret:`,
+      `  ${plan.ownClientCommand}`,
+    );
+  }
 
   if (plan.browser) {
     lines.push(

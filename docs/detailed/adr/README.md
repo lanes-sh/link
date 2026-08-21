@@ -35,6 +35,7 @@ Nothing in the codebase depends on it.
 | [024](024-telemetry-is-a-copy.md) | Extra audit sinks are copies; the durable log is never a network call |
 | [025](025-connecting-an-account-from-a-deployed-endpoint.md) | **Proposed, not decided.** Whether a deployed endpoint may run the OAuth flow itself — the mechanical objection has expired, the authorisation one has not |
 | [026](026-a-revision-rotates-its-own-credentials.md) | A revision may add a version to each secret it rotates, and may still never create one |
+| [028](028-a-hosted-oauth-client-is-the-default.md) | A client Lanes operates is what `connect` uses by default; `--own-client` registers your own |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 
@@ -48,6 +49,11 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
 - **ADR-018** amends ADR-003 and replaces init.md's "optionally behind Cloud Run IAM" (M3, point 5).
   IAM in front of the endpoint is not a second layer over the bearer token — it is an alternative
   that excludes every remote MCP client, so the gate moved into the application instead.
+- **ADR-028** amends ADR-005's step 2, "read the provider's `oauth_app` entry and resolve the client
+  id and secret … prompting for them on first use", which stops being the default. Everything else
+  in ADR-005 survives — the CLI still runs the flow, the listener is still loopback, the browser
+  still talks to the vendor, the server still never participates. What moves is who holds the
+  client secret, and therefore where the code becomes a token.
 - **ADR-019** does not supersede ADR-007. It records why a *read-only* setup surface is outside
   those exclusions — the rule is about authorisation, not information — and names the two things
   that keep it there: it reports only what policy already permits, and it never reports whether a
