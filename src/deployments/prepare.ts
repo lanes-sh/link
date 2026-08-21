@@ -1,4 +1,4 @@
-import { credentialRefFor, rotatableCredentialRefsFor } from '#registry';
+import { credentialRefFor, ownClientRefsFor, rotatableCredentialRefsFor } from '#registry';
 import { listProfiles, loadProfileConfig, type Config, type TargetConfig } from '#profile';
 import { VAULT_DOCUMENT_REF, VAULT_KEY_REF, generateVaultKey, type SecretStore } from '#secrets';
 import { ok, print, style, warn } from '#cli/output.ts';
@@ -151,6 +151,7 @@ export async function readableRefs(
       const ref = credentialRefFor(connection, manifest);
       if (ref) refs.add(ref);
       for (const rotatable of rotatableCredentialRefsFor(connection, manifest)) refs.add(rotatable);
+      for (const client of ownClientRefsFor(manifest, config.oauth_apps)) refs.add(client);
     }
   }
 

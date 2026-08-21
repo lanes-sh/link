@@ -65,6 +65,14 @@ export function resolveSecretRefs(
   manifest: ProviderManifest,
   connection: ConnectionConfig,
   definition?: ProviderDefinition,
+  /**
+   * Which `app` entries this profile declares a client of its own for.
+   *
+   * Only consulted for a provider that could also authorise against a broker.
+   * Defaults to none, which is correct for every provider that declares no
+   * broker: the gate below leaves those exactly as they were.
+   */
+  ownClients: readonly string[] = [],
 ): SecretRef[] {
   const refs = new Set<SecretRef>(
     definition?.credentialRefs?.(connection.id, connection.config ?? {}) ?? [],
@@ -80,9 +88,16 @@ export function resolveSecretRefs(
     // against. Nothing wider: `gmail.main` must not reach `gmail/side`.
     refs.add(`${manifest.id}/${connection.id}`);
     if (auth.registration === 'manual' && auth.app) {
-      refs.add(`${auth.app}/client_id`);
-      refs.add(`${auth.app}/client_secret`);
-      refs.add(`${auth.app}/client`);
+      // Only where this profile holds a client of its own. When the client is
+      // the broker's there is no id, secret, or registration anywhere in this
+      // store, so naming the three refs would grant reach to nothing while
+      // describing an arrangement that does not exist — and a grant list is
+      // read by people deciding what a provider can see.
+      if (!auth.broker || ownClients.includes(auth.app)) {
+        refs.add(`${auth.app}/client_id`);
+        refs.add(`${auth.app}/client_secret`);
+        refs.add(`${auth.app}/client`);
+      }
     } else {
       refs.add(`${manifest.id}/client`);
     }
@@ -114,6 +129,8 @@ export interface BuildContextOptions {
   readonly signal: AbortSignal;
   /** The same closure the connector context gets. Absent for `local` providers. */
   readonly authorize?: ((request: Request) => Promise<Request>) | undefined;
+  /** `oauth_apps` entries this profile declares. See `resolveSecretRefs`. */
+  readonly ownClients?: readonly string[] | undefined;
 }
 
 export function buildProviderContext(options: BuildContextOptions): ProviderContext {
@@ -133,7 +150,7 @@ export function buildProviderContext(options: BuildContextOptions): ProviderCont
     storage: scopeBlobStore(options.storage, namespace),
     credentials: scopeSecrets(
       options.credentials,
-      resolveSecretRefs(manifest, connection, definition),
+      resolveSecretRefs(manifest, connection, definition, options.ownClients ?? []),
     ),
     audit: options.audit,
     log: options.log,
