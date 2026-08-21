@@ -4,11 +4,16 @@ import { GOOGLE_APP } from './oauth.ts';
  * The walkthrough every Google provider prints before asking for anything.
  *
  * Google requires a pre-registered OAuth client — even for Google's own MCP
- * servers. No architecture avoids that; it is their policy, and it is the one
- * piece of setup that could not be deleted.
+ * servers. That is their policy and no architecture avoids it, but it does not
+ * follow that *you* have to be the one to register it: since ADR-028 the client
+ * Lanes operates is the default, and this walkthrough is what `--own-client`
+ * opts into. It stays complete, because the people who need it — an
+ * organisation that forbids third-party clients, a Workspace "Internal" app —
+ * need all of it.
  *
  * Gmail and Drive share the `google` app, which is why `oauth_apps` exists:
- * every connection of a vendor authorises against the same registered client.
+ * every connection of a vendor authorises against the same registered client,
+ * and declaring that entry is also how a profile says it has one of its own.
  */
 export const googleSetup = (
   product: string,
@@ -32,7 +37,7 @@ export const googleSetup = (
       : ['gmail.googleapis.com', 'drive.googleapis.com']);
 
   return {
-    summary: `${product} needs a Google Cloud OAuth client that you register yourself. Lanes Link never operates one on your behalf — the credentials stay yours. This is asked once per profile and then covers every Google account you connect.`,
+    summary: `${product} signs in with Google. By default it authorises against the OAuth client Lanes operates, so there is nothing to register and no client secret on this machine — the code is exchanged for a token by the Lanes API, which holds that secret. Pass --own-client to register a client of your own instead; the steps below are that path, asked once per profile and then covering every Google account you connect.`,
     docs: 'docs/detailed/setup/google.md',
     docs_url: 'https://console.cloud.google.com/auth',
     steps: [

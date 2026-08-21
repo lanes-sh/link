@@ -14,6 +14,14 @@ import type { ScopeMeaning } from '../../scopes.ts';
  * here.
  */
 export const GOOGLE_SCOPE_MEANINGS: Record<string, ScopeMeaning> = {
+  // Asked for only when authorising against the client Lanes operates, which
+  // needs to tell one caller's refresh from another's. Neither reaches any
+  // Google service, and describing them matters precisely because they are the
+  // two the operator did not ask for.
+  openid: { meaning: 'a signed statement of which Google account this is — no access to anything' },
+  email: {
+    meaning: 'your address, so the hosted client can tell whose connection this is. Not the mailbox',
+  },
   'https://mail.google.com/': {
     meaning: 'full mailbox — read, send, and permanently delete any message',
     broad: true,
