@@ -42,6 +42,11 @@ limits:
   upstream_calls_per_minute: 60   # per connection, protects vendor quota
 
 # App registrations, shared by every connection of that vendor.
+#
+# Also the switch. A provider whose manifest names a broker — every Google REST
+# provider does — authorises against the client that broker operates when there
+# is no entry here, and against yours when there is. Written for you by
+# "lanes link connect <provider> --own-client"; delete it to go back.
 oauth_apps:
   google:
     client_id_ref: google/client_id
@@ -85,6 +90,38 @@ This value looked like a credential:
 ```
 
 There is deliberately no suppression flag.
+
+## A profile that uses the hosted OAuth client
+
+The default, and the shorter file: there is no `oauth_apps` block at all, because there is no client
+to point at. The Google connections below authorise against the client Lanes operates, and its
+secret is never on this machine.
+
+```yaml
+contract: 1
+
+instance:
+  profile: personal
+  default_target: local
+
+targets:
+  local:
+    credentials: { adapter: file }
+    storage: { adapter: filesystem, path: ./data }
+
+connections:
+  - id: ada_lovelace
+    provider: gmail
+    account: ada.lovelace@example.com
+
+policy:
+  allow: ['gmail.*']
+```
+
+Adding an `oauth_apps` entry later does not move an existing connection onto your client: which
+client minted a refresh token is recorded with the token, because one client's refresh token is
+refused by another. Run `connect` again for any connection you want moved. See
+[ADR-028](adr/028-a-hosted-oauth-client-is-the-default.md).
 
 ## Validation rules
 

@@ -546,3 +546,19 @@ value, not the command, so a rotated token needs re-registration. `lanes link ou
 
 **`lanes link outputs` shows a local URL for a cloud target** — it asks Cloud Run for the service URL and
 falls back to the configured host and port when `gcloud` is absent or the service is not deployed yet.
+
+## A brokered Google connection on Cloud Run
+
+Nothing extra to bind. A connection authorised against the OAuth client Lanes operates rewrites
+exactly one secret while serving — its own token blob — which is already in the rotation grant, and
+it needs no client id or secret anywhere in the target's store.
+
+The one requirement is **outbound HTTPS to the broker host**, which Cloud Run has by default. It
+only becomes a question if you have set VPC egress to route all traffic: the revision refreshes
+through `api.lanes.sh`, so that host has to be reachable or every Google call fails an hour after
+the revision reports healthy.
+
+A profile that registered its own client is the other way round: its `oauth_apps` refs are bound
+**readable** by `deploy` so the refresh path can sign with them, and never writable —
+[ADR-026](adr/026-a-revision-rotates-its-own-credentials.md)'s line is that a revision rotates what
+is its own and never rewrites the operator's client.

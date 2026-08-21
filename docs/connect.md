@@ -4,8 +4,8 @@ Each account is one connection, with its own credential, its own permissions, an
 `lanes link connect <provider>` once per account you want reachable.
 
 ```console
-$ lanes link connect gmail        # prompts for a client id/secret once, then a browser
-$ lanes link connect gmail        # straight to the browser, a second mailbox
+$ lanes link connect gmail        # straight to the browser, nothing to register
+$ lanes link connect gmail        # again, for a second mailbox
 ```
 
 `lanes link status` shows what is connected and what that makes reachable.
@@ -43,8 +43,22 @@ app-specific password covers all three. iCloud Drive is separate — it holds no
 reading your sync folder through the filesystem. Full walkthrough:
 [`detailed/setup/icloud.md`](detailed/setup/icloud.md).
 
-**Only Google needs an OAuth client you register yourself.** Notion and Linear register themselves,
-and iCloud takes an app-specific password you generate at appleid.apple.com.
+**No provider asks you to register an OAuth client.** Google authorises against the client Lanes
+operates, Notion and Linear register themselves, and iCloud takes an app-specific password you
+generate at appleid.apple.com.
+
+For Google you can still register your own, and some people have to — an organisation that forbids
+third-party clients, a Workspace app that must be "Internal", or a hosted client that has reached
+its account limit:
+
+```console
+$ lanes link connect gmail --own-client
+```
+
+That walks through the Google Cloud console once, stores the client id and secret, and records the
+choice in your profile, so every later Google connection on that profile uses your client without
+the flag. See [`detailed/setup/google.md`](detailed/setup/google.md) for the walkthrough and what
+the two paths trade against each other.
 
 ## See what one takes before you start
 

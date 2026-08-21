@@ -96,8 +96,9 @@ One command per account. Run it again to add a second mailbox, a second calendar
 | Drive (Google MCP) | `lanes link connect drive_mcp` |
 
 Two things worth knowing up front: `lanes link connect icloud` sets up Mail, Calendar, and Contacts
-together, because one app-specific password covers all three. And Google is the only one that asks
-you to register an OAuth client of your own — `lanes link connect gmail` walks you through it.
+together, because one app-specific password covers all three. And Google needs no OAuth client of
+your own: `lanes link connect gmail` authorises against the one Lanes operates, so there is no
+Cloud console to visit. Add `--own-client` if you would rather register your own.
 
 Full guide — what each one gives your agent, what it needs, and adding your own:
 **[docs/connect.md](docs/connect.md)**.

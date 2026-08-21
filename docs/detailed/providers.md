@@ -29,8 +29,10 @@ modify — the smallest demonstration that bundles do something.
 
 ## `gmail`
 
-Setup: [`setup/google.md`](setup/google.md). You register your own Google Cloud OAuth client; there
-is no Lanes-operated app anywhere in the flow.
+Setup: [`setup/google.md`](setup/google.md). By default this authorises against the Google OAuth
+client Lanes operates, whose secret stays in the Lanes API and never reaches your machine;
+`--own-client` registers one of your own instead. [ADR-028](adr/028-a-hosted-oauth-client-is-the-default.md)
+records what each path trades.
 
 | Capability | Kind | Bundle | Why |
 |---|---|---|---|

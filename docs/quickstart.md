@@ -99,8 +99,9 @@ A mail or calendar account is the first thing that costs any setup:
 $ lanes link connect gmail
 ```
 
-Google asks you to register an OAuth client of your own; the command walks you through it. See
-[Connect your accounts](connect.md) for every provider and what each one needs.
+That opens a browser and nothing else — Google authorises against the OAuth client Lanes operates,
+so there is no Cloud project to create. See [Connect your accounts](connect.md) for every provider,
+what each one needs, and how to use an OAuth client of your own instead.
 
 A new connection is served after the endpoint restarts — stop `lanes link start` and run it again.
 

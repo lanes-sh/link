@@ -82,8 +82,8 @@ One command, run once per account. The second run skips whatever the first estab
 ```console
 $ lanes link connect example      # → example.main
 $ lanes link connect example      # → example.main2
-$ lanes link connect gmail        # → prompts for client id/secret once, then a browser
-$ lanes link connect gmail        # → straight to the browser, another account
+$ lanes link connect gmail        # → straight to the browser, nothing to register
+$ lanes link connect gmail        # → again, another account
 ```
 
 `lanes link connect gmail.main` re-authorises one existing account. `--id` overrides the derived connection

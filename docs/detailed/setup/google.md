@@ -1,11 +1,48 @@
 # Connecting Gmail, Drive, Sheets, Docs, Calendar, Tasks, and Contacts
 
-Google is the one provider where you must register your own OAuth client. Notion and Linear register
-themselves automatically; Google does not offer that, **even for Google's own MCP servers**. No
-architecture avoids it — it is their policy.
+```console
+$ lanes link connect gmail
+```
 
-The good news: you do this **once**, and one client covers **every** Google account you connect —
-personal Gmail and Workspace alike, across as many accounts as you like.
+That is the whole of it. A browser opens, you approve the scopes, the connection is made.
+
+Google requires a pre-registered OAuth client — Notion and Linear register themselves automatically,
+Google does not offer that, **even for Google's own MCP servers**, and no architecture avoids it.
+But it does not follow that *you* have to be the one who registers it. By default Lanes Link
+authorises against a client Lanes operates, whose secret stays in the Lanes API and never reaches
+your machine.
+
+Two things that costs you, both worth knowing before you start:
+
+- Until Google's verification completes you will see a **"Google hasn't verified this app"**
+  screen. Choose **Advanced → Go to Lanes** to continue.
+- The hosted client is limited to **100 Google accounts**, a cap Google counts for the lifetime of
+  the project. `lanes link connect` warns as it fills and tells you what to do if it is full.
+
+What it saves you is the rest of this page.
+
+## Registering a client of your own
+
+You would want to, and the rest of this page is how, if:
+
+- your organisation does not permit third-party OAuth clients;
+- all your accounts are on one Workspace domain and you want an **Internal** app, which never
+  expires a refresh token and shows no warning screen;
+- you would rather the authorization code and refresh token never passed through the Lanes API
+  ([`../security.md`](../security.md) states exactly what that gives up);
+- or the hosted client is at capacity.
+
+```console
+$ lanes link connect gmail --own-client
+```
+
+It asks for a client id and secret, stores them, and writes an `oauth_apps` entry to your profile.
+That entry is the switch: once it is there, every Google connection on that profile uses your
+client and you never need the flag again. Delete it to go back to the hosted one — though existing
+connections keep refreshing against whichever client issued them, so moving one across means
+running `connect` for it again.
+
+Everything below is that path.
 
 ---
 
@@ -47,8 +84,9 @@ providers are simply unavailable to you — use `gmail` and `drive`, which have 
 
 ## Choose the right path first
 
-This is the decision that determines everything else, and getting it wrong is what sends people into
-Google's verification centre.
+For a client of your own, this is the decision that determines everything else, and getting it
+wrong is what sends people into Google's verification centre. None of it applies to the hosted
+client, which is published and carries no seven-day expiry.
 
 | Your accounts | User type | Verification | Refresh tokens |
 |---|---|---|---|
@@ -298,11 +336,15 @@ app, registered in your own project, and the credentials never leave your machin
 
 Each run adds one account. The client ID and secret are asked for once per *profile*, not once per
 account — all your Google connections authorise against the same registered client, which is what the
-`oauth_apps` block in your config exists for.
+`oauth_apps` block in your config exists for, and what its presence tells Lanes Link to keep using
+instead of the hosted client.
 
 ---
 
 ## The weekly re-authorisation
+
+This is a property of **your own** External app while it is in Testing. Connections made against
+the hosted client do not expire weekly, and `doctor` does not warn about their age.
 
 With an External app in Testing, refresh tokens die after seven days. When one does, a call fails
 with a message naming the cause and the fix:
@@ -319,15 +361,18 @@ $ lanes link doctor
 warn  gmail.personal credential is 8 days old — Testing-status apps expire at 7. Run: lanes link connect gmail.personal
 ```
 
-If the weekly cycle becomes annoying, the only genuine escapes are:
+If the weekly cycle becomes annoying, the escapes are:
 
+- **Use the hosted client** — drop `--own-client`, delete the `oauth_apps` entry from your profile,
+  and run `lanes link connect` again for each account. That client is published, so its refresh
+  tokens do not expire weekly.
 - **Move those accounts to a Workspace domain** and use an Internal app — no expiry, no warning
   screen, no verification.
-- **Complete Google's verification** for the External app — weeks to months, and for restricted
+- **Complete Google's verification** for your External app — weeks to months, and for restricted
   scopes it includes a paid third-party security assessment.
 
-There is no third option. Anything claiming otherwise is either using non-restricted scopes or is
-about to stop working.
+There is no fourth. Anything claiming otherwise is either using non-restricted scopes or is about
+to stop working.
 
 ---
 
