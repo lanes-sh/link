@@ -25,6 +25,10 @@ export async function setupPlan(provider: string | undefined, flags: SetupFlags)
     const context = {
       profile: runtime.resolution.profile,
       connections: runtime.config.connections.map((c) => `${c.provider}.${c.id}`),
+      // Declaring an `oauth_apps` entry is how a profile says "use my own
+      // client". Without this the plan would tell someone who has already
+      // registered one that they need nothing.
+      ownClients: Object.keys(runtime.config.oauth_apps),
     };
 
     const manifests = runtime.registry.list().map((entry) => entry.manifest);
@@ -96,9 +100,16 @@ function renderOne(plan: ProviderPlan, missing: ReadonlySet<string>): void {
     print(`  ${style.green('connected')}  ${plan.connected.join(', ')}`);
   }
 
-  if (plan.steps.length > 0) {
+  if (plan.steps.length > 0 && !plan.brokered) {
     heading('First, in the vendor’s console');
     plan.steps.forEach((step, index) => print(`  ${index + 1}. ${step}`));
+  }
+
+  if (plan.brokered) {
+    heading('Values it needs');
+    print(
+      `  ${style.dim(`none — the OAuth client is operated by ${plan.clientOperator}, and its secret never reaches this machine.`)}`,
+    );
   }
 
   if (plan.requires.length > 0) {
@@ -115,6 +126,19 @@ function renderOne(plan: ProviderPlan, missing: ReadonlySet<string>): void {
 
   heading('Then');
   print(`  ${plan.command}`);
+
+  // Last, and headed as the alternative it is. Someone reading this wants the
+  // one line that connects an account; the console walkthrough is for the
+  // minority who cannot use the hosted client, and putting it first taught
+  // everyone else that this provider is the hard one.
+  if (plan.brokered && plan.ownClientCommand) {
+    heading('Or register a client of your own');
+    print(`  ${plan.ownClientCommand}`);
+    if (plan.steps.length > 0) {
+      print();
+      plan.steps.forEach((step, index) => print(`  ${index + 1}. ${step}`));
+    }
+  }
   if (plan.browser) {
     print();
     print(

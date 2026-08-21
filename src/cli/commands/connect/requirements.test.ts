@@ -78,6 +78,7 @@ describe('setupRequirements', () => {
     expect(setupRequirements(NO_AUTH, undefined, 'personal')).toEqual({
       requirements: [],
       needsId: false,
+      brokered: false,
     });
   });
 
