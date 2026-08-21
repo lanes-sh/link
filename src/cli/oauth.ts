@@ -1,5 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { completionPage } from './callback-page.ts';
+import { OAuthError } from './oauth-error.ts';
+import { directExchange, type ExchangeCode, type OAuthTokens } from './oauth-exchange.ts';
 
 /**
  * The OAuth authorization-code exchange, run entirely from the CLI.
@@ -19,10 +21,21 @@ import { completionPage } from './callback-page.ts';
 
 export interface OAuthFlowOptions {
   readonly authorizeUrl: string;
-  readonly tokenUrl: string;
+  /** Where a client this machine holds redeems the code. Unused with `exchange`. */
+  readonly tokenUrl?: string;
   readonly clientId: string;
-  readonly clientSecret: string;
+  /** Unused with `exchange` — a brokered flow has no secret to hold. */
+  readonly clientSecret?: string;
   readonly scopes: readonly string[];
+  /**
+   * How the code becomes a token. Defaults to posting to `tokenUrl` with the
+   * client above; a brokered provider supplies one that posts to its broker.
+   *
+   * Everything before this point is identical either way, which is the whole
+   * reason it is a parameter rather than a branch: the listener, PKCE, the
+   * state check, and the browser cannot drift apart between the two paths.
+   */
+  readonly exchange?: ExchangeCode;
   readonly authorizeParams?: Readonly<Record<string, string>>;
   /** What the completion page names as connected. A provider's display name. */
   readonly connectionLabel?: string;
@@ -33,19 +46,10 @@ export interface OAuthFlowOptions {
   readonly fetch?: typeof globalThis.fetch;
 }
 
-export interface OAuthTokens {
-  readonly refreshToken: string;
-  readonly accessToken: string;
-  readonly expiresIn: number;
-  readonly scope: string;
-}
-
-export class OAuthError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'OAuthError';
-  }
-}
+// Re-exported so the flow stays one import for its callers even though the
+// exchange half now lives next door.
+export { OAuthError };
+export type { ExchangeCode, OAuthTokens };
 
 const base64url = (input: Buffer): string => input.toString('base64url');
 
@@ -180,7 +184,13 @@ export async function runOAuthFlow(options: OAuthFlowOptions): Promise<OAuthToke
       `Timed out after ${Math.round(timeoutMs / 1000)}s waiting for the browser.`,
     );
 
-    return await exchangeCode(code, redirectUri, verifier, options);
+    const exchange = options.exchange ?? defaultExchange(options);
+    return await exchange({
+      code,
+      redirectUri,
+      codeVerifier: verifier,
+      scopes: options.scopes,
+    });
   } finally {
     await shutdown(server);
   }
@@ -235,57 +245,18 @@ async function withTimeout<T>(promise: Promise<T>, ms: number, message?: string)
   }
 }
 
-async function exchangeCode(
-  code: string,
-  redirectUri: string,
-  verifier: string,
-  options: OAuthFlowOptions,
-): Promise<OAuthTokens> {
-  const doFetch = options.fetch ?? globalThis.fetch;
-
-  const response = await doFetch(options.tokenUrl, {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'authorization_code',
-      code,
-      redirect_uri: redirectUri,
-      client_id: options.clientId,
-      client_secret: options.clientSecret,
-      code_verifier: verifier,
-    }),
+function defaultExchange(options: OAuthFlowOptions): ExchangeCode {
+  if (!options.tokenUrl || !options.clientSecret) {
+    throw new OAuthError(
+      'runOAuthFlow needs either a tokenUrl and clientSecret to redeem the code with, or an exchange to redeem it through.',
+    );
+  }
+  return directExchange({
+    tokenUrl: options.tokenUrl,
+    clientId: options.clientId,
+    clientSecret: options.clientSecret,
+    ...(options.fetch ? { fetch: options.fetch } : {}),
   });
-
-  const body = (await response.json().catch(() => ({}))) as {
-    access_token?: string;
-    refresh_token?: string;
-    expires_in?: number;
-    scope?: string;
-    error?: string;
-    error_description?: string;
-  };
-
-  if (!response.ok || !body.access_token) {
-    throw new OAuthError(
-      `Token exchange failed: ${body.error ?? response.status} ${body.error_description ?? ''}`.trim(),
-    );
-  }
-
-  if (!body.refresh_token) {
-    // Without one, the connection would work until the access token expires
-    // and then quietly stop. Better to fail now with the actual cause.
-    throw new OAuthError(
-      'Google returned no refresh token. This usually means the account was already authorised ' +
-        'for this app; revoke it at https://myaccount.google.com/permissions and try again.',
-    );
-  }
-
-  return {
-    refreshToken: body.refresh_token,
-    accessToken: body.access_token,
-    expiresIn: body.expires_in ?? 3600,
-    scope: body.scope ?? options.scopes.join(' '),
-  };
 }
 
 
