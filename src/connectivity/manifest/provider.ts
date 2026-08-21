@@ -97,9 +97,35 @@ export function defineProvider(input: unknown): ProviderManifest {
         `Provider "${manifest.id}": OAuth with registration "manual" needs an "app" naming the oauth_apps entry that holds the client.`,
       );
     }
-    if (!manifest.setup || manifest.setup.prompts.length === 0) {
+    // Prompts are required only when asking is the *only* way to get a client.
+    // A broker is the other way, so a provider that declares one and no prompts
+    // simply has no bring-your-own path — a legal thing to be. The CLI is where
+    // that absence becomes visible, by refusing the flag and saying why.
+    if (!manifest.auth.broker && (!manifest.setup || manifest.setup.prompts.length === 0)) {
       throw new Error(
         `Provider "${manifest.id}": OAuth with registration "manual" requires the operator to supply a client, so it must declare setup prompts. Otherwise there is no way to learn what to provide.`,
+      );
+    }
+  }
+
+  if (manifest.auth.kind === 'oauth' && manifest.auth.broker) {
+    if (manifest.auth.registration !== 'manual' || !manifest.auth.app) {
+      throw new Error(
+        `Provider "${manifest.id}": a broker supplies a pre-registered client, so auth must declare registration "manual" and an "app" naming the oauth_apps entry that overrides it.`,
+      );
+    }
+    // An MCP provider hands the exchange to the SDK, which posts to the token
+    // endpoint with whatever `clientInformation()` returned. There is no seam
+    // to route that through a broker without reimplementing its auth path, so
+    // this is refused at definition rather than discovered after consent.
+    if (manifest.connector.kind === 'mcp') {
+      throw new Error(
+        `Provider "${manifest.id}": an mcp connector runs the exchange through the SDK, which cannot route it through a broker. Register a client (registration "manual") or use dynamic registration.`,
+      );
+    }
+    if (!manifest.auth.authorize_url) {
+      throw new Error(
+        `Provider "${manifest.id}": a broker performs the exchange, but the browser still goes to the vendor, so auth.authorize_url is required.`,
       );
     }
   }
