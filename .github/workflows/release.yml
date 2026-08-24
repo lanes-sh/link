@@ -65,20 +65,22 @@ jobs:
       # older than that.
       - run: npm install -g npm@latest
 
+      # No credential. npm mints a short-lived one from the OIDC token that
+      # `id-token: write` above allows this run to request, and matches it
+      # against the trusted publisher configured on the package — this
+      # repository, this workflow file. Nothing to store, nothing to rotate, and
+      # nothing that still works if it leaks out of a log.
+      #
+      # v0.1.0 could not do this: a package must exist on the registry before it
+      # can have a trusted publisher, so that one release went out under a
+      # short-lived NPM_TOKEN with 2FA bypassed. That token is revoked, and npm
+      # is restricting the mechanism it used anyway.
+      #
       # `--provenance` is passed rather than relied on: npm documents it as
       # automatic under OIDC and it does not reliably fire. It attests that this
       # tarball was built by this workflow from this repository, which is the
       # claim worth making for something that holds people's credentials.
-      #
-      # Credentials: until `@lanes-sh/link` exists on the registry it cannot have
-      # a trusted publisher configured, so the first release authenticates with a
-      # short-lived NPM_TOKEN. Once it is published, configure the trusted
-      # publisher on the package's npm settings page, then delete both the secret
-      # and the `env:` block below — `id-token: write` above is all that is left
-      # to need.
       - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: github release
         env:
