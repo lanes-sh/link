@@ -23,6 +23,7 @@ each decision was made, not just what to type.
 | [`security.md`](detailed/security.md) | The threat model and the guarantee table |
 | [`deployment-cloudrun.md`](detailed/deployment-cloudrun.md) | Cloud Run in full: cold starts, scaling, IAM, the image |
 | [`setup/google.md`](detailed/setup/google.md) | Registering your own Google OAuth client, step by step |
+| [`google-verification.md`](detailed/google-verification.md) | The scope justifications Google's review asks for, and why each scope is the narrowest that works |
 | [`setup/icloud.md`](detailed/setup/icloud.md) | One app-specific password for Mail, Calendar, and Contacts |
 | [`creating-a-provider.md`](detailed/creating-a-provider.md) | Add your own integration |
 | [`local-development.md`](detailed/local-development.md) | Working on Lanes Link itself |

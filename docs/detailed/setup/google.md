@@ -375,7 +375,9 @@ If the weekly cycle becomes annoying, the escapes are:
 - **Move those accounts to a Workspace domain** and use an Internal app — no expiry, no warning
   screen, no verification.
 - **Complete Google's verification** for your External app — weeks to months, and for restricted
-  scopes it includes a paid third-party security assessment.
+  scopes it includes a paid third-party security assessment. What the review asks for, scope by
+  scope, is in [`../google-verification.md`](../google-verification.md); it is written for the
+  hosted client but the questions are the same for yours.
 
 There is no fourth. Anything claiming otherwise is either using non-restricted scopes or is about
 to stop working.
