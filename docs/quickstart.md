@@ -8,13 +8,16 @@ You need [Bun](https://bun.com) 1.3.11+. There is no build step.
 ## 1. Install
 
 ```console
-$ bun install
-$ bun link                    # puts `lanes` on your PATH
+$ bun install -g @lanes-sh/link
+$ lanes --version             # confirms it landed on your PATH
 ```
 
-Do the `bun link`. Several registration commands read your token with `$(lanes link token show
+Check that second line. Several registration commands read your token with `$(lanes link token show
 --raw)`, and without `lanes` on your `PATH` that substitutes to an empty string — the only symptom
 is a 401 that looks like a bad token.
+
+Working on Lanes Link itself rather than using it? A checkout and `bun link` put the same command on
+your `PATH`: [`detailed/local-development.md`](detailed/local-development.md).
 
 ## 2. Create a profile
 

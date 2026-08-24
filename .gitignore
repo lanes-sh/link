@@ -40,6 +40,11 @@ build/
 *.tsbuildinfo
 coverage/
 
+# What `bun pm pack` leaves behind. Verifying a release means packing the
+# tarball and installing it somewhere, and the artefact is 0.5 MB of the same
+# bytes already in the tree.
+*.tgz
+
 # Compiled `lanes` binary from `bun build --compile`
 /lanes
 

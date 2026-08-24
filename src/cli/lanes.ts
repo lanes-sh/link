@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { ConfigError } from '#profile';
 import { print, printErr, style } from './output.ts';
+import { version } from './version.ts';
 
 /**
  * `lanes` — the command, and the one area it currently has.
@@ -25,7 +26,11 @@ function areasUsage(): string {
     .map(([name, blurb]) => `  ${style.bold(`lanes ${name}`)}  ${blurb}`)
     .join('\n');
 
-  return `${style.bold('lanes')} — your own tools, wherever you work\n\n${rows}\n\nRun ${style.bold('lanes <area> help')} for what an area can do.\n`;
+  return (
+    `${style.bold('lanes')} — your own tools, wherever you work\n\n${rows}\n\n` +
+    `Run ${style.bold('lanes <area> help')} for what an area can do, ` +
+    `or ${style.bold('lanes --version')} for which release this is.\n`
+  );
 }
 
 async function main(argv: readonly string[]): Promise<void> {
@@ -35,6 +40,14 @@ async function main(argv: readonly string[]): Promise<void> {
   // Not an error — someone who typed `lanes` wants to know what it offers.
   if (!area || area === 'help' || area === '--help') {
     print(areasUsage());
+    return;
+  }
+
+  // Before the area is peeled, because it belongs to the binary rather than to
+  // any one area — and because `lanes --version` is the reflex for anything on
+  // a PATH. `lanes link version` answers with the same string.
+  if (area === '--version' || area === '-v') {
+    print(version());
     return;
   }
 
