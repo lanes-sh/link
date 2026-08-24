@@ -1,23 +1,39 @@
-# Publishing `@lanes-sh/link` to npm, on a tag.
+# Publishing `@lanes-sh/link` to npm.
 #
-# The tag is the trigger and the record: `git push --follow-tags` on `v0.2.0` is
-# the whole release, and what shipped is afterwards recoverable from the tag
-# rather than from anyone's shell history.
+# Runs when `package.json` lands on `main` carrying a version no tag has been
+# cut for — which is what merging the pull request from `release-pr.yml` does.
+# A version that already has a tag has already been published, so this exits
+# without doing anything, and an ordinary merge that happens to touch
+# `package.json` (a dependency change, say) is therefore harmless.
 #
-# The same two commands CONTRIBUTING.md requires run here before anything is
-# published, because `ci.yml` gates pull requests and a tag is not one — a
-# release could otherwise ship a tree no reviewer ever saw green.
+# **The filename is load-bearing.** npm's trusted publisher for this package
+# names `release.yml`; renaming this file makes every publish fail to
+# authenticate, with an error about OIDC rather than about the rename.
+#
+# **Minor and major releases** need no separate path: set the version you want
+# in `package.json` in an ordinary pull request. It arrives here with no tag
+# behind it and is published as declared, which puts the one judgement in a
+# release — that something earns more than a patch — in review, beside the
+# change it describes.
+#
+# Nothing here is pushed to `main`. The tag is, and a tag is not covered by the
+# branch ruleset, so this needs no bypass and no stored credential.
 name: release
 
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+    paths:
+      - 'package.json'
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 permissions:
-  # `contents: write` creates the GitHub release. `id-token: write` is what lets
-  # npm mint a short-lived OIDC credential for the publish, so that no long-lived
-  # write token has to exist — see "Credentials" below.
+  # The tag and the GitHub release. Not the branch — see above.
   contents: write
+  # What npm mints a short-lived publish credential from. No token is stored.
   id-token: write
 
 jobs:
@@ -26,63 +42,82 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Tags decide whether this version is already out, so a shallow clone
+          # would report every version as new and try to republish the last one.
+          fetch-depth: 0
+
+      - name: is there anything to publish
+        id: check
+        run: |
+          set -euo pipefail
+          VERSION="$(node --print 'require("./package.json").version')"
+          if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "v$VERSION is already tagged — nothing to do."
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            echo "publishing $VERSION"
+          fi
 
       - uses: oven-sh/setup-bun@v2
+        if: steps.check.outputs.publish == 'true'
         with:
           # The same pin as ci.yml, for the same reason: a Bun release must not
           # be able to change what green means without a commit saying so.
           bun-version: 1.3.11
 
-      - run: bun install --frozen-lockfile
+      - if: steps.check.outputs.publish == 'true'
+        run: bun install --frozen-lockfile
 
-      - run: bun test
-      - run: bun run typecheck
+      # The release pull request cannot carry a CI run of its own — GitHub does
+      # not run workflows on pull requests it opened itself — so this is the
+      # only place both gates run against the exact tree being published, and
+      # the registry does not give a version back.
+      - if: steps.check.outputs.publish == 'true'
+        run: bun test
+      - if: steps.check.outputs.publish == 'true'
+        run: bun run typecheck
 
-      # The tag and the manifest have to agree before anything leaves the runner.
-      # A `v0.2.0` tag on a tree still declaring 0.1.0 publishes 0.1.0, and npm
-      # does not allow a version to be republished — so the mistake is permanent
-      # and the only fix is to burn a version number.
-      - name: the tag is the version
-        run: |
-          TAG="${GITHUB_REF_NAME#v}"
-          PKG="$(bun --print 'require("./package.json").version')"
-          if [ "$TAG" != "$PKG" ]; then
-            echo "tag $GITHUB_REF_NAME declares $TAG, package.json declares $PKG" >&2
-            exit 1
-          fi
-          echo "publishing $PKG"
-
-      # Publishing is the one step that is not Bun. `bun publish` does not
-      # implement npm's OIDC trusted publishing (oven-sh/bun#24855), which is the
-      # whole reason this workflow needs no stored credential. npm reads the same
-      # package.json and packs the same `files`, so the artefact is identical.
       - uses: actions/setup-node@v4
+        if: steps.check.outputs.publish == 'true'
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
-      # Trusted publishing needs npm 11.5.1+, and the npm bundled with Node 22 is
-      # older than that.
-      - run: npm install -g npm@latest
+      # Trusted publishing needs npm 11.5.1+, and the npm bundled with Node 22
+      # is older than that.
+      - if: steps.check.outputs.publish == 'true'
+        run: npm install -g npm@latest
 
-      # No credential. npm mints a short-lived one from the OIDC token that
-      # `id-token: write` above allows this run to request, and matches it
-      # against the trusted publisher configured on the package — this
-      # repository, this workflow file. Nothing to store, nothing to rotate, and
-      # nothing that still works if it leaks out of a log.
-      #
-      # v0.1.0 could not do this: a package must exist on the registry before it
-      # can have a trusted publisher, so that one release went out under a
-      # short-lived NPM_TOKEN with 2FA bypassed. That token is revoked, and npm
-      # is restricting the mechanism it used anyway.
+      # Before the tag, because the order decides what a failure leaves behind.
+      # Publish first and a failure leaves the repository untouched and the run
+      # repeatable. Tag first and a failed publish leaves a tag claiming a
+      # version nobody can install, which this job then reads as released and
+      # skips forever after.
       #
       # `--provenance` is passed rather than relied on: npm documents it as
       # automatic under OIDC and it does not reliably fire. It attests that this
       # tarball was built by this workflow from this repository, which is the
       # claim worth making for something that holds people's credentials.
-      - run: npm publish --provenance --access public
+      - if: steps.check.outputs.publish == 'true'
+        run: npm publish --provenance --access public
+
+      - name: tag it
+        if: steps.check.outputs.publish == 'true'
+        env:
+          VERSION: ${{ steps.check.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "v$VERSION" -m "v$VERSION"
+          git push origin "v$VERSION"
 
       - name: github release
+        if: steps.check.outputs.publish == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag
+          VERSION: ${{ steps.check.outputs.version }}
+        run: gh release create "v$VERSION" --generate-notes --verify-tag

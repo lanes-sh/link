@@ -61,6 +61,28 @@ Two tests hold the layers to the code, and both should stay green rather than be
 `src/readme.test.ts` asserts the README names a working `lanes link connect` command for every
 provider, and `src/profile/docs.test.ts` parses the YAML examples out of the reference pages.
 
+## Releasing
+
+You do not tag anything. Merging a change under `src/`, `bin/`, `instructions/`, `package.json`, or
+`bun.lock` opens a **"Release x.y.z" pull request** carrying the patch bump and a list of what is
+going out. Merging that pull request publishes to npm and cuts the tag.
+
+For a **minor or major**, put the version you want in `package.json` in your own pull request. It
+arrives on `main` with no tag behind it and is published as declared — so the judgement that
+something earns more than a patch is made in review, beside the change that earns it.
+
+Two things will look wrong and are not:
+
+- **The release pull request shows `ci` as never reporting.** GitHub does not run workflows on pull
+  requests it opened itself, so it needs an admin merge. Both gates run again in `release.yml`
+  against the exact tree being published, which is the run that matters — the registry does not give
+  a version back.
+- **Nothing is pushed to `main` by CI, ever.** A workflow cannot: the ruleset requires a pull
+  request, and the built-in `GITHUB_TOKEN` cannot be added to its bypass list. Doing it anyway would
+  mean storing a GitHub App key or a personal access token with write access to `main` — a larger
+  credential than the npm token this project deliberately does not have. Publishing authenticates
+  over OIDC instead, so there is no publish credential either.
+
 ## Commit messages
 
 Say what changed and why the approach was chosen — especially where a simpler option was rejected.
