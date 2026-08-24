@@ -1,5 +1,6 @@
 import { generateProfileToken, ownerPrincipal } from '#auth';
 import type { SecretStore } from '#secrets';
+import type { BlobStore } from '#stores/blobs';
 import {
   loadProfileConfig,
   resolveSelection,
@@ -8,7 +9,7 @@ import {
   type Config,
   type Resolution,
 } from '#profile';
-import { openSecrets } from '#deployments/target.ts';
+import { openSecrets, openStorage } from '#deployments/target.ts';
 
 /**
  * Which profile and target a command acts on, and the credentials that go with
@@ -79,6 +80,32 @@ export async function openSecretStoreFor(
   const declared = config.targets[target];
   if (!declared) throw undeclaredTarget(target, config);
   return openSecrets({ declared, config, root, target });
+}
+
+/**
+ * One target's blob store, for a caller with no use for a runtime.
+ *
+ * The sibling of `openSecretStoreFor` above, and here for the reason this file
+ * already gives: removal enumerates a target's objects and never dispatches a
+ * call, so a registry and a reconcile would only add parts that can fail.
+ *
+ * `area` reaches a root other than the profile's own. The default is the
+ * profile's blob tree; `profiles` is where a deployed revision reads its config
+ * from (ADR-023), which lives outside that tree and still belongs to the
+ * profile being removed.
+ */
+export async function openBlobStoreFor(
+  config: Config,
+  root: string,
+  target: string,
+  area?: string,
+): Promise<BlobStore> {
+  const declared = config.targets[target];
+  if (!declared) throw undeclaredTarget(target, config);
+
+  const input = { declared, config, root, target };
+  const storage = await openStorage(input, await openSecrets(input));
+  return area === undefined ? storage() : storage(area);
 }
 
 /** Mint the profile token if it does not exist yet. Returns it either way. */

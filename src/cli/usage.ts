@@ -40,6 +40,8 @@ ${style.bold('Profiles')}
   ${PROGRAM} profile add <name> [--default] [--json]
   ${PROGRAM} profile list [--json]
   ${PROGRAM} profile default <name>
+  ${PROGRAM} profile remove <name> [--target t] [--dry-run] [--yes] [--json]
+                                 the profile, its credentials, and its data
 
 ${style.bold('Targets')}
   ${PROGRAM} target list [--urls]      where this profile can run, and which one is in play

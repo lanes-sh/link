@@ -46,7 +46,11 @@ limits:
 # Also the switch. A provider whose manifest names a broker — every Google REST
 # provider does — authorises against the client that broker operates when there
 # is no entry here, and against yours when there is. Written for you by
-# "lanes link connect <provider> --own-client"; delete it to go back.
+# "lanes link connect <provider> --own-client". Deleting it is not enough to go
+# back: the client is also looked for in the credential store, so that a profile
+# whose config lost this block is not silently moved onto a different client and
+# left holding refresh tokens the new one refuses. Removing both is what
+# switches — see the lifecycle section below.
 oauth_apps:
   google:
     client_id_ref: google/client_id
@@ -122,6 +126,48 @@ Adding an `oauth_apps` entry later does not move an existing connection onto you
 client minted a refresh token is recorded with the token, because one client's refresh token is
 refused by another. Run `connect` again for any connection you want moved. See
 [ADR-028](adr/028-a-hosted-oauth-client-is-the-default.md).
+
+## Removing a profile
+
+```console
+$ lanes link profile remove work
+```
+
+It prints what it would delete, then asks you to type the profile name. `--dry-run` stops after the
+preview, `--yes` skips the prompt, and `--target <name>` decommissions one target while leaving the
+profile itself in place.
+
+What goes: the profile's config, and — in **every target it declares** — its credentials, state,
+audit log, provider blobs, and vault. For a target whose home is a bucket, the copy of the config a
+deployed revision reads goes too.
+
+What stays, and each for a reason:
+
+- **`skills/`** is workspace-wide. Every profile sees every skill, so one profile's removal has no
+  business taking them.
+- **`lanes-link.yaml`.** If it named this profile as `default_profile`, that key is cleared rather
+  than repointed at whatever remains — choosing a new default would silently change what every
+  other command in the workspace acts on.
+- **Infrastructure.** No Cloud Run service, bucket, or service account is touched. `deploy` created
+  those and can recreate them; removing them needs permissions this command should not hold.
+- **Credentials this profile does not declare.** In Secret Manager, references are flat names in
+  one project, so two profiles deployed to the same project share a namespace. Only what this
+  profile declares is deleted; anything else is listed in the preview and left alone.
+
+Removal is best effort. If a store cannot be reached — a project deleted, an expired login — the
+rest still goes, every survivor is named with the command that finishes it, and the exit code is
+non-zero. The profile's config is **kept** in that case, so nothing is stranded and the retry is the
+same command again.
+
+A deployed target is called out in the preview: the service keeps answering, and every call fails,
+because what it served is gone.
+
+### Going back to the hosted OAuth client
+
+This is the blunt instrument for it. The precise one is to remove the `oauth_apps` entry *and* the
+stored `google/client_id` and `google/client_secret` — both, because the client is looked for in the
+credential store as well as in config. Then run `connect` again for each account: a refresh token is
+only accepted by the client that minted it.
 
 ## Validation rules
 

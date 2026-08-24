@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describeBlobStoreContract, type ContractBlobStore } from '#stores/blobs/conformance.ts';
@@ -122,5 +123,35 @@ describe('what the bytes are readable by', () => {
     // The sidecar too — it lands beside the blob and took the same default.
     expect((await stat(join(directory, 'a.md'))).mode & 0o777).toBe(0o600);
     expect((await stat(join(directory, 'a.md.meta'))).mode & 0o777).toBe(0o600);
+  });
+});
+
+describe('deleting the last object under a prefix', () => {
+  test('leaves no empty directory behind', async () => {
+    // An object store has no directories: `a/b/c.txt` is one flat key, and
+    // removing it leaves nothing called `a/b`. This adapter emulates that
+    // interface, so an empty directory surviving a delete is a filesystem
+    // artifact leaking through — visible as a `data/<profile>` that outlives
+    // the profile whose objects it held.
+    const root = await mkdtemp(join(tmpdir(), 'lanes-link-fs-'));
+    const store = createFilesystemBlobStore({ root });
+
+    await store.put('deep/nested/thing.txt', new TextEncoder().encode('x'));
+    await store.delete('deep/nested/thing.txt');
+
+    expect(existsSync(join(root, 'deep/nested'))).toBe(false);
+    expect(existsSync(join(root, 'deep'))).toBe(false);
+    expect(existsSync(root)).toBe(true);
+  });
+
+  test('keeps a directory that still holds something', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'lanes-link-fs-'));
+    const store = createFilesystemBlobStore({ root });
+
+    await store.put('shared/gone.txt', new TextEncoder().encode('x'));
+    await store.put('shared/stays.txt', new TextEncoder().encode('y'));
+    await store.delete('shared/gone.txt');
+
+    expect(existsSync(join(root, 'shared/stays.txt'))).toBe(true);
   });
 });

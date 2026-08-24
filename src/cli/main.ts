@@ -16,6 +16,7 @@ import {
   tokenShow,
 } from './commands/operate.ts';
 import { profileAdd, profileDefault, profileList } from './commands/profile.ts';
+import { removeProfile as profileRemove } from './commands/profile/remove.ts';
 import { targetList, targetShow, targetUse } from './commands/target.ts';
 import { setupPlan } from './commands/setup.ts';
 import { mcpAdd, mcpList, mcpStdio, skillDocument } from './commands/mcp.ts';
@@ -101,6 +102,18 @@ export async function run(argv: readonly string[]): Promise<void> {
         case 'default':
           if (!rest[0]) throw new Error(`Usage: ${PROGRAM} profile default <name>`);
           return profileDefault(rest[0]);
+        case 'remove':
+          if (!rest[0]) {
+            throw new Error(
+              `Usage: ${PROGRAM} profile remove <name> [--target t] [--dry-run] [--yes]`,
+            );
+          }
+          return profileRemove(rest[0], {
+            ...global,
+            json,
+            dryRun: flags['dry-run'] === true,
+            yes: flags['yes'] === true,
+          });
         default:
           throw new Error(`Unknown: ${PROGRAM} profile ${second}`);
       }
