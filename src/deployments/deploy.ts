@@ -1,5 +1,6 @@
 import { ConfigError, resolveDeployTarget, type DeployConfig } from '#profile';
 import { announce, fail, heading, ok, print, style, warn } from '#cli/output.ts';
+import { staleNudge } from '#cli/release.ts';
 import { confirm, isInteractive } from '#cli/prompt.ts';
 import { openSecretStoreFor, resolveProfile, type GlobalFlags } from '#cli/runtime.ts';
 import { resolveTarget, vaultEnv } from './bootstrap.ts';
@@ -56,6 +57,12 @@ export async function deploy(flags: DeployFlags): Promise<void> {
   // `check` before anything external, per the gate order: a config that will be
   // rejected on boot should be rejected here, not after a five-minute build.
   print(ok(`${resolution.profilePath} is valid`));
+
+  // The CLI planning this rollout, not the image it will build. An old one
+  // plans an old rollout, and a build is the most expensive place to find that
+  // out.
+  const stale = await staleNudge();
+  if (stale !== null) print(warn(stale));
 
   const declared = await resolveTarget({
     config,

@@ -38,6 +38,7 @@ import {
   vaultRemove,
   vaultSet,
 } from './commands/owner.ts';
+import { update } from './commands/update.ts';
 import { globalFlags, ownerFlags, parseArgv, text } from './argv.ts';
 import { PROGRAM, USAGE } from './usage.ts';
 import { version } from './version.ts';
@@ -334,6 +335,9 @@ export async function run(argv: readonly string[]): Promise<void> {
     case 'version':
       print(version());
       return;
+
+    case 'update':
+      return update({ check: flags['check'] === true, json });
 
     default:
       throw new Error(`Unknown command "${first}". Run: ${PROGRAM} help`);

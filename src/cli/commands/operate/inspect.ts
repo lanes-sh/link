@@ -10,6 +10,7 @@ import {
   toPolicyDocument,
 } from '#registry';
 import { announce, emit, fail, ok, print, warn } from '../../output.ts';
+import { staleNudge } from '../../release.ts';
 import { capabilityDiff, discoveryProbe } from '../../runtime/discovery.ts';
 import { openRuntime, resolveProfile, type GlobalFlags } from '../../runtime.ts';
 
@@ -188,6 +189,12 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
           'Fix with: bun link (from the checkout)',
       });
     }
+
+    // Every finding above is about this profile; this one is about the binary
+    // reading it. Silent when the registry cannot be reached — `doctor` is
+    // expected to work on a plane, and "could not check" is not a finding.
+    const stale = await staleNudge();
+    if (stale !== null) warnings.push({ kind: 'stale_release', message: stale });
 
     await reportCapabilityDrift(runtime, (message) =>
       warnings.push({ kind: 'capability_drift', message }),

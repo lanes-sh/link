@@ -36,9 +36,10 @@ call rather than filtering it out of discovery, or adding a policy operator beyo
 **Bun-specific APIs outside the two files that are allowed them** —
 `src/deployments/adapters/sqlite.ts` and `src/server/index.ts`.
 
-**Anything `src/architecture.test.ts` refuses.** It holds three rules: the
+**Anything `src/architecture.test.ts` refuses.** It holds four rules: the
 dependency direction between components, no vendor name in the code a request
-passes through, and a file-size budget. The first was enforced by thirteen
+passes through, a file-size budget, and no real address, project, or bucket
+anywhere a reader can see. The first was enforced by thirteen
 `package.json` files until they were collapsed into one; the test is what
 replaced them. If one fails, the fix is almost never to relax the rule — and
 where a concession is genuinely right, it goes in the named list in that file
