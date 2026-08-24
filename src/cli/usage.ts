@@ -16,7 +16,7 @@ import { style } from './output.ts';
 /** How this CLI is invoked — the `link` area of the `lanes` command. */
 export const PROGRAM = 'lanes link';
 
-export const USAGE = `${style.bold(PROGRAM)} — a self-hosted MCP gateway for your accounts, memory, skills, and secrets
+export const USAGE = `${style.bold(PROGRAM)} — a self-hostable MCP gateway for all your connections, memory, skills, and secrets
 
 ${style.bold('Everyday')}
   ${PROGRAM} setup plan [--json]        what each provider needs, and which are connected

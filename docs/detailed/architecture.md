@@ -1,6 +1,6 @@
 # Architecture
 
-Lanes Link is a self-hosted MCP endpoint that exposes a person's accounts, knowledge, procedures, and
+Lanes Link is a self-hostable MCP endpoint that exposes a person's accounts, knowledge, procedures, and
 secrets to any agent, behind an authorization boundary the runtime enforces.
 
 The bet: `gmail.search = allow` and `gmail.send = deny` are decisions the runtime **enforces**, not
