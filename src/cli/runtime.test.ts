@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { layout } from '#profile';
 import { createFileSecretStore } from '#secrets';
 import { openSecretStoreFor, openRuntime, resolveProfile } from './runtime.ts';
 
@@ -89,12 +90,19 @@ describe('the local target', () => {
 });
 
 describe('the owner layer follows the target — ADR-014', () => {
-  test('skills load from the workspace directory, as they always have', async () => {
+  test("skills load from the profile's own directory — ADR-030", async () => {
     const root = await workspace();
+    // Not `<root>/skills/`, which is where they lived while every profile
+    // shared them. A skill left there now loads for nobody, deliberately.
+    await mkdir(join(root, layout.skills('personal')), { recursive: true });
+    await writeFile(
+      join(root, layout.skills('personal'), 'review-diff.md'),
+      '---\ndescription: Review a diff\n---\nReview it.\n',
+    );
     await mkdir(join(root, 'skills'), { recursive: true });
     await writeFile(
-      join(root, 'skills', 'review-diff.md'),
-      '---\ndescription: Review a diff\n---\nReview it.\n',
+      join(root, 'skills', 'stale.md'),
+      '---\ndescription: Left at the old workspace path\n---\nIgnored.\n',
     );
 
     const runtime = await openRuntime({ target: 'local' });
@@ -105,6 +113,9 @@ describe('the owner layer follows the target — ADR-014', () => {
       // The same store the provider reads, exposed so `lanes link skills` cannot drift
       // into a second spelling of the same layout.
       expect((await runtime.skills.list()).map((blob) => blob.key)).toEqual(['review-diff.md']);
+      expect(runtime.registry.capabilities().map((entry) => entry.id)).not.toContain(
+        'skills.stale',
+      );
     } finally {
       await runtime.close();
     }

@@ -81,7 +81,7 @@ limitation. `RESERVED` names a compatibility slot with no implementation.
 | `credentials.not-agent-reachable` | ENFORCED | context surface assertion |
 | `state.provider-scoped` | ENFORCED | `ScopedStore` isolation tests |
 | `storage.namespace-contained` | ENFORCED | traversal rejection tests |
-| `deployed.config-not-self-writable` | ENFORCED (deployed target) | the revision's `objectAdmin` grant is conditioned on the prefixes it owns, so `profiles/`, `providers/` and `lanes-link.yaml` are readable and not writable. Enforced by the platform; `src/deployments/grants.test.ts` asserts the keys the endpoint writes fall inside the condition and the config paths fall outside. This replaces the read-only image that carried the guarantee before [ADR-023](adr/023-the-workspace-is-not-in-the-image.md) |
+| `deployed.config-not-self-writable` | ENFORCED (deployed target) | the revision's `objectAdmin` grant is conditioned on the prefixes it owns, so `profiles/`, `lanes-link.yaml` and each profile's `providers.d/` are readable and not writable. The last of those sits *inside* the granted `data/` prefix since [ADR-030](adr/030-a-profile-owns-its-skills-and-manifests.md), so the condition carries an explicit exclusion rather than simply not naming it. Enforced by the platform; `src/deployments/grants.test.ts` evaluates the shipped expression — not a scan for prefixes, which would read straight past a negation — and asserts the keys the endpoint writes fall inside it and the config paths fall outside. This replaces the read-only image that carried the guarantee before [ADR-023](adr/023-the-workspace-is-not-in-the-image.md) |
 | `audit.append-only` | ENFORCED | the store interface has no update or delete |
 | `audit.tamper-evident` | ENFORCED **for edits and mid-run removals** | records are hash-chained per run; `lanes link audit verify`. Truncating a run killed mid-write, or deleting a run whole, is not detectable — see [ADR-020](adr/020-the-log-is-objects.md) |
 | `audit.redaction` | ENFORCED | provider redaction tests, including on denials |
@@ -90,7 +90,7 @@ limitation. `RESERVED` names a compatibility slot with no implementation.
 | `setup.no-credential-presence` | ENFORCED | `missingRequirements` is CLI-only; the surface reports requirements, not what is stored |
 | `transport.stateless` | ENFORCED | restart-mid-session test |
 | `credentials.encrypted-at-rest` | ENFORCED (file adapter) | nothing readable on disk; tamper detection |
-| `profile.isolated` | ENFORCED | cross-profile token, state, and audit tests |
+| `profile.isolated` | ENFORCED | cross-profile token, state, and audit tests, plus `src/cli/runtime/scoping.test.ts` for the owner layer. Two things were shared until [ADR-030](adr/030-a-profile-owns-its-skills-and-manifests.md) — skills and provider manifests, both at the workspace root — so this row was previously true of credentials, state and the log rather than of everything a profile holds |
 | `limits.per-profile` | ENFORCED per instance | rate limit tests |
 | `audit.every-invocation` | ENFORCED **with two documented exceptions** | see below |
 | `credentials.client-secret-never-local` | ENFORCED (hosted client) | there is no client secret on the machine to hold. `resolveSecretRefs` grants no client reference at all for a connection authorised this way, asserted in `src/dispatch/context.test.ts` |

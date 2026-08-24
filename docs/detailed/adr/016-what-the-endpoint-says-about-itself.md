@@ -87,11 +87,14 @@ revision still has to describe itself.
 **Decision: bundled client-facing documents live under `instructions/`, not `skills/` and
 `agents/`.**
 
-A repository-root `skills/` claimed a word this project had already spent. `<workspace>/skills/` is
-the owner's own procedures — `lanes link skills add`, served as MCP prompts — and `main.ts` already
-described the collision between that and `lanes link mcp skill` as *"a trap worth closing"*. Two
-directories called `skills`, meaning different things, in one repository, was the same trap one
-level up.
+A repository-root `skills/` claimed a word this project had already spent. The owner's own
+procedures — reached by `lanes link skills add` and served as MCP prompts — already held it, and
+`main.ts` described the collision between that and `lanes link mcp skill` as *"a trap worth
+closing"*. Two directories called `skills`, meaning different things, in one repository, was the
+same trap one level up. (They lived at `<workspace>/skills/` when this was written and now live at
+`data/<profile>/skills.d/`, per
+[ADR-030](030-a-profile-owns-its-skills-and-manifests.md) — which does not free the word, because
+the collision was over what the name *means*.)
 
 `instructions/skills/` and `instructions/agents/` keep the kind explicit, because the installer maps
 kind to a harness directory, while naming the category honestly: these are what we tell a client.

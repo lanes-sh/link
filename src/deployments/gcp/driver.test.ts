@@ -246,8 +246,12 @@ describe('first-run provisioning', () => {
     expect(condition).not.toContain('expression=true');
     expect(condition).toContain('/objects/profiles/');
     expect(condition).toContain('/objects/lanes-link.yaml');
-    // Not the data it writes, and not the whole bucket.
-    expect(condition).not.toContain('/objects/data/');
+    // It does reach into `data/` now, for the manifests ADR-030 moved in there
+    // — but by the anchored pattern only. A blanket `startsWith(".../data/")`
+    // here would hand the revision read on every credential-adjacent object in
+    // the profile, which is the narrowing this condition exists to make.
+    expect(condition).toContain('providers\\.d/');
+    expect(condition).not.toMatch(/startsWith\("[^"]*\/objects\/data\/"\)/);
   });
 
   test('the revision may write its data but only read its config', async () => {
@@ -261,17 +265,23 @@ describe('first-run provisioning', () => {
 
     const write = conditions.find((condition) => condition.includes('owns-its-data'))!;
     expect(write).toContain('/objects/data/');
-    expect(write).toContain('/objects/skills/');
-    // The config paths are conspicuously absent from the writable set.
+    // Skills are inside `data/` since ADR-030 rather than beside it, so there
+    // is no second prefix to grant.
+    expect(write).not.toContain('/objects/skills/');
+    // The config paths are conspicuously absent from the writable set — and
+    // that now includes the manifests living inside the tree this grants, which
+    // is why the expression carries a negation at all.
     expect(write).not.toContain('profiles/');
     expect(write).not.toContain('lanes-link.yaml');
+    expect(write).toContain('!resource.name.matches(');
+    expect(write).toContain('providers\\.d/');
 
     expect(conditions.some((condition) => condition.includes('reads-its-config'))).toBe(true);
   });
 
   test('a gcs target gets a bucket, the same as an s3 one', async () => {
     // Deployed, every target addresses a bucket: config, state, the log,
-    // memory, skills and attachments are all objects in it.
+    // memory, skills, manifests and attachments are all objects in it.
     const steps = await provision({ adapter: 'gcs', bucket: 'lanes-link-blobs' });
     expect(steps.flatMap((step) => step.argv)).toContain('buckets');
   });

@@ -15,7 +15,6 @@ import {
 } from '#profile';
 import { ProviderRegistry, toPolicyDocument } from '#registry';
 import { Dispatcher, createConsoleLogger } from '#dispatch';
-import { WORKSPACE_SKILL_DIR } from '#providers/skills/store.ts';
 import { PROVIDER_MANIFESTS } from '#providers/index.ts';
 import {
   createBlobVaultStore,
@@ -55,7 +54,7 @@ export interface Runtime {
   readonly audit: AuditReader;
   readonly credentials: SecretStore;
   readonly storage: BlobStore;
-  /** Where skills are kept — `<workspace>/skills/` locally. */
+  /** Where skills are kept — `data/<profile>/skills.d/` locally. */
   readonly skills: BlobStore;
   /** The vault's own store, so `lanes link vault` reaches the same bytes MCP does. */
   readonly vault: VaultStore;
@@ -77,21 +76,26 @@ export interface Runtime {
 }
 
 /**
- * Where skills live, in either target.
+ * Where this profile's skills live, in either target.
  *
- * Locally this is `<workspace>/skills/` — the same directory, holding the same
- * files, as before skills went through a store at all. What changes is that a
- * deployment now has somewhere to keep them: a filesystem path is baked into a
- * container image at build time and an S3 prefix is not, so before ADR-014 a
- * deployed instance could only ever serve the skills that existed when its
- * image was built.
+ * Locally `data/<profile>/skills.d/`; deployed, the same key under the bucket
+ * prefix. Going through the store rather than a filesystem path is what gives a
+ * deployment skills at all — a path is baked into a container image at build
+ * time and an object key is not, so before ADR-014 a deployed instance could
+ * only ever serve the skills that existed when its image was built.
  *
- * Workspace-wide rather than per-profile, which is how they have always loaded.
- * Every profile sees every skill, and policy still gates `skills.<name>` per
- * profile — a procedure is not private to a profile the way its knowledge is.
+ * **Per profile**, which reverses ADR-012 §1. Policy gating `skills.<name>`
+ * was the whole isolation story while the bytes were shared, and it is a weak
+ * one: it decides who may *run* a procedure, not who may read that it exists or
+ * what it says. A skill written for work names work's accounts and work's
+ * people. ADR-030.
+ *
+ * An explicit area, matching `openState` and `openAudit` — a profile that
+ * declares its own `storage.path` moves its provider blobs, not the reserved
+ * roots beside them.
  */
-function skillStore(storage: StorageFactory): BlobStore {
-  return storage(WORKSPACE_SKILL_DIR);
+function skillStore(storage: StorageFactory, profile: string): BlobStore {
+  return storage(layout.skills(profile));
 }
 
 /**
@@ -164,7 +168,7 @@ export async function openRuntime(flags: GlobalFlags): Promise<Runtime> {
     (message) => logger.warn(message),
   );
 
-  const skills = skillStore(storageFor);
+  const skills = skillStore(storageFor, config.instance.profile);
 
   // The vault's own store, beside the credential store and never it: a separate
   // document, a separate key, and a separate environment variable
@@ -224,7 +228,7 @@ export async function openRuntime(flags: GlobalFlags): Promise<Runtime> {
         account: connection.account,
       }));
 
-  registry = await buildRegistryWithWorkspace(root, {
+  registry = await buildRegistryWithWorkspace(root, config.instance.profile, {
     skillStore: skills,
     onSkillsChanged: refreshSkills,
     vault: { store: vaultStore, items: await vaultStore.ids() },

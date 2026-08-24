@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { createMemoryBlobStore } from '#stores/blobs/testing.ts';
 import type { BlobStore } from '#stores/blobs';
 import {
-  loadWorkspaceSkills,
+  loadProfileSkills,
   parseSkill,
   readSkill,
   removeSkill,
@@ -17,8 +17,10 @@ import {
  * instructions an agent receives as its own turn.
  *
  * The store is a `BlobStore` rather than a directory (ADR-014): locally it is
- * still `<workspace>/skills/`, holding the same files, but a deployed instance
- * has no writable directory that survives a revision and does have a bucket.
+ * `data/<profile>/skills.d/`, holding the same files it always has, but a
+ * deployed instance has no writable directory that survives a revision and does
+ * have a bucket. Nothing below names either path — the store arrives rooted, so
+ * ADR-030 moving it into the profile changed no test in this file.
  */
 
 async function skillsIn(files: Record<string, string> = {}): Promise<BlobStore> {
@@ -37,7 +39,7 @@ Review the following diff.`;
 
 describe('finding skills in the store', () => {
   test('an empty store is the normal case, not an error', async () => {
-    expect(await loadWorkspaceSkills(await skillsIn())).toEqual([]);
+    expect(await loadProfileSkills(await skillsIn())).toEqual([]);
   });
 
   test('reads both layouts: a flat file and a SKILL.md in a directory', async () => {
@@ -46,7 +48,7 @@ describe('finding skills in the store', () => {
       'nested/SKILL.md': `---\ndescription: A nested one\n---\nBody`,
     });
 
-    expect((await loadWorkspaceSkills(store)).map((skill) => skill.name).sort()).toEqual([
+    expect((await loadProfileSkills(store)).map((skill) => skill.name).sort()).toEqual([
       'flat',
       'nested',
     ]);
@@ -54,7 +56,7 @@ describe('finding skills in the store', () => {
 
   test('the name falls back to the filename', async () => {
     const store = await skillsIn({ 'draft-reply.md': `---\ndescription: d\n---\nBody` });
-    expect((await loadWorkspaceSkills(store))[0]?.name).toBe('draft-reply');
+    expect((await loadProfileSkills(store))[0]?.name).toBe('draft-reply');
   });
 
   test('a directory without a SKILL.md is skipped rather than failing the load', async () => {
@@ -65,7 +67,7 @@ describe('finding skills in the store', () => {
       'real.md': `---\ndescription: d\n---\nBody`,
     });
 
-    expect((await loadWorkspaceSkills(store)).map((skill) => skill.name)).toEqual(['real']);
+    expect((await loadProfileSkills(store)).map((skill) => skill.name)).toEqual(['real']);
   });
 });
 
@@ -74,7 +76,7 @@ describe('writing a skill — ADR-014', () => {
     const store = await skillsIn();
     await writeSkill(store, 'review-diff', MINIMAL);
 
-    expect((await loadWorkspaceSkills(store)).map((skill) => skill.name)).toEqual(['review-diff']);
+    expect((await loadProfileSkills(store)).map((skill) => skill.name)).toEqual(['review-diff']);
     expect((await readSkill(store, 'review-diff'))?.description).toBe(
       'Review a diff for correctness',
     );
@@ -86,7 +88,7 @@ describe('writing a skill — ADR-014', () => {
     const store = await skillsIn();
 
     await expect(writeSkill(store, 'broken', 'no frontmatter here')).rejects.toThrow(/frontmatter/);
-    expect(await loadWorkspaceSkills(store)).toEqual([]);
+    expect(await loadProfileSkills(store)).toEqual([]);
   });
 
   test('rewriting a nested skill stays nested, rather than forking into two files', async () => {
@@ -118,7 +120,7 @@ describe('writing a skill — ADR-014', () => {
 
     expect(await removeSkill(store, 'nested')).toBe(true);
     expect(await removeSkill(store, 'nested')).toBe(false);
-    expect(await loadWorkspaceSkills(store)).toEqual([]);
+    expect(await loadProfileSkills(store)).toEqual([]);
   });
 
   test('reading one that is not there is null, not a throw', async () => {

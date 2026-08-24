@@ -1,6 +1,6 @@
 import { ConfigError } from '#profile';
 import {
-  loadWorkspaceSkills,
+  loadProfileSkills,
   readSkill,
   removeSkill,
   writeSkill,
@@ -12,7 +12,7 @@ import { agreed, readStdin, required, withRuntime, type OwnerFlags } from './sha
 
 export async function skillsList(flags: OwnerFlags): Promise<void> {
   await withRuntime(flags, async (runtime) => {
-    const skills = await loadWorkspaceSkills(runtime.skills);
+    const skills = await loadProfileSkills(runtime.skills);
 
     heading(`Skills (${skills.length})`);
     if (skills.length === 0) {

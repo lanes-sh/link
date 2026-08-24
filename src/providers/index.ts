@@ -27,7 +27,7 @@ import { notion } from './notion/index.ts';
  * vendored specification. Adding a provider is a folder and a line below.
  *
  * The list is a convenience, not a boundary: anything not here is a YAML
- * manifest in `~/.lanes-link/providers/`, validated by the same schema and
+ * manifest in the profile's own `providers.d/`, validated by the same schema and
  * loaded by `./custom/load.ts`.
  *
  * The owner layer — `memory/`, `skills/`, `vault/` — is deliberately absent

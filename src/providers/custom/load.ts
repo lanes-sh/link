@@ -2,29 +2,37 @@ import { readdir, readFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { defineProvider, type ProviderManifest } from '#connectivity';
-import { ConfigError } from '#profile';
+import { ConfigError, layout } from '#profile';
 import { findSecrets, formatSecretFindings } from '#profile';
 
 /**
  * Provider manifests supplied by the operator.
  *
  * The built-in list is a convenience, never a boundary. Anything not shipped is
- * a YAML file in `<workspace>/providers/`, validated by the same schema the
- * built-ins are — no code, no rebuild, no pull request.
+ * a YAML file in `<workspace>/data/<profile>/providers.d/`, validated by the
+ * same schema the built-ins are — no code, no rebuild, no pull request.
  *
  * That is the whole scalability claim of this milestone: a service nobody has
  * integrated costs a file.
+ *
+ * **Per profile**, which the workspace-wide directory this replaced was not. A
+ * manifest names a host, an OpenAPI document, and the credential refs that
+ * reach them, so it describes somebody's infrastructure — and work's is not
+ * personal's to read. The path comes from `layout` for the same reason every
+ * other profile-owned path does: one place that knows the on-disk shape.
+ * ADR-030.
  */
-
-export const WORKSPACE_PROVIDER_DIR = 'providers';
 
 export interface LoadedManifest {
   readonly manifest: ProviderManifest;
   readonly path: string;
 }
 
-export async function loadWorkspaceProviders(workspaceRoot: string): Promise<LoadedManifest[]> {
-  const directory = join(workspaceRoot, WORKSPACE_PROVIDER_DIR);
+export async function loadProfileProviders(
+  workspaceRoot: string,
+  profile: string,
+): Promise<LoadedManifest[]> {
+  const directory = join(workspaceRoot, layout.providers(profile));
 
   let entries: string[];
   try {

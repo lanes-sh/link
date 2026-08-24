@@ -2,7 +2,8 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadWorkspaceProviders, parseManifest } from './load.ts';
+import { layout } from '#profile';
+import { loadProfileProviders, parseManifest } from './load.ts';
 import { manifestTemplate } from './template.ts';
 
 /**
@@ -12,12 +13,16 @@ import { manifestTemplate } from './template.ts';
 
 const roots: string[] = [];
 
+/** Manifests are the profile's own, so a workspace here is a profile's directory. */
+const PROFILE = 'personal';
+
 async function workspaceWith(files: Record<string, string>): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'lanes-link-manifests-'));
   roots.push(root);
-  await mkdir(join(root, 'providers'), { recursive: true });
+  const directory = join(root, layout.providers(PROFILE));
+  await mkdir(directory, { recursive: true });
   for (const [name, contents] of Object.entries(files)) {
-    await writeFile(join(root, 'providers', name), contents);
+    await writeFile(join(directory, name), contents);
   }
   return root;
 }
@@ -38,9 +43,9 @@ auth:
   registration: dynamic
 `;
 
-  test('loads from the workspace', async () => {
+  test('loads from the profile', async () => {
     const root = await workspaceWith({ 'acme.yaml': manifest });
-    const [loaded] = await loadWorkspaceProviders(root);
+    const [loaded] = await loadProfileProviders(root, PROFILE);
 
     expect(loaded?.manifest.id).toBe('acme');
     expect(loaded?.manifest.connector).toMatchObject({
@@ -155,7 +160,7 @@ describe('workspace loading', () => {
   test('an absent providers directory is the normal case, not an error', async () => {
     const root = await mkdtemp(join(tmpdir(), 'lanes-link-empty-'));
     roots.push(root);
-    expect(await loadWorkspaceProviders(root)).toEqual([]);
+    expect(await loadProfileProviders(root, PROFILE)).toEqual([]);
   });
 
   test('ignores non-YAML and example files', async () => {
@@ -165,13 +170,13 @@ describe('workspace loading', () => {
       'template.example.yaml': 'id: bad',
     });
 
-    const loaded = await loadWorkspaceProviders(root);
+    const loaded = await loadProfileProviders(root, PROFILE);
     expect(loaded.map((entry) => entry.manifest.id)).toEqual(['acme']);
   });
 
   test('names the file when one manifest is broken', async () => {
     const root = await workspaceWith({ 'broken.yaml': 'id: acme\nname: Acme' });
-    await expect(loadWorkspaceProviders(root)).rejects.toThrow(/broken\.yaml/);
+    await expect(loadProfileProviders(root, PROFILE)).rejects.toThrow(/broken\.yaml/);
   });
 });
 
@@ -186,10 +191,10 @@ describe('a relative openapi path', () => {
         'connector: { kind: http, base_url: https://api.mything.test, openapi: ./mything.json }',
     });
 
-    const [loaded] = await loadWorkspaceProviders(root);
+    const [loaded] = await loadProfileProviders(root, PROFILE);
     const connector = loaded!.manifest.connector as { openapi: string };
 
-    expect(connector.openapi).toBe(join(root, 'providers', 'mything.json'));
+    expect(connector.openapi).toBe(join(root, layout.providers(PROFILE), 'mything.json'));
   });
 
   test('a URL is left alone', async () => {
@@ -199,7 +204,7 @@ describe('a relative openapi path', () => {
         'connector: { kind: http, base_url: https://api.remote.test, openapi: https://api.remote.test/openapi.json }',
     });
 
-    const [loaded] = await loadWorkspaceProviders(root);
+    const [loaded] = await loadProfileProviders(root, PROFILE);
 
     expect((loaded!.manifest.connector as { openapi: string }).openapi).toBe(
       'https://api.remote.test/openapi.json',

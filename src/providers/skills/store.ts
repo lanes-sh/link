@@ -6,15 +6,20 @@ import { ConfigError } from '#profile';
  * Skills the owner has written.
  *
  * A skill is a **document in the owner layer's store**, which locally is a file
- * in `<workspace>/skills/` — the same place, in the same format, as before the
- * store existed. Going through `BlobStore` rather than `node:fs` is what lets a
- * deployed instance have skills at all: a filesystem path is baked into a
- * container image at build time, and an S3 key is not.
+ * in `<workspace>/data/<profile>/skills.d/`, in the same format it has always
+ * had. Going through `BlobStore` rather than `node:fs` is what lets a deployed
+ * instance have skills at all: a filesystem path is baked into a container
+ * image at build time, and an S3 key is not.
+ *
+ * **One profile's skills, not the workspace's.** Nothing in this file knows
+ * that — the store it is handed is already rooted at one profile's directory,
+ * which is why moving skills under the profile (ADR-030) changed where the
+ * store is opened and nothing about how it is read.
  *
  * Two layouts, because both are conventional and neither is worth refusing:
  *
- *     skills/review-diff.md
- *     skills/review-diff/SKILL.md
+ *     skills.d/review-diff.md
+ *     skills.d/review-diff/SKILL.md
  *
  * Frontmatter is YAML between `---` fences, matching every other tool that
  * reads a skill file. `description` is the only required key; the body after
@@ -25,8 +30,6 @@ import { ConfigError } from '#profile';
  * authoring stays out of the default bundle, so an agent reaches it only where
  * policy says so, and the control plane reaches it always.
  */
-
-export { WORKSPACE_SKILL_DIR } from '#profile';
 
 /** The nested layout's filename, kept so a rewrite lands on the file it read. */
 const NESTED = 'SKILL.md';
@@ -73,7 +76,7 @@ export function assertSkillName(name: string, source = 'skill'): void {
  * a skill and is malformed still throws, because that one is a mistake the
  * owner wants to hear about.
  */
-export async function loadWorkspaceSkills(store: BlobStore): Promise<LoadedSkill[]> {
+export async function loadProfileSkills(store: BlobStore): Promise<LoadedSkill[]> {
   const keys = (await store.list()).map((blob) => blob.key).sort();
   const loaded: LoadedSkill[] = [];
 
@@ -137,8 +140,8 @@ export async function writeSkill(
   }
 
   // No contentType: on the filesystem adapter that writes a `<key>.meta`
-  // sidecar, and `<workspace>/skills/` is a directory the owner edits and
-  // commits. Nothing reads a skill's stored content type.
+  // sidecar, and `skills.d/` is a directory the owner opens and edits by hand.
+  // Nothing reads a skill's stored content type.
   await store.put(key, new TextEncoder().encode(text));
   return skill;
 }

@@ -2,11 +2,8 @@ import type { BlobStore } from '#stores/blobs';
 import type { ProviderDefinition } from '#connectivity';
 import { ConfigError } from '#profile';
 import { ProviderRegistry } from '#registry';
-import { loadWorkspaceProviders } from '#providers/custom/index.ts';
-import {
-  loadWorkspaceSkills,
-  type LoadedSkill,
-} from '#providers/skills/store.ts';
+import { loadProfileProviders } from '#providers/custom/index.ts';
+import { loadProfileSkills, type LoadedSkill } from '#providers/skills/store.ts';
 import { exampleProvider } from '#providers/example/provider.ts';
 import {
   createMemoryVaultStore,
@@ -107,21 +104,27 @@ export function buildRegistry(owner: OwnerLayerOptions = {}): ProviderRegistry {
 }
 
 /**
- * Built-ins plus whatever the operator has dropped into the workspace.
+ * Built-ins plus whatever the operator has dropped into this profile.
  *
- * A workspace manifest registering under a built-in id is refused rather than
- * silently overriding it — an operator shadowing `gmail` by accident would be
- * very hard to diagnose from the outside.
+ * A manifest registering under a built-in id is refused rather than silently
+ * overriding it — an operator shadowing `gmail` by accident would be very hard
+ * to diagnose from the outside.
+ *
+ * The profile is a parameter rather than read from a config here because two of
+ * the three callers do not have one: `deploy` walks every profile in turn, and
+ * `profile remove` is holding the name of the one being deleted. Passing it
+ * makes "which profile's manifests" a question the caller has already answered.
  */
 export async function buildRegistryWithWorkspace(
   root: string,
+  profile: string,
   owner: OwnerLayerOptions = {},
 ): Promise<ProviderRegistry> {
   const skills =
-    owner.skills ?? (owner.skillStore ? await loadWorkspaceSkills(owner.skillStore) : []);
+    owner.skills ?? (owner.skillStore ? await loadProfileSkills(owner.skillStore) : []);
   const registry = buildRegistry({ ...owner, skills });
 
-  for (const { manifest, path } of await loadWorkspaceProviders(root)) {
+  for (const { manifest, path } of await loadProfileProviders(root, profile)) {
     if (registry.has(manifest.id)) {
       throw new ConfigError(
         `${path}: provider "${manifest.id}" is already built in. Rename it, or remove the file to use the built-in.`,
@@ -166,7 +169,7 @@ export async function reloadSkills(
 
   registry.replace(
     skillsProviderFor({
-      skills: await loadWorkspaceSkills(store),
+      skills: await loadProfileSkills(store),
       skillStore: store,
       onSkillsChanged: onChange,
     }),

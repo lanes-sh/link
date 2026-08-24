@@ -6,7 +6,7 @@ import {
   type ProviderManifest,
 } from '#connectivity';
 import { CredentialOAuthProvider } from '#connectivity/auth/index.ts';
-import { WORKSPACE_SKILL_DIR, layout, type Config, type DeployConfig, type TargetConfig } from '#profile';
+import { layout, type Config, type DeployConfig, type TargetConfig } from '#profile';
 import { ownClientRefsFor } from '#registry';
 import { encodeRef } from './adapters/gcp-secret-manager.ts';
 import { provisionSteps } from './gcp/provision.ts';
@@ -70,7 +70,7 @@ const AREAS: Record<string, [string | undefined, string]> = {
   'the audit log': [layout.audit(PROFILE), '2026/08/13/1755075600000-abc.json'],
   'a memory entry': [undefined, 'memory/main/note.md'],
   'an attachment': [undefined, 'gmail/ada_lovelace/attachments/x.pdf'],
-  'a skill': [WORKSPACE_SKILL_DIR, 'review-diff/SKILL.md'],
+  'a skill': [layout.skills(PROFILE), 'review-diff/SKILL.md'],
 };
 
 const WRITES: Record<string, string> = {};
@@ -116,22 +116,42 @@ afterAll(() => {
 const READS = {
   'its own profile': `profiles/${PROFILE}.yaml`,
   'the workspace file': 'lanes-link.yaml',
-  'a provider manifest': 'providers/acme.yaml',
+  // Inside `data/` since ADR-030, so the write condition has to carve it back
+  // out rather than simply not mentioning it.
+  'a provider manifest': `${layout.providers(PROFILE)}/acme.yaml`,
 };
 
 async function writeCondition(): Promise<string> {
   const steps = await provisionSteps({ deploy: cloudrun, declared: target, target: 'cloud' });
   const step = steps.find((candidate) => candidate.argv.join(' ').includes('owns-its-data'));
 
-  return step!.argv[step!.argv.indexOf('--condition') + 1]!;
+  // `title=…,expression=…`; only the expression is evaluable.
+  const condition = step!.argv[step!.argv.indexOf('--condition') + 1]!;
+  const marker = 'expression=';
+  return condition.slice(condition.indexOf(marker) + marker.length);
 }
 
-/** `a.startsWith("x") || a.startsWith("y")`, evaluated for one resource name. */
+/**
+ * Evaluate the shipped condition for one resource name.
+ *
+ * The subset of CEL these expressions use — `||`, `&&`, `!`, parentheses,
+ * `startsWith`, `matches`, and `==` against a string literal — is also valid
+ * JavaScript, so the expression runs rather than being pattern-matched. That
+ * matters more since the write grant stopped being a flat `||` of prefixes: an
+ * exclusion is exactly the kind of clause a regex scan reads straight past,
+ * reporting a permission the revision does not have.
+ *
+ * `name` is a `String` object so the methods can hang off it while
+ * `resource.name == "…"` still compares equal by coercion.
+ */
 function permits(condition: string, key: string): boolean {
-  const prefixes = [...condition.matchAll(/startsWith\("([^"]+)"\)/g)].map((match) => match[1]!);
-  expect(prefixes.length).toBeGreaterThan(0);
+  const full = `${OBJECTS}${key}`;
+  const name = Object.assign(new String(full), {
+    contains: (needle: string) => full.includes(needle),
+    matches: (pattern: string) => new RegExp(pattern).test(full),
+  });
 
-  return prefixes.some((prefix) => `${OBJECTS}${key}`.startsWith(prefix));
+  return new Function('resource', `return ${condition};`)({ name }) === true;
 }
 
 describe('what the revision is granted, against what it writes', () => {

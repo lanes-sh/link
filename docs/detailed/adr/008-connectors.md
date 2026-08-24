@@ -20,6 +20,11 @@ The manifest schema is the same whether it arrives as a typed module in `provide
 YAML in `<workspace>/providers/*.yaml`. That is the point: a service we have never heard of is a
 file, not a pull request.
 
+> That directory moved to `data/<profile>/providers.d/` in
+> [ADR-030](030-a-profile-owns-its-skills-and-manifests.md). The equivalence claimed here is
+> untouched — what changed is which profiles can reach one, which was every profile in the
+> workspace and is now the one that owns it.
+
 ## Why
 
 `providers/gmail` reached **612 lines** for one read-only integration. `packages/policy` — the

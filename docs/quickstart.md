@@ -48,6 +48,9 @@ $ lanes link connect vault
 `connect` takes one provider at a time. Connecting grants that provider's whole namespace, write
 half included — `lanes link policy deny memory.write` narrows it.
 
+All three belong to the profile you ran them under. A second profile starts empty and stays that
+way: nothing you store in one is visible from another.
+
 ## 4. Start the endpoint
 
 ```console

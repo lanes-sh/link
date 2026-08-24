@@ -3,8 +3,14 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rotatableRefs } from './prepare.ts';
-import { deployedWorkspace, isWorkspaceConfig, publishWorkspace, repairSetupSurface } from './upload.ts';
-import { parseConfig } from '#profile';
+import {
+  deployedWorkspace,
+  isWorkspaceConfig,
+  publishWorkspace,
+  repairSetupSurface,
+  uploadWorkspace,
+} from './upload.ts';
+import { layout, parseConfig, workspaceFiles } from '#profile';
 
 const roots: string[] = [];
 
@@ -25,8 +31,20 @@ describe('what a deploy sends up', () => {
   test('config goes', () => {
     expect(isWorkspaceConfig('lanes-link.yaml')).toBe(true);
     expect(isWorkspaceConfig('profiles/personal.yaml')).toBe(true);
-    expect(isWorkspaceConfig('providers/acme.yaml')).toBe(true);
-    expect(isWorkspaceConfig('skills/review-diff/SKILL.md')).toBe(true);
+  });
+
+  test('the authored areas inside a profile go — they are config, not state', () => {
+    // ADR-030 moved both into the profile. They still have to go up: a skill
+    // that does not is the ADR-014 §2 regression, and a manifest that does not
+    // is a provider the revision has never heard of.
+    expect(isWorkspaceConfig('data/personal/skills.d/review-diff/SKILL.md')).toBe(true);
+    expect(isWorkspaceConfig('data/personal/skills.d/review-diff.md')).toBe(true);
+    expect(isWorkspaceConfig('data/personal/providers.d/acme.yaml')).toBe(true);
+  });
+
+  test('the old workspace-wide paths do not go — nothing reads them now', () => {
+    expect(isWorkspaceConfig('providers/acme.yaml')).toBe(false);
+    expect(isWorkspaceConfig('skills/review-diff/SKILL.md')).toBe(false);
   });
 
   test('credentials never go, however they are spelled', () => {
@@ -34,10 +52,30 @@ describe('what a deploy sends up', () => {
       'data/personal/credentials.enc',
       'data/personal/credentials.enc.key',
       'data/personal/vault.enc',
+      'data/personal/vault.enc.key',
       'data/personal/state.kv/connections%2Ev1/gmail%2Emain.json',
       'data/personal/audit.log/2026/08/12/x.json',
+      'data/personal/memory/main/note.md',
+      'data/personal/gmail/ada_lovelace/attachments/x.pdf',
     ]) {
       expect(isWorkspaceConfig(key)).toBe(false);
+    }
+  });
+
+  test('reaching into data/ matches whole segments, never prefixes', () => {
+    // The allowlist now names two directories inside the tree it otherwise
+    // refuses wholesale. A prefix match would send anything merely starting
+    // with the same letters, and the thing on the other side of that boundary
+    // is the credential store.
+    for (const key of [
+      'data/personal/skills.detour/leak.md',
+      'data/personal/providers.disabled/acme.yaml',
+      'data/personal/skills.d',
+      'data/personal/providers.d',
+      'data/skills.d/review-diff.md',
+      'data//skills.d/review-diff.md',
+    ]) {
+      expect({ key, sent: isWorkspaceConfig(key) }).toEqual({ key, sent: false });
     }
   });
 
@@ -55,6 +93,12 @@ describe('what a deploy sends up', () => {
     // that only one of them is for.
     expect(isWorkspaceConfig('profiles/personal.yaml', 'personal')).toBe(true);
     expect(isWorkspaceConfig('profiles/work.yaml', 'personal')).toBe(false);
+
+    // Same question for the authored areas, which are now the larger half of
+    // what goes up.
+    expect(isWorkspaceConfig('data/personal/skills.d/a.md', 'personal')).toBe(true);
+    expect(isWorkspaceConfig('data/work/skills.d/a.md', 'personal')).toBe(false);
+    expect(isWorkspaceConfig('data/work/providers.d/acme.yaml', 'personal')).toBe(false);
   });
 });
 
@@ -335,5 +379,96 @@ policy:
     // covered above.
     expect(deployedWorkspace(config.targets['cloud']!)).toBe('gs://your-bucket/workspace');
     expect(deployedWorkspace(config.targets['local']!)).toBeUndefined();
+  });
+});
+
+/**
+ * The allowlist against a real listing, rather than against keys typed by hand.
+ *
+ * `uploadWorkspace` walks `list('')` over the whole workspace, which descends
+ * into `data/` and returns `credentials.enc` along with everything else — the
+ * filter is the only thing between that listing and a bucket. Testing the
+ * predicate alone leaves the pairing untested, and the pairing is where a
+ * credential would leak: a listing that stopped recursing would make the
+ * skills half silently do nothing, and one that recursed further than the
+ * filter expects would send the rest.
+ *
+ * Driven between two directories because a `BlobStore` over a local path and
+ * one over a bucket are the same interface. No bucket required.
+ */
+describe('the allowlist against a real workspace listing', () => {
+  const roots: string[] = [];
+
+  afterAll(async () => {
+    await Promise.all(roots.map((root) => rm(root, { recursive: true, force: true })));
+  });
+
+  async function populated(): Promise<{ source: string; destination: string }> {
+    const source = await mkdtemp(join(tmpdir(), 'lanes-link-upload-'));
+    const destination = await mkdtemp(join(tmpdir(), 'lanes-link-bucket-'));
+    roots.push(source, destination);
+
+    const files: Record<string, string> = {
+      'lanes-link.yaml': 'contract: 1\ndefault_profile: personal\n',
+      'profiles/personal.yaml': 'contract: 1\n',
+      'profiles/work.yaml': 'contract: 1\n',
+      [`${layout.skills('personal')}/review-diff/SKILL.md`]: '---\ndescription: d\n---\nb\n',
+      [`${layout.providers('personal')}/acme.yaml`]: 'id: acme\n',
+      [`${layout.skills('work')}/triage.md`]: '---\ndescription: d\n---\nb\n',
+      'data/personal/credentials.enc': 'ciphertext',
+      'data/personal/credentials.enc.key': 'the key that opens it',
+      'data/personal/vault.enc': 'ciphertext',
+      'data/personal/state.kv/connections%2Ev1/example%2Ea.json': '{}',
+      'data/personal/audit.log/2026/08/24/x.json': '{}',
+      'data/personal/memory/main/note.md': 'a note',
+      'data/personal/example/a/attachments/x.pdf': 'bytes',
+    };
+
+    for (const [key, contents] of Object.entries(files)) {
+      await mkdir(join(source, key, '..'), { recursive: true });
+      await writeFile(join(source, key), contents);
+    }
+
+    return { source, destination };
+  }
+
+  const landed = async (root: string): Promise<string[]> =>
+    (await workspaceFiles(root).list('')).map((entry) => entry.key).sort();
+
+  test('the whole workspace goes, and nothing else in data/ does', async () => {
+    const { source, destination } = await populated();
+
+    await uploadWorkspace(source, destination, undefined);
+
+    expect(await landed(destination)).toEqual([
+      'data/personal/providers.d/acme.yaml',
+      'data/personal/skills.d/review-diff/SKILL.md',
+      'data/work/skills.d/triage.md',
+      'lanes-link.yaml',
+      'profiles/personal.yaml',
+      'profiles/work.yaml',
+    ]);
+  });
+
+  test('naming a profile sends that profile and the workspace file', async () => {
+    const { source, destination } = await populated();
+
+    await uploadWorkspace(source, destination, 'personal');
+
+    expect(await landed(destination)).toEqual([
+      'data/personal/providers.d/acme.yaml',
+      'data/personal/skills.d/review-diff/SKILL.md',
+      'lanes-link.yaml',
+      'profiles/personal.yaml',
+    ]);
+  });
+
+  test('the source really does offer the credential store to the filter', async () => {
+    // Without this, the test above passes just as well against a listing that
+    // never descends into `data/` — which would mean the skills never go up
+    // either, silently.
+    const { source } = await populated();
+
+    expect(await landed(source)).toContain('data/personal/credentials.enc.key');
   });
 });

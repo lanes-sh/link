@@ -427,11 +427,15 @@ one encrypted document. Locally that is files under the workspace, and in a depl
 in S3. Before ADR-014 the vault had no target switch at all, so a Cloud Run instance wrote it to a
 container filesystem that the next revision discarded.
 
+**All three are the profile's**, and so is the `providers.d/` beside them — see
+[ADR-030](adr/030-a-profile-owns-its-skills-and-manifests.md). Skills were workspace-wide until
+then, which made them the one owner-layer store a second profile could read.
+
 | | Local | Cloud |
 |---|---|---|
-| skills | `<workspace>/skills/<name>.md` | `s3://…/skills/<name>.md` |
+| skills | `<workspace>/data/<profile>/skills.d/<name>.md` | the same key, in the bucket |
 | memory | `<storage>/memory/<connection>/entry/<id>.md` | the same key, in the bucket |
-| vault | `<workspace>/data/<profile>.vault.enc` | one object, `targets.<t>.vault.adapter: blob` |
+| vault | `<workspace>/data/<profile>/vault.enc` | one object, `targets.<t>.vault.adapter: blob` |
 
 ### `memory`
 
@@ -476,7 +480,7 @@ its arguments — a resource is a function of its URI alone. A prompt's messages
 conversation, which is what a procedure wants; a tool result comes back as data the model reasons
 about.
 
-A skill is a file in `<workspace>/skills/`, either `name.md` or `name/SKILL.md`, with YAML frontmatter
+A skill is a file in `<workspace>/data/<profile>/skills.d/`, either `name.md` or `name/SKILL.md`, with YAML frontmatter
 carrying `description` and optional `arguments`; `{{argument}}` is substituted into the body. An
 argument the caller omits leaves its placeholder visible rather than becoming empty — "review the diff
 below" with nothing below it is a worse failure than one that names what is missing.
