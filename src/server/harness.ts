@@ -229,6 +229,7 @@ export function startHarness(options: HarnessOptions): Harness {
           }),
           issuer: (origin: string) => origin,
           mcpPath: '/mcp',
+          target: 'local',
         },
         authenticator: new IssuedTokenAuthenticator(store, options.profile),
       }

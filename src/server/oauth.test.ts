@@ -173,6 +173,9 @@ describe('the authorization code flow', () => {
     const html = await page.text();
     expect(html).toContain('Test Client');
     expect(html).toContain('claude.ai');
+    // And which target's store the token it asks for lives in. The endpoint
+    // knows; the shell the reader runs the command in does not.
+    expect(html).toContain('lanes link outputs --show --target local');
   });
 
   test('a client name cannot inject markup into the approval page', async () => {

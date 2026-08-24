@@ -33,8 +33,8 @@ export async function start(
         print(plan);
         print(ok(`reconciled ${ofMany ? profile : ''}`.trim()));
       },
-      tokenMinted() {
-        print(warn('minted a token — run: lanes link outputs --show'));
+      tokenMinted({ target }) {
+        print(warn(`minted a token — run: lanes link outputs --show --target ${target}`));
       },
     },
   });

@@ -46,7 +46,7 @@ export interface EndpointReporter {
   /** A profile whose runtime state differed from its config, and what was applied. */
   reconciled(input: { profile: string; plan: string; ofMany: boolean }): void;
   /** No profile token existed and one was minted. */
-  tokenMinted(): void;
+  tokenMinted(minted: { target: string }): void;
 }
 
 const SILENT: EndpointReporter = { reconciled() {}, tokenMinted() {} };
@@ -199,7 +199,7 @@ async function openAuthorization(
     return {
       // The issuer is somebody else's origin, so it is a constant here rather
       // than derived from the request.
-      surface: { issuer: () => declared.issuer, mcpPath: MCP_PATH },
+      surface: { issuer: () => declared.issuer, mcpPath: MCP_PATH, target: primary.target },
       authenticator: new OidcAuthenticator(verifier, profile),
     };
   }
@@ -221,7 +221,7 @@ async function openAuthorization(
   });
 
   return {
-    surface: { server, issuer: (origin) => origin, mcpPath: MCP_PATH },
+    surface: { server, issuer: (origin) => origin, mcpPath: MCP_PATH, target: primary.target },
     authenticator: new IssuedTokenAuthenticator(store, profile),
   };
 }
@@ -236,7 +236,7 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
         primary.credentials,
         primary.config.auth.token_ref,
       );
-      if (created) reporter.tokenMinted();
+      if (created) reporter.tokenMinted({ target: primary.target });
     } else {
       // Deployed, the token is written by the operator's CLI into the target's
       // credential store and read back here. Refusing to start beats serving an

@@ -415,8 +415,15 @@ what this instance holds, and a deployed URL is readable by anyone.
 `mode: self` means this endpoint issues the tokens, and there is nothing to set up: no OAuth client,
 no console, no redirect URI. Deploy, then add a custom connector by URL in Claude or ChatGPT. The
 client registers itself, a browser opens on this endpoint's approval page, and you paste the
-endpoint token once — the string `lanes link outputs --show` prints. That is the whole flow, and it
-works the same on a laptop and on a phone.
+endpoint token once — the string `lanes link outputs --show --target cloud` prints. That is the
+whole flow, and it works the same on a laptop and on a phone.
+
+Name the target. Credentials are per-target, and a bare `lanes link outputs --show` resolves to
+`instance.default_target` — `local` on a scaffolded profile, whose token this endpoint has never
+seen and will refuse. Worse, when that store is empty the command mints a fresh local token rather
+than reporting that it has none, so what you paste looks like an answer and fails as a wrong
+password. The approval page prints the target it is actually running as, so the command it shows
+you is the one to run.
 
 What makes it work is a handshake worth knowing about when it does not: `/mcp` answers `401` with a
 `WWW-Authenticate` header pointing at `/.well-known/oauth-protected-resource`, which names this

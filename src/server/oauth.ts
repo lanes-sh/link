@@ -33,6 +33,13 @@ export interface AuthorizationSurface {
   readonly issuer: (origin: string) => string;
   /** The MCP endpoint path, so `resource` names what the client actually calls. */
   readonly mcpPath: string;
+  /**
+   * The target this endpoint runs as, so the consent page can name the store its
+   * token actually lives in. Credentials are per-target, and the reader is about
+   * to run a command in a shell that resolves a target of its own — usually
+   * `local`, which is the one store a deployed endpoint's token is never in.
+   */
+  readonly target: string;
 }
 
 /** Every path this surface answers, so the router can ask before authenticating. */
@@ -99,27 +106,35 @@ export async function handleAuthorization(
   if (!server) return new Response('Not found', { status: 404 });
 
   if (path === REGISTER_PATH && request.method === 'POST') {
-    return render(await server.register(await safeJson(request)), request);
+    return render(await server.register(await safeJson(request)), request, surface.target);
   }
 
   if (path === AUTHORIZE_PATH) {
     if (request.method === 'GET') {
-      return render(await server.authorize(url.searchParams), request);
+      return render(await server.authorize(url.searchParams), request, surface.target);
     }
     if (request.method === 'POST') {
       const form = new URLSearchParams(await request.text());
-      return render(await server.approve(requestFromForm(form), form.get('token') ?? ''), request);
+      return render(
+        await server.approve(requestFromForm(form), form.get('token') ?? ''),
+        request,
+        surface.target,
+      );
     }
   }
 
   if (path === TOKEN_PATH && request.method === 'POST') {
-    return render(await server.token(new URLSearchParams(await request.text())), request);
+    return render(
+      await server.token(new URLSearchParams(await request.text())),
+      request,
+      surface.target,
+    );
   }
 
   return new Response('Method not allowed', { status: 405 });
 }
 
-function render(result: OAuthResult, request: Request): Response {
+function render(result: OAuthResult, request: Request, target: string): Response {
   switch (result.kind) {
     case 'json':
       return json(result.body, result.status);
@@ -137,6 +152,7 @@ function render(result: OAuthResult, request: Request): Response {
         action: `${publicOrigin(request)}${AUTHORIZE_PATH}`,
         fields: formFromRequest(result.request),
         retry: result.retry,
+        target,
       });
 
     case 'error':
