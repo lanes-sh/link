@@ -193,6 +193,43 @@ describe('a skill written over MCP is a prompt on the next call', () => {
   });
 });
 
+describe('what the handshake advertises', () => {
+  test('a profile holding skills declares prompts, and declares them unannounced', async () => {
+    // The other half of ADR-032, and the half that is easy to lose: a skill
+    // registers as a prompt, not a tool, so `prompts.listChanged` governs
+    // whether a client re-reads its skills. It carries the same SDK default and
+    // the same inability — there is no stream to announce on — so it has to
+    // carry the same `false`. The tools-side assertion lives in `index.test.ts`;
+    // this is the one profile in the suite that actually has a prompt.
+    const response = await fetch(url(invokeOnly), {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        authorization: 'Bearer llk_readonly_token_value',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-06-18',
+          capabilities: {},
+          clientInfo: { name: 'listChanged-test', version: '0.0.0' },
+        },
+      }),
+    });
+
+    const text = await response.text();
+    const line = text.split('\n').find((candidate) => candidate.startsWith('data:'));
+    const body = line === undefined ? text : line.slice('data:'.length).trim();
+    const capabilities = (JSON.parse(body) as { result?: { capabilities?: Record<string, { listChanged?: boolean }> } })
+      .result?.capabilities;
+
+    expect(capabilities?.['prompts']?.listChanged).toBe(false);
+  });
+});
+
 describe('authoring is a separate grant', () => {
   const token = 'llk_readonly_token_value';
 

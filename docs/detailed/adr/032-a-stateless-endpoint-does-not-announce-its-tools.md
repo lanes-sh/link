@@ -48,10 +48,15 @@ response in the platform's request log.
 
 ## Decision
 
-**Declare `listChanged: false`, explicitly, for tools, resources and prompts.** `buildMcpServer`
-passes it in `ServerOptions`; the SDK's `?? true` yields to an authored `false`. A client that knows
-the list is not announced re-reads it, which is the behaviour a surface that changes between
-sessions requires.
+**Declare `listChanged: false`, explicitly.** `buildMcpServer` passes it in `ServerOptions`; the
+SDK's `?? true` yields to an authored `false`. A client that knows the list is not announced
+re-reads it, which is the behaviour a surface that changes between sessions requires.
+
+`tools` unconditionally. Resources and prompts carry the identical default and the identical
+inability, so they get the same answer — but only where the profile has some, because declaring a
+capability installs its handler set, and a client that gates its list calls on what is advertised
+would otherwise spend three stateless POSTs per session, each rebuilding the whole server, to be
+told nothing is there.
 
 The cost is one `tools/list` per session for every client, forever, in exchange for a surface that
 is never stale. That is the same trade ADR-029 declined for config — it chose a notify over a poll
@@ -78,6 +83,14 @@ over the wire, printing the count, the names by provider, the payload size, and 
 that says forty-two tools while a client shows two is exactly the case where a derived answer would
 be believed.
 
+Which sets the bar for its own failures, because each of them reads as an answer. It says whether
+the address is the deployed one or the loopback fallback, since a `--target cloud` whose service
+could not be located answers from `127.0.0.1` with a token `secrets push` made identical. It
+separates *refused* from *unreachable*, because a rotated token and a dead port need opposite
+fixes. It groups by resolving each wire name back to a capability id rather than splitting on the
+first underscore, and files what it cannot resolve as unattributed instead of guessing. And it
+exits non-zero when it could not answer, as `doctor` does.
+
 **The generation logger is the endpoint's logger.** It was an inline no-op, so `could not reload
 config`, `could not refresh skills`, and every `mcp handler error` went nowhere.
 
@@ -101,6 +114,11 @@ cannot supply a reason to.
 `subscriptions/listen` stream, so one could be. It is not, because the same value is declared to
 both legs and a capability that is true only for clients on the newer revision is the ambiguity this
 ADR removes.
+
+**It does not cover skills.** A skill registers as a prompt, so it moves neither the count nor the
+line `connect` prints — and skills refresh *within* a generation, on a poll, so no reload fires to
+report one either. `docs/connect.md` says so where it tells an operator to compare the number
+against their client, rather than leaving "nothing is stale" to cover a case it does not.
 
 **The count is not audited.** `tools/list` still dispatches nothing and still writes no audit event.
 It is logged once per generation instead — the question worth answering was "what is this endpoint

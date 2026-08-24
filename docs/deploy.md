@@ -48,7 +48,8 @@ already holds unless you pass `--overwrite`.
 Name it, and everything downstream takes the same flag:
 
 ```console
-$ lanes link deploy --target staging       # its own project, bucket, and service
+$ lanes link deploy --target staging          # its own project, bucket, and service
+$ lanes link connect gmail --target staging   # same ordering: accounts before the URL
 $ lanes link outputs --target staging
 ```
 

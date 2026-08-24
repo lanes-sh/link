@@ -252,6 +252,11 @@ export function startHarness(options: HarnessOptions): Harness {
     log,
   });
 
+  // As `startEndpoint` does, and after `serve()` for the same reason: the
+  // record means the socket is bound. Here because this harness claims to be
+  // the real wiring, and a boot step it omits is a boot step no test can see.
+  generations.announce();
+
   return {
     server,
     state,

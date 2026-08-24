@@ -288,6 +288,10 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
       ...(options.host !== undefined ? { host: options.host } : {}),
     });
 
+    // After `serve()`, so the record means the socket is bound. Recording it
+    // from the constructor claimed an endpoint that a failed bind never served.
+    generations.announce();
+
     return {
       url: server.url,
       profiles: [...runtimes.keys()],

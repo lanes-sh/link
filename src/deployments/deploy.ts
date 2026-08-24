@@ -211,7 +211,7 @@ export async function deploy(flags: DeployFlags): Promise<void> {
   print(`  ${url}/mcp`);
   print(await healthLine(url));
   print('');
-  print(registerLine(target, prepared.warnings.length));
+  print(registerLine(target));
 
   reportUnauthorised(prepared.warnings, target);
 }
@@ -228,16 +228,18 @@ export async function deploy(flags: DeployFlags): Promise<void> {
  * and holds it. The endpoint is right, every reload lands, and the client shows
  * two tools until someone removes and re-adds it.
  *
- * Saying it here costs one line at the exact moment someone is about to do it.
+ * Unconditional, and that is the correction that matters. This was gated on
+ * `prepared.warnings.length`, which is zero in precisely the case it describes:
+ * a fresh profile declares only `setup.main`, `setup` is a local provider with
+ * no credential, so `prepareSecrets` has nothing to warn about. The advice
+ * appeared only on a later re-deploy, by which point the connector is usually
+ * registered and the ordering is no longer available to get right.
  */
-function registerLine(target: string, pending: number): string {
-  const register = `  Register it with: lanes link outputs --target ${target}`;
-  if (pending === 0) return style.dim(register);
-
+function registerLine(target: string): string {
   return style.dim(
-    `${register}\n` +
-      '  Connect the accounts below first. A client keeps the tool list it fetched\n' +
-      '  when it connected, so one registered now would hold the smaller surface.',
+    `  Connect your accounts first, then register with: lanes link outputs --target ${target}\n` +
+      '  A client keeps the tool list it fetched when it connected, so one registered\n' +
+      '  before the accounts holds a surface without them until it is re-added.',
   );
 }
 

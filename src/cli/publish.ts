@@ -201,15 +201,22 @@ export function nextAfterEdit(outcome: PublishOutcome): string {
     // `tools/list` when it connects and holds the answer, and this endpoint
     // cannot tell it otherwise — it is stateless, so there is no stream on
     // which to send `notifications/tools/list_changed`, and it no longer claims
-    // there is (`buildMcpServer`).
+    // there is (ADR-032).
     //
     // So the tool count goes here, where the change happened, and so does the
     // one action that picks it up. Without this line the command reports
     // success and the operator watches a connector that never changes.
+    //
+    // Worded for either direction, because `policy deny` prints this too and a
+    // deny is the case this file already calls "the one kind of staleness worth
+    // being strict about". "Pick them up" was written for a `connect` and read
+    // as nonsense after a deny, where the client is holding one tool too many
+    // rather than one too few — and where the stale entry is a tool the model
+    // will keep calling until it is gone.
     return (
       `${served}\n` +
-      `  ${outcome.tools} tools are advertised now. A client connected before this keeps the\n` +
-      `  list it already fetched — reconnect it to pick them up.`
+      `  ${outcome.tools} tools are advertised now. A client connected before this is still\n` +
+      `  holding the list it fetched then — reconnect it to match.`
     );
   }
 

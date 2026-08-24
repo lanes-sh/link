@@ -121,19 +121,24 @@ describe('vendored specs yield registrable tools', () => {
    * and what decides whether a client injects the tools or hides them behind a
    * search of its own.
    *
-   * Measured per provider, because which providers an operator connects is
-   * their business and only the per-provider contribution is this repository's.
+   * Measured as what `registerDiscoveredTool` actually registers — `title`,
+   * `description` and `inputSchema` — rather than as the whole discovered
+   * capability. The difference is not a rounding error: a capability also
+   * carries its `target`, the HTTP method, path and parameter mapping the
+   * dispatcher routes with, and that never reaches a client. It is 53% of
+   * Gmail's object and 29% of Drive's, so measuring the object would let a
+   * provider trip this budget by growing a routing table that costs a client
+   * nothing, and let one double its real payload while staying under.
    *
-   * The number is a ratchet, not a target. Drive is 178KB across nine
-   * operations today, and three `files.*` writes are 143KB of it: the `File`
-   * resource inlined three times over. Cutting that means `makeOpaque`, which
-   * buys the bytes by taking away the schema the model composes a request body
-   * against — a real trade, worth making deliberately rather than to satisfy a
-   * test. So this is set with the same headroom the per-tool budget carries
-   * (64KB over a legitimate 37KB): enough to catch a surface that grew by an
+   * The number is a ratchet, not a target. Drive is 127KB on the wire across
+   * nine operations, most of it the `File` resource inlined once per write.
+   * Cutting that means `makeOpaque`, which buys bytes by taking away the schema
+   * the model composes a request body against — a real trade, worth making
+   * deliberately rather than to satisfy a test. So this carries the same
+   * headroom the per-tool budget does: enough to catch a surface that grew by an
    * order of magnitude, not so tight that it demands the trade today.
    */
-  const SURFACE_BUDGET_KB = 256;
+  const SURFACE_BUDGET_KB = 192;
 
   test.each(httpProviders.map((m) => [m.id, m] as const))(
     '%s keeps its whole advertised surface inside the budget',
@@ -144,11 +149,15 @@ describe('vendored specs yield registrable tools', () => {
         openapi: connector.openapi,
       }).discover({ manifest });
 
-      // The whole capability, not the schema alone: a name and a description
-      // are sent on every `tools/list` too, and twenty-five of them add up.
-      const kb = Math.round(JSON.stringify(capabilities).length / 1024);
+      // What `registerDiscoveredTool` reads, and therefore what a client is
+      // sent. The routing `target` beside it is the dispatcher's business.
+      const bytes = capabilities.reduce(
+        (total, { title, description, inputSchema }) =>
+          total + JSON.stringify({ title, description, inputSchema }).length,
+        0,
+      );
 
-      expect(kb).toBeLessThanOrEqual(SURFACE_BUDGET_KB);
+      expect(Math.round(bytes / 1024)).toBeLessThanOrEqual(SURFACE_BUDGET_KB);
     },
   );
 

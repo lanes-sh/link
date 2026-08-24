@@ -95,8 +95,13 @@ $ lanes link tools                # names by provider, payload size
 $ lanes link tools --target cloud # ask the deployed endpoint instead
 ```
 
-If that count matches your client, nothing is stale. If it does not, the client is holding an old
-list and reconnecting is the fix.
+If that count matches your client, its tools are current. If it does not, the client is holding an
+old list and reconnecting is the fix.
+
+Tools only, though. A skill is a *prompt*, not a tool, so adding one moves neither the count nor
+the line `connect` prints — and skills are picked up by a running endpoint without a reload, so
+nothing announces them either. After `lanes link skills add`, reconnect the client on the same
+reasoning and without waiting for a number to change.
 
 ## See what one takes before you start
 

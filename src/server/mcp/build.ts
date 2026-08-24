@@ -65,12 +65,20 @@ export function buildMcpServer(options: BuildServerOptions): McpServer {
       // for `tools/list`.
       //
       // Saying `false` costs a re-list per session and buys a surface that is
-      // never stale. Prompts and resources carry the identical default and the
-      // identical inability, so they are answered here too.
+      // never stale.
+      //
+      // `tools` unconditionally, because the argument above is about tools and
+      // an endpoint that serves none should still answer "none right now"
+      // rather than "this server does not do tools". Resources and prompts only
+      // when the profile has some: declaring a capability installs its handler
+      // set, so a client that gates its list calls on what is advertised would
+      // otherwise issue `resources/list`, `resources/templates/list` and
+      // `prompts/list` — three stateless POSTs, each rebuilding the whole
+      // server — to be told nothing is there.
       capabilities: {
         tools: { listChanged: false },
-        resources: { listChanged: false },
-        prompts: { listChanged: false },
+        ...(offers(merged, isResource) ? { resources: { listChanged: false } } : {}),
+        ...(offers(merged, isPrompt) ? { prompts: { listChanged: false } } : {}),
       },
     },
   );
@@ -92,4 +100,23 @@ export function buildMcpServer(options: BuildServerOptions): McpServer {
   }
 
   return server;
+}
+
+/**
+ * Whether any reachable capability registers as this kind.
+ *
+ * Reads the same `merged` map the registration loop below consumes and asks it
+ * the same question `isResource`/`isPrompt` answer there, so what is advertised
+ * and what is registered cannot disagree. A discovered capability is always a
+ * tool, which is why it is not consulted here.
+ */
+function offers(
+  merged: ReturnType<typeof mergeCapabilities>,
+  kind: typeof isResource | typeof isPrompt,
+): boolean {
+  for (const entry of merged.values()) {
+    if (!entry.discovered && entry.capability && kind(entry.capability)) return true;
+  }
+
+  return false;
 }

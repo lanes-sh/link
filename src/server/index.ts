@@ -3,7 +3,8 @@ import type { Logger } from '#connectivity';
 import { capabilityIdForToolName } from '#server/mcp';
 import { ATTACHMENTS_PATH, stageAttachment } from './attachments.ts';
 import { allowedHostnamesFor, rebindingRefusal } from './rebinding.ts';
-import type { Generation, Generations } from './generations.ts';
+import type { Generation } from './generation.ts';
+import type { Generations } from './generations.ts';
 import { callerKey, failedAuthLimiter, FAILED_AUTH_PER_MINUTE, tooManyAttempts } from './edge.ts';
 import {
   handleAuthorization,

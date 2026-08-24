@@ -29,6 +29,9 @@ describe('what an edit says it did', () => {
     expect(line).toContain('Serving it now');
     expect(line).toContain('42 tools');
     expect(line).toContain('reconnect');
+    // Worded for a shrinking surface as well: `policy deny` prints this line,
+    // and there is nothing to "pick up" after one.
+    expect(line).not.toContain('pick them up');
   });
 
   test('an endpoint that did not report a count says only what it knows', () => {

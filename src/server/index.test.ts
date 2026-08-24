@@ -582,8 +582,22 @@ describe('the tool list does not go stale', () => {
       | undefined;
 
     expect(capabilities?.['tools']?.listChanged).toBe(false);
+    // This profile reaches `example.note`, which registers as a resource.
     expect(capabilities?.['resources']?.listChanged).toBe(false);
-    expect(capabilities?.['prompts']?.listChanged).toBe(false);
+  });
+
+  test('a kind the profile has none of is not advertised at all', async () => {
+    // Declaring a capability installs its handler set, so advertising `prompts`
+    // on a profile with no skills invites a `prompts/list` per session — a
+    // stateless POST that rebuilds the whole server to answer `[]`. `tools` is
+    // the one that stays unconditional, because "none right now" and "this
+    // server does not do tools" are different answers to a client deciding
+    // whether to ask again.
+    const result = await initialize(personal.server.url);
+    const capabilities = result['capabilities'] as Record<string, unknown> | undefined;
+
+    expect(capabilities?.['prompts']).toBeUndefined();
+    expect(capabilities?.['tools']).toBeDefined();
   });
 });
 
@@ -1037,6 +1051,43 @@ describe('operational logging', () => {
       expect(warnings.find((entry) => entry.message === 'rejected request')?.detail).toEqual({
         reason: 'invalid',
       });
+    } finally {
+      await listening.stop();
+    }
+  });
+
+  test('a bound endpoint records what it advertises', async () => {
+    // The one signal ADR-032 rests its observability claim on, and nothing
+    // asserted it: `tools/list` is neither logged nor audited, so this line is
+    // the only record of whether a generation is serving two tools or forty.
+    // Deleting it, or letting the count go stale, would otherwise leave the
+    // whole suite green.
+    const records: Array<{ message: string; detail?: Record<string, unknown> }> = [];
+
+    const listening = startHarness({
+      profile: 'advertising',
+      port: allocatePort(),
+      policy: `  allow:
+    - "example.*"`,
+      log: {
+        debug() {},
+        warn() {},
+        error() {},
+        info(message, detail) {
+          records.push({ message, ...(detail ? { detail } : {}) });
+        },
+      },
+    });
+
+    try {
+      const advertised = records.find((entry) => entry.message === 'advertising');
+      const listed = await listTools(listening.server.url);
+
+      expect(advertised?.detail).toEqual({ epoch: 0, tools: listed.length });
+      // Not `serving`: the container writes its own `serving <url>` to the same
+      // stream, and one word covering two records is a filter that returns both
+      // and distinguishes neither.
+      expect(records.map((entry) => entry.message)).not.toContain('serving');
     } finally {
       await listening.stop();
     }

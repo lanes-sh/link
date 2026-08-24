@@ -17,7 +17,52 @@ import type { Config, DeployConfig } from '#profile';
  */
 export async function endpointUrl(config: Config, target: string): Promise<string> {
   const deployed = await deployedUrl(config.targets[target]?.deploy);
-  return deployed ?? `http://${config.instance.host}:${config.instance.port}/mcp`;
+  return deployed ?? localUrl(config);
+}
+
+/**
+ * Where `lanes link start` would listen, from config alone.
+ *
+ * Split out so a caller that has already asked `deployedUrl` can name the
+ * fallback without asking again — `endpointUrl` is the two together, and going
+ * through it after a null costs a second `gcloud run services describe` that is
+ * already known to answer nothing.
+ */
+export function localUrl(config: Config): string {
+  return `http://${config.instance.host}:${config.instance.port}/mcp`;
+}
+
+/**
+ * Who is answering at this URL, if anyone.
+ *
+ * Shared for the reason `endpointUrl` above is: two workspaces can assign the
+ * same port, so an endpoint answering is not the same as *this* profile's
+ * endpoint answering. A command that skips this check reports another
+ * workspace's surface under this profile's heading.
+ *
+ * Anonymous would be enough to prove a socket is bound, but the profile list is
+ * behind the token, and the profile is the whole point of asking.
+ */
+export async function endpointHealth(url: string, token: string): Promise<EndpointHealth | null> {
+  try {
+    const probe = new URL(url);
+    probe.pathname = '/health';
+    const response = await fetch(probe, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(700),
+    });
+    if (!response.ok) return null;
+
+    const body = (await response.json()) as Partial<EndpointHealth>;
+    return body.profile ? { profile: body.profile, profiles: body.profiles ?? [body.profile] } : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface EndpointHealth {
+  readonly profile: string;
+  readonly profiles: readonly string[];
 }
 
 /**
