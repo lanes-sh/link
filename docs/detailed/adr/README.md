@@ -36,6 +36,7 @@ Nothing in the codebase depends on it.
 | [025](025-connecting-an-account-from-a-deployed-endpoint.md) | **Proposed, not decided.** Whether a deployed endpoint may run the OAuth flow itself — the mechanical objection has expired, the authorisation one has not |
 | [026](026-a-revision-rotates-its-own-credentials.md) | A revision may add a version to each secret it rotates, and may still never create one |
 | [028](028-a-hosted-oauth-client-is-the-default.md) | A client Lanes operates is what `connect` uses by default; `--own-client` registers your own |
+| [029](029-connecting-is-not-deploying.md) | Connecting publishes its own config and the endpoint re-reads it; deploying is only code |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 
@@ -58,3 +59,9 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
   those exclusions — the rule is about authorisation, not information — and names the two things
   that keep it there: it reports only what policy already permits, and it never reports whether a
   credential is present.
+- **ADR-029** amends ADR-004's "exposes no administrative API", which stops being true: there is one
+  authenticated route that is not `/mcp`. The clause that carried the weight survives intact — a
+  deployed instance still never mutates its own configuration, and `/reload` takes no parameters, so
+  the only thing it can be asked for is a re-read of what the CLI already wrote. It also supersedes
+  ADR-019's "a new connection is not served until the endpoint restarts", which named this as a
+  decision someone would have to take, and pays one of the five costs ADR-025 listed as blocking.

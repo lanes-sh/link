@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
-import { allocatePort, rpc, startHarness, TEST_TOKEN } from './harness.ts';
+import { allocatePort, rpc, startHarness, wireProfiles, TEST_TOKEN } from './harness.ts';
 import { isLoopback } from './index.ts';
+import { parseConfig, type Config } from '#profile';
 
 /**
  * End-to-end tests against a real HTTP server on a real port.
@@ -607,5 +608,209 @@ describe('one endpoint, several profiles', () => {
       { profile: 'side' },
     );
     expect(allowed.error).toBeUndefined();
+  });
+});
+
+/**
+ * Reloading, over the wire.
+ *
+ * The claim under test is the one the operator cares about: an account
+ * connected a moment ago is served by the endpoint that is already running,
+ * without a restart locally or a new revision in the cloud (ADR-029). The
+ * generation lifecycle underneath is tested in `generations.test.ts`.
+ */
+describe('reload', () => {
+  const READ_ONLY = `  allow:
+    - "example.get_note"`;
+  const EVERYTHING = `  allow:
+    - "example.*"`;
+
+  /** A config naming exactly these connections, so one can be seen to appear. */
+  function configWith(profile: string, port: number, ids: string[], policy: string): Config {
+    return parseConfig(`
+contract: 1
+instance:
+  profile: ${profile}
+  default_target: local
+  port: ${port}
+targets:
+  local:
+    credentials: { adapter: file, path: ./data/${profile}/credentials.enc }
+    storage: { adapter: filesystem, path: ./data/${profile} }
+limits:
+  requests_per_minute: 1000
+  upstream_calls_per_minute: 1000
+connections:
+${ids.map((id) => `  - { id: ${id}, provider: example, account: Scratch ${id} }`).join('\n')}
+policy:
+${policy}
+`).config;
+}
+
+  /**
+   * A harness whose next reload serves whatever `edited` currently holds.
+   *
+   * Stands in for the operator editing the workspace between two requests —
+   * which is what `lanes link connect` does before it calls `/reload`.
+   */
+  function reloadable(
+    port: number,
+    initial: Config,
+  ): {
+    harness: ReturnType<typeof startHarness>;
+    edit: (config: Config) => void;
+    reload: (token?: string | null) => Promise<{ status: number; body: Record<string, unknown> }>;
+  } {
+    let edited = initial;
+
+    const harness = startHarness({
+      profile: 'personal',
+      port,
+      policy: READ_ONLY,
+      config: initial,
+      reopen: () =>
+        Promise.resolve(
+          wireProfiles({ profile: 'personal', port, policy: READ_ONLY, config: edited }).profiles,
+        ),
+    });
+
+    return {
+      harness,
+      edit: (config) => {
+        edited = config;
+      },
+      reload: async (token = TEST_TOKEN) => {
+        const response = await fetch(harness.server.url.replace('/mcp', '/reload'), {
+          method: 'POST',
+          ...(token === null ? {} : { headers: { authorization: `Bearer ${token}` } }),
+        });
+        return {
+          status: response.status,
+          body: (await response.json()) as Record<string, unknown>,
+        };
+      },
+    };
+  }
+
+  test('is refused without the profile token', async () => {
+    const port = allocatePort();
+    const { harness, reload } = reloadable(port, configWith('personal', port, ['a'], READ_ONLY));
+    try {
+      const { status, body } = await reload(null);
+
+      expect(status).toBe(401);
+      expect(body['error']).toBe('unauthorized');
+    } finally {
+      await harness.stop();
+    }
+  });
+
+  test('a connection added to the config is served without a restart', async () => {
+    const port = allocatePort();
+    const { harness, edit, reload } = reloadable(
+      port,
+      configWith('personal', port, ['a'], READ_ONLY),
+    );
+
+    try {
+      const before = await listTools(harness.server.url);
+      expect(
+        before.find((tool) => tool.name === 'example_get_note')?.inputSchema.properties?.connection
+          ?.enum,
+      ).toEqual(['example.a']);
+
+      // The operator connects a second account. Nothing restarts.
+      edit(configWith('personal', port, ['a', 'c'], READ_ONLY));
+      const { status, body } = await reload();
+
+      expect(status).toBe(200);
+      expect(body['reloaded']).toBe(true);
+      expect(body['epoch']).toBe(1);
+
+      const after = await listTools(harness.server.url);
+      expect(
+        after.find((tool) => tool.name === 'example_get_note')?.inputSchema.properties?.connection
+          ?.enum,
+      ).toEqual(['example.a', 'example.c']);
+    } finally {
+      await harness.stop();
+    }
+  });
+
+  test('a widened policy is in force on the next call', async () => {
+    const port = allocatePort();
+    const { harness, edit, reload } = reloadable(
+      port,
+      configWith('personal', port, ['a'], READ_ONLY),
+    );
+
+    try {
+      expect((await listTools(harness.server.url)).map((tool) => tool.name)).toEqual([
+        'example_get_note',
+      ]);
+
+      edit(configWith('personal', port, ['a'], EVERYTHING));
+      await reload();
+
+      const names = (await listTools(harness.server.url)).map((tool) => tool.name);
+      expect(names).toContain('example_set_note');
+      expect(names).toContain('example_echo');
+    } finally {
+      await harness.stop();
+    }
+  });
+
+  test('a reload that cannot read the config keeps the endpoint serving', async () => {
+    const port = allocatePort();
+    const harness = startHarness({
+      profile: 'personal',
+      port,
+      policy: READ_ONLY,
+      config: configWith('personal', port, ['a'], READ_ONLY),
+      reopen: () => Promise.reject(new Error('profiles/personal.yaml: could not parse YAML')),
+    });
+
+    try {
+      const response = await fetch(harness.server.url.replace('/mcp', '/reload'), {
+        method: 'POST',
+        headers: { authorization: `Bearer ${TEST_TOKEN}` },
+      });
+      const body = (await response.json()) as Record<string, unknown>;
+
+      // Reported, not fatal. A config caught mid-write must not be able to take
+      // down an endpoint that is serving perfectly well.
+      expect(response.status).toBe(200);
+      expect(body['reloaded']).toBe(false);
+      expect(body['reason']).toContain('could not parse YAML');
+
+      expect((await listTools(harness.server.url)).map((tool) => tool.name)).toEqual([
+        'example_get_note',
+      ]);
+    } finally {
+      await harness.stop();
+    }
+  });
+
+  test('a call naming a tool this instance has not heard of reloads before refusing it', async () => {
+    // The notify reaches one instance. This is the other one: it was warm when
+    // the operator connected, so the first it hears of the new tool is a call
+    // naming it. Reloading there is what keeps "no redeploy" from being true
+    // only sometimes.
+    const port = allocatePort();
+    const { harness, edit } = reloadable(port, configWith('personal', port, ['a'], READ_ONLY));
+
+    try {
+      edit(configWith('personal', port, ['a'], EVERYTHING));
+
+      const result = await callTool(harness.server.url, 'example_echo', {
+        message: 'hello',
+        connection: 'example.a',
+      });
+
+      expect(result.isError).toBeFalsy();
+      expect(JSON.stringify(result)).toContain('hello');
+    } finally {
+      await harness.stop();
+    }
   });
 });

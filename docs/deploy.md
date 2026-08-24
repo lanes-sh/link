@@ -17,19 +17,21 @@ That is the list. Note what is not on it: a project. There is no database to pro
 pair to mint in a console — the first `deploy` creates the project, links billing, enables the APIs,
 mints the service account and the bucket, and builds the image.
 
-## The five commands
+## The four commands
 
 ```console
 $ lanes link deploy --dry-run              # every gcloud command, none of them run
 $ lanes link deploy                        # creates the project and rolls a revision
 $ lanes link connect gmail --target cloud  # a browser consent per account
-$ lanes link deploy                        # again, so the revision sees them
 $ lanes link outputs --target cloud        # the URL your agent needs
 ```
 
-`connect` comes *after* the first deploy: a credential store that does not exist yet is not somewhere
-to write a credential. The second deploy is what gets a revision to pick up the accounts you just
-authorised.
+`connect` comes *after* the deploy: a credential store that does not exist yet is not somewhere to
+write a credential.
+
+There is no second deploy. `connect` copies the config to where the running revision reads it and
+asks that revision to re-read it, so the account is reachable as soon as the browser consent is
+done. Deploying is how new code gets there, and authorising an account changes no code (ADR-029).
 
 `cloud` there is a name, not a keyword — it is what the first deploy calls the target it creates.
 `lanes link target list` shows what your profile declares and which one commands are using.

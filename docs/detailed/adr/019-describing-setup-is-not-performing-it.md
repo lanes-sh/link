@@ -120,13 +120,20 @@ The skill says not to, the flag is verbose enough that repeating it is deliberat
 lands in the shell history of whoever typed it. The browser consent screen is still ahead of
 it. Treat it as the earlier, clearer checkpoint rather than the only one.
 
-**A new connection is not served until the endpoint restarts.** `runtime.config` and the
+**A new connection is not served until the endpoint restarts.** ~~`runtime.config` and the
 policy document are read once at startup, and re-opening a runtime mid-flight would change
 what policy is evaluated against between two calls — `ProviderRegistry.replace` says in its
 own docstring that it is not a general hot-reload facility. So `setup.overview` says so
 rather than pretending otherwise. A staleness flag on the existing 2s budget would be an
 honest improvement; a live reload wants its own decision, because "a running instance never
-mutates its own configuration" is adjacent enough to matter.
+mutates its own configuration" is adjacent enough to matter.~~
+
+**Superseded by [ADR-029](029-connecting-is-not-deploying.md).** That decision was taken, and
+it resolved the way this paragraph hoped: re-reading is not mutating. A request now pins one
+generation of runtimes for its whole lifetime, so a reload cannot change what policy a call is
+evaluated against between two of its own awaits — which was the objection, and it is answered
+by pinning rather than by refusing to reload. `setup.overview` says a connection is served
+within moments now, because it is.
 
 **The shell-less ceiling is accepted.** For a client with no shell the loop ends with a
 person pasting one line. Closing that would require the endpoint to act on it, which is

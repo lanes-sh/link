@@ -123,9 +123,11 @@ policy:
 ```console
 $ lanes link deploy                        # everything, from nothing
 $ lanes link connect gmail --target cloud  # a browser consent per account
-$ lanes link deploy                        # again, so the revision sees them
 $ lanes link outputs --target cloud        # the URL an agent needs
 ```
+
+`connect` publishes the config to the bucket the revision reads and asks the revision to re-read
+it, so it takes effect without a second deploy. Deploy again when the *code* changes.
 
 ### More than one deployment
 

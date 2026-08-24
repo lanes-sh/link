@@ -218,12 +218,13 @@ export async function deploy(flags: DeployFlags): Promise<void> {
  * Printed last rather than before the build, because this is the only thing
  * left to do and a list eight steps up the scrollback is a list nobody reads.
  *
- * The re-deploy is the part worth stating. Connection *credentials* are read
- * live on every call, so it is tempting to assume a fresh `connect` is picked up
- * — but whether a connection is usable at all is decided by reconcile, which
- * runs once per process at boot. A revision that came up with an account
- * unauthorised keeps refusing it until a new revision reconciles, and the
- * refusal names the connection rather than the staleness. Nobody guesses that.
+ * There is no second deploy at the end of it any more, and the reason the old
+ * one existed is worth keeping. Connection *credentials* are read live on every
+ * call, so a fresh `connect` looked like it should be picked up — but whether a
+ * connection was usable at all was decided by a reconcile that ran once per
+ * process, so a revision that came up with an account unauthorised went on
+ * refusing it, naming the connection rather than the staleness. Reconcile now
+ * runs again on every reload, and `connect` asks for one (ADR-029).
  */
 function reportUnauthorised(warnings: readonly string[], target: string): void {
   if (warnings.length === 0) return;
@@ -233,10 +234,10 @@ function reportUnauthorised(warnings: readonly string[], target: string): void {
   print('');
   print(
     style.dim(
-      '  A browser consent per account is the one step this cannot take for you.\n' +
-        `  Afterwards re-run  lanes link deploy --target ${target}  — the revision that is\n` +
-        '  serving now decided which connections were usable when it booted, and it\n' +
-        '  will go on refusing these until a new one reconciles.',
+      '  A browser consent per account is the one step this cannot take for you:\n' +
+        `    lanes link connect <provider> --target ${target}\n` +
+        '  Each is served as soon as it is authorised. There is no second deploy —\n' +
+        '  deploying is how code gets here, and authorising an account changes none.',
     ),
   );
 }

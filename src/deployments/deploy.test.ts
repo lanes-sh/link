@@ -3,7 +3,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rotatableRefs } from './prepare.ts';
-import { isWorkspaceConfig, repairSetupSurface } from './upload.ts';
+import { deployedWorkspace, isWorkspaceConfig, publishWorkspace, repairSetupSurface } from './upload.ts';
+import { parseConfig } from '#profile';
 
 const roots: string[] = [];
 
@@ -279,5 +280,60 @@ policy:
     // Matching the repair: a broken sibling nobody named should not cost the
     // operator a rollout, and provisioning happens before anything is uploaded.
     expect(await rotatableRefs(root, undefined)).toEqual(['gmail/mine']);
+  });
+});
+
+/**
+ * Where a config edit goes, once it is no longer a deploy that takes it there.
+ *
+ * `publishWorkspace` answers "where does the endpoint for this target read its
+ * config" and nothing else. The interesting half is the `null`: a local target
+ * reads the same files the CLI just wrote, so publishing to it would be copying
+ * a file over itself.
+ */
+describe('publishing a config edit', () => {
+  const targets = (extra: string): string => `
+contract: 1
+instance:
+  profile: personal
+  default_target: local
+  port: 7337
+targets:
+  local:
+    credentials: { adapter: file, path: ./data/personal/credentials.enc }
+    storage: { adapter: filesystem, path: ./data/personal }
+${extra}
+connections: []
+policy:
+  allow: []
+`;
+
+  test('a filesystem target publishes nowhere', async () => {
+    const { config } = parseConfig(targets(''));
+
+    expect(await publishWorkspace({ config, workspaceRoot: '/nowhere', target: 'local', profile: 'personal' })).toBeNull();
+  });
+
+  test('an undeclared target publishes nowhere rather than throwing', async () => {
+    const { config } = parseConfig(targets(''));
+
+    // The edit already succeeded and is on disk. A target nobody declared is a
+    // problem for `check` to report, not a reason to fail the edit that is done.
+    expect(await publishWorkspace({ config, workspaceRoot: '/nowhere', target: 'cloud', profile: 'personal' })).toBeNull();
+  });
+
+  test('a bucket-backed target resolves to the bucket it declares', () => {
+    const { config } = parseConfig(
+      targets(`  cloud:
+    credentials: { adapter: file, path: ./data/personal/credentials.enc }
+    storage: { adapter: gcs, bucket: your-bucket, prefix: workspace }`),
+    );
+
+    // The destination is derived from the target, never passed in — which is
+    // the whole of what `publishWorkspace` adds over `uploadWorkspace`. Driving
+    // the copy itself would need a bucket; the allowlist that governs it is
+    // covered above.
+    expect(deployedWorkspace(config.targets['cloud']!)).toBe('gs://your-bucket/workspace');
+    expect(deployedWorkspace(config.targets['local']!)).toBeUndefined();
   });
 });

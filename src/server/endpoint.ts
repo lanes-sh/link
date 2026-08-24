@@ -1,5 +1,6 @@
 import { MCP_PATH, serve } from './index.ts';
 import { serveOverStdio } from './stdio.ts';
+import { Generations, type OpenedWorkspace } from './generations.ts';
 import type { AuthorizationSurface } from './oauth.ts';
 import type { ProfileRuntime } from './mcp/index.ts';
 import {
@@ -249,8 +250,25 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
 
     const gate = await openAuthorization(primary);
 
+    // The authenticator and the authorization gate are built once, from the
+    // runtime this endpoint booted with, and are deliberately not part of what
+    // a reload replaces (ADR-029). Retiring that generation stays safe for them
+    // because `Runtime.close()` ends connector sessions and the audit log — it
+    // does not close the credential store or the state handle these hold.
+    const generations = new Generations(
+      { profiles: profileRuntimes(runtimes), close: () => closeAll(runtimes).then(() => {}) },
+      async (): Promise<OpenedWorkspace> => {
+        const reopened = await openReconciled(options);
+        return {
+          profiles: profileRuntimes(reopened.runtimes),
+          close: () => closeAll(reopened.runtimes).then(() => {}),
+        };
+      },
+      { primary: primary.resolution.profile, log: { debug() {}, info() {}, warn() {}, error() {} } },
+    );
+
     const server = serve({
-      profiles: profileRuntimes(runtimes),
+      generations,
       primary: primary.resolution.profile,
       authenticator: gate
         ? new AuthenticatorChain([primary.authenticator, gate.authenticator])
@@ -264,10 +282,11 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
     return {
       url: server.url,
       profiles: [...runtimes.keys()],
-      async stop() {
-        await server.stop();
-        await closeAll(runtimes);
-      },
+      // `server.stop()` closes the request handler, which closes whichever
+      // generation is current — and a generation owns the runtimes it opened.
+      // Closing `runtimes` here too would reach past a reload and close a set
+      // nothing is serving from any more.
+      stop: () => server.stop(),
     };
   } catch (error) {
     await closeAll(runtimes);

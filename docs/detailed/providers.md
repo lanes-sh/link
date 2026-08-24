@@ -367,9 +367,10 @@ made before this change keeps the old schema and `attachments` never appears, ho
 is. `lanes link connect icloud_mail` fixes it: the stored app password is reused, so it is
 non-interactive. Gmail needs nothing, because its send is authored rather than discovered.
 
-Note the failure mode in between: once the cache is refreshed, an endpoint still running the *old*
-code advertises `attachments` and silently ignores it — a mail that says it has an attachment and
-does not, which is the original bug wearing a new hat. Restart the endpoint after refreshing.
+Note the failure mode in between: an endpoint still running the *old* code advertises `attachments`
+and silently ignores it — a mail that says it has an attachment and does not, which is the original
+bug wearing a new hat. The refreshed cache reaches a running endpoint on its own, because `connect`
+asks it to re-read (ADR-029); the old *code* does not, and that is what a deploy is for.
 `lanes link plan` will not warn you, because it compares capability *names* and this changed a
 schema.
 

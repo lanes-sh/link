@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { progress } from '../../output.ts';
-import { ALREADY, NOTHING, RESTART, renderOutcome, nextAfterConnect } from './outcome.ts';
+import { ALREADY, NOTHING, renderOutcome } from './outcome.ts';
+import { nextAfterEdit } from '#cli/publish.ts';
 
 /**
  * What a caller is told when `connect` stops short.
@@ -91,10 +92,10 @@ describe('a blocked outcome', () => {
 });
 
 describe('a successful outcome', () => {
-  test('says to restart rather than to start', () => {
+  test('says the connection is already being served', () => {
     // "Next: lanes link start" reads as "you are done" to somebody who already
-    // has one running, and the endpoint they have is still serving the config it
-    // was started with.
+    // has one running. It is neither now: the endpoint was told, so the line
+    // reports what it answered.
     const { out } = captured(() =>
       renderOutcome({
         ok: true,
@@ -104,12 +105,12 @@ describe('a successful outcome', () => {
         granted: ['post.*'],
         discovered: 4,
         writable: 1,
-        next: RESTART,
+        next: nextAfterEdit({ served: true }),
       }),
     );
 
     expect(out).toContain('connected');
-    expect(out).toContain('Restart the endpoint');
+    expect(out).toContain('Serving it now');
     expect(out).toContain('1 of them write');
   });
 
@@ -119,7 +120,7 @@ describe('a successful outcome', () => {
     );
 
     expect(out).toContain('post.ada is already connected.');
-    expect(out).not.toContain('Restart');
+    expect(out).not.toContain('Serving it now');
   });
 
   test('a family prints nothing extra, since each service already reported', () => {
@@ -132,12 +133,25 @@ describe('a successful outcome', () => {
 });
 
 describe('what to do after connecting', () => {
-  test('a local target is restarted, a deployed one is replaced', () => {
-    // Told to restart `lanes link start` after authorising an account against a
-    // deployment, an operator restarts a server that was not serving it and
-    // watches the deployed one go on refusing.
-    expect(nextAfterConnect(false)).toContain('lanes link start');
-    expect(nextAfterConnect(true)).toContain('lanes link deploy');
-    expect(nextAfterConnect(true)).not.toContain('lanes link start');
+  // This used to be a guess derived from whether the target was deployable, and
+  // saying the wrong one cost an operator a restart of a server that was not
+  // serving them. It is reported now: the endpoint either answered or it did
+  // not (ADR-029).
+  test('a served edit needs nothing further', () => {
+    const line = nextAfterEdit({ served: true });
+
+    expect(line).toContain('Serving it now');
+    expect(line).not.toContain('lanes link start');
+    expect(line).not.toContain('lanes link deploy');
+  });
+
+  test('an unreachable endpoint says why, and that the edit is safe', () => {
+    const line = nextAfterEdit({ served: false, reason: 'no endpoint answered' });
+
+    expect(line).toContain('no endpoint answered');
+    expect(line).toContain('when it next starts');
+    // Never a redeploy: rolling a revision is how code gets there, and this
+    // changed no code.
+    expect(line).not.toContain('lanes link deploy');
   });
 });

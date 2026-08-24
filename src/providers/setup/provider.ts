@@ -235,8 +235,8 @@ function renderOverview(
 
   lines.push(
     '',
-    'Setting anything up is done by the owner, in a terminal — this endpoint cannot do it, ' +
-      'and a connection it makes is served only after the endpoint restarts.',
+    'Setting anything up is done by the owner, in a terminal — this endpoint cannot do it. ' +
+      'A connection they make is served here within moments of them making it.',
     `(reported for connection ${self})`,
   );
 
@@ -317,7 +317,7 @@ function renderProvider(plan: ProviderPlan): string {
     );
   }
 
-  lines.push('', 'Once it is done the endpoint must be restarted before this can reach it.');
+  lines.push('', 'Once it is done this becomes reachable here, with nothing further to run.');
 
   return lines.join('\n');
 }

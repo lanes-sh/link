@@ -2,6 +2,7 @@ import {
   WORKSPACE_FILE,
   listProfiles,
   workspaceFiles,
+  type Config,
   type TargetConfig,
 } from '#profile';
 import { ConfigDocument, ensureSetupConnection, repairLines, repaired } from '#cli/config-edit.ts';
@@ -134,4 +135,41 @@ export async function uploadWorkspace(
   }
 
   print(ok(`uploaded ${copied} config file${copied === 1 ? '' : 's'} to ${destination}`));
+}
+
+/**
+ * Put the config where this target's endpoint reads it.
+ *
+ * Split from `deploy` because the two answer different questions. A deploy
+ * asks "what should this revision run"; this asks "where does the config a
+ * running endpoint reads actually live", and the answer stopped being "in the
+ * image" at ADR-023. Once config lives in a bucket, copying it there is a
+ * consequence of *editing* it, not of rolling a revision — which is what lets
+ * `connect` stop ending in `lanes link deploy` (ADR-029).
+ *
+ * `null` when the target reads the same files the CLI just wrote: a local
+ * target's endpoint opens the workspace directly, so there is nowhere to
+ * publish to and nothing to copy.
+ *
+ * Scoped to the profile that was edited, deliberately more narrowly than
+ * `deploy` scopes itself. `deploy` passes `flags.profile` — the flag alone —
+ * so a profile resolved from `LANES_LINK_PROFILE` leaves it undefined and the
+ * whole workspace goes up. An edit knows exactly which profile it touched, and
+ * sending a sibling profile to a bucket because someone edited this one is a
+ * surprise nobody asked for.
+ */
+export async function publishWorkspace(input: {
+  readonly config: Config;
+  readonly workspaceRoot: string;
+  readonly target: string;
+  readonly profile: string;
+}): Promise<string | null> {
+  const declared = input.config.targets[input.target];
+  if (!declared) return null;
+
+  const destination = deployedWorkspace(declared);
+  if (!destination) return null;
+
+  await uploadWorkspace(input.workspaceRoot, destination, input.profile);
+  return destination;
 }

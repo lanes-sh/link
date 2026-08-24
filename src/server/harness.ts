@@ -21,6 +21,7 @@ import type { AuditStore } from '#audit';
 import { createBlobAuditStore } from '#deployments/adapters/audit-blob.ts';
 import type { AnyConnector, ProviderDefinition } from '#connectivity';
 import { serve, type RunningServer } from './index.ts';
+import { Generations } from './generations.ts';
 import { serveOverStdio } from './stdio.ts';
 
 /**
@@ -74,6 +75,8 @@ export interface Harness {
    * *denial* is recorded means asking the layer that records it.
    */
   readonly dispatcher: Dispatcher;
+  /** The generation holder, so a test can drive a reload without an HTTP call. */
+  readonly generations: Generations;
   stop(): Promise<void>;
 }
 
@@ -102,6 +105,12 @@ export interface HarnessOptions {
   refreshSkills?: (registry: ProviderRegistry) => Promise<void>;
   /** Serve the `self` authorization flow alongside the bearer token. */
   authorization?: boolean;
+  /**
+   * What a reload re-reads, standing in for `openReconciled` over a workspace
+   * this harness does not have. Throwing is how the "a failed reload keeps
+   * serving the old generation" case is reached; absent means nothing new.
+   */
+  reopen?: () => Promise<ReadonlyMap<string, ProfileRuntime>>;
 }
 
 /**
@@ -121,7 +130,7 @@ interface WiredProfiles {
   readonly token: string;
 }
 
-function wireProfiles(options: HarnessOptions): WiredProfiles {
+export function wireProfiles(options: HarnessOptions): WiredProfiles {
   const config = options.config ?? configFor(options.profile, options.port, options.policy);
   const token = options.token ?? TEST_TOKEN;
 
@@ -224,12 +233,21 @@ export function startHarness(options: HarnessOptions): Harness {
       }
     : null;
 
+  const log = { debug() {}, info() {}, warn() {}, error() {} };
+
+  const nothing = () => Promise.resolve();
+  const generations = new Generations(
+    { profiles, close: nothing },
+    async () => ({ profiles: (await options.reopen?.()) ?? profiles, close: nothing }),
+    { primary: options.profile, log },
+  );
+
   const server = serve({
-    profiles,
+    generations,
     primary: options.profile,
     authenticator: gate ? new AuthenticatorChain([bearer, gate.authenticator]) : bearer,
     ...(gate ? { authorization: gate.surface } : {}),
-    log: { debug() {}, info() {}, warn() {}, error() {} },
+    log,
   });
 
   return {
@@ -238,6 +256,7 @@ export function startHarness(options: HarnessOptions): Harness {
     audit,
     token,
     dispatcher,
+    generations,
     stop: () => server.stop(),
   };
 }

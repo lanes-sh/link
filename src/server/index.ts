@@ -1,19 +1,9 @@
-import {
-  createMcpHandler,
-  type McpHttpHandler,
-  type McpRequestContext,
-} from '@modelcontextprotocol/server';
-import { challenge, ownerPrincipal, type Authenticator, type Principal } from '#auth';
+import { challenge, type Authenticator } from '#auth';
 import type { Logger } from '#connectivity';
-import {
-  buildMcpServer,
-  capabilityIdForToolName,
-  toolNameFor,
-  visibleCapabilities,
-  type ProfileRuntime,
-} from '#server/mcp';
+import { capabilityIdForToolName } from '#server/mcp';
 import { ATTACHMENTS_PATH, stageAttachment } from './attachments.ts';
 import { allowedHostnamesFor, rebindingRefusal } from './rebinding.ts';
+import type { Generation, Generations } from './generations.ts';
 import {
   handleAuthorization,
   isAuthorizationPath,
@@ -27,16 +17,22 @@ import {
  * Stateless streamable HTTP on a single endpoint. Statelessness is not an
  * optimisation: the M2 target replaces instances between requests, so any
  * in-memory session state would produce intermittent 404s. `createMcpHandler`
- * builds a fresh server instance per request from the factory below, which is
- * also what lets the tool list be a pure function of the caller's policy.
+ * builds a fresh server instance per request from the generation's factory,
+ * which is also what lets the tool list be a pure function of the caller's
+ * policy.
  *
- * Authentication happens here, in front of the factory, so the factory only
+ * Authentication happens here, in front of that factory, so the factory only
  * ever runs for a caller whose identity is already established.
+ *
+ * What this file is *not* responsible for is which runtimes are current. A
+ * request pins one generation on the way in and uses it throughout, so a reload
+ * landing mid-request cannot change what that request is evaluated against.
+ * See `./generations.ts`.
  */
 
 export interface ServerOptions {
-  /** Every profile this endpoint serves, keyed by name. */
-  readonly profiles: ReadonlyMap<string, ProfileRuntime>;
+  /** The current profile runtimes, and the reload that replaces them. */
+  readonly generations: Generations;
   /** Which profile's port, host, and token govern the endpoint itself. */
   readonly primary: string;
   readonly authenticator: Authenticator;
@@ -54,6 +50,7 @@ export interface ServerOptions {
 }
 
 export const MCP_PATH = '/mcp';
+export const RELOAD_PATH = '/reload';
 
 /**
  * Loopback addresses. What binding to one changes is the browser threat model,
@@ -65,134 +62,43 @@ export function isLoopback(host: string): boolean {
   return LOOPBACK.has(host);
 }
 
+/**
+ * How often an unrecognised tool name may provoke a reload.
+ *
+ * The safety net below reloads when a call names a tool this endpoint does not
+ * advertise, which is what a just-connected provider looks like to an instance
+ * that missed the notify. An agent retrying a genuinely absent tool must not
+ * turn that into a reload per call, so it is bounded.
+ */
+const RELOAD_PROBE_MS = 10_000;
+
 export interface RequestHandler {
   fetch(request: Request): Promise<Response>;
   close(): Promise<void>;
 }
 
 export function createRequestHandler(options: ServerOptions): RequestHandler {
-  const handlers = new Map<string, McpHttpHandler>();
+  let probedAt = 0;
 
   /**
-   * How stale a registry may be before the next request re-reads its skills.
+   * Re-read the config because a call named a tool we do not serve.
    *
-   * A skill written elsewhere — `lanes link skills add` in another terminal — cannot
-   * announce itself, so the endpoint has to look. Bounded rather than
-   * per-request because looking costs a `list()`, which on S3 is a network
-   * call: at most one per profile per interval, however busy the endpoint is.
-   * A write made *through* MCP does not wait for this; it refreshes directly.
+   * The notify (ADR-029) reaches one instance. A second instance that was warm
+   * when the operator connected an account keeps refusing it, which would make
+   * "connecting does not need a redeploy" true only sometimes — the worst of
+   * the three possible states, because nobody can reproduce it.
+   *
+   * So the error path closes it. A tool that appeared a moment ago is
+   * indistinguishable from a tool that never existed, and both arrive here; one
+   * reload tells them apart. Nothing on the success path pays for this.
    */
-  const SKILL_POLL_MS = 2_000;
-  let polledAt = 0;
-
-  const refreshSkills = async (): Promise<void> => {
+  const probeForNewConfig = async (): Promise<boolean> => {
     const now = Date.now();
-    if (now - polledAt < SKILL_POLL_MS) return;
-    polledAt = now;
+    if (now - probedAt < RELOAD_PROBE_MS) return false;
+    probedAt = now;
 
-    await Promise.all(
-      [...options.profiles.values()].map(async (runtime) => {
-        try {
-          await runtime.refreshSkills?.();
-        } catch (error) {
-          // A skills directory that has gone unreadable, or one skill file
-          // someone is mid-edit, must not take the endpoint down with it. The
-          // previously loaded skills stay registered.
-          options.log.warn('could not refresh skills', { message: (error as Error).message });
-        }
-      }),
-    );
-  };
-
-  /**
-   * Work derived from the registries, recomputed when one of them changes.
-   *
-   * These were memoised once, which was correct while a registry was fixed for
-   * the life of the process. Skills can now be replaced in it (ADR-014), and a
-   * stale `visible()` is not a cosmetic problem: it gates the refusal-audit
-   * path below, so a newly added skill would be recorded as a refusal on its
-   * first `prompts/get` even though the call succeeded.
-   */
-  const generation = (): number =>
-    [...options.profiles.values()].reduce((total, runtime) => total + runtime.registry.revision, 0);
-
-  const memoise = <T>(compute: () => T): (() => T) => {
-    let at = -1;
-    let value: T;
-    return () => {
-      const now = generation();
-      if (now !== at) {
-        value = compute();
-        at = now;
-      }
-      return value;
-    };
-  };
-
-  /**
-   * Every capability id across every profile, granted or not.
-   *
-   * Used only to spell a refusal correctly: a tool that exists but is not
-   * permitted should appear in the audit under its real id.
-   */
-  const allCapabilityIds = memoise(() => [
-    ...new Set(
-      [...options.profiles.values()].flatMap((runtime) =>
-        runtime.registry.capabilities().map(({ id }) => id),
-      ),
-    ),
-  ]);
-
-  /**
-   * Wire names the endpoint advertises.
-   *
-   * M1 has a single principal per profile, so this set does not vary by
-   * caller. When delegated principals arrive it becomes a per-principal
-   * lookup; the call site already reads as one.
-   */
-  const visible = memoise(
-    () =>
-      new Set(
-        visibleCapabilities({
-          profiles: options.profiles,
-          principal: ownerPrincipal(options.primary),
-        }).map(toolNameFor),
-      ),
-  );
-
-  /**
-   * One handler per (principal, client label), memoised.
-   *
-   * The MCP surface depends only on resolved policy, so rebuilding the wiring
-   * per request would be pure waste. Reuse is safe because `createMcpHandler`
-   * still constructs a fresh server instance per request — what is memoised is
-   * the factory wiring, never session state.
-   */
-  const handlerFor = (principal: Principal, clientLabel: string | undefined): McpHttpHandler => {
-    const key = `${principal.id}\u0000${clientLabel ?? ''}`;
-    const existing = handlers.get(key);
-    if (existing) return existing;
-
-    const handler = createMcpHandler(
-      // The principal is closed over rather than read back out of `authInfo`:
-      // this handler is already keyed on it, and re-deriving identity from a
-      // field the SDK treats as opaque pass-through would create a second
-      // source of truth for who is calling.
-      (_context: McpRequestContext) =>
-        buildMcpServer({
-          profiles: options.profiles,
-          principal,
-          clientLabel,
-          ...(options.version ? { version: options.version } : {}),
-        }),
-      {
-        onerror: (error: Error) =>
-          options.log.error('mcp handler error', { message: error.message }),
-      },
-    );
-
-    handlers.set(key, handler);
-    return handler;
+    const result = await options.generations.reload();
+    return result.reloaded;
   };
 
   return {
@@ -227,12 +133,16 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
         return Response.json({
           status: 'ok',
           ...(named.ok
-            ? { profile: options.primary, profiles: [...options.profiles.keys()] }
+            ? { profile: options.primary, profiles: options.generations.current.names() }
             : {}),
         });
       }
 
-      if (url.pathname !== MCP_PATH && url.pathname !== ATTACHMENTS_PATH) {
+      if (
+        url.pathname !== MCP_PATH &&
+        url.pathname !== ATTACHMENTS_PATH &&
+        url.pathname !== RELOAD_PATH
+      ) {
         return new Response('Not found', { status: 404 });
       }
 
@@ -268,74 +178,102 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
         );
       }
 
-      // Bytes in, handle out — the one thing a tool argument cannot carry, since
-      // a file in a tool call is base64 in the model's output. Behind the same
-      // bearer check as everything else, and it stages into one named connection
-      // rather than a shared area, so a staged file stays as isolated as the
-      // account it was staged for.
-      if (url.pathname === ATTACHMENTS_PATH) {
-        return await stageAttachment({
-          profiles: options.profiles,
-          primary: options.primary,
-          principal: outcome.principal,
-          request,
-          clientLabel: request.headers.get('x-mcp-client') ?? undefined,
-        });
+      // Behind the same bearer check as everything else, and deliberately not a
+      // way to *change* configuration: it re-reads what the CLI already wrote to
+      // the store this endpoint boots from, so the one-way flow ADR-004 requires
+      // — local CLI to instance — is exactly what it follows. ADR-029.
+      if (url.pathname === RELOAD_PATH) {
+        const result = await options.generations.reload();
+        return Response.json(result);
       }
 
-      // After authentication, so an unauthenticated caller cannot make the
-      // endpoint poll its store. Before `visible()`, because a skill added
-      // since the last poll must not be audited as a refusal on its first call.
-      await refreshSkills();
+      // A request works against one generation for its whole lifetime. Pinning
+      // it here rather than reading `current` at each use is what makes a reload
+      // landing mid-request invisible to this one: the config it is evaluated
+      // against cannot change between two of its own awaits.
+      let generation = options.generations.acquire();
 
-      const clientLabel = request.headers.get('x-mcp-client') ?? undefined;
-
-      // Policy-filtered discovery means an unpermitted tool is never
-      // advertised, so a call naming one is rejected by the protocol layer
-      // before dispatch — and would otherwise leave no trace. The 2026-07-28
-      // envelope requires the method and target in headers and rejects any
-      // request whose headers and body disagree, so reading them here is exact
-      // without parsing (and consuming) the body.
-      //
-      // **Only for an envelope client.** A 2025-era request carries neither
-      // header, and `createMcpHandler` above is built without a `legacy`
-      // option — whose default is `'stateless'`, so those requests are served
-      // rather than refused. This check short-circuits and the refusal goes
-      // unrecorded. That is the second documented exception to
-      // `audit.every-invocation` in `docs/detailed/security.md`, asserted in
-      // `index.test.ts`. Closing it means cloning and parsing the body when the
-      // header is absent, which is what `stdio.ts` does for want of headers.
-      //
-      // `prompts/get` is included because a prompt is named exactly as a tool
-      // is — `skills_review-diff` — so the same lookup is exact. `resources/read`
-      // is **not**, and cannot be with this shape: 2026-07-28 mirrors
-      // `params.uri` rather than a name into the header, and a URI does not
-      // match a wire name, so including it would record a refusal for every
-      // successful read. Recovering a capability id from a concrete URI means
-      // matching it against each registered template, which is a real design
-      // decision — not least about what to record when it matches nothing —
-      // and M4 did not take it. `resources.test.ts` asserts the gap.
-      const method = request.headers.get('mcp-method');
-      if (method === 'tools/call' || method === 'prompts/get') {
-        const toolName = request.headers.get('mcp-name');
-        if (toolName && !visible().has(toolName)) {
-          // Recorded against the primary profile: the body has not been read,
-          // so which profile the call named is not yet known, and an attempt on
-          // a tool no profile advertises belongs to none of them in particular.
-          await options.profiles.get(options.primary)!.dispatcher.recordRefusal({
+      try {
+        // Bytes in, handle out — the one thing a tool argument cannot carry,
+        // since a file in a tool call is base64 in the model's output. It stages
+        // into one named connection rather than a shared area, so a staged file
+        // stays as isolated as the account it was staged for.
+        if (url.pathname === ATTACHMENTS_PATH) {
+          return await stageAttachment({
+            profiles: generation.profiles,
+            primary: options.primary,
             principal: outcome.principal,
-            capabilityId: capabilityIdForToolName(toolName, allCapabilityIds()),
-            clientLabel,
+            request,
+            clientLabel: request.headers.get('x-mcp-client') ?? undefined,
           });
         }
-      }
 
-      return handlerFor(outcome.principal, clientLabel).fetch(request);
+        // After authentication, so an unauthenticated caller cannot make the
+        // endpoint poll its store. Before `visible()`, because a skill added
+        // since the last poll must not be audited as a refusal on its first call.
+        await generation.refreshSkills();
+
+        const clientLabel = request.headers.get('x-mcp-client') ?? undefined;
+
+        // Policy-filtered discovery means an unpermitted tool is never
+        // advertised, so a call naming one is rejected by the protocol layer
+        // before dispatch — and would otherwise leave no trace. The 2026-07-28
+        // envelope requires the method and target in headers and rejects any
+        // request whose headers and body disagree, so reading them here is exact
+        // without parsing (and consuming) the body.
+        //
+        // **Only for an envelope client.** A 2025-era request carries neither
+        // header, and `createMcpHandler` is built without a `legacy` option —
+        // whose default is `'stateless'`, so those requests are served rather
+        // than refused. This check short-circuits and the refusal goes
+        // unrecorded. That is the second documented exception to
+        // `audit.every-invocation` in `docs/detailed/security.md`, asserted in
+        // `index.test.ts`. Closing it means cloning and parsing the body when
+        // the header is absent, which is what `stdio.ts` does for want of
+        // headers.
+        //
+        // `prompts/get` is included because a prompt is named exactly as a tool
+        // is — `skills_review-diff` — so the same lookup is exact.
+        // `resources/read` is **not**, and cannot be with this shape: 2026-07-28
+        // mirrors `params.uri` rather than a name into the header, and a URI does
+        // not match a wire name, so including it would record a refusal for every
+        // successful read. Recovering a capability id from a concrete URI means
+        // matching it against each registered template, which is a real design
+        // decision — not least about what to record when it matches nothing —
+        // and M4 did not take it. `resources.test.ts` asserts the gap.
+        const method = request.headers.get('mcp-method');
+        if (method === 'tools/call' || method === 'prompts/get') {
+          const toolName = request.headers.get('mcp-name');
+
+          if (toolName && !generation.visible().has(toolName)) {
+            // Before recording it as a refusal: this instance may simply be
+            // holding config older than the account the caller is naming.
+            if (await probeForNewConfig()) {
+              await options.generations.release(generation);
+              generation = options.generations.acquire();
+            }
+          }
+
+          if (toolName && !generation.visible().has(toolName)) {
+            // Recorded against the primary profile: the body has not been read,
+            // so which profile the call named is not yet known, and an attempt on
+            // a tool no profile advertises belongs to none of them in particular.
+            await generation.profiles.get(options.primary)!.dispatcher.recordRefusal({
+              principal: outcome.principal,
+              capabilityId: capabilityIdForToolName(toolName, generation.allCapabilityIds()),
+              clientLabel,
+            });
+          }
+        }
+
+        return await generation.handlerFor(outcome.principal, clientLabel).fetch(request);
+      } finally {
+        await options.generations.release(generation);
+      }
     },
 
     async close() {
-      await Promise.all([...handlers.values()].map((handler) => handler.close()));
-      handlers.clear();
+      await options.generations.close();
     },
   };
 }
@@ -351,9 +289,13 @@ export interface RunningServer {
 }
 
 export function serve(options: ServeOptions): RunningServer {
-  const primary = options.profiles.get(options.primary);
+  const current: Generation = options.generations.current;
+  const primary = current.profiles.get(options.primary);
   if (!primary) throw new Error(`Profile "${options.primary}" is not among those being served.`);
 
+  // Read once, from the generation that is current at bind time. A reload
+  // cannot move a bound socket, so `instance.port` and `instance.host` are
+  // deliberately not part of what reloading re-reads (ADR-029).
   const host = options.host ?? primary.config.instance.host;
   const port = options.port ?? primary.config.instance.port;
 

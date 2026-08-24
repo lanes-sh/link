@@ -46,32 +46,19 @@ export const NOTHING = { changes: [], granted: [], discovered: 0 } as const;
 export const ALREADY = 'Already connected — nothing changed.';
 
 /**
- * A running endpoint reads its config once, at startup.
+ * What `connect` says last.
  *
- * `connect` used to say "Next: lanes link start", which reads as "you are done"
- * to someone who already has one running. They then ask an agent that cannot
- * see the new connection, and the endpoint is not wrong — it is serving the
- * config it was started with.
- *
- * Which endpoint that is depends on the target, and saying the wrong one is
- * worse than saying nothing: told to restart `lanes link start` after
+ * It used to be a guess: "restart the endpoint", or "run lanes link deploy" for
+ * a deployable target, because a running endpoint read its config once at
+ * startup and there was no way to reach it in between. Saying the wrong one was
+ * worse than saying nothing — told to restart `lanes link start` after
  * authorising an account against a deployment, an operator restarts a server
- * that was not serving it and watches the deployed one go on refusing. A
- * deployed instance is replaced rather than restarted, and the config it reads
- * lives in a bucket that `deploy` uploads — so the revision and the config it
- * needs arrive by the same command.
+ * that was not serving it and watches the deployed one go on refusing.
+ *
+ * The guess is gone. `connect` publishes the config where the target reads it
+ * and asks the endpoint to re-read it, so the line reports what happened rather
+ * than predicting it — see `nextAfterEdit` in `#cli/publish.ts` and ADR-029.
  */
-export const RESTART = 'Restart the endpoint to serve it: stop lanes link start, then run it again.';
-
-export const REDEPLOY =
-  'Roll a revision so the deployed endpoint serves it: lanes link deploy\n' +
-  '      It decides which connections are usable when it boots, so the one running now\n' +
-  '      keeps refusing this account until a new revision replaces it.';
-
-/** Which of the two a target has. */
-export function nextAfterConnect(deployable: boolean): string {
-  return deployable ? REDEPLOY : RESTART;
-}
 
 export function renderOutcome(outcome: ConnectOutcome): void {
   // Each member already rendered itself as it ran; a summary here would print
