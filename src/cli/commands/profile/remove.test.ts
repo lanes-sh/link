@@ -2,7 +2,12 @@ import { describe, expect, test } from 'bun:test';
 import type { SecretRef, SecretStore } from '#secrets';
 import type { BlobMetadata, BlobStore } from '#stores/blobs';
 import type { RemovalItem, RemovalPlan } from './removal.ts';
-import { executeRemoval, type RunDeps } from './remove.ts';
+import {
+  executeRemoval,
+  renderOutcome,
+  type RemovalOutcome,
+  type RunDeps,
+} from './remove.ts';
 
 /**
  * Performing a removal, and being honest about the parts that did not happen.
@@ -178,5 +183,103 @@ describe('executeRemoval', () => {
     );
 
     expect(opened).toBe(1);
+  });
+});
+
+// --- renderOutcome ---------------------------------------------------------
+
+function captured(body: () => void): { out: string; err: string } {
+  const outWrite = process.stdout.write.bind(process.stdout);
+  const errWrite = process.stderr.write.bind(process.stderr);
+  let out = '';
+  let err = '';
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (process.stdout as any).write = (chunk: string) => ((out += chunk), true);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (process.stderr as any).write = (chunk: string) => ((err += chunk), true);
+  try {
+    body();
+  } finally {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (process.stdout as any).write = outWrite;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (process.stderr as any).write = errWrite;
+  }
+  return { out, err };
+}
+
+const outcome = (over: Partial<RemovalOutcome> = {}): RemovalOutcome => ({
+  profile: 'personal',
+  results: [{ item: item({ kind: 'secret', id: 'gmail/someone' }), status: 'removed' }],
+  survived: 0,
+  ...over,
+});
+
+describe('renderOutcome', () => {
+  test('a clean run says so, and leaves the exit code alone', () => {
+    const before = process.exitCode;
+    const { out } = captured(() => renderOutcome(outcome()));
+
+    expect(out).toMatch(/personal/);
+    expect(process.exitCode).toBe(before);
+  });
+
+  test('a survivor is named with the command that finishes it', () => {
+    const { out } = captured(() =>
+      renderOutcome(
+        outcome({
+          results: [
+            {
+              item: item({ kind: 'secret', id: 'a/one' }),
+              status: 'failed',
+              error: 'permission denied',
+              retry: 'gcloud secrets delete a__one --project my-project',
+            },
+          ],
+          survived: 1,
+        }),
+      ),
+    );
+
+    expect(out).toContain('a/one');
+    expect(out).toContain('permission denied');
+    expect(out).toContain('gcloud secrets delete a__one');
+
+    process.exitCode = 0;
+  });
+
+  test('anything surviving sets a non-zero exit code', () => {
+    // Silence would read as success to a script, and the thing left behind is
+    // a live credential.
+    process.exitCode = 0;
+    captured(() =>
+      renderOutcome(
+        outcome({
+          results: [{ item: item({ kind: 'secret', id: 'a/one' }), status: 'failed' }],
+          survived: 1,
+        }),
+      ),
+    );
+
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
+  });
+
+  test('a kept config says the removal can simply be run again', () => {
+    process.exitCode = 0;
+    const { out } = captured(() =>
+      renderOutcome(
+        outcome({
+          results: [
+            { item: item({ kind: 'secret', id: 'a/one' }), status: 'failed', error: 'nope' },
+            { item: item({ target: null, kind: 'config', id: '/ws/p.yaml' }), status: 'kept' },
+          ],
+          survived: 2,
+        }),
+      ),
+    );
+
+    expect(out).toMatch(/again|re-run|rerun/i);
+    process.exitCode = 0;
   });
 });

@@ -1,5 +1,6 @@
 import type { SecretStore } from '#secrets';
 import type { BlobStore } from '#stores/blobs';
+import { fail, ok, print, style } from '../../output.ts';
 import type { RemovalItem, RemovalPlan } from './removal.ts';
 
 /**
@@ -119,4 +120,52 @@ export async function executeRemoval(
     results,
     survived: results.filter((result) => result.status !== 'removed').length,
   };
+}
+
+/**
+ * What happened, and what is still out there.
+ *
+ * The exit code is the load-bearing part. Best effort means the command can
+ * finish having left a live credential behind, and to a script silence is
+ * indistinguishable from success — so anything that survived makes this exit
+ * non-zero, and names itself with the command that finishes it.
+ */
+export function renderOutcome(outcome: RemovalOutcome): void {
+  const removed = outcome.results.filter((result) => result.status === 'removed');
+  const failed = outcome.results.filter((result) => result.status === 'failed');
+  const kept = outcome.results.filter((result) => result.status === 'kept');
+
+  print();
+  if (outcome.survived === 0) {
+    print(ok(`Removed profile ${style.bold(outcome.profile)} — ${removed.length} item(s).`));
+    print();
+    return;
+  }
+
+  print(
+    fail(
+      `Removed ${removed.length} item(s) of profile ${style.bold(outcome.profile)}, and ${failed.length} refused.`,
+    ),
+  );
+  print();
+
+  for (const result of failed) {
+    print(`  ${result.item.id}`);
+    if (result.error) print(style.dim(`    ${result.error}`));
+    if (result.retry) print(style.dim(`    finish it with: ${result.retry}`));
+  }
+  print();
+
+  if (kept.length > 0) {
+    // Said plainly, because the alternative reading — that the profile is
+    // half-gone and needs unpicking by hand — is the one an operator will
+    // assume from a failure report.
+    print(
+      `The profile's config was kept, so nothing is stranded: fix the above and run the same command again.`,
+    );
+    print();
+  }
+
+  // A live credential left behind must not look like success to a script.
+  process.exitCode = 1;
 }
