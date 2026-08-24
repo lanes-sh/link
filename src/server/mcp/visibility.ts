@@ -1,3 +1,4 @@
+import { isTool } from '#connectivity';
 import type { Principal } from '#auth';
 import type { Config } from '#profile';
 import type { ProviderRegistry } from '#registry';
@@ -112,6 +113,27 @@ export function mergeCapabilities(options: BuildServerOptions): Map<string, Merg
 /** Which capability ids this principal can reach, across every profile served. */
 export function visibleCapabilities(options: BuildServerOptions): string[] {
   return [...mergeCapabilities(options).keys()];
+}
+
+/**
+ * How many of those are tools, as `tools/list` would count them.
+ *
+ * Not the same number as `visibleCapabilities().length`, and the difference is
+ * the kind of thing that only shows up when someone reads it: a reachable
+ * capability may register as a resource or a prompt instead, so counting ids
+ * and calling the answer "tools" overstates the list by however many of those
+ * a profile has. The kind is decided here exactly as `buildMcpServer` decides
+ * it — a discovered capability is always a tool, an authored one is asked.
+ */
+export function visibleToolCount(options: BuildServerOptions): number {
+  let count = 0;
+
+  for (const entry of mergeCapabilities(options).values()) {
+    if (entry.discovered) count += 1;
+    else if (entry.capability && isTool(entry.capability)) count += 1;
+  }
+
+  return count;
 }
 
 /**

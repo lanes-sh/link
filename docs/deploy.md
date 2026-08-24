@@ -27,7 +27,10 @@ $ lanes link outputs --target cloud        # the URL your agent needs
 ```
 
 `connect` comes *after* the deploy: a credential store that does not exist yet is not somewhere to
-write a credential.
+write a credential. And `outputs` comes after *both* — register your agent last. A client reads the
+tool list when it connects and keeps it, so one registered before the accounts holds a list without
+them and has to be removed and re-added (ADR-032). `lanes link tools --target cloud` shows what a
+client would be handed.
 
 There is no second deploy. `connect` copies the config to where the running revision reads it and
 asks that revision to re-read it, so the account is reachable as soon as the browser consent is

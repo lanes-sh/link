@@ -18,6 +18,25 @@ describe('what an edit says it did', () => {
     expect(line).not.toContain('deploy');
   });
 
+  test('a served edit says what the surface is now, and how a client picks it up', () => {
+    // The failure this wording exists for: the endpoint re-read its config and
+    // said so, the operator refreshed their connector, and the connector went
+    // on showing the two tools it captured before any account was connected.
+    // Nothing was wrong with the endpoint — the client had never been told to
+    // ask again, and cannot be, so the command has to say it.
+    const line = nextAfterEdit({ served: true, tools: 42 });
+
+    expect(line).toContain('Serving it now');
+    expect(line).toContain('42 tools');
+    expect(line).toContain('reconnect');
+  });
+
+  test('an endpoint that did not report a count says only what it knows', () => {
+    // An older endpoint, or one behind a proxy that ate the body. Inventing a
+    // number here would be worse than omitting the sentence.
+    expect(nextAfterEdit({ served: true })).not.toContain('reconnect');
+  });
+
   test('an unreachable endpoint names where it tried', () => {
     // `lanes link start --port 7455` moves the socket without moving
     // `instance.port`, so "nothing answered" most often means "not there".

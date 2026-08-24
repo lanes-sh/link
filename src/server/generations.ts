@@ -10,6 +10,7 @@ import {
   buildMcpServer,
   toolNameFor,
   visibleCapabilities,
+  visibleToolCount,
   type ProfileRuntime,
 } from '#server/mcp';
 
@@ -102,6 +103,14 @@ export class Generation {
    */
   readonly visible: () => ReadonlySet<string>;
 
+  /**
+   * How many tools this generation advertises (ADR-032).
+   *
+   * Not `visible().size`: that set spans every reachable capability, and a
+   * resource or a prompt is in it without being in `tools/list`.
+   */
+  readonly toolCount: () => number;
+
   constructor(epoch: number, opened: OpenedWorkspace, deps: GenerationDeps) {
     this.epoch = epoch;
     this.profiles = opened.profiles;
@@ -124,6 +133,10 @@ export class Generation {
             principal: ownerPrincipal(deps.primary),
           }).map(toolNameFor),
         ),
+    );
+
+    this.toolCount = this.#memo(() =>
+      visibleToolCount({ profiles: this.profiles, principal: ownerPrincipal(deps.primary) }),
     );
   }
 
@@ -255,6 +268,13 @@ export interface ReloadResult {
   readonly reloaded: boolean;
   readonly epoch: number;
   readonly profiles: readonly string[];
+  /**
+   * How many tools the generation now serving advertises (ADR-032).
+   *
+   * What `connect` prints: the edit landing and the surface a client sees are
+   * different events, and the gap is where a stale tool list hides.
+   */
+  readonly tools: number;
   /** Why it did not reload. Absent on success. */
   readonly reason?: string;
 }
@@ -278,6 +298,12 @@ export class Generations {
     this.#current = new Generation(0, initial, deps);
     this.#open = open;
     this.#deps = deps;
+
+    // The boot half of what `#reload` logs, and the more useful half: a fresh
+    // revision comes up with whatever config held at deploy time — often one
+    // `setup.main` and two tools — and a client registered in that window keeps
+    // what it was handed. This is what makes the window visible afterwards.
+    deps.log.info('serving', { epoch: 0, tools: this.#current.toolCount() });
   }
 
   get current(): Generation {
@@ -330,6 +356,7 @@ export class Generations {
         reloaded: false,
         epoch: previous.epoch,
         profiles: previous.names(),
+        tools: previous.toolCount(),
         reason,
       };
     }
@@ -348,10 +375,18 @@ export class Generations {
     // generation, and this only waits on requests that started before it.
     await previous.retire();
 
+    const tools = this.#current.toolCount();
+
+    // The only record of what the endpoint advertises: `tools/list` is neither
+    // logged nor audited, so nothing else could tell a generation serving two
+    // tools from one serving forty. Once per reload, on a memoised read.
+    this.#deps.log.info('serving', { epoch: this.#current.epoch, tools });
+
     return {
       reloaded: true,
       epoch: this.#current.epoch,
       profiles: this.#current.names(),
+      tools,
     };
   }
 

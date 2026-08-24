@@ -14,6 +14,7 @@ import {
   status,
   tokenRotate,
   tokenShow,
+  tools,
 } from './commands/operate.ts';
 import { profileAdd, profileDefault, profileList } from './commands/profile.ts';
 import { removeProfile as profileRemove } from './commands/profile/remove.ts';
@@ -249,6 +250,13 @@ export async function run(argv: readonly string[]): Promise<void> {
       return status({ ...global, json });
     case 'outputs':
       return outputs({ ...global, show, json });
+
+    // Beside `outputs` because it answers the next question. `outputs` says
+    // where the endpoint is; this says what it would hand a client that asked
+    // right now — which is the only way to tell a stale client from a wrong
+    // endpoint without reading request sizes out of a log.
+    case 'tools':
+      return tools({ ...global, json });
 
     // Undocumented alias for `mcp skill`, which is where it moved when `skills`
     // arrived. Anyone who learned the old spelling keeps it.

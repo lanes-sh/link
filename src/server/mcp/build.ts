@@ -45,7 +45,34 @@ export function buildMcpServer(options: BuildServerOptions): McpServer {
     // Second argument, not the first: `instructions` is a `ServerOptions` field,
     // and `Implementation` would take it as an unknown extra and drop it from
     // `initialize` without complaining.
-    { instructions: serverInstructions(names, merged) },
+    {
+      instructions: serverInstructions(names, merged),
+      // Declared `false` because it is false, and the SDK defaults it to `true`.
+      //
+      // `listChanged` is a promise to send `notifications/tools/list_changed`
+      // when the surface changes. This endpoint cannot keep it: it is stateless
+      // streamable HTTP, so there is no stream to deliver a notification on and
+      // this very server instance is discarded once the response is written.
+      // Nothing in `src/` sends one, and nothing can.
+      //
+      // Leaving the default on is not a harmless inaccuracy. A client that
+      // believes it will be told has no reason to ask again, so it keeps the
+      // list it captured when it first connected — and the surface here grows
+      // every time an account is connected (ADR-029). That combination cost a
+      // connector registered before `connect` ran its whole tool list: it held
+      // the two setup tools for as long as it lived, and no refresh replaced
+      // them, because the refresh was an `initialize` that never went on to ask
+      // for `tools/list`.
+      //
+      // Saying `false` costs a re-list per session and buys a surface that is
+      // never stale. Prompts and resources carry the identical default and the
+      // identical inability, so they are answered here too.
+      capabilities: {
+        tools: { listChanged: false },
+        resources: { listChanged: false },
+        prompts: { listChanged: false },
+      },
+    },
   );
 
   for (const [id, entry] of merged) {

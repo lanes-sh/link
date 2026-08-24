@@ -26,6 +26,7 @@ export {
   mergeCapabilities,
   oneProfile,
   visibleCapabilities,
+  visibleToolCount,
   type BuildServerOptions,
   type MergedCapability,
   type ProfileRuntime,

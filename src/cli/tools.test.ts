@@ -112,6 +112,47 @@ describe('vendored specs yield registrable tools', () => {
   );
 
   /**
+   * The size nobody was measuring: the whole list, not one tool in it.
+   *
+   * `BUDGET_KB` is a floor under a single runaway schema. Every provider can sit
+   * comfortably under it while the list a client is handed grows without limit,
+   * one vendored operation at a time — and that total is what actually travels
+   * on every `tools/list`, what a hosted client has to accept in one response,
+   * and what decides whether a client injects the tools or hides them behind a
+   * search of its own.
+   *
+   * Measured per provider, because which providers an operator connects is
+   * their business and only the per-provider contribution is this repository's.
+   *
+   * The number is a ratchet, not a target. Drive is 178KB across nine
+   * operations today, and three `files.*` writes are 143KB of it: the `File`
+   * resource inlined three times over. Cutting that means `makeOpaque`, which
+   * buys the bytes by taking away the schema the model composes a request body
+   * against — a real trade, worth making deliberately rather than to satisfy a
+   * test. So this is set with the same headroom the per-tool budget carries
+   * (64KB over a legitimate 37KB): enough to catch a surface that grew by an
+   * order of magnitude, not so tight that it demands the trade today.
+   */
+  const SURFACE_BUDGET_KB = 256;
+
+  test.each(httpProviders.map((m) => [m.id, m] as const))(
+    '%s keeps its whole advertised surface inside the budget',
+    async (_id, manifest) => {
+      const connector = manifest.connector as { base_url: string; openapi: string };
+      const capabilities = await createHttpConnector({
+        baseUrl: connector.base_url,
+        openapi: connector.openapi,
+      }).discover({ manifest });
+
+      // The whole capability, not the schema alone: a name and a description
+      // are sent on every `tools/list` too, and twenty-five of them add up.
+      const kb = Math.round(JSON.stringify(capabilities).length / 1024);
+
+      expect(kb).toBeLessThanOrEqual(SURFACE_BUDGET_KB);
+    },
+  );
+
+  /**
    * A hint that is declared but not delivered.
    *
    * `specs.test.ts` checks that a `hints` key names a real capability. This

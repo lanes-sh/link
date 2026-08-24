@@ -211,9 +211,34 @@ export async function deploy(flags: DeployFlags): Promise<void> {
   print(`  ${url}/mcp`);
   print(await healthLine(url));
   print('');
-  print(style.dim(`  Register it with: lanes link outputs --target ${target}`));
+  print(registerLine(target, prepared.warnings.length));
 
   reportUnauthorised(prepared.warnings, target);
+}
+
+/**
+ * How to register the endpoint, and when.
+ *
+ * The ordering is the whole point of the second half. A client captures
+ * `tools/list` when it connects and keeps it: this endpoint is stateless, so
+ * there is no stream on which to send `notifications/tools/list_changed`, and
+ * `buildMcpServer` no longer pretends otherwise. A first deploy necessarily
+ * publishes a profile whose only connection is `setup.main` — the accounts come
+ * after — so a connector registered in that window captures a two-tool surface
+ * and holds it. The endpoint is right, every reload lands, and the client shows
+ * two tools until someone removes and re-adds it.
+ *
+ * Saying it here costs one line at the exact moment someone is about to do it.
+ */
+function registerLine(target: string, pending: number): string {
+  const register = `  Register it with: lanes link outputs --target ${target}`;
+  if (pending === 0) return style.dim(register);
+
+  return style.dim(
+    `${register}\n` +
+      '  Connect the accounts below first. A client keeps the tool list it fetched\n' +
+      '  when it connected, so one registered now would hold the smaller surface.',
+  );
 }
 
 /**

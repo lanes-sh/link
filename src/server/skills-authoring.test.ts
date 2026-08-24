@@ -197,14 +197,24 @@ describe('authoring is a separate grant', () => {
   const token = 'llk_readonly_token_value';
 
   test('an invoke-only profile is offered no management tool at all', async () => {
-    // Not an empty list — `tools/list` is not a method this endpoint answers,
-    // because nothing registered a tool for this principal. Policy-filtered
-    // discovery means the four `skills.manage.*` capabilities are not withheld
-    // at call time, they were never advertised.
+    // An empty list, and deliberately not `Method not found`.
+    //
+    // It used to be the latter: nothing registered a tool for this principal,
+    // so the SDK never installed the handler. Declaring the `tools` capability
+    // up front — which is what stops the endpoint promising a `list_changed`
+    // notification it cannot send — installs it unconditionally, and the answer
+    // becomes the true one. The difference is the same difference that fix is
+    // about: "this server has no tools right now" invites a client to ask
+    // again, and "this server does not do tools" tells it never to.
+    //
+    // What the test is actually about is unchanged. Policy-filtered discovery
+    // means the four `skills.manage.*` capabilities are not withheld at call
+    // time — they were never advertised.
     const listed = await rpc(url(invokeOnly), 'tools/list', {}, { token });
-    const error = listed.body['error'] as { message: string } | undefined;
+    const result = listed.body['result'] as { tools?: unknown[] } | undefined;
 
-    expect(error?.message).toBe('Method not found');
+    expect(listed.body['error']).toBeUndefined();
+    expect(result?.tools).toEqual([]);
   });
 
   test('it can still invoke the skills it has', async () => {

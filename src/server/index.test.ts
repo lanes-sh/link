@@ -531,6 +531,62 @@ describe('audit over the wire', () => {
   });
 });
 
+describe('the tool list does not go stale', () => {
+  /**
+   * A 2025-era handshake, by hand.
+   *
+   * `rpc` speaks the 2026-07-28 envelope, which has no handshake left to
+   * assert. The clients this test is about — a hosted connector, and Claude
+   * Code — open with `initialize`, and what that answer claims is the whole
+   * subject here.
+   */
+  async function initialize(url: string): Promise<Record<string, unknown>> {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        authorization: `Bearer ${TEST_TOKEN}`,
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-06-18',
+          capabilities: {},
+          clientInfo: { name: 'listChanged-test', version: '0.0.0' },
+        },
+      }),
+    });
+
+    // The legacy leg answers as SSE, so the payload is a `data:` line.
+    const text = await response.text();
+    const line = text.startsWith('event:') || text.startsWith('data:')
+      ? (text.split('\n').find((candidate) => candidate.startsWith('data: '))?.slice(6) ?? '{}')
+      : text;
+
+    return (JSON.parse(line) as { result?: Record<string, unknown> }).result ?? {};
+  }
+
+  test('initialize does not promise a list_changed notification', async () => {
+    // The endpoint is stateless: no stream to notify on, and the server
+    // instance is gone once the response is written. The SDK defaults every
+    // one of these to `true`, and a client that believes it will be told stops
+    // asking — so a connector registered before an account was connected keeps
+    // the smaller list it first saw, for as long as it lives. That is not
+    // hypothetical; it is the bug this test exists for.
+    const result = await initialize(personal.server.url);
+    const capabilities = result['capabilities'] as
+      | Record<string, { listChanged?: boolean } | undefined>
+      | undefined;
+
+    expect(capabilities?.['tools']?.listChanged).toBe(false);
+    expect(capabilities?.['resources']?.listChanged).toBe(false);
+    expect(capabilities?.['prompts']?.listChanged).toBe(false);
+  });
+});
+
 describe('statelessness', () => {
   test('sequential calls need no session handshake', async () => {
     // No initialize, no session id, no ordering requirement — which is what
@@ -775,6 +831,37 @@ ${policy}
     }
   });
 
+  test('the count it reports is tools, not everything reachable', async () => {
+    // `EVERYTHING` reaches `example.note`, which registers as a *resource*.
+    // That is what makes this test worth having: the count `connect` prints is
+    // the only number an operator can hold against what their client shows, and
+    // counting reachable capability ids would have overstated it by one here —
+    // silently, and by more on a profile with skills, since every skill is a
+    // prompt. `READ_ONLY` would not have noticed: it reaches no resource at all.
+    const port = allocatePort();
+    const { harness, edit, reload } = reloadable(
+      port,
+      configWith('personal', port, ['a'], EVERYTHING),
+    );
+
+    try {
+      edit(configWith('personal', port, ['a', 'c'], EVERYTHING));
+      const { body } = await reload();
+
+      const listed = await listTools(harness.server.url);
+      // `resources/templates/list`, not `resources/list`: `example.note` is
+      // addressed by a URI template, and a template is not a concrete resource.
+      const templates = await rpc(harness.server.url, 'resources/templates/list', {});
+      const registered =
+        (templates.body['result'] as { resourceTemplates?: unknown[] })?.resourceTemplates ?? [];
+
+      expect(registered.length).toBeGreaterThan(0);
+      expect(body['tools']).toBe(listed.length);
+    } finally {
+      await harness.stop();
+    }
+  });
+
   test('a connection added to the config is served without a restart', async () => {
     const port = allocatePort();
     const { harness, edit, reload } = reloadable(
@@ -802,6 +889,7 @@ ${policy}
         after.find((tool) => tool.name === 'example_get_note')?.inputSchema.properties?.connection
           ?.enum,
       ).toEqual(['example.a', 'example.c']);
+
     } finally {
       await harness.stop();
     }
