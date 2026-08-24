@@ -38,9 +38,14 @@ $ lanes link connect gmail --own-client
 
 It asks for a client id and secret, stores them, and writes an `oauth_apps` entry to your profile.
 That entry is the switch: once it is there, every Google connection on that profile uses your
-client and you never need the flag again. Delete it to go back to the hosted one — though existing
-connections keep refreshing against whichever client issued them, so moving one across means
-running `connect` for it again.
+client and you never need the flag again.
+
+Going back to the hosted one takes two steps, not one. Deleting the entry leaves the client id and
+secret in your credential store, and they still count — deliberately, so a profile whose config
+lost the block is not moved onto a different client and left holding refresh tokens the new one
+refuses. Remove the stored pair as well, or remove the profile
+([`../configuration.md`](../configuration.md)). Either way, existing connections keep refreshing
+against whichever client issued them, so moving one across means running `connect` for it again.
 
 Everything below is that path.
 
@@ -363,9 +368,10 @@ warn  gmail.personal credential is 8 days old — Testing-status apps expire at 
 
 If the weekly cycle becomes annoying, the escapes are:
 
-- **Use the hosted client** — drop `--own-client`, delete the `oauth_apps` entry from your profile,
-  and run `lanes link connect` again for each account. That client is published, so its refresh
-  tokens do not expire weekly.
+- **Use the hosted client** — drop `--own-client`, remove the `oauth_apps` entry *and* the stored
+  `google/client_id` and `google/client_secret` (both, for the reason above), then run
+  `lanes link connect` again for each account. That client is published, so its refresh tokens do
+  not expire weekly.
 - **Move those accounts to a Workspace domain** and use an Internal app — no expiry, no warning
   screen, no verification.
 - **Complete Google's verification** for your External app — weeks to months, and for restricted
