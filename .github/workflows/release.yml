@@ -1,37 +1,55 @@
-# Publishing `@lanes-sh/link` to npm.
+# Releasing `@lanes-sh/link`. One workflow, because it is one idea.
 #
-# Runs when `package.json` lands on `main` carrying a version no tag has been
-# cut for — which is what merging the pull request from `release-pr.yml` does.
-# A version that already has a tag has already been published, so this exits
-# without doing anything, and an ordinary merge that happens to touch
-# `package.json` (a dependency change, say) is therefore harmless.
+# A merge that changes what people install does one of two things, and which one
+# is decided by whether the version in `package.json` already has a tag:
+#
+#   tagged     — it is already published, so this merge earns the next patch.
+#                A `release/next` branch is pushed carrying the bump, and the
+#                run summary links to the pull request that opens it.
+#   not tagged — somebody set that version deliberately, which is what merging
+#                a release pull request does. Publish it and cut the tag.
+#
+# So the same file both proposes a release and performs one, and never both.
 #
 # **The filename is load-bearing.** npm's trusted publisher for this package
 # names `release.yml`; renaming this file makes every publish fail to
 # authenticate, with an error about OIDC rather than about the rename.
 #
 # **Minor and major releases** need no separate path: set the version you want
-# in `package.json` in an ordinary pull request. It arrives here with no tag
-# behind it and is published as declared, which puts the one judgement in a
-# release — that something earns more than a patch — in review, beside the
-# change it describes.
+# in `package.json` in an ordinary pull request. It arrives with no tag behind
+# it and is published as declared, which puts the one judgement in a release —
+# that something earns more than a patch — in review, beside the change it
+# describes.
 #
-# Nothing here is pushed to `main`. The tag is, and a tag is not covered by the
-# branch ruleset, so this needs no bypass and no stored credential.
+# **Nothing is pushed to `main`.** A workflow cannot: the ruleset requires a
+# pull request and the built-in GITHUB_TOKEN cannot be added to its bypass list.
+# The alternative is a stored App key or token with write access to `main`,
+# which is a larger credential than the npm token this project deliberately does
+# not have. What is pushed is a side branch and a tag, neither of which the
+# ruleset covers, so nothing here is stored anywhere.
 name: release
 
 on:
   push:
     branches: [main]
+    # What ships, and nothing else. `files` in package.json is the same list,
+    # and the two should stay in step: a merge that cannot change the tarball
+    # must not spend a version number. `README.md` is deliberately absent even
+    # though it is packed — a typo fix in it rides along with the next real
+    # release rather than becoming one.
     paths:
+      - 'src/**'
+      - 'bin/**'
+      - 'instructions/**'
       - 'package.json'
+      - 'bun.lock'
 
 concurrency:
   group: release
   cancel-in-progress: false
 
 permissions:
-  # The tag and the GitHub release. Not the branch — see above.
+  # The `release/next` branch, the tag, and the GitHub release. Not `main`.
   contents: write
   # What npm mints a short-lived publish credential from. No token is stored.
   id-token: write
@@ -40,84 +58,139 @@ jobs:
   release:
     name: release
     runs-on: ubuntu-latest
+    # The bump is pushed to a side branch rather than here, so this guard is
+    # belt to that braces: a GITHUB_TOKEN push starts no workflow run, and
+    # relying on that silently is how the loop closes later under a token
+    # someone swapped in for an unrelated reason.
+    if: github.actor != 'github-actions[bot]'
     steps:
       - uses: actions/checkout@v5
         with:
-          # Tags decide whether this version is already out, so a shallow clone
-          # would report every version as new and try to republish the last one.
+          # Tags decide which of the two things this run is. A shallow clone
+          # reports every version as new and would republish the last one.
           fetch-depth: 0
 
-      - name: is there anything to publish
-        id: check
+      - name: publish, or propose
+        id: mode
         run: |
           set -euo pipefail
           VERSION="$(node --print 'require("./package.json").version')"
+
           if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-            echo "v$VERSION is already tagged — nothing to do."
+            echo "mode=propose" >> "$GITHUB_OUTPUT"
+            echo "v$VERSION is published; this merge earns the next patch."
           else
-            echo "publish=true" >> "$GITHUB_OUTPUT"
+            echo "mode=publish" >> "$GITHUB_OUTPUT"
             echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-            echo "publishing $VERSION"
+            echo "v$VERSION has no tag; publishing it."
           fi
 
+      # ---- propose -------------------------------------------------------
+      # No gates here: nothing is published, and `ci` has already run on this
+      # commit as a push to main. The gates that matter run below, against the
+      # exact tree that reaches the registry.
+      - name: push the next release
+        if: steps.mode.outputs.mode == 'propose'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          CURRENT="$(node --print 'require("./package.json").version')"
+          NEXT="$(npm version patch --no-git-tag-version | tr -d 'v')"
+
+          # `|| true` because `set -o pipefail` turns the SIGPIPE that `head`
+          # sends `git log` into a failed run, and a long history is not an
+          # error.
+          CHANGES="$( { git log "v$CURRENT..HEAD" --no-merges --pretty=format:'- %s' || true; } | head -50)"
+          [ -n "$CHANGES" ] || CHANGES="- (nothing recorded since v$CURRENT)"
+
+          # The commit message is the release note. GitHub pre-fills a pull
+          # request's title and body from it when a branch holds one commit, so
+          # opening the release is one click and arrives already describing
+          # itself — which is why this workflow does not call `gh pr create`.
+          # That call needs "Allow GitHub Actions to create and approve pull
+          # requests", and the approving half of that permission would let a
+          # workflow satisfy the review this repository requires.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B release/next
+          git add package.json
+          # printf rather than a multi-line string: a quoted newline inside a
+          # YAML block scalar carries the block's own indentation into the
+          # commit body, and from there into the pre-filled pull request.
+          BODY="$(printf 'Merging this publishes %s to npm.\n\nSince v%s:\n\n%s\n' \
+            "$NEXT" "$CURRENT" "$CHANGES")"
+          git commit -m "Release $NEXT" -m "$BODY"
+          git push --force origin release/next
+
+          REPO="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+          {
+            echo "### Release $NEXT is ready to open"
+            echo
+            echo "$CHANGES"
+            echo
+            echo "[Open the pull request]($REPO/compare/main...release/next?expand=1) — merging it publishes."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # ---- publish -------------------------------------------------------
       - uses: oven-sh/setup-bun@v2
-        if: steps.check.outputs.publish == 'true'
+        if: steps.mode.outputs.mode == 'publish'
         with:
           # The same pin as ci.yml, for the same reason: a Bun release must not
-          # be able to change what green means without a commit saying so.
+          # change what green means without a commit saying so.
           bun-version: 1.3.11
 
-      - if: steps.check.outputs.publish == 'true'
+      - if: steps.mode.outputs.mode == 'publish'
         run: bun install --frozen-lockfile
 
-      # The release pull request cannot carry a CI run of its own — GitHub does
-      # not run workflows on pull requests it opened itself — so this is the
-      # only place both gates run against the exact tree being published, and
-      # the registry does not give a version back.
-      - if: steps.check.outputs.publish == 'true'
+      # A release pull request carries no `ci` run of its own — GitHub does not
+      # run workflows on branches it pushed — so this is the only place both
+      # gates meet the exact tree being published, and the registry does not
+      # give a version back.
+      - if: steps.mode.outputs.mode == 'publish'
         run: bun test
-      - if: steps.check.outputs.publish == 'true'
+      - if: steps.mode.outputs.mode == 'publish'
         run: bun run typecheck
 
       - uses: actions/setup-node@v4
-        if: steps.check.outputs.publish == 'true'
+        if: steps.mode.outputs.mode == 'publish'
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
 
       # Trusted publishing needs npm 11.5.1+, and the npm bundled with Node 22
       # is older than that.
-      - if: steps.check.outputs.publish == 'true'
+      - if: steps.mode.outputs.mode == 'publish'
         run: npm install -g npm@latest
 
       # Before the tag, because the order decides what a failure leaves behind.
       # Publish first and a failure leaves the repository untouched and the run
       # repeatable. Tag first and a failed publish leaves a tag claiming a
-      # version nobody can install, which this job then reads as released and
+      # version nobody can install, which the next run reads as released and
       # skips forever after.
       #
       # `--provenance` is passed rather than relied on: npm documents it as
       # automatic under OIDC and it does not reliably fire. It attests that this
       # tarball was built by this workflow from this repository, which is the
       # claim worth making for something that holds people's credentials.
-      - if: steps.check.outputs.publish == 'true'
+      - if: steps.mode.outputs.mode == 'publish'
         run: npm publish --provenance --access public
 
       - name: tag it
-        if: steps.check.outputs.publish == 'true'
+        if: steps.mode.outputs.mode == 'publish'
         env:
-          VERSION: ${{ steps.check.outputs.version }}
+          VERSION: ${{ steps.mode.outputs.version }}
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "v$VERSION" -m "v$VERSION"
           git push origin "v$VERSION"
+          git push --delete origin release/next 2>/dev/null || true
 
       - name: github release
-        if: steps.check.outputs.publish == 'true'
+        if: steps.mode.outputs.mode == 'publish'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.check.outputs.version }}
+          VERSION: ${{ steps.mode.outputs.version }}
         run: gh release create "v$VERSION" --generate-notes --verify-tag
