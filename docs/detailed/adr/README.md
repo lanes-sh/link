@@ -40,6 +40,7 @@ Nothing in the codebase depends on it.
 | [030](030-a-profile-owns-its-skills-and-manifests.md) | Skills and provider manifests move into `data/<profile>/`; nothing is shared between profiles any more |
 | [031](031-sign-in-and-data-access-are-separate-projects.md) | Signing in and reaching Google data are separate Cloud projects; the second is where every Google-data client goes |
 | [032](032-a-stateless-endpoint-does-not-announce-its-tools.md) | `listChanged` is declared false because it is false; a reload reports its tool count and `lanes link tools` asks the endpoint |
+| [033](033-a-pasted-token-for-an-mcp-server.md) | Where a vendor's MCP server will not register a client, the operator's own token is the credential — so an mcp connector's auth is exactly none, oauth, or bearer |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 

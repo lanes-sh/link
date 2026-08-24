@@ -80,6 +80,57 @@ describe('defineProvider cross-field rules', () => {
   });
 });
 
+describe('what an mcp connector may authenticate with', () => {
+  /**
+   * The transport sends one header and only one. Every rule here exists
+   * because the alternative is a manifest that validates, connects, and comes
+   * back with an empty tool list — no error anywhere to say the credential
+   * never left the machine.
+   */
+  const mcp = (auth: Record<string, unknown>, connector: Record<string, unknown> = {}) =>
+    defineProvider({
+      id: 'vendor_mcp',
+      name: 'Vendor',
+      connector: { kind: 'mcp', endpoint: 'https://mcp.example.com/mcp', ...connector },
+      auth,
+    });
+
+  test('the three kinds it can actually send are accepted', () => {
+    expect(() => mcp({ kind: 'none' })).not.toThrow();
+    expect(() => mcp({ kind: 'oauth', registration: 'dynamic' })).not.toThrow();
+    expect(() => mcp({ kind: 'bearer' })).not.toThrow();
+  });
+
+  test('a credential the transport has nowhere to put is refused', () => {
+    // Not a style preference: `api_key` wants a query string or a header of
+    // its own, `basic` a different scheme entirely. The transport reads only
+    // the token, so each of these would be dropped in silence.
+    expect(() => mcp({ kind: 'api_key' })).toThrow(/must be "none", "oauth", or "bearer"/);
+    expect(() => mcp({ kind: 'header', header: 'X-Token' })).toThrow(/nowhere else on the request/);
+    expect(() => mcp({ kind: 'basic' })).toThrow(/must be "none", "oauth", or "bearer"/);
+    expect(() => mcp({ kind: 'strategy', strategy: 'bunq' })).toThrow(/"strategy"/);
+  });
+
+  test('bearer may not rename its header here, though the schema allows it', () => {
+    // `resolveBearer` honours a chosen header and the mcp transport never
+    // reads it, so this is the same silent drop one field further in.
+    expect(() => mcp({ kind: 'bearer', header: 'x-auth' })).toThrow(/cannot be honoured/);
+    expect(() => mcp({ kind: 'bearer' })).not.toThrow();
+  });
+
+  test('connector headers may not claim Authorization, in any casing', () => {
+    // Configuration the *server* offers, not a second place to put the
+    // credential. Both set, which one wins is merge order.
+    expect(() => mcp({ kind: 'bearer' }, { headers: { 'X-MCP-Toolsets': 'issues' } })).not.toThrow();
+    expect(() => mcp({ kind: 'bearer' }, { headers: { Authorization: 'Bearer x' } })).toThrow(
+      /may not set "Authorization"/,
+    );
+    expect(() => mcp({ kind: 'bearer' }, { headers: { authorization: 'Bearer x' } })).toThrow(
+      /the credential comes from auth/,
+    );
+  });
+});
+
 describe('a broker as the other answer to "where does the client come from"', () => {
   const broker = { url: 'https://api.example.com/v1/auth/link/vendor', operator: 'Someone' };
   const oauth = (extra: Record<string, unknown> = {}) => ({

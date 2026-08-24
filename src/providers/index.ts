@@ -2,6 +2,7 @@ import type { ProviderDefinition, ProviderManifest } from '#connectivity';
 import { calendar } from './google/calendar/index.ts';
 import { contacts } from './google/contacts/index.ts';
 import { docs } from './google/docs/index.ts';
+import { github } from './github/index.ts';
 import { drive } from './google/drive/index.ts';
 import { driveMcp } from './google/drive-mcp/index.ts';
 import { gmail } from './google/gmail/index.ts';
@@ -14,6 +15,7 @@ import { icloudDrive } from './icloud/drive/index.ts';
 import { icloudMail } from './icloud/mail/index.ts';
 import { linear } from './linear/index.ts';
 import { notion } from './notion/index.ts';
+import { slack } from './slack/index.ts';
 
 /**
  * Every provider, in one list.
@@ -48,6 +50,8 @@ import { notion } from './notion/index.ts';
 export const PROVIDERS: readonly (ProviderManifest | ProviderDefinition)[] = [
   notion,
   linear,
+  github,
+  slack,
   gmail,
   drive,
   sheets,
@@ -88,6 +92,8 @@ export {
   tasks,
 } from './google/index.ts';
 export { icloudCalendar, icloudContacts, icloudDrive, icloudMail } from './icloud/index.ts';
+export { github } from './github/index.ts';
 export { linear } from './linear/index.ts';
 export { notion } from './notion/index.ts';
+export { slack } from './slack/index.ts';
 export { SCOPE_MEANINGS, type ScopeMeaning } from './scopes.ts';

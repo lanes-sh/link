@@ -27,6 +27,8 @@ $ lanes link connect gmail        # again, for a second mailbox
 | iCloud Drive | `lanes link connect icloud_drive` | Your sync folder, on the Mac that syncs it |
 | Notion | `lanes link connect notion` | Notion's own MCP server |
 | Linear | `lanes link connect linear` | Linear's own MCP server |
+| GitHub | `lanes link connect github` | Repositories, issues, pull requests, and workflow runs |
+| Slack | `lanes link connect slack` | Search, read, and send messages, threads, files, and canvases |
 | Gmail (Google MCP) | `lanes link connect gmail_mcp` | Google's own MCP server — Developer Preview only |
 | Drive (Google MCP) | `lanes link connect drive_mcp` | Likewise; use `drive` unless you are enrolled |
 
@@ -43,9 +45,15 @@ app-specific password covers all three. iCloud Drive is separate — it holds no
 reading your sync folder through the filesystem. Full walkthrough:
 [`detailed/setup/icloud.md`](detailed/setup/icloud.md).
 
-**No provider asks you to register an OAuth client.** Google authorises against the client Lanes
-operates, Notion and Linear register themselves, and iCloud takes an app-specific password you
-generate at appleid.apple.com.
+**Only Slack asks you to register anything.** Google authorises against the client Lanes operates,
+Notion and Linear register themselves, iCloud takes an app-specific password you generate at
+appleid.apple.com, and GitHub takes a personal access token —
+[`detailed/setup/github.md`](detailed/setup/github.md).
+
+Slack is the exception, and not for want of trying. Slack's MCP server does not register clients
+automatically, and a client of your own needs an HTTPS callback, which a CLI listening on localhost
+cannot be. So Slack means creating a Slack app once, installing it to your workspace, and pasting
+the user token it mints: [`detailed/setup/slack.md`](detailed/setup/slack.md).
 
 For Google you can still register your own, and some people have to — an organisation that forbids
 third-party clients, a Workspace app that must be "Internal", or a hosted client that has reached
@@ -132,8 +140,8 @@ For providers whose credential is a key or a password rather than a browser sign
 shell can do the whole setup:
 
 ```console
-$ printf %s "$KEY" | lanes link secrets set linear/main --profile personal
-$ lanes link connect linear --id main --non-interactive --json --profile personal
+$ printf %s "$TOKEN" | lanes link secrets set github/octocat --profile personal
+$ lanes link connect github --id octocat --non-interactive --json --profile personal
 ```
 
 `--non-interactive` never prompts. It resolves every value from the credential store, or refuses and

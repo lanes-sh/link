@@ -2,7 +2,7 @@ import type { AnyConnector, ProviderDefinition, ProviderManifest } from '#connec
 import type { SecretStore } from '#secrets';
 import type { ProviderRegistry } from '#registry';
 import { basicCredential } from '#connectivity/auth/basic/index.ts';
-import { resolveUpstreamToken } from '#connectivity/auth/oauth-authcode/index.ts';
+import { bearerToken } from '#connectivity/auth/token.ts';
 import { createCompositeConnector } from './composite/index.ts';
 import { createDavConnector } from './dav/index.ts';
 import { createFsConnector } from './fs/index.ts';
@@ -114,7 +114,11 @@ function build(
     case 'mcp':
       return createMcpConnector({
         endpoint: manifest.connector.endpoint,
-        accessToken: () => resolveUpstreamToken(manifest, connectionId, options.credentials),
+        ...(manifest.connector.headers ? { headers: manifest.connector.headers } : {}),
+        // Not `resolveUpstreamToken` directly: that one answers only for OAuth,
+        // and returns null for a provider whose token the operator pasted —
+        // which reaches the server as a missing header rather than an error.
+        accessToken: () => bearerToken(manifest, connectionId, options.credentials),
       });
 
     case 'imap':

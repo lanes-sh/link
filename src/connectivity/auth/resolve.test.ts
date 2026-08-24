@@ -5,6 +5,8 @@ import { defineProvider } from '#connectivity';
 import { connectorFactory } from '#connectivity/transports';
 import { requestAuthorizer } from './authorize.ts';
 import { credentialResolver } from './resolve.ts';
+import { bearerToken, bearerTokenAsStored } from './token.ts';
+import { clearUpstreamTokens } from './oauth-authcode/provider.ts';
 
 /**
  * The factory's cache, which for a long time did not exist.
@@ -190,5 +192,97 @@ describe('requestAuthorizer', () => {
 
     expect((await sent(authorize, 'one')).headers.get('authorization')).toBe('Bearer A');
     expect((await sent(authorize, 'two')).headers.get('authorization')).toBe('Bearer B');
+  });
+});
+
+/**
+ * The token a transport sends when it has no `Request` to authorise.
+ *
+ * An mcp connector sends `Authorization: Bearer <token>` and nothing else, so
+ * it takes a token rather than a request — and two unrelated arrangements
+ * produce one. Every caller used to ask the OAuth provider, which answered
+ * `null` for a pasted token instead of raising: the ref it reads is identical,
+ * so it found the token, failed to parse it as a JSON blob, and returned
+ * undefined by design. The connection then went upstream unauthenticated.
+ */
+
+const MCP = { kind: 'mcp', endpoint: 'https://mcp.test/mcp' } as const;
+
+const mcpProvider = (auth: Record<string, unknown>) =>
+  defineProvider({ id: 'acme3', name: 'Acme3', connector: MCP, auth });
+
+const future = () => Date.now() + 3_600_000;
+
+describe('bearerToken', () => {
+  test('a pasted token comes back exactly as stored', async () => {
+    const credentials = createMemoryCredentials({ 'acme3/main': 'a-pasted-token' });
+
+    expect(await bearerToken(mcpProvider({ kind: 'bearer' }), 'main', credentials)).toBe(
+      'a-pasted-token',
+    );
+  });
+
+  test('an oauth provider comes back as its access token', async () => {
+    clearUpstreamTokens();
+    const credentials = createMemoryCredentials({
+      'acme3/live': JSON.stringify({ access_token: 'AT', expires_at: future() }),
+    });
+
+    const manifest = mcpProvider({ kind: 'oauth', registration: 'dynamic' });
+    expect(await bearerToken(manifest, 'live', credentials)).toBe('AT');
+  });
+
+  test('a provider that authenticates to nothing has no token', async () => {
+    const manifest = defineProvider({ id: 'acme3', name: 'Acme3', connector: MCP });
+
+    expect(await bearerToken(manifest, 'main', createMemoryCredentials({}))).toBeNull();
+  });
+
+  test('a missing credential raises, naming the ref and the command', async () => {
+    // The regression this whole helper exists for. `null` here is a request
+    // sent with no Authorization header at all: no error, an empty tool list,
+    // and nothing to read that says why.
+    const promise = bearerToken(mcpProvider({ kind: 'bearer' }), 'main', createMemoryCredentials({}));
+
+    expect(promise).rejects.toThrow(/No credential stored at acme3\/main.*lanes link connect acme3/s);
+  });
+
+  test('a credential that cannot be a bearer token says which kind it is', async () => {
+    // Unreachable through `defineProvider`, which refuses these on an mcp
+    // connector — so this is the pin that keeps the guard and this switch from
+    // drifting apart quietly if either is ever relaxed.
+    const manifest = defineProvider({ id: 'acme3', name: 'Acme3', connector: HTTP, auth: { kind: 'basic' } });
+    const credentials = createMemoryCredentials({ 'acme3/main': 'ada:secret' });
+
+    expect(bearerToken(manifest, 'main', credentials)).rejects.toThrow(/"basic"/);
+  });
+});
+
+describe('bearerTokenAsStored', () => {
+  test('an expired oauth token is handed back rather than refreshed', async () => {
+    // What `connect` needs: the token exactly as just written. Refreshing here
+    // would spend a network round trip on a token seconds old, and would cache
+    // it under the provisional connection id — a key naming a connection that
+    // stops existing a moment later.
+    clearUpstreamTokens();
+    const credentials = createMemoryCredentials({
+      'acme3/pending': JSON.stringify({
+        access_token: 'STALE',
+        refresh_token: 'R',
+        expires_at: Date.now() - 1_000,
+      }),
+    });
+
+    const manifest = mcpProvider({ kind: 'oauth', registration: 'dynamic' });
+    expect(await bearerTokenAsStored(manifest, 'pending', credentials)).toBe('STALE');
+  });
+
+  test('a pasted token reads the same either way, having no other reading', async () => {
+    const credentials = createMemoryCredentials({ 'acme3/main': 'a-pasted-token' });
+    const manifest = mcpProvider({ kind: 'bearer' });
+
+    expect(await bearerTokenAsStored(manifest, 'main', credentials)).toBe(
+      await bearerToken(manifest, 'main', credentials),
+    );
   });
 });
