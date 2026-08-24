@@ -61,6 +61,37 @@ export function rotatableCredentialRefsFor(
 }
 
 /**
+ * The OAuth client a revision signs its refreshes with, where the profile holds one.
+ *
+ * Read-only, and only for a profile that declares the entry: the client is the
+ * operator's, shared by every connection of that vendor, and ADR-026's line is
+ * that a revision rotates what is its own and never rewrites somebody else's.
+ * So this is deliberately *not* part of `rotatableCredentialRefsFor`.
+ *
+ * These were missing, and the failure was silent in the worst way. The
+ * gcp-secret-manager adapter answers `null` only on a 404 — an *unbound* secret
+ * is a 403, which throws — so a bring-your-own Google connection on Cloud Run
+ * would serve until its access token expired and then fail every call, an hour
+ * after the revision reported healthy. A profile that authorises against a
+ * broker declares no entry and so adds nothing here, which is the arrangement
+ * this is meant to leave alone.
+ *
+ * Here rather than in `#deployments` for the reason its sibling gives: that
+ * component cannot import `#connectivity`, and this needs the manifest.
+ */
+export function ownClientRefsFor(
+  manifest: ProviderManifest | undefined,
+  oauthApps: Readonly<Record<string, { client_id_ref: string; client_secret_ref: string }>>,
+): readonly string[] {
+  if (manifest?.auth.kind !== 'oauth' || manifest.auth.registration !== 'manual') return [];
+  const app = manifest.auth.app;
+  if (!app) return [];
+
+  const declared = oauthApps[app];
+  return declared ? [declared.client_id_ref, declared.client_secret_ref] : [];
+}
+
+/**
  * How to find a provider's manifest, so a missing `credential_ref` can derive.
  *
  * A lookup rather than a boolean: "does this authenticate" was never enough to

@@ -59,12 +59,28 @@ export interface ProviderPlan {
   readonly needsId: boolean;
   /** The one line that connects it. */
   readonly command: string;
+  /**
+   * The OAuth client is operated by somebody else, so `requires` is empty
+   * because there is nothing to register — not because setup is trivial.
+   */
+  readonly brokered: boolean;
+  /** Who operates that client, for the sentence shown before consent. */
+  readonly clientOperator?: string;
+  /** The line that opts out of it and registers one of your own instead. */
+  readonly ownClientCommand?: string;
 }
 
 export interface PlanContext {
   readonly profile: string;
   /** Every configured connection this caller may see, as `provider.id`. */
   readonly connections: readonly string[];
+  /**
+   * `oauth_apps` entries this profile declares.
+   *
+   * Which clients are the operator's own, so a profile that has registered one
+   * is described as needing it rather than as needing nothing.
+   */
+  readonly ownClients?: readonly string[];
 }
 
 export function planFor(
@@ -72,7 +88,12 @@ export function planFor(
   context: PlanContext,
   connectionId?: string,
 ): ProviderPlan {
-  const { requirements, needsId } = setupRequirements(manifest, connectionId, context.profile);
+  const { requirements, needsId, brokered } = setupRequirements(
+    manifest,
+    connectionId,
+    context.profile,
+    { ...(context.ownClients ? { ownClients: context.ownClients } : {}) },
+  );
 
   const connected = context.connections.filter((key) => key.startsWith(`${manifest.id}.`));
 
@@ -97,6 +118,16 @@ export function planFor(
     requires: requirements,
     needsId,
     command,
+    brokered,
+    ...(brokered && manifest.auth.kind === 'oauth' && manifest.auth.broker
+      ? {
+          clientOperator: manifest.auth.broker.operator,
+          // The steps stay in `steps` either way. A renderer decides whether to
+          // show a console walkthrough for a path nobody has asked for; the
+          // plan's job is to say the path exists and what opens it.
+          ownClientCommand: `${command} --own-client`,
+        }
+      : {}),
   };
 }
 

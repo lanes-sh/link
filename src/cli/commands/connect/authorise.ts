@@ -7,6 +7,10 @@ import { captureOAuthCallback, defaultOpenBrowser, runOAuthFlow } from '../../oa
 import { ok, progress, style, warn } from '../../output.ts';
 import { terminalPrompter, type Prompter } from '../../prompt.ts';
 import { describeScopes, shortScope } from '../../scopes.ts';
+import { BROKERED, BrokerError } from '#connectivity/auth/index.ts';
+import { brokerExchangeVia } from '../../oauth-exchange.ts';
+import { brokeredScopes, hostedClientRefusal, resolveOAuthClient } from './client.ts';
+import { confirmScopes } from './scopes-gate.ts';
 import { ensureOAuthApp } from './setup.ts';
 
 /**
@@ -37,130 +41,6 @@ export function oauthProviderFor(
 }
 
 /**
- * Warn when a manifest's pinned scopes have drifted from the server's.
- *
- * Pinning is deliberate — it stops a vendor widening a grant by editing its own
- * metadata — but a pinned list is a list that can go stale, and both directions
- * of staleness are worth different words:
- *
- * - the server declares a scope we do not request → calls fail, and Google's
- *   servers say only "The caller does not have permission", which points
- *   nowhere near the cause. This is the failure that cost an afternoon.
- * - we request one it no longer declares → probably harmless, possibly a scope
- *   that has been withdrawn; worth seeing, not worth stopping for.
- *
- * Advisory in both directions. Discovery failing must not block a connect that
- * would otherwise work, so a broken probe is silent.
- */
-async function reportScopeDrift(pinned: readonly string[], serverUrl: string): Promise<void> {
-  let advertised: readonly string[] = [];
-
-  try {
-    const metadata = await discoverOAuthProtectedResourceMetadata(serverUrl);
-    advertised = (metadata as { scopes_supported?: string[] }).scopes_supported ?? [];
-  } catch {
-    return;
-  }
-
-  if (advertised.length === 0) return;
-
-  const missing = advertised.filter((scope) => !pinned.includes(scope));
-  const extra = pinned.filter((scope) => !advertised.includes(scope));
-
-  if (missing.length > 0) {
-    progress('');
-    progress(
-      style.dim(
-        `${new URL(serverUrl).host} advertises ${missing.length} scope(s) not requested: ` +
-          `${missing.map(shortScope).join(', ')}.`,
-      ),
-    );
-    progress(
-      style.dim(
-        '  Deliberate — an advertised scope is not necessarily a required one, and these are broader than the docs ask for. Worth revisiting only if calls fail on permission.',
-      ),
-    );
-  }
-
-  if (extra.length > 0) {
-    progress('');
-    progress(style.dim(`Note: ${extra.map(shortScope).join(', ')} is no longer declared by the server.`));
-  }
-}
-
-/**
- * Show what is about to be granted, and stop on the broad ones.
- *
- * The consent screen that follows lists the same scopes in the vendor's own
- * wording, where "Read, compose, send, and permanently delete all your email"
- * sits in a list of five and reads like boilerplate. This is the same
- * information a step earlier, in our words, with the account still unconnected
- * — the last point where declining costs nothing.
- */
-async function confirmScopes(
-  manifest: ProviderManifest,
-  serverUrl: string,
-  prompter: Prompter,
-  acceptBroadScopes: boolean,
-): Promise<boolean> {
-  if (manifest.auth.kind !== 'oauth' || manifest.auth.scopes.length === 0) return true;
-
-  await reportScopeDrift(manifest.auth.scopes, serverUrl);
-
-  const described = describeScopes(manifest.auth.scopes);
-
-  progress('');
-  progress(`${manifest.name} will be granted:`);
-  for (const { scope, meaning, broad } of described) {
-    const name = broad ? style.bold(shortScope(scope)) : shortScope(scope);
-    progress(`  ${broad ? '!' : '·'} ${name}${meaning ? style.dim(`  — ${meaning}`) : ''}`);
-  }
-
-  if (!described.some((entry) => entry.broad)) {
-    progress('');
-    return true;
-  }
-
-  // Why the broad ones cannot simply be dropped — otherwise the obvious next
-  // question is why we ask instead of asking for less.
-  progress('');
-  progress(
-    warn(
-      'The marked scopes are broader than this provider needs. Grant them only if you ' +
-        'mean to — policy can restrict what an agent calls, but it cannot un-grant a token.',
-    ),
-  );
-  progress(
-    style.dim(
-      '  Policy still applies: only capabilities you allow are reachable, and every call is audited.',
-    ),
-  );
-  progress('');
-
-  // Answered ahead of time, by a person, in their own shell. The flag is long
-  // enough that repeating it is a deliberate act, and it lands in the history of
-  // whoever typed it — which is the property that matters, since the point of
-  // this gate is that the decision does not originate with the agent.
-  if (acceptBroadScopes) {
-    progress(style.dim('Broad scopes accepted with --accept-broad-scopes.'));
-    return true;
-  }
-
-  // Fail closed rather than defaulting to no. A non-interactive run cannot
-  // answer, and inventing an answer here would remove the last point at which
-  // declining is free — the vendor's own consent screen is next, where the same
-  // sentence sits in a list of five and reads like boilerplate.
-  if (!prompter.interactive) {
-    throw new Error(
-      `${manifest.name} asks for scopes broader than it needs, and this run is non-interactive.\n` +
-        `  Nothing was authorised. Re-run in a terminal, or add --accept-broad-scopes if you mean to grant them.`,
-    );
-  }
-
-  return prompter.confirm('Authorise with these scopes?', false);
-}
-
-/**
  * Drive the SDK's OAuth flow over a loopback callback.
  *
  * The SDK does discovery, registration, PKCE, and the exchange. We supply
@@ -175,19 +55,25 @@ export async function authorise(input: {
   changes: string[];
   /** No connection of this provider exists yet, so its console setup is undone. */
   firstForProvider: boolean;
+  /** How the operator spelled the target, so a refusal names a command they typed. */
+  target?: string;
+  profile: string;
+  /** `--own-client`: register a client rather than using the one a broker runs. */
+  ownClient?: boolean;
   prompter?: Prompter;
   /** The operator has already said yes to scopes broader than the provider needs. */
   acceptBroadScopes?: boolean;
+  /** Injected for tests. The broker is the only thing `connect` fetches. */
+  fetch?: typeof globalThis.fetch;
 }): Promise<void> {
   const { manifest, connectionId, credentials, document, changes } = input;
   const prompter = input.prompter ?? terminalPrompter;
   const acceptBroadScopes = input.acceptBroadScopes === true;
   if (manifest.auth.kind !== 'oauth') return;
 
-  if (manifest.auth.registration === 'manual') {
-    await ensureOAuthApp(input);
-  }
-
+  // `authoriseDirect` owns the client decision now: a brokered provider has
+  // nothing to prompt for, and asking first would ask for what it does not need.
+  //
   // A non-MCP connector has nothing to discover auth from: a REST API is a base
   // URL, and where its authorization server lives is not something it
   // announces. So the manifest names the endpoints and we run the flow
@@ -196,6 +82,12 @@ export async function authorise(input: {
   if (manifest.connector.kind !== 'mcp') {
     await authoriseDirect(input);
     return;
+  }
+
+  // An MCP provider is always bring-your-own: `defineProvider` refuses a broker
+  // on one, because the SDK owns the exchange and there is no seam to route it.
+  if (manifest.auth.registration === 'manual') {
+    await ensureOAuthApp(input);
   }
 
   const serverUrl = manifest.connector.endpoint;
@@ -283,8 +175,15 @@ async function authoriseDirect(input: {
   manifest: ProviderManifest;
   connectionId: string;
   credentials: SecretStore;
+  document: ConfigDocument;
+  changes: string[];
+  firstForProvider: boolean;
+  target?: string;
+  profile: string;
+  ownClient?: boolean;
   prompter?: Prompter;
   acceptBroadScopes?: boolean;
+  fetch?: typeof globalThis.fetch;
 }): Promise<void> {
   const { manifest, connectionId, credentials } = input;
   const prompter = input.prompter ?? terminalPrompter;
@@ -298,36 +197,80 @@ async function authoriseDirect(input: {
     );
   }
 
-  const [clientId, clientSecret] = app
-    ? await Promise.all([
-        credentials.get(`${app}/client_id`),
-        credentials.get(`${app}/client_secret`),
-      ])
-    : [null, null];
+  const client = await resolveOAuthClient({
+    manifest,
+    credentials,
+    document: input.document,
+    changes: input.changes,
+    firstForProvider: input.firstForProvider,
+    ownClient: input.ownClient === true,
+    target: input.target ?? manifest.id,
+    profile: input.profile,
+    ...(input.prompter ? { prompter: input.prompter } : {}),
+    ...(input.fetch ? { fetch: input.fetch } : {}),
+  });
 
-  if (!clientId || !clientSecret) {
-    throw new Error(`No OAuth client stored for "${app}". Run: lanes link connect ${manifest.id}`);
-  }
+  const scopes =
+    client.kind === 'brokered'
+      ? brokeredScopes(manifest.auth.scopes, client.config).scopes
+      : manifest.auth.scopes;
 
   if (
-    !(await confirmScopes(manifest, authorizeUrl, prompter, input.acceptBroadScopes === true))
+    !(await confirmScopes(
+      manifest,
+      authorizeUrl,
+      prompter,
+      input.acceptBroadScopes === true,
+      scopes,
+    ))
   ) {
     throw new Error('Cancelled — nothing was authorised.');
   }
 
-  const tokens = await runOAuthFlow({
-    authorizeUrl,
-    tokenUrl,
-    clientId,
-    clientSecret,
-    scopes: manifest.auth.scopes,
-    connectionLabel: manifest.name,
-    ...(manifest.auth.authorize_params ? { authorizeParams: manifest.auth.authorize_params } : {}),
-    onPrompt: (url) => {
-      progress(style.dim('Opening your browser to authorise…'));
-      progress(style.dim(`If it did not open: ${url}`));
-    },
-  });
+  let tokens;
+  try {
+    tokens = await runOAuthFlow({
+      authorizeUrl,
+      clientId: client.kind === 'own' ? client.clientId : client.config.clientId,
+      ...(client.kind === 'own'
+        ? { tokenUrl, clientSecret: client.clientSecret }
+        : {
+            exchange: brokerExchangeVia({
+              url: client.url,
+              ...(input.fetch ? { fetch: input.fetch } : {}),
+            }),
+          }),
+      scopes,
+      connectionLabel: manifest.name,
+      ...(manifest.auth.authorize_params
+        ? { authorizeParams: manifest.auth.authorize_params }
+        : {}),
+      onPrompt: (url) => {
+        progress(style.dim('Opening your browser to authorise…'));
+        progress(style.dim(`If it did not open: ${url}`));
+      },
+    });
+  } catch (cause) {
+    // A broker refusal after consent is worth its own sentence: the operator
+    // has already approved the screen, and "nothing was stored" is the fact
+    // they need before they decide whether to try again.
+    if (cause instanceof BrokerError && client.kind === 'brokered') {
+      throw hostedClientRefusal({
+        manifest,
+        target: input.target ?? manifest.id,
+        profile: input.profile,
+        operator: manifest.auth.broker?.operator ?? 'this project',
+        cause: cause.message,
+        ...(cause.notice ? { notice: cause.notice } : {}),
+        ...(cause.docsUrl ? { docsUrl: cause.docsUrl } : {}),
+        afterConsent: true,
+        // A replayed code is not solved by an hour in a console, and the broker
+        // is the one that knows which of its refusals are.
+        ownClient: cause.ownClient,
+      });
+    }
+    throw cause;
+  }
 
   await credentials.set(
     `${manifest.id}/${connectionId}`,
@@ -339,6 +282,15 @@ async function authoriseDirect(input: {
       expires_at: Date.now() + tokens.expiresIn * 1000,
       scope: tokens.scope,
       issuer: new URL(authorizeUrl).origin,
+      ...(tokens.idToken ? { id_token: tokens.idToken } : {}),
+      // Which client issued this, stamped once at connect.
+      //
+      // A property of the token, not of the profile: a refresh token minted by
+      // one client is refused by another, so an operator who registers a client
+      // of their own six months from now must not drag existing connections
+      // onto it. Absent means "the profile's own", which every credential
+      // written before this feature already is.
+      ...(client.kind === 'brokered' ? { authorized_via: BROKERED } : {}),
     }),
   );
 

@@ -219,6 +219,7 @@ export async function ensureOAuthApp(input: {
           'APIs and scopes above are per product, and this is the first connection of this one.',
       );
     }
+    declareOwnClient(document, manifest, changes);
     return;
   }
 
@@ -237,6 +238,29 @@ export async function ensureOAuthApp(input: {
     await credentials.set(prompt.credential_ref!, answers.get(prompt.key)!);
   }
 
+  declareOwnClient(document, manifest, changes);
+}
+
+/**
+ * Record that this profile uses a client of its own.
+ *
+ * The entry is not merely a pair of pointers — it is the switch. A provider
+ * that can also authorise against a broker reads its presence as "this profile
+ * registered a client, use it", so writing it is what makes `--own-client`
+ * stick without a second flag to remember. Which is also why it is called on
+ * both of `ensureOAuthApp`'s exits: someone whose credentials were already in
+ * the store but whose config lost the block would otherwise be moved onto the
+ * hosted client at the next connect.
+ */
+export function declareOwnClient(
+  document: ConfigDocument,
+  manifest: ProviderManifest,
+  changes: string[],
+): void {
+  if (manifest.auth.kind !== 'oauth' || !manifest.auth.app) return;
+  const app = manifest.auth.app;
+
+  const shared = (manifest.setup?.prompts ?? []).filter((p) => p.scope === 'shared');
   const idPrompt = shared.find((p) => p.key === 'client_id');
   const secretPrompt = shared.find((p) => p.key === 'client_secret');
 

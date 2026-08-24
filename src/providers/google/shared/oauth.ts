@@ -1,3 +1,6 @@
+import type { AuthBroker } from '#connectivity';
+import { brokerOriginOverride } from '#connectivity/auth/index.ts';
+
 /**
  * Google's OAuth endpoints, shared by every Google provider.
  *
@@ -8,6 +11,47 @@
  */
 export const GOOGLE_APP = 'google';
 
+/**
+ * The Google OAuth client Lanes operates, and where its secret stays.
+ *
+ * Its own Cloud project, separate from the one that signs people into Lanes:
+ * this client asks for Gmail and Drive and carries a verification review that
+ * can be rejected, and a rejection must not be able to take sign-in with it.
+ *
+ * The secret is not confidential in Google's sense — an installed app cannot
+ * hold one — and is held back anyway. Shipping it would hand anyone the shared
+ * quota and standing of a single client that every Lanes Link user depends on,
+ * and there is no way to withdraw one copy of a secret.
+ *
+ * What this buys the operator is the whole of `setup/google.md`: no project, no
+ * console, no scope list to transcribe, and no seven-day refresh-token expiry,
+ * because that expiry is a property of a project left in "Testing" and this one
+ * is not. What it costs is recorded in ADR-028 and in the guarantee table in
+ * `docs/detailed/security.md` — chiefly that the exchange stops being local.
+ */
+const BROKER_ORIGIN = 'https://api.lanes.sh';
+const BROKER_PATH = '/v1/auth/link/google';
+
+/**
+ * The same client, reached at a different origin.
+ *
+ * Two callers need it: the CLI performing the first exchange and the dispatcher
+ * refreshing while it serves. Both read `manifest.auth.broker.url`, so building
+ * it once here is what keeps them from disagreeing about where the broker is —
+ * and what makes `LANES_LINK_BROKER_ORIGIN` reach both at once. The path stays
+ * fixed; only the host in front of it moves. See `../../../connectivity/auth/
+ * oauth-authcode/broker.ts` for what an override is allowed to be.
+ */
+export function googleBroker(env?: Record<string, string | undefined>): AuthBroker {
+  return {
+    url: `${brokerOriginOverride(env) ?? BROKER_ORIGIN}${BROKER_PATH}`,
+    operator: 'Lanes',
+    docs_url: 'https://lanes.sh/link#google',
+  };
+}
+
+export const GOOGLE_BROKER: AuthBroker = googleBroker();
+
 export const GOOGLE_OAUTH = {
   authorize_url: 'https://accounts.google.com/o/oauth2/v2/auth',
   token_url: 'https://oauth2.googleapis.com/token',
@@ -16,6 +60,11 @@ export const GOOGLE_OAUTH = {
   // whichever account the browser is already signed into and never offers a
   // choice, so connecting a second mailbox silently re-authorises the first.
   authorize_params: { access_type: 'offline', prompt: 'select_account consent' },
+  // Every REST provider here spreads this block, so one line turns brokering on
+  // for all seven. `gmail_mcp` and `drive_mcp` write their auth longhand and do
+  // not spread it, which is what keeps them bring-your-own — the SDK owns their
+  // exchange and `defineProvider` refuses a broker on an mcp connector.
+  broker: GOOGLE_BROKER,
 } as const;
 
 /**

@@ -22,10 +22,12 @@ export {
 
 export {
   authNoneSchema,
+  authBrokerSchema,
   authOAuthSchema,
   authSchema,
   authStrategySchema,
   authTokenSchema,
+  type AuthBroker,
   type AuthConfig,
 } from './auth.ts';
 

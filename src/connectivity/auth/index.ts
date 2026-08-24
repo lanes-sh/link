@@ -22,3 +22,14 @@ export {
   type OAuthProviderOptions,
 } from './oauth-authcode/provider.ts';
 export { resolveUpstreamToken } from './oauth-authcode/index.ts';
+export {
+  BROKER_ORIGIN_ENV,
+  BROKERED,
+  BrokerError,
+  brokerConfig,
+  brokerExchange,
+  brokerOriginOverride,
+  brokerRefresh,
+  type BrokerConfig,
+  type BrokerTokens,
+} from './oauth-authcode/broker.ts';

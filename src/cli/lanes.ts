@@ -1,6 +1,5 @@
 #!/usr/bin/env bun
 import { ConfigError } from '#profile';
-import { run as runLink } from './main.ts';
 import { print, printErr, style } from './output.ts';
 
 /**
@@ -39,7 +38,15 @@ async function main(argv: readonly string[]): Promise<void> {
     return;
   }
 
-  if (area === 'link') return runLink(rest);
+  if (area === 'link') {
+    // Loaded here rather than at the top of the file so that a failure while
+    // the area's module graph evaluates — a malformed environment variable read
+    // at import time, say — is caught below and printed as an `error` line. A
+    // static import throws before this file's try block is reached, and Bun
+    // renders that as a stack trace with the message buried in it.
+    const { run: runLink } = await import('./main.ts');
+    return await runLink(rest);
+  }
 
   throw new Error(
     `Unknown area "${area}". Available: ${Object.keys(AREAS).join(', ')}.\n` +

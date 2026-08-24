@@ -1,5 +1,6 @@
 import { ownerPrincipal } from '#auth';
 import type { DiscoveredCapability } from '#connectivity';
+import { BROKERED } from '#connectivity/auth/index.ts';
 import { allowedConnections } from '#policy';
 import {
   credentialRefFor,
@@ -106,7 +107,12 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
         // days. That is a policy setting rather than a fault, but it presents
         // as an authentication failure mid-task — so say it before the call
         // fails rather than after.
-        if (staleness !== null && staleness.days >= 7) {
+        //
+        // Only for a client the operator registered. The hosted one is in
+        // production and does not expire refresh tokens weekly, so this warning
+        // would simply be false there — and a warning that is wrong once is a
+        // warning that gets scrolled past every time after.
+        if (staleness !== null && !staleness.brokered && staleness.days >= 7) {
           warnings.push({
             kind: 'stale_credential',
             key,
@@ -116,7 +122,10 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
             fix: forProfile(`lanes link connect ${key}`),
           });
         } else {
-          checks.push(`${key} credential resolves${staleness ? ` (${staleness.days}d old)` : ''}`);
+          const age = staleness
+            ? ` (${staleness.days}d old${staleness.brokered ? ', hosted client' : ''})`
+            : '';
+          checks.push(`${key} credential resolves${age}`);
         }
       } else {
         problems.push({
@@ -222,16 +231,23 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
 async function credentialAge(
   credentials: { get(ref: string): Promise<string | null> },
   ref: string,
-): Promise<{ days: number } | null> {
+): Promise<{ days: number; brokered: boolean } | null> {
   const raw = await credentials.get(ref);
   if (!raw) return null;
 
   try {
-    const parsed = JSON.parse(raw) as { expires_at?: number; expires_in?: number };
+    const parsed = JSON.parse(raw) as {
+      expires_at?: number;
+      expires_in?: number;
+      authorized_via?: string;
+    };
     if (typeof parsed.expires_at !== 'number') return null;
 
     const issued = parsed.expires_at - (parsed.expires_in ?? 3600) * 1000;
-    return { days: Math.floor((Date.now() - issued) / 86_400_000) };
+    return {
+      days: Math.floor((Date.now() - issued) / 86_400_000),
+      brokered: parsed.authorized_via === BROKERED,
+    };
   } catch {
     return null;
   }

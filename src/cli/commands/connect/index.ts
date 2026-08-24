@@ -38,6 +38,17 @@ export interface ConnectOptions extends GlobalFlags {
   readonly nonInteractive?: boolean | undefined;
   /** The operator has already agreed to scopes broader than the provider needs. */
   readonly acceptBroadScopes?: boolean | undefined;
+  /**
+   * Register an OAuth client of your own rather than using a hosted one.
+   *
+   * Sticky by consequence rather than by flag: it writes the `oauth_apps` entry,
+   * and a profile that declares one is never moved off it. So this is typed once
+   * and then forgotten, which is the right shape for a decision about a client
+   * that is shared by every connection of that vendor.
+   */
+  readonly ownClient?: boolean | undefined;
+  /** Injected for tests. The broker is the only thing `connect` fetches. */
+  readonly fetch?: typeof globalThis.fetch | undefined;
   readonly json?: boolean | undefined;
 }
 
@@ -192,8 +203,12 @@ async function runConnect(target: string, options: ConnectOptions): Promise<Conn
         document,
         changes,
         firstForProvider: !runtime.config.connections.some((c) => c.provider === providerId),
+        target,
+        profile,
+        ownClient: options.ownClient === true,
         prompter,
         acceptBroadScopes: options.acceptBroadScopes === true,
+        ...(options.fetch ? { fetch: options.fetch } : {}),
       });
     } else if (manifest.auth.kind !== 'none') {
       await ensureStaticCredential({

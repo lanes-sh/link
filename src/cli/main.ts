@@ -80,6 +80,7 @@ export async function run(argv: readonly string[]): Promise<void> {
         replace: flags['replace'] === true,
         nonInteractive: flags['non-interactive'] === true,
         acceptBroadScopes: flags['accept-broad-scopes'] === true,
+        ownClient: flags['own-client'] === true,
         json,
       });
 

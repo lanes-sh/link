@@ -80,3 +80,70 @@ describe('the scoped store enforces it', () => {
     expect(scoped.get('profile/token')).rejects.toThrow(/not in scope/);
   });
 });
+
+describe('a client the profile does not hold is not granted', () => {
+  const oauth = (broker?: object) =>
+    defineProvider({
+      id: 'vendor_mail',
+      name: 'Vendor Mail',
+      connector: { kind: 'http', base_url: 'https://api.test', openapi: './t.json' },
+      auth: {
+        kind: 'oauth',
+        registration: 'manual',
+        app: 'vendor',
+        scopes: ['a'],
+        authorize_url: 'https://accounts.example.com/o/oauth2/v2/auth',
+        token_url: 'https://oauth2.example.com/token',
+        ...(broker ? { broker } : {}),
+      },
+      ...(broker
+        ? {}
+        : {
+            setup: {
+              prompts: [
+                { key: 'client_id', label: 'Client id', credential_ref: 'vendor/client_id' },
+              ],
+            },
+          }),
+    });
+
+  const brokered = oauth({ url: 'https://api.example.com/b', operator: 'Someone' });
+
+  test('a brokered connection reaches its tokens and no client refs at all', () => {
+    // There is no client id, secret, or registration anywhere in this store.
+    // Naming the three would grant reach to nothing while describing an
+    // arrangement that does not exist, and a grant list is read by people.
+    const refs = resolveSecretRefs(brokered, connection('vendor_mail', 'ada'));
+
+    expect(refs).toEqual(['vendor_mail/ada']);
+  });
+
+  test('the same provider on a profile that registered its own client reaches it', () => {
+    const refs = resolveSecretRefs(brokered, connection('vendor_mail', 'ada'), undefined, [
+      'vendor',
+    ]);
+
+    expect(refs).toContain('vendor/client_id');
+    expect(refs).toContain('vendor/client_secret');
+  });
+
+  test('a provider with no broker is unchanged, whatever the profile declares', () => {
+    // Every provider that exists today takes this path, so it is the one that
+    // must not move.
+    const refs = resolveSecretRefs(oauth(), connection('vendor_mail', 'ada'));
+
+    expect(refs).toContain('vendor/client_id');
+    expect(refs).toContain('vendor/client_secret');
+    expect(refs).toContain('vendor/client');
+  });
+
+  test('a sibling account is still out of reach on either arrangement', async () => {
+    const scoped = scopeSecrets(
+      createMemoryCredentials({ 'vendor_mail/ada': 'a', 'vendor_mail/sam': 's' }),
+      resolveSecretRefs(brokered, connection('vendor_mail', 'ada')),
+    );
+
+    expect(await scoped.get('vendor_mail/ada')).toBe('a');
+    await expect(scoped.get('vendor_mail/sam')).rejects.toThrow(/not in scope/);
+  });
+});

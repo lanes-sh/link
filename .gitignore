@@ -13,6 +13,12 @@ config/*.yaml
 !config/*.example.yaml
 lanes-link.yaml
 
+# Custom provider manifests. `WORKSPACE_PROVIDER_DIR` is 'providers', and the
+# console writes one here from a browser form, so a workspace rooted at the
+# repo during local dev drops them straight into an untracked directory.
+providers/*.yaml
+!providers/*.example.yaml
+
 # Local state: sqlite databases, encrypted credential stores, blobs.
 data/
 
@@ -41,6 +47,11 @@ coverage/
 # Machine-local tooling state
 # ---------------------------------------------------------------------------
 .claude/settings.local.json
+
+# Playwright MCP's default output directory: screenshots, network logs, traces.
+# A screenshot of the console taken mid-connect carries a real address, and
+# possibly a token in the URL bar.
+.playwright-mcp/
 
 # Worktrees live inside the repo, so git sees them as untracked files on the
 # branch they were made from. Both spellings: `.claude/worktrees/` is where the
