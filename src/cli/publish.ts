@@ -177,5 +177,9 @@ function message(error: unknown): string {
 export function nextAfterEdit(outcome: PublishOutcome): string {
   if (outcome.served) return 'Serving it now — the endpoint has re-read its config.';
 
-  return `${outcome.reason ?? 'no endpoint answered'} — saved, and the endpoint will serve this when it next starts.`;
+  // Naming the URL, because the likeliest reason nothing answered is that the
+  // endpoint is somewhere else: `lanes link start --port` moves the socket
+  // without moving `instance.port`, which is where this address comes from.
+  const where = outcome.url ? ` at ${outcome.url}` : '';
+  return `${outcome.reason ?? 'no endpoint answered'}${where} — saved, and the endpoint will serve this when it next starts.`;
 }
