@@ -5,6 +5,9 @@ import { isLoopback } from './index.ts';
 import { parseConfig, type Config } from '#profile';
 import manifest from '../../package.json' with { type: 'json' };
 
+/** The stripe fill, so the two rects that are *not* stripes can be picked out. */
+const INK_ON_GROUND = '#ffffff';
+
 /**
  * End-to-end tests against a real HTTP server on a real port.
  *
@@ -253,18 +256,29 @@ describe('discovery is filtered by policy', () => {
     // to black.
     expect(svg).not.toContain('currentColor');
 
-    // The ground is painted across the whole box rather than left transparent.
-    // The published mark lets the page behind it supply the ground, which is
-    // right for a favicon on lanes.sh and wrong for an icon a client draws on
-    // a surface we know nothing about.
+    // The ground is painted rather than left transparent. The published mark
+    // lets the page behind it supply the ground, which is right for a favicon
+    // on lanes.sh and wrong for an icon a client draws on a surface we know
+    // nothing about.
     expect(svg).toContain('fill="#121214"');
 
-    // The mark is inset rather than bleeding to its own edges. Without the
-    // margin a circular avatar crop takes the silhouette and leaves anonymous
-    // diagonals. A negative viewBox origin is that margin, square on both axes.
+    // The mark fills its box rather than sitting inset in it. An inset version
+    // shipped first, on the reasoning that a circular avatar crop would take
+    // the rounded-square silhouette — what it actually produced was a dark ring
+    // inside the circle with the stripes shrunk away from it. A viewBox at the
+    // origin is what keeps the stripes running edge to edge under that crop.
     const [x, y] = (svg.match(/viewBox="(-?[\d.]+) (-?[\d.]+)/) ?? []).slice(1).map(Number);
-    expect(x).toBeLessThan(0);
-    expect(y).toBe(x);
+    expect(x).toBe(0);
+    expect(y).toBe(0);
+
+    // Ground and mask are the same rect, so the stripes stop exactly where the
+    // rounded square does — no ring of bare ground at the edge, in either
+    // direction. Two identical rects, one filled with the ground colour and one
+    // with the mask's white.
+    const rects = [...svg.matchAll(/<rect ([^>]*?) fill="([^"]+)"/g)].map((m) => m.slice(1));
+    const [ground, mask] = rects.filter(([, fill]) => fill !== INK_ON_GROUND);
+    expect(ground?.[0]).toBe(mask?.[0]);
+    expect(ground?.[1]).toBe('#121214');
   });
 
   test('server/discover leaks no capability names past the policy filter', async () => {
