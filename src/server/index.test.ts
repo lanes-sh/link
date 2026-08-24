@@ -1,7 +1,9 @@
 import { afterAll, describe, expect, test } from 'bun:test';
+import type { Icon } from '@modelcontextprotocol/server';
 import { allocatePort, rpc, startHarness, wireProfiles, TEST_TOKEN } from './harness.ts';
 import { isLoopback } from './index.ts';
 import { parseConfig, type Config } from '#profile';
+import manifest from '../../package.json' with { type: 'json' };
 
 /**
  * End-to-end tests against a real HTTP server on a real port.
@@ -209,6 +211,60 @@ describe('discovery is filtered by policy', () => {
 
     expect(result.supportedVersions).toContain('2026-07-28');
     expect(result._meta?.['io.modelcontextprotocol/serverInfo']?.name).toBe('lanes-link');
+  });
+
+  test('the endpoint reports its own branding, not just its name', async () => {
+    // SEP-973 fields, and the reason to assert them is where they live rather
+    // than what they say: `icons`, `description` and `websiteUrl` belong to
+    // `Implementation` — the first argument to `McpServer` — and the second
+    // argument would accept all three as unknown extras and drop them from the
+    // wire without an error. The comment in `build.ts` warns about that trap in
+    // the other direction for `instructions`; this is the test that notices.
+    const response = await rpc(personal.server.url, 'server/discover', {});
+    const info = (
+      response.body['result'] as {
+        _meta?: Record<string, { description?: string; websiteUrl?: string; icons?: Icon[] }>;
+      }
+    )._meta?.['io.modelcontextprotocol/serverInfo'];
+
+    // Held equal to the manifest rather than compared to a copy of the string,
+    // so the two cannot drift into describing the same endpoint differently.
+    expect(info?.description).toBe(manifest.description);
+    expect(info?.websiteUrl).toBe('https://github.com/lanes-sh/link');
+
+    // One entry, and no `theme` on it. `theme` claims there is another icon to
+    // pick instead, and this one carries its own ground and looks the same on
+    // either — two identical entries labelled `light` and `dark` would be
+    // metadata describing a variation that does not exist.
+    expect(info?.icons).toHaveLength(1);
+    const icon = info?.icons?.[0];
+    expect(icon?.theme).toBeUndefined();
+    expect(icon?.mimeType).toBe('image/svg+xml');
+    expect(icon?.src.startsWith('data:image/svg+xml;base64,')).toBe(true);
+
+    // Decoded, because a truncated or double-encoded src is still a string
+    // that starts with the right prefix. What a client renders is the SVG.
+    const svg = Buffer.from(icon?.src.split(',')[1] ?? '', 'base64').toString('utf8');
+    expect(svg.startsWith('<svg xmlns="http://www.w3.org/2000/svg"')).toBe(true);
+    expect(svg.endsWith('</svg>')).toBe(true);
+
+    // No `currentColor`: a client renders the icon in a document that sets no
+    // colour for it, so an inherited ink resolves to whatever is nearest, or
+    // to black.
+    expect(svg).not.toContain('currentColor');
+
+    // The ground is painted across the whole box rather than left transparent.
+    // The published mark lets the page behind it supply the ground, which is
+    // right for a favicon on lanes.sh and wrong for an icon a client draws on
+    // a surface we know nothing about.
+    expect(svg).toContain('fill="#121214"');
+
+    // The mark is inset rather than bleeding to its own edges. Without the
+    // margin a circular avatar crop takes the silhouette and leaves anonymous
+    // diagonals. A negative viewBox origin is that margin, square on both axes.
+    const [x, y] = (svg.match(/viewBox="(-?[\d.]+) (-?[\d.]+)/) ?? []).slice(1).map(Number);
+    expect(x).toBeLessThan(0);
+    expect(y).toBe(x);
   });
 
   test('server/discover leaks no capability names past the policy filter', async () => {

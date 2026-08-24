@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { isPrompt, isResource, isTool } from '#connectivity';
+import { SERVER_ICONS } from './icon.ts';
 import { serverInstructions } from './instructions.ts';
 import { SERVER_NAME } from './naming.ts';
 import { registerPrompt } from './prompts.ts';
@@ -28,6 +29,18 @@ export function buildMcpServer(options: BuildServerOptions): McpServer {
       name: SERVER_NAME,
       version: options.version ?? '0.0.0',
       title: `Lanes Link — ${names.join(', ')}`,
+      // First argument, and this is the half of the pairing below that is easy
+      // to get wrong in the other direction: `icons`, `description` and
+      // `websiteUrl` are `Implementation` fields that SEP-973 added, so they
+      // belong here and would be dropped from `ServerOptions`.
+      //
+      // `description` is `package.json`'s, and the test holds the two equal
+      // rather than trusting a copy to stay one. It is the whole endpoint being
+      // described, not this connection, so it does not name the profiles the
+      // way `title` does.
+      description: 'A self-hosted MCP gateway for your accounts, memory, skills, and secrets',
+      websiteUrl: 'https://github.com/lanes-sh/link',
+      icons: SERVER_ICONS,
     },
     // Second argument, not the first: `instructions` is a `ServerOptions` field,
     // and `Implementation` would take it as an unknown extra and drop it from
