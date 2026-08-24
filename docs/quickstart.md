@@ -103,7 +103,9 @@ That opens a browser and nothing else — Google authorises against the OAuth cl
 so there is no Cloud project to create. See [Connect your accounts](connect.md) for every provider,
 what each one needs, and how to use an OAuth client of your own instead.
 
-A new connection is served after the endpoint restarts — stop `lanes link start` and run it again.
+A new connection is served straight away — `connect` tells the running endpoint to re-read its
+config, so there is nothing to restart. It prints which happened on its last line; if no endpoint
+was running, the connection is saved and served when you next start one.
 
 ## 7. Check what you have
 

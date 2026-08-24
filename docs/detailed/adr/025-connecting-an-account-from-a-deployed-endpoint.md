@@ -76,11 +76,14 @@ Not a small change, and the cost is mostly in guarantees rather than code:
   immutability no longer provided it.
 - **"A running instance never mutates its own configuration"** would stop being true. This is the
   sentence ADR-007 ends on and the one ADR-023 was careful to preserve while moving its mechanism.
-- **A config-reload story.** `src/server/endpoint.ts:86-104` opens one runtime per profile at boot
-  and holds it, and `ProviderRegistry.replace` says in its own docstring that it is not a general
-  hot-reload facility. A connection written at runtime is not served until the revision restarts —
-  so either the flow ends with "redeploy", which loses most of its point, or reload becomes its own
-  decision about what policy a call is evaluated against between two requests.
+- ~~**A config-reload story.**~~ **Paid by [ADR-029](029-connecting-is-not-deploying.md).** This
+  read: *"opens one runtime per profile at boot and holds it … so either the flow ends with
+  'redeploy', which loses most of its point, or reload becomes its own decision about what policy a
+  call is evaluated against between two requests."* Reload became its own decision. Runtimes live in
+  a generation a request pins for its lifetime, so the policy a call is evaluated against cannot
+  change underneath it, and `POST /reload` re-reads the whole config. Four costs remain, and the
+  authorisation objection below is untouched — this changed when the endpoint looks, not who may
+  tell it to connect something.
 - **An OAuth redirect URI on the deployment**, which ADR-005 lists as a cost the loopback flow
   exists to avoid: a public callback route, a registered "Web application" client rather than the
   current "Desktop app", and a redirect URI that changes with the service URL.

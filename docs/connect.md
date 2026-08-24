@@ -60,6 +60,22 @@ choice in your profile, so every later Google connection on that profile uses yo
 the flag. See [`detailed/setup/google.md`](detailed/setup/google.md) for the walkthrough and what
 the two paths trade against each other.
 
+## When the connection starts working
+
+As soon as `connect` finishes. It saves the connection, copies the config to wherever the target's
+endpoint reads it, and asks that endpoint to re-read it — so a running `lanes link start` picks it
+up without a restart, and a deployed endpoint picks it up without a new revision. Deploying is how
+new code gets to an endpoint; authorising an account changes no code (ADR-029).
+
+The last line says which happened:
+
+```console
+Next: Serving it now — the endpoint has re-read its config.
+```
+
+If no endpoint was running, or this machine cannot reach a deployed one, it says that instead. The
+connection is saved either way and is served the next time that endpoint starts.
+
 ## See what one takes before you start
 
 ```console
