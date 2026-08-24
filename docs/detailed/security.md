@@ -91,6 +91,7 @@ limitation. `RESERVED` names a compatibility slot with no implementation.
 | `transport.stateless` | ENFORCED | restart-mid-session test |
 | `credentials.encrypted-at-rest` | ENFORCED (file adapter) | nothing readable on disk; tamper detection |
 | `profile.isolated` | ENFORCED | cross-profile token, state, and audit tests, plus `src/cli/runtime/scoping.test.ts` for the owner layer. Two things were shared until [ADR-030](adr/030-a-profile-owns-its-skills-and-manifests.md) — skills and provider manifests, both at the workspace root — so this row was previously true of credentials, state and the log rather than of everything a profile holds |
+| `oauth.refresh-replay-revokes-the-chain` | ENFORCED | a spent refresh token is tombstoned rather than deleted, so presenting it again is detectable; the whole family goes, tested over real HTTP in `src/server/oauth.test.ts`. A client retrying and a thief replaying are indistinguishable, and re-authorising is the cheaper mistake |
 | `token.rotation-takes-effect` | ENFORCED **within a five-second window** | `src/auth/index.test.ts` covers both halves against a real credential store: the replacement is accepted on its first call, and the rotated-away token stops working once the window passes. Both caches are dropped together — the authenticator's and the credential store's — because dropping only one re-reads the same stale value |
 | `limits.per-profile` | ENFORCED per instance | rate limit tests |
 | `audit.every-invocation` | ENFORCED **with two documented exceptions** | see below |

@@ -248,18 +248,27 @@ export class OAuthServer {
     const presented = form.get('refresh_token') ?? '';
     const record = await this.#options.store.token(presented);
 
-    if (!record || record.kind !== 'refresh') {
+    if (!record || record.kind === 'access') {
       return invalid('invalid_grant', 'That refresh token is unknown or expired.');
     }
+
+    // A spent token presented again is the one signal that it has been copied.
+    // Rotation alone does not answer it: whoever refreshes first walks away
+    // with a live pair, and rejecting only the token in hand leaves that pair
+    // working while the other party — usually the real client — is locked out.
+    // So the whole chain goes. A client retrying a response it never saw and a
+    // thief replaying are indistinguishable from here, and re-authorising is
+    // the cheaper of the two mistakes.
+    if (record.kind === 'consumed') {
+      await this.#options.store.revokeFamily(record.family);
+      return invalid('invalid_grant', 'That refresh token has already been used.');
+    }
+
     if (record.clientId !== form.get('client_id')) {
       return invalid('invalid_grant', 'That refresh token was issued to a different client.');
     }
 
-    // Rotation: the presented token stops working the moment its replacement is
-    // minted, so a captured refresh token is useful only until the real client
-    // next refreshes — at which point one of the two presents a dead token and
-    // the whole family is dropped.
-    await this.#options.store.revokeToken(presented);
+    await this.#options.store.consumeToken(presented);
     return this.#issue(record.clientId, record.scope, randomToken('llr'), record.family);
   }
 

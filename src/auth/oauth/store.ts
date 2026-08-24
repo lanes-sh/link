@@ -44,7 +44,17 @@ export interface AuthorizationCode {
   readonly expiresAt: number;
 }
 
-export type TokenKind = 'access' | 'refresh';
+/**
+ * `consumed` is a spent refresh token kept as a tombstone.
+ *
+ * Deleting one outright is what made replay undetectable: a token that is
+ * simply absent cannot be told apart from one that never existed, so the single
+ * signal that a refresh token has been copied was being discarded at the moment
+ * it arrived. A tombstone keeps the family id and nothing else useful, and it
+ * opens no more than a deleted row does — every check that admits a credential
+ * tests for `access` by name.
+ */
+export type TokenKind = 'access' | 'refresh' | 'consumed';
 
 export interface IssuedToken {
   readonly clientId: string;
@@ -165,6 +175,14 @@ export class OAuthStore {
 
   async revokeToken(token: string): Promise<void> {
     await this.#state.delete(TOKENS, hashToken(token));
+  }
+
+  /** Spend a refresh token, keeping the tombstone that makes a replay visible. */
+  async consumeToken(token: string): Promise<void> {
+    const key = hashToken(token);
+    const record = await this.#read<IssuedToken>(TOKENS, key);
+    if (!record) return;
+    await this.#state.set(TOKENS, key, JSON.stringify({ ...record, kind: 'consumed' }));
   }
 
   /**
