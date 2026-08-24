@@ -19,37 +19,34 @@ import type { Icon } from '@modelcontextprotocol/server';
  * honour the field.
  */
 
-/** The published mark's own box, before the margin this file adds around it. */
-const TILE = 738;
-
 /**
- * How far the mark is inset inside the icon's box, in the mark's own units.
+ * The tile: the published mark's own geometry, used verbatim and not inset.
  *
- * The published mark bleeds to its own edges — it is a rounded square *made of*
- * the stripes, so at the edges there is nothing between the artwork and the
- * boundary. An avatar is cropped, usually to a circle, and a mark that reaches
- * its own edge loses the silhouette to the crop and reads as anonymous
- * diagonals. A tenth of the box on each side is enough for the stripes to stop
- * clear of a circular crop.
+ * These are the numbers from the published file — a 737.28 square at a
+ * sub-pixel offset inside a 738 × 739 box, with `rx="150"` corners. The tile is
+ * both the ground and the mask, which is what makes the stripes stop exactly
+ * where the rounded square does.
+ *
+ * **The mark is not inset, and that is a deliberate reversal.** An earlier
+ * version held it a tenth of the box clear of the edge, reasoning that a
+ * circular avatar crop would otherwise take the rounded-square silhouette. It
+ * does take it — but what the margin actually produced was a dark ring inside
+ * the circle with the stripes shrunk away from it, which reads as a small mark
+ * badly placed rather than as a mark whose corners were cropped. Filling the
+ * box is the better trade in both shapes: cropped to a circle the stripes run
+ * edge to edge, and left square the silhouette is there anyway.
  */
-const MARGIN = Math.round(TILE / 10);
+const TILE = { x: 0.360107, y: 0.859375, size: 737.28, radius: 150 } as const;
 
-/** The icon's outer box, and the ground the whole of it is painted on. */
-const BOX = TILE + MARGIN * 2;
+/** The box the published file declares, which the tile sits inside. */
+const WIDTH = 738;
+const HEIGHT = 739;
+
 const GROUND = '#121214';
 const INK = '#ffffff';
 
 /**
- * The corner radius, carried across from the mark rather than picked.
- *
- * The published tile is `rx="150"` on a 737.28 box. Scaling that ratio to the
- * padded box keeps the same curve rather than a tighter or looser one that
- * happens to look close at 220px and wrong at 32.
- */
-const RADIUS = Math.round((BOX * 150) / 737.28);
-
-/**
- * The icon: the published Lanes mark, inset, on its own dark ground.
+ * The icon: the published Lanes mark, filling its box, on its own dark ground.
  *
  * This is the mark lanes.sh serves as `/icon-light.svg` and `/icon-dark.svg`.
  * It is *not* the glyph beside "Any MCP client" in the README diagram: that one
@@ -70,8 +67,8 @@ const RADIUS = Math.round((BOX * 150) / 737.28);
  * right for a favicon on lanes.sh and wrong here: a client draws an icon on a
  * surface this file knows nothing about, and transparent gaps mean the mark is
  * a different thing on each one and invisible on some. Painting `#121214`
- * across the whole box — margin included — is what makes the result the same
- * icon everywhere, and it is why there is one entry below rather than two.
+ * behind the stripes is what makes the result the same icon everywhere, and it
+ * is why there is one entry below rather than two.
  *
  * The twenty-four stripes are generated rather than pasted. In the published
  * file they are an exact arithmetic progression — same step on both axes, the
@@ -90,19 +87,21 @@ function mark(): string {
     );
   }
 
+  // One rect shape, spelled once and used twice: as the ground the stripes are
+  // painted over, and as the mask that stops them at its edge. Written apart
+  // they are two places to change a corner radius and one place to forget.
+  const tile = `x="${TILE.x}" y="${TILE.y}" width="${TILE.size}" height="${TILE.size}" rx="${TILE.radius}"`;
+
   return [
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-MARGIN} ${-MARGIN} ${BOX} ${BOX}"`,
-    ' role="img">',
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${WIDTH} ${HEIGHT}" role="img">`,
     '<title>Lanes Link</title>',
-    `<rect x="${-MARGIN}" y="${-MARGIN}" width="${BOX}" height="${BOX}"`,
-    ` rx="${RADIUS}" fill="${GROUND}" />`,
+    `<rect ${tile} fill="${GROUND}" />`,
     // The rounded square is a mask rather than a drawn shape, which is what
     // makes the stripes stop where they do. Its id has to be stable but not
     // unique — the icon is its own `data:` document, so nothing else is in
-    // scope to collide with it. Its own corners never show: it is inset on a
-    // ground of the same colour, so what reads is where the stripes end.
-    '<mask id="tile" maskUnits="userSpaceOnUse" x="0" y="0" width="738" height="739">',
-    '<rect x="0.360107" y="0.859375" width="737.28" height="737.28" rx="150" fill="#fff" />',
+    // scope to collide with it.
+    `<mask id="tile" maskUnits="userSpaceOnUse" x="0" y="0" width="${WIDTH}" height="${HEIGHT}">`,
+    `<rect ${tile} fill="#fff" />`,
     '</mask>',
     `<g mask="url(#tile)">${stripes.join('')}</g>`,
     '</svg>',
