@@ -5,7 +5,7 @@ description: Use when the user refers to their own accounts, knowledge, procedur
 
 # Lanes Link
 
-A self-hosted gateway to one person's own context: the accounts they have
+A self-hostable gateway to one person's own context: the accounts they have
 connected, the knowledge they have accumulated, the procedures they have
 written down, and their secrets. One endpoint serves every profile in a
 workspace under one token, and each call names which profile it means.

@@ -1,10 +1,10 @@
 # Lanes Link
 
-**One secure endpoint between your AI agents and your real accounts, knowledge, and secrets.**
+**One secure endpoint between your AI agents and all your connections, memory, skills, and secrets.**
 
 Connect your mail, calendar, files, and notes once, and add the memory and skills that only you
 have. Every agent you use — Claude, ChatGPT, and anything else that speaks MCP — reaches them
-through a single MCP endpoint that you own and run. Open source, self-hosted, no vendor sitting in
+through a single MCP endpoint that you own and run. Open source, self-hostable, no vendor sitting in
 the middle of your data.
 
 <picture>
