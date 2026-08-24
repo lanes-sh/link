@@ -1,5 +1,9 @@
 # Lanes Link
 
+[![npm version](https://img.shields.io/npm/v/%40lanes-sh%2Flink?style=flat-square&color=black&label=npm)](https://www.npmjs.com/package/@lanes-sh/link)
+[![license Apache-2.0](https://img.shields.io/github/license/lanes-sh/link?style=flat-square&color=black)](LICENSE)
+[![ci](https://img.shields.io/github/actions/workflow/status/lanes-sh/link/ci.yml?branch=main&style=flat-square&label=ci)](https://github.com/lanes-sh/link/actions/workflows/ci.yml)
+
 **One secure endpoint between your AI agents and all your connections, memory, skills, and secrets.**
 
 Connect your mail, calendar, files, and notes once, and add the memory and skills that only you
