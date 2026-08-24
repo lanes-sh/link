@@ -176,21 +176,40 @@ jobs:
       - if: steps.mode.outputs.mode == 'publish'
         run: npm publish --provenance --access public
 
-      - name: tag it
-        if: steps.mode.outputs.mode == 'publish'
-        env:
-          VERSION: ${{ steps.mode.outputs.version }}
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "v$VERSION" -m "v$VERSION"
-          git push origin "v$VERSION"
-          git push --delete origin release/next 2>/dev/null || true
-
-      - name: github release
+      # The tag is created through the API, not by `git push`.
+      #
+      # Pushing it failed, after the publish had already succeeded:
+      #
+      #   refusing to allow a GitHub App to create or update workflow
+      #   `.github/workflows/release-pr.yml` without `workflows` permission
+      #
+      # A push is refused when the ref it creates carries workflow files that
+      # differ from what the remote already has, and GITHUB_TOKEN cannot be
+      # granted the permission that would allow it — there is no `workflows`
+      # key in the `permissions:` block. The tag pointed at the commit this run
+      # checked out, another merge landed while the run was publishing, and the
+      # tag therefore looked like it was re-creating a workflow file that merge
+      # had deleted. Any merge during a release run reproduces it.
+      #
+      # Creating the ref through the API pushes no objects — the commit is
+      # already on the remote — so the check never applies. `--target` makes
+      # `gh release create` do exactly that, which also collapses the tag and
+      # the release into one call that cannot half-succeed.
+      #
+      # $GITHUB_SHA rather than the branch: `main` may have moved since this run
+      # started, and the tag has to name the tree that was published.
+      - name: tag it and announce it
         if: steps.mode.outputs.mode == 'publish'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.mode.outputs.version }}
-        run: gh release create "v$VERSION" --generate-notes --verify-tag
+        run: gh release create "v$VERSION" --target "$GITHUB_SHA" --generate-notes
+
+      # Housekeeping, and never a reason to fail a release that has already
+      # reached the registry.
+      - name: tidy the release branch
+        if: steps.mode.outputs.mode == 'publish'
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh api -X DELETE repos/${{ github.repository }}/git/refs/heads/release/next
