@@ -85,6 +85,58 @@ export class BrokerError extends Error {
 
 type Fetch = typeof globalThis.fetch;
 
+export const BROKER_ORIGIN_ENV = 'LANES_LINK_BROKER_ORIGIN';
+
+/** Loopback, in the spellings a `URL` will hand back for one. */
+const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
+
+/**
+ * Aiming the exchange somewhere other than the origin the manifest declares.
+ *
+ * A broker running on this machine and a staging deployment are the same
+ * problem: everything about the flow is unchanged except which host holds the
+ * secret. An origin is the whole of the difference, so a provider keeps its own
+ * path and only the origin in front of it moves.
+ *
+ * It refuses rather than falls back, because the failure it would otherwise
+ * cause is the expensive kind — believing you are exercising a local broker
+ * while a real authorization code goes to production. A variable that is
+ * ignored when malformed is worse than one that stops the command.
+ *
+ * `http` is confined to loopback for the same reason the redirect is: off this
+ * machine it puts an authorization code on the wire in the clear.
+ */
+export function brokerOriginOverride(
+  env: Record<string, string | undefined> = process.env as Record<string, string | undefined>,
+): string | undefined {
+  const raw = env[BROKER_ORIGIN_ENV]?.trim();
+  if (!raw) return undefined;
+
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error(`${BROKER_ORIGIN_ENV} is not a URL: ${raw}`);
+  }
+
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+    // `localhost:8080` is the mistake people make, and it *parses* — as a URL
+    // whose scheme is "localhost". Saying which scheme it read is what turns
+    // that from a baffling refusal into an obvious missing `http://`.
+    throw new Error(
+      `${BROKER_ORIGIN_ENV} must be an http or https URL. "${raw}" reads as scheme ` +
+        `"${url.protocol.replace(':', '')}" — a host and port with no scheme becomes one.`,
+    );
+  }
+  if (url.protocol === 'http:' && !LOOPBACK.has(url.hostname)) {
+    throw new Error(
+      `${BROKER_ORIGIN_ENV} may only be http for a loopback host. "${url.hostname}" over http ` +
+        `would put the authorization code on the wire in the clear — use https.`,
+    );
+  }
+  return url.origin;
+}
+
 /** The `{success, data}` envelope, unwrapped, or thrown as a `BrokerError`. */
 async function unwrap(response: Response, what: string): Promise<Record<string, unknown>> {
   const text = await response.text();

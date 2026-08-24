@@ -1,4 +1,10 @@
-import { BrokerError, brokerConfig, type BrokerConfig } from '#connectivity/auth/index.ts';
+import {
+  BROKER_ORIGIN_ENV,
+  BrokerError,
+  brokerConfig,
+  brokerOriginOverride,
+  type BrokerConfig,
+} from '#connectivity/auth/index.ts';
 import type { ProviderManifest } from '#connectivity';
 import type { SecretStore } from '#secrets';
 import { ConfigDocument } from '../../config-edit.ts';
@@ -82,6 +88,18 @@ export async function resolveOAuthClient(input: ClientChoice): Promise<OAuthClie
       );
     }
     return { kind: 'own', clientId, clientSecret };
+  }
+
+  // Before the fetch, so it is said even when the broker cannot be reached.
+  // The danger is not someone who set this deliberately; it is the variable
+  // still exported in a shell three days later, quietly sending a real
+  // authorization code somewhere other than where the operator believes.
+  const overridden = brokerOriginOverride();
+  if (overridden) {
+    warn(
+      `${BROKER_ORIGIN_ENV} is set — the authorization code will be exchanged at ${overridden}, ` +
+        `not by ${broker.operator}.`,
+    );
   }
 
   let config: BrokerConfig;

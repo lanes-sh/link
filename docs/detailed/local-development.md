@@ -27,6 +27,38 @@ $ bun run lanes link connect example
 $ bun run lanes link start
 ```
 
+## Pointing the OAuth broker somewhere else
+
+A provider whose manifest declares `auth.broker` — every Google REST provider does — authorises
+against a client somebody else operates, and the exchange happens at that operator's origin. For
+production that is the right answer and there is nothing to configure. For working *on* the broker
+it is not: you want the one on your machine, or the one on stage.
+
+`LANES_LINK_BROKER_ORIGIN` replaces the origin and leaves the path alone, for every provider at
+once:
+
+```console
+$ export LANES_LINK_BROKER_ORIGIN=http://127.0.0.1:8080
+$ bun run lanes link connect gmail
+warn  LANES_LINK_BROKER_ORIGIN is set — the authorization code will be exchanged at
+      http://127.0.0.1:8080, not by Lanes.
+```
+
+It reaches both callers, because both read the same manifest field: the CLI performing the first
+exchange, and the endpoint refreshing while it serves.
+
+Three things it deliberately will not do:
+
+- **Fall back when the value is malformed.** It throws. A variable that is ignored when wrong is how
+  you send a real authorization code to production while believing you are testing locally.
+- **Accept `http` for anything but loopback.** Off this machine that puts an authorization code on
+  the wire in the clear. Use `https` for a remote broker.
+- **Keep a path.** `https://stage.example.com/v9/nope` becomes `https://stage.example.com`. The
+  provider owns its path; two places deciding where `/exchange` lives would disagree eventually.
+
+The warning above is the point of the feature as much as the redirect is — an override left
+exported in a shell is otherwise invisible.
+
 ## Layout
 
 Dependencies run one way: infrastructure interfaces → provider SDK → core → mcp → server/cli.

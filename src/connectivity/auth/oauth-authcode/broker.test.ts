@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { BrokerError, brokerConfig, brokerExchange, brokerRefresh } from './broker.ts';
+import {
+  BrokerError,
+  brokerConfig,
+  brokerExchange,
+  brokerOriginOverride,
+  brokerRefresh,
+} from './broker.ts';
 
 const URL_ = 'https://api.example.com/v1/auth/link/vendor';
 
@@ -193,5 +199,55 @@ describe('brokerRefresh', () => {
     await brokerRefresh(URL_, { refreshToken: 'rt' }, fetch);
 
     expect((calls[0]!.init!.headers as Record<string, string>)['authorization']).toBeUndefined();
+  });
+});
+
+describe('brokerOriginOverride', () => {
+  test('is absent unless the variable is set to something', () => {
+    expect(brokerOriginOverride({})).toBeUndefined();
+    expect(brokerOriginOverride({ LANES_LINK_BROKER_ORIGIN: '' })).toBeUndefined();
+    expect(brokerOriginOverride({ LANES_LINK_BROKER_ORIGIN: '   ' })).toBeUndefined();
+  });
+
+  test('keeps the origin and discards everything after it', () => {
+    // The provider owns the path. Accepting one here would mean two places
+    // decide where `/exchange` lives, and they would disagree eventually.
+    expect(brokerOriginOverride({ LANES_LINK_BROKER_ORIGIN: 'https://stage.example.com/v9/nope' })).toBe(
+      'https://stage.example.com',
+    );
+    expect(brokerOriginOverride({ LANES_LINK_BROKER_ORIGIN: 'http://127.0.0.1:8080' })).toBe(
+      'http://127.0.0.1:8080',
+    );
+  });
+
+  test('refuses a value it cannot read rather than falling back', () => {
+    // Falling back would send a real authorization code to production while
+    // the operator believes they are exercising a local broker.
+    expect(() => brokerOriginOverride({ LANES_LINK_BROKER_ORIGIN: 'not a url' })).toThrow(
+      /is not a URL/,
+    );
+    expect(() => brokerOriginOverride({ LANES_LINK_BROKER_ORIGIN: 'ftp://example.com' })).toThrow(
+      /must be an http or https URL/,
+    );
+  });
+
+  test('names the scheme it read, because a missing one still parses', () => {
+    // `localhost:8080` is a URL whose scheme is "localhost". Without this the
+    // refusal reads as nonsense to someone who just forgot `http://`.
+    expect(() => brokerOriginOverride({ LANES_LINK_BROKER_ORIGIN: 'localhost:8080' })).toThrow(
+      /reads as scheme "localhost"/,
+    );
+  });
+
+  test('permits http only for a loopback host', () => {
+    expect(brokerOriginOverride({ LANES_LINK_BROKER_ORIGIN: 'http://localhost:8080' })).toBe(
+      'http://localhost:8080',
+    );
+    expect(() => brokerOriginOverride({ LANES_LINK_BROKER_ORIGIN: 'http://stage.example.com' })).toThrow(
+      /in the clear/,
+    );
+    expect(brokerOriginOverride({ LANES_LINK_BROKER_ORIGIN: 'https://stage.example.com' })).toBe(
+      'https://stage.example.com',
+    );
   });
 });

@@ -1,3 +1,6 @@
+import type { AuthBroker } from '#connectivity';
+import { brokerOriginOverride } from '#connectivity/auth/index.ts';
+
 /**
  * Google's OAuth endpoints, shared by every Google provider.
  *
@@ -26,11 +29,28 @@ export const GOOGLE_APP = 'google';
  * is not. What it costs is recorded in ADR-028 and in the guarantee table in
  * `docs/detailed/security.md` — chiefly that the exchange stops being local.
  */
-export const GOOGLE_BROKER = {
-  url: 'https://api.lanes.sh/v1/auth/link/google',
-  operator: 'Lanes',
-  docs_url: 'https://lanes.sh/link#google',
-} as const;
+const BROKER_ORIGIN = 'https://api.lanes.sh';
+const BROKER_PATH = '/v1/auth/link/google';
+
+/**
+ * The same client, reached at a different origin.
+ *
+ * Two callers need it: the CLI performing the first exchange and the dispatcher
+ * refreshing while it serves. Both read `manifest.auth.broker.url`, so building
+ * it once here is what keeps them from disagreeing about where the broker is —
+ * and what makes `LANES_LINK_BROKER_ORIGIN` reach both at once. The path stays
+ * fixed; only the host in front of it moves. See `../../../connectivity/auth/
+ * oauth-authcode/broker.ts` for what an override is allowed to be.
+ */
+export function googleBroker(env?: Record<string, string | undefined>): AuthBroker {
+  return {
+    url: `${brokerOriginOverride(env) ?? BROKER_ORIGIN}${BROKER_PATH}`,
+    operator: 'Lanes',
+    docs_url: 'https://lanes.sh/link#google',
+  };
+}
+
+export const GOOGLE_BROKER: AuthBroker = googleBroker();
 
 export const GOOGLE_OAUTH = {
   authorize_url: 'https://accounts.google.com/o/oauth2/v2/auth',
