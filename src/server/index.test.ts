@@ -812,5 +812,38 @@ ${policy}
     } finally {
       await harness.stop();
     }
+describe('the authentication edge', () => {
+  const probed = startHarness({
+    profile: 'personal',
+    port: allocatePort(),
+    policy: `  allow:
+    - "example.*"`,
+  });
+
+  afterAll(async () => {
+    await probed.stop();
+  });
+
+  test('a sustained burst of failed authentications is eventually refused outright', async () => {
+    // Every failed comparison against a cached value costs a re-read of the
+    // credential store, which on a deployed instance is a network call and
+    // locally is a decrypt. Unbounded, that is a way to make the endpoint do
+    // expensive work with no credential at all.
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      statuses.push(
+        (await rpc(probed.server.url, 'tools/list', {}, { token: `llk_wrong_${attempt}` })).status,
+      );
+    }
+
+    expect(statuses[0]).toBe(401);
+    expect(statuses.at(-1)).toBe(429);
+  });
+
+  test('a valid token still works while wrong ones are being refused', async () => {
+    // The limit has to bite on failure only. Keyed on the caller rather than on
+    // the outcome, anyone able to reach the endpoint could lock the owner out of
+    // it, which trades a cost problem for a worse availability one.
+    expect((await rpc(probed.server.url, 'tools/list', {}, { token: TEST_TOKEN })).status).toBe(200);
   });
 });

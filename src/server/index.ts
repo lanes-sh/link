@@ -4,6 +4,7 @@ import { capabilityIdForToolName } from '#server/mcp';
 import { ATTACHMENTS_PATH, stageAttachment } from './attachments.ts';
 import { allowedHostnamesFor, rebindingRefusal } from './rebinding.ts';
 import type { Generation, Generations } from './generations.ts';
+import { callerKey, failedAuthLimiter, FAILED_AUTH_PER_MINUTE, tooManyAttempts } from './edge.ts';
 import {
   handleAuthorization,
   isAuthorizationPath,
@@ -79,6 +80,7 @@ export interface RequestHandler {
 
 export function createRequestHandler(options: ServerOptions): RequestHandler {
   let probedAt = 0;
+  const failedAuth = failedAuthLimiter();
 
   /**
    * Re-read the config because a call named a tool we do not serve.
@@ -152,6 +154,14 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
 
       if (!outcome.ok) {
         options.log.warn('rejected request', { reason: outcome.reason });
+
+        // After the attempt rather than before it: keyed on the caller alone,
+        // anyone able to reach the endpoint could spend the owner's budget and
+        // lock them out, which trades a cost problem for a worse availability
+        // one. Only a failure consumes a token, so a valid credential is never
+        // refused by this.
+        const budget = failedAuth.take(callerKey(request), FAILED_AUTH_PER_MINUTE);
+        if (!budget.allowed) return tooManyAttempts(budget.retryAfterMs);
 
         // The pointer is the whole handshake for a remote client: it reads the
         // named document, finds the authorization server, and starts a flow.

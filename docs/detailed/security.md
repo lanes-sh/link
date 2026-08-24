@@ -206,6 +206,9 @@ weekly schedule — so `invalid_grant` is detected specifically and the error na
   token. It does mean an unauthenticated caller can write rows, so the list is capped at 200 and the
   oldest without a live token are evicted — a connector in use is never dropped to make room.
 - **Rate limits are per instance.** On a horizontally scaled deployment they are not global.
+  This now includes a ceiling on *failed* authentication at the HTTP edge, which exists to bound
+  the credential-store re-read a mismatch triggers rather than to make guessing harder — 256 bits
+  already does that. Only a failure spends the budget, so a valid token is never refused by it.
 - **No egress control**, no provider sandbox, no secret scanning on write.
 - **Content leaving the boundary is not recoverable.** Lanes Link governs what an agent may fetch,
   not what happens to it afterwards.
