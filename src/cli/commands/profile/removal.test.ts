@@ -1,7 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import type { Config, TargetConfig } from '#profile';
+import type { SecretRef, SecretStore } from '#secrets';
+import type { BlobMetadata, BlobStore } from '#stores/blobs';
 import { buildRegistry } from '../../runtime/registry.ts';
-import { declaredRefs } from './removal.ts';
+import {
+  declaredRefs,
+  removalPlan,
+  type RemovalItem,
+  type RemovalPlan,
+} from './removal.ts';
 
 /**
  * Which credentials a profile may have its removal delete.
@@ -99,5 +106,143 @@ describe('declaredRefs', () => {
     expect(refs.filter((ref) => ref === 'google/client_id')).toHaveLength(1);
     expect(refs).toContain('gmail/a');
     expect(refs).toContain('drive/b');
+  });
+});
+
+// --- removalPlan -----------------------------------------------------------
+
+function fakeSecrets(refs: string[]): SecretStore {
+  const held = new Map(refs.map((ref) => [ref, 'value']));
+  return {
+    get: async (ref) => held.get(ref) ?? null,
+    set: async (ref, value) => void held.set(ref, value),
+    has: async (ref) => held.has(ref),
+    delete: async (ref) => void held.delete(ref),
+    list: async () => [...held.keys()] as SecretRef[],
+  };
+}
+
+function fakeBlobs(keys: string[]): BlobStore {
+  const held = new Set(keys);
+  return {
+    put: async (key) => void held.add(key),
+    get: async () => null,
+    has: async (key) => held.has(key),
+    delete: async (key) => void held.delete(key),
+    list: async () =>
+      [...held].map((key) => ({ key, size: 0, modifiedAt: new Date(0) })) as BlobMetadata[],
+  };
+}
+
+const ids = (plan: RemovalPlan, kind: RemovalItem['kind']): string[] =>
+  plan.items.filter((item) => item.kind === kind).map((item) => item.id);
+
+describe('removalPlan', () => {
+  test('plans every declared target, and the workspace items exactly once', async () => {
+    const two = config({
+      targets: { local: target(), cloud: target({ storage: { adapter: 'gcs', bucket: 'your-bucket' } } as never) },
+    } as never);
+
+    const plan = await removalPlan(two, '/ws', 'personal', registry, {
+      openSecrets: async () => fakeSecrets(['profile/token']),
+      openBlobs: async () => fakeBlobs(['state.kv/a']),
+    });
+
+    expect(plan.items.filter((i) => i.target === 'local')).not.toHaveLength(0);
+    expect(plan.items.filter((i) => i.target === 'cloud')).not.toHaveLength(0);
+    expect(ids(plan, 'config').filter((id) => !id.startsWith('profiles/'))).toHaveLength(1);
+  });
+
+  test('deletes secrets before blobs, because the file store is itself a blob', async () => {
+    // `layout.credentials(p)` is `data/<p>/credentials.enc`, inside the blob
+    // root `data/<p>`. Delete blobs first and the store the secret deletions
+    // read through is gone.
+    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
+      openSecrets: async () => fakeSecrets(['profile/token']),
+      openBlobs: async () => fakeBlobs(['credentials.enc']),
+    });
+
+    const kinds = plan.items.filter((i) => i.target === 'local').map((i) => i.kind);
+    expect(kinds.indexOf('secret')).toBeLessThan(kinds.indexOf('blob'));
+  });
+
+  test('the local config is the last item, because it is the record of where things are', async () => {
+    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
+      openSecrets: async () => fakeSecrets(['profile/token']),
+      openBlobs: async () => fakeBlobs(['a']),
+    });
+
+    expect(plan.items.at(-1)?.kind).toBe('config');
+  });
+
+  test('a ref the profile does not declare is reported, never planned', async () => {
+    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
+      openSecrets: async () => fakeSecrets(['profile/token', 'gmail/someone_else']),
+      openBlobs: async () => fakeBlobs([]),
+    });
+
+    expect(ids(plan, 'secret')).toContain('profile/token');
+    expect(ids(plan, 'secret')).not.toContain('gmail/someone_else');
+    expect(plan.untouched.flatMap((u) => u.refs)).toContain('gmail/someone_else');
+  });
+
+  test('--target restricts to it, and leaves the profile itself alone', async () => {
+    const two = config({
+      targets: { local: target(), cloud: target() },
+    } as never);
+
+    const plan = await removalPlan(two, '/ws', 'personal', registry, {
+      target: 'cloud',
+      openSecrets: async () => fakeSecrets(['profile/token']),
+      openBlobs: async () => fakeBlobs(['a']),
+    });
+
+    expect(plan.items.every((item) => item.target === 'cloud')).toBe(true);
+    expect(ids(plan, 'config')).toHaveLength(0);
+    expect(ids(plan, 'workspace-key')).toHaveLength(0);
+  });
+
+  test('a deployed target warns that its endpoint keeps answering with nothing behind it', async () => {
+    const deployed = config({
+      targets: {
+        cloud: target({ deploy: { platform: 'cloudrun', project: 'my-project' } } as never),
+      },
+    } as never);
+
+    const plan = await removalPlan(deployed, '/ws', 'personal', registry, {
+      openSecrets: async () => fakeSecrets([]),
+      openBlobs: async () => fakeBlobs([]),
+    });
+
+    expect(plan.warnings.join(' ')).toMatch(/keep answering|still answer/i);
+  });
+
+  test('a store that cannot be opened warns, and the other target still plans', async () => {
+    const two = config({
+      targets: { local: target(), cloud: target() },
+    } as never);
+
+    const plan = await removalPlan(two, '/ws', 'personal', registry, {
+      openSecrets: async (name) => {
+        if (name === 'cloud') throw new Error('no credentials for this project');
+        return fakeSecrets(['profile/token']);
+      },
+      openBlobs: async () => fakeBlobs(['a']),
+    });
+
+    expect(plan.warnings.join(' ')).toMatch(/cloud/);
+    expect(plan.items.some((item) => item.target === 'local')).toBe(true);
+  });
+
+  test('skills are never planned — every profile sees them', async () => {
+    // The blob store is rooted at the profile's own tree, so workspace-wide
+    // skills are outside it by construction. Asserted because "shared by every
+    // profile" is exactly the thing a future refactor could quietly break.
+    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
+      openSecrets: async () => fakeSecrets([]),
+      openBlobs: async () => fakeBlobs(['state.kv/a', 'audit.log/b']),
+    });
+
+    expect(plan.items.every((item) => !item.id.startsWith('skills/'))).toBe(true);
   });
 });
