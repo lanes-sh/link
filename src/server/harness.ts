@@ -130,7 +130,7 @@ interface WiredProfiles {
   readonly token: string;
 }
 
-function wireProfiles(options: HarnessOptions): WiredProfiles {
+export function wireProfiles(options: HarnessOptions): WiredProfiles {
   const config = options.config ?? configFor(options.profile, options.port, options.policy);
   const token = options.token ?? TEST_TOKEN;
 
