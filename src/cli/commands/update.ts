@@ -1,0 +1,255 @@
+import { homedir } from 'node:os';
+import { join, sep } from 'node:path';
+import { installRoot } from '#profile';
+import { emit, fail, ok, print, printErr, progress, style, warn } from '../output.ts';
+import { PACKAGE, release, type ReleaseState } from '../release.ts';
+import { version } from '../version.ts';
+
+/**
+ * `lanes link update` — install the newer release, or say why it will not.
+ *
+ * There is no build step and no compiled artifact, so updating means exactly
+ * one thing: replace the installed package directory with a newer tarball from
+ * the registry. `bin/lanes` resolves its own symlink chain and execs Bun on the
+ * `src/` inside that directory, so the shipped source *is* the running code and
+ * the symlink on the PATH never has to move.
+ *
+ * Bun is the only installer this drives. `bun install -g @lanes-sh/link` is the
+ * only install documented, `engines.bun` requires it, and the shim refuses to
+ * run without it — so inferring a package manager would be machinery serving a
+ * case nobody is told to create. The case that does exist is handled below
+ * rather than ignored: an `npm i -g` install updated with Bun gets a second
+ * copy somewhere else on the PATH, which this detects and reports instead of
+ * doing quietly.
+ *
+ * Nothing here is control plane — it touches the install, not a profile — so it
+ * resolves no profile and no target, and is the second command after `version`
+ * that prints no `announce` line.
+ */
+
+export interface UpdateFlags {
+  /** Report and exit without installing anything. */
+  readonly check?: boolean | undefined;
+  readonly json?: boolean | undefined;
+}
+
+/**
+ * What `update` would do, and why.
+ *
+ * `'checkout'` is a refusal: `bun link` puts a checkout on the same PATH entry
+ * a published install would occupy, so installing from the registry there would
+ * leave two copies of this CLI and no indication of which one answers. `git
+ * pull` is the update in a checkout, and saying so is more useful than doing
+ * something surprising.
+ */
+export type UpdateAction = 'install' | 'current' | 'ahead' | 'checkout' | 'unknown';
+
+export interface UpdateDecision {
+  readonly action: UpdateAction;
+  /** The argv to run, or `null` when nothing should be run. */
+  readonly install: readonly string[] | null;
+  readonly message: string;
+  /** Something true and unwelcome about this install, if there is anything. */
+  readonly warning: string | null;
+}
+
+export interface UpdateInput {
+  readonly installed: string;
+  readonly latest: string | null;
+  readonly state: ReleaseState;
+  /** Where this CLI is installed — `installRoot()`, not the workspace. */
+  readonly root: string;
+  /** Where Bun keeps global installs, so a copy landing elsewhere is visible. */
+  readonly bunGlobal: string;
+}
+
+/**
+ * The whole decision, as a function of five strings.
+ *
+ * Split from the spawn because the alternative is a command whose only test is
+ * one that replaces the copy of this CLI on the machine running the suite. Every
+ * branch below is reachable from `update.test.ts` with no network and no
+ * subprocess — including the stale branch, which the checkout this is written in
+ * can never reach on its own, being by definition the newest thing there is.
+ */
+export function updatePlan(input: UpdateInput): UpdateDecision {
+  const { installed, latest, state, root, bunGlobal } = input;
+
+  // A published install lives under `node_modules`; a checkout does not. Cheaper
+  // and steadier than looking for `.git`, which a tarball could carry and a
+  // shallow export could lack.
+  const published = root.split(sep).includes('node_modules');
+
+  if (!published) {
+    return {
+      action: 'checkout',
+      install: null,
+      message: `${root} is a checkout, not an install — git pull is the update here`,
+      warning: null,
+    };
+  }
+
+  if (state === 'unknown') {
+    return {
+      action: 'unknown',
+      install: null,
+      message:
+        latest === null
+          ? `could not reach the registry — ${installed} is installed`
+          : `cannot compare ${installed} against ${latest}`,
+      warning: null,
+    };
+  }
+
+  if (state === 'ahead') {
+    return {
+      action: 'ahead',
+      install: null,
+      message: `${installed} is installed, ahead of the published ${latest ?? 'release'}`,
+      warning: null,
+    };
+  }
+
+  if (state === 'current') {
+    return { action: 'current', install: null, message: `${installed} is current`, warning: null };
+  }
+
+  // Installed by npm, updated by Bun: `bun install -g` writes into its own
+  // global prefix and leaves the npm copy where it is, so both are on the PATH
+  // and its order decides which one answers. Worth saying before, not after.
+  const elsewhere = !root.startsWith(bunGlobal + sep);
+
+  return {
+    action: 'install',
+    install: ['install', '-g', PACKAGE],
+    message: `${installed} installed, ${latest} available`,
+    warning: elsewhere
+      ? `this copy is at ${root}, which is not under ${bunGlobal} — ` +
+        'Bun will install a second copy there rather than replace this one, ' +
+        'and your PATH order decides which one answers'
+      : null,
+  };
+}
+
+/** Where Bun keeps global installs, honouring `BUN_INSTALL`. */
+export function bunGlobalRoot(env: Record<string, string | undefined> = process.env): string {
+  return join(env['BUN_INSTALL'] ?? join(homedir(), '.bun'), 'install', 'global');
+}
+
+export async function update(flags: UpdateFlags): Promise<void> {
+  const current = await release();
+  const root = installRoot(import.meta.dir);
+  const decision = updatePlan({
+    installed: current.installed,
+    latest: current.latest,
+    state: current.state,
+    root,
+    bunGlobal: bunGlobalRoot(),
+  });
+
+  // A gate wants a non-zero exit for the one state that needs action. An
+  // unreachable registry is not that state — failing a build because a network
+  // was down would make this the flakiest check in it.
+  if (flags.check === true && decision.action === 'install') process.exitCode = 1;
+
+  const report = {
+    installed: current.installed,
+    latest: current.latest,
+    state: current.state,
+    action: decision.action,
+    root,
+    ...(decision.install !== null ? { install: `bun ${decision.install.join(' ')}` } : {}),
+    ...(decision.warning !== null ? { warning: decision.warning } : {}),
+  };
+
+  if (flags.check === true || decision.action !== 'install') {
+    return emit(flags.json, report, () => {
+      if (decision.action === 'install') {
+        print(warn(decision.message));
+        if (decision.warning !== null) print(style.dim(`      ${decision.warning}`));
+        print(style.dim('      run: lanes link update'));
+        return;
+      }
+
+      // Green for the two states that need nothing. A refusal and an
+      // unreachable registry are neither wrong nor fine, and `ok` would claim
+      // the second of those.
+      if (decision.action === 'current' || decision.action === 'ahead') {
+        print(ok(decision.message));
+        return;
+      }
+
+      print(style.dim(decision.message));
+    });
+  }
+
+  // Stderr, both of them. What this command produces is the version change, and
+  // with `--json` that is a document — a line of prose in front of it corrupts
+  // it for whatever is parsing, which is the whole reason `emit` exists.
+  if (decision.warning !== null) progress(warn(decision.warning));
+  progress(style.dim(`bun ${decision.install!.join(' ')}`));
+
+  const installed = await runInstall(decision.install!, flags.json === true);
+  if (!installed) {
+    printErr(fail('the install did not complete — nothing was changed'));
+    process.exitCode = 1;
+    return;
+  }
+
+  // Read the version back off disk rather than trusting the exit code. `version()`
+  // reads `package.json` from the install root at call time, so this is the one
+  // question worth asking after a successful install: did *this* copy change?
+  // Unchanged after a clean install is the second-copy case above, seen from the
+  // other side.
+  const landed = version();
+
+  return emit(
+    flags.json,
+    {
+      ...report,
+      // The action was `install`; this is what came of it. Inventing a third
+      // action value would describe an outcome as a decision.
+      result: landed === current.installed ? 'unchanged' : 'installed',
+      installed: landed,
+      previous: current.installed,
+    },
+    () => {
+      if (landed === current.installed) {
+        print(warn(`bun reported success, but ${root} is still ${landed}`));
+        print(style.dim('      the copy it installed is somewhere else on your PATH'));
+        print(style.dim('      check with: which -a lanes'));
+        return;
+      }
+
+      print(ok(`${current.installed} → ${style.bold(landed)}`));
+      print(style.dim('      a running endpoint serves the old code until it is restarted'));
+    },
+  );
+}
+
+/**
+ * Hand the install to Bun and let it own the terminal.
+ *
+ * `process.execPath` rather than `Bun.which('bun')`: this process is already
+ * running under the Bun that should do the installing, and a PATH lookup can
+ * find a different one — which would resolve the dependency set with a
+ * different resolver than the one that will run the result.
+ *
+ * Output is inherited rather than captured. Bun prints its own progress and its
+ * own errors, and paraphrasing a package manager's failure is how a report ends
+ * up less useful than the thing it replaced. Its stdout is dropped under
+ * `--json` for the same reason the lines above go to stderr: the document on
+ * stdout has to be the only thing on stdout. Its stderr is kept either way,
+ * because a failure is worth reading in both modes.
+ */
+async function runInstall(argv: readonly string[], json: boolean): Promise<boolean> {
+  try {
+    const child = Bun.spawn([process.execPath, ...argv], {
+      stdout: json ? 'ignore' : 'inherit',
+      stderr: 'inherit',
+    });
+    return (await child.exited) === 0;
+  } catch {
+    return false;
+  }
+}

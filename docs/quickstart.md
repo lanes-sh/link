@@ -19,6 +19,9 @@ is a 401 that looks like a bad token.
 Working on Lanes Link itself rather than using it? A checkout and `bun link` put the same command on
 your `PATH`: [`detailed/local-development.md`](detailed/local-development.md).
 
+Later, `lanes link update` installs a newer release, and `lanes link update --check` only says whether
+there is one.
+
 ## 2. Create a profile
 
 A profile is one set of accounts with one set of permissions. Most people start with one.

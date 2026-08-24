@@ -1,6 +1,7 @@
 import { startEndpoint } from '#server/endpoint.ts';
 import { streamLogger } from '#server/logging.ts';
 import { announce, ok, print, style, warn } from '../../output.ts';
+import { staleNudge } from '../../release.ts';
 import { resolveProfile, type GlobalFlags } from '../../runtime.ts';
 
 /** `lanes link start` — reconcile, then serve every profile on one endpoint. */
@@ -41,6 +42,12 @@ export async function start(
 
   print(ok(`serving ${style.bold(endpoint.url)}`));
   print(style.dim(`      profiles: ${endpoint.profiles.join(', ')}`));
+
+  // Last, not first: the endpoint is what someone ran this for, and a version
+  // note in front of it would be the first thing they read and the least useful.
+  const stale = await staleNudge();
+  if (stale !== null) print(warn(stale));
+
   print(style.dim('Ctrl-C to stop.'));
 
   const shutdown = async (): Promise<void> => {

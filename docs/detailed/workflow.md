@@ -418,7 +418,18 @@ $ lanes link audit tail --denied-only        # the interesting half
 $ lanes link config show                     # the resolved config as JSON
 $ lanes link token show --show
 $ lanes link token rotate                    # invalidates every agent on this profile
+$ lanes link version                         # which release this is
+$ lanes link update --check                  # is a newer one published (exit 1 if so)
+$ lanes link update                          # install it
 ```
+
+`update` re-runs the global install, because that is all an update is: there is no build step, so
+the `src/` inside the installed package is the code that runs. Bun is the only installer it drives.
+From a checkout it refuses and says so — `git pull` is the update there. A running endpoint keeps
+serving the old code until it is restarted.
+
+`doctor`, `start`, and `deploy` each print one line when a newer release is out, and nothing when
+the registry cannot be reached.
 
 `lanes link audit tail` shows both allowed and denied calls, with arguments redacted per the provider's
 rules:
