@@ -46,6 +46,35 @@ function acceptedScopes(operation: Operation): string[] {
   return [...new Set((operation.security ?? []).flatMap((entry) => Object.values(entry).flat()))];
 }
 
+/**
+ * The scopes the verification doc justifies.
+ *
+ * Google will not accept a submission until every sensitive and restricted
+ * scope carries a justification, a data-usage statement and a demo video, and
+ * none of those live in this repository — they are free text on a console form.
+ * `docs/detailed/google-verification.md` is where the text is written and kept;
+ * the console is where it is pasted. That leaves the same gap `vendor.ts` had
+ * before the check above existed: prose stating a rule, and nothing enforcing
+ * it.
+ *
+ * Only the block between the markers is read. The prose around it names scopes
+ * deliberately *not* requested — `https://mail.google.com/` and unrestricted
+ * `drive`, both of which the doc tells a reviewer are refused — and matching on
+ * those would invert the test.
+ */
+const VERIFICATION_DOC = new URL(
+  '../../../../docs/detailed/google-verification.md',
+  import.meta.url,
+).pathname;
+
+async function justifiedScopes(): Promise<Set<string>> {
+  const source = await Bun.file(VERIFICATION_DOC).text();
+  const block = /<!-- scopes:begin -->([\s\S]*?)<!-- scopes:end -->/.exec(source)?.[1];
+  if (block === undefined) throw new Error(`${VERIFICATION_DOC}: no scopes block`);
+
+  return new Set(block.match(/https:\/\/www\.googleapis\.com\/auth\/[\w.]+/g) ?? []);
+}
+
 describe.each([
   ['gmail', gmail],
   ['drive', drive],
@@ -102,6 +131,22 @@ describe.each([
     const steps = (manifest.setup?.steps ?? []).join('\n');
 
     expect(manifest.auth.scopes.filter((scope) => !steps.includes(scope))).toEqual([]);
+  });
+
+  /**
+   * A scope reaches the consent screen justified, or it does not reach it.
+   *
+   * The failure is slow and lands on someone else. Adding a scope to a manifest
+   * works immediately for anyone running their own OAuth client, so nothing
+   * locally says it is incomplete — but on the hosted client it goes out
+   * unjustified, and Google answers weeks later by rejecting the whole
+   * submission rather than the one scope. The check costs a file read.
+   */
+  test('every scope the manifest requests is justified for verification', async () => {
+    if (manifest.auth.kind !== 'oauth') throw new Error('expected an oauth manifest');
+    const justified = await justifiedScopes();
+
+    expect(manifest.auth.scopes.filter((scope) => !justified.has(scope))).toEqual([]);
   });
 
   test('nothing vendored composes a message beside the authored capability', async () => {
@@ -208,5 +253,33 @@ describe.each([
     expect(
       declared.filter((name) => !capabilities.has(name) && !authored.has(name)),
     ).toEqual([]);
+  });
+});
+
+/**
+ * And nothing justified that is not asked for.
+ *
+ * This is the direction with teeth. A scope dropped from a manifest leaves the
+ * consent screen at once and its justification behind — still in the doc, and
+ * therefore still in the console, where it reads as a standing request for
+ * access the application no longer makes. Asking for more than is used is one
+ * of the things a verification review is looking for, so the stale entry is
+ * worse than no entry: it is an argument for something untrue, signed.
+ *
+ * It also catches the likelier clerical version: the doc's list is typed by
+ * hand, and a scope a word off from the one in the manifest justifies something
+ * that does not exist while leaving the real one unjustified.
+ */
+describe('verification', () => {
+  test('every scope justified for verification is one a manifest requests', async () => {
+    const requested = new Set(
+      [gmail, drive, sheets, docs, calendar, tasks, contacts].flatMap((entry) => {
+        const manifest = manifestOf(entry);
+        return manifest.auth.kind === 'oauth' ? manifest.auth.scopes : [];
+      }),
+    );
+
+    const justified = [...(await justifiedScopes())];
+    expect(justified.filter((scope) => !requested.has(scope))).toEqual([]);
   });
 });
