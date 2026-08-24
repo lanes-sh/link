@@ -302,9 +302,23 @@ the user asked for are returned to the user's machine. *(Then the shared handlin
 
 ## The demo video
 
-One unlisted YouTube video, its URL pasted into every scope's field. Google requires it to show the
-complete OAuth consent screen displaying exactly the scopes being requested, and then every feature
-that uses them, end to end.
+**One** unlisted YouTube video, its URL pasted into every scope's field. Not one per scope — a
+single recording is required to cover all of them, which is the whole reason it is worth recording
+last, after the scope set has stopped moving.
+
+There is no way to avoid it here. A video is required for *sensitive* scopes as well as restricted
+ones, so dropping all five restricted scopes would still leave seven that need it; the only routes
+that skip it are the ones that skip verification altogether — Internal, Testing, personal use, and
+domain-wide install — and Testing is the status [ADR-028](adr/028-a-hosted-oauth-client-is-the-default.md)
+exists to escape.
+
+Four things are asked for, and the bar is lower than "demo video" suggests — it is a screen
+recording of the tool being used, not a produced asset:
+
+- the OAuth grant process **in English**;
+- the consent screen displaying the application name correctly;
+- the browser address bar, on that consent screen, showing the OAuth client id;
+- the functionality each requested scope enables, actually exercised.
 
 Shot list — connect, consent, then exercise, one provider at a time:
 
