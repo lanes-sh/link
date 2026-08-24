@@ -1,9 +1,24 @@
 import type { SecretStore } from '#secrets';
 import type { BlobStore } from '#stores/blobs';
-import { ConfigError } from '#profile';
+import {
+  ConfigError,
+  WORKSPACE_FILE,
+  readWorkspace,
+  readWorkspaceFile,
+  workspaceFiles,
+  writeWorkspaceFile,
+} from '#profile';
+import { parseDocument } from 'yaml';
 import { terminalPrompter, type Prompter } from '../../prompt.ts';
-import { fail, ok, print, style } from '../../output.ts';
-import type { RemovalItem, RemovalPlan } from './removal.ts';
+import { announce, emit, fail, ok, print, style } from '../../output.ts';
+import {
+  buildRegistryWithWorkspace,
+  openBlobStoreFor,
+  openSecretStoreFor,
+  resolveProfile,
+  type GlobalFlags,
+} from '../../runtime.ts';
+import { removalPlan, renderPlan, type RemovalItem, type RemovalPlan } from './removal.ts';
 
 /**
  * Performing a removal, and being honest about the parts that did not happen.
@@ -213,4 +228,83 @@ export async function confirmedByName(
     return false;
   }
   return true;
+}
+
+export interface RemoveFlags extends GlobalFlags {
+  readonly dryRun?: boolean | undefined;
+  readonly yes?: boolean | undefined;
+  readonly json?: boolean | undefined;
+  /** Injected by a caller that has already asked — the console, and tests. */
+  readonly prompter?: Prompter | undefined;
+}
+
+/**
+ * `lanes link profile remove <name>` — the profile, and everything it owns.
+ *
+ * Deliberately not reachable from MCP. This writes credentials and mutates
+ * config, which ADR-007 keeps CLI-only, and it is the most destructive thing
+ * in the tool.
+ */
+export async function removeProfile(name: string, flags: RemoveFlags): Promise<void> {
+  const { resolution, config } = await resolveProfile({ ...flags, profile: name });
+  announce(resolution);
+
+  const root = resolution.workspaceRoot;
+  const registry = await buildRegistryWithWorkspace(root);
+  const files = workspaceFiles(root);
+
+  const plan = await removalPlan(config, root, name, registry, {
+    target: flags.target,
+    openSecrets: (target) => openSecretStoreFor(config, root, target),
+    openBlobs: (target, area) => openBlobStoreFor(config, root, target, area),
+    readDefaultProfile: async () => (await readWorkspace(root))?.default_profile,
+  });
+
+  renderPlan(plan);
+
+  if (flags.dryRun) {
+    print(style.dim('  --dry-run: nothing was removed, and no store was written to.'));
+    print();
+    return emit(flags.json, plan, () => {});
+  }
+
+  if (!(await confirmedByName(name, { yes: flags.yes, prompter: flags.prompter }))) return;
+
+  const outcome = await executeRemoval(plan, {
+    openSecrets: (target) => openSecretStoreFor(config, root, target),
+    openBlobs: (target, area) => openBlobStoreFor(config, root, target, area),
+    removeConfig: async (path) => await files.delete(relativeToRoot(root, path)),
+    clearDefaultProfile: async () => await clearDefault(root),
+    retry: retryCommand,
+  });
+
+  return emit(flags.json, outcome, () => renderOutcome(outcome));
+}
+
+/** `profiles/<name>.yaml`, however the path was spelled for display. */
+function relativeToRoot(root: string, path: string): string {
+  const at = path.indexOf('profiles/');
+  return at === -1 ? path.replace(`${root}/`, '') : path.slice(at);
+}
+
+/**
+ * Clear the key, never repoint it.
+ *
+ * Choosing a new default on the operator's behalf would silently change what
+ * every other command in that workspace acts on — the one thing a removal
+ * should not decide for them.
+ */
+async function clearDefault(root: string): Promise<void> {
+  const text = await readWorkspaceFile(workspaceFiles(root), WORKSPACE_FILE);
+  if (text === null) return;
+
+  const document = parseDocument(text);
+  document.delete('default_profile');
+  await writeWorkspaceFile(workspaceFiles(root), WORKSPACE_FILE, String(document));
+}
+
+/** The command that finishes a refusal by hand, where one can be named. */
+function retryCommand(item: RemovalItem): string | undefined {
+  if (item.kind !== 'secret') return undefined;
+  return `lanes link profile remove <name> --target ${item.target} # or delete ${item.id} in that store`;
 }
