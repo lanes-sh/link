@@ -236,8 +236,16 @@ export function provisionSteps(input: ProvisionInput): Promise<DeployStep[]> {
       const objectIs = (path: string): string =>
         `resource.name == "projects/_/buckets/${bucket}/objects/${path}"`;
 
+      // A provider manifest is configuration that happens to live inside the
+      // profile's directory (ADR-030), so `data/` alone no longer separates
+      // what the revision owns from what declares what it is. Anchored to the
+      // profile segment rather than matched loosely: `contains("/providers.d/")`
+      // would also catch a blob whose own key happened to spell it.
+      const providerManifests =
+        `resource.name.matches("^projects/_/buckets/${bucket}/objects/data/[^/]+/providers\\.d/")`;
+
       steps.push({
-        title: 'let the revision write its own data and skills',
+        title: 'let the revision write its own data, but not the manifests in it',
         argv: [
           'storage',
           'buckets',
@@ -250,7 +258,7 @@ export function provisionSteps(input: ProvisionInput): Promise<DeployStep[]> {
           '--role',
           'roles/storage.objectAdmin',
           '--condition',
-          `title=owns-its-data,expression=${objectsUnder('data/')} || ${objectsUnder('skills/')}`,
+          `title=owns-its-data,expression=${objectsUnder('data/')} && !${providerManifests}`,
         ],
         tolerateFailure: true,
       });
@@ -268,10 +276,10 @@ export function provisionSteps(input: ProvisionInput): Promise<DeployStep[]> {
           'roles/storage.objectViewer',
           // `expression=true` was here, which is every object in the bucket —
           // the step title and ADR-023 both claim a narrowing this did not do.
-          // The config the revision reads is the workspace file and the
-          // profiles beside it, so name exactly those.
+          // The config the revision reads is the workspace file, the profiles
+          // beside it, and each profile's own manifests, so name exactly those.
           '--condition',
-          `title=reads-its-config,expression=${objectsUnder('profiles/')} || ${objectIs('lanes-link.yaml')}`,
+          `title=reads-its-config,expression=${objectsUnder('profiles/')} || ${objectIs('lanes-link.yaml')} || ${providerManifests}`,
         ],
         tolerateFailure: true,
       });

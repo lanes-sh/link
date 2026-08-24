@@ -6,7 +6,7 @@ A provider declares *how to reach a vendor*, not *what the vendor can do*
 ([ADR-008](adr/008-connectors.md)). Capabilities are discovered — from the vendor's own MCP server,
 or from an OpenAPI document — so there is nothing per-endpoint to write.
 
-Drop one of these in `<workspace>/providers/*.yaml` and it registers with no code and no rebuild:
+Drop one of these in `<workspace>/data/<profile>/providers.d/*.yaml` and it registers with no code and no rebuild — for that profile, which is the only one that can reach it ([ADR-030](adr/030-a-profile-owns-its-skills-and-manifests.md)):
 
 ```yaml
 # Any MCP server — a vendor's, a colleague's, your own.

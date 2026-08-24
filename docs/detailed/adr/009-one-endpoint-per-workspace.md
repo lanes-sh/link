@@ -41,7 +41,10 @@ endpoint as trusting whoever holds the token with everything the workspace holds
 - **Policy is still evaluated per profile.** The named profile's rules decide, and a capability no
   profile grants is not registered at all.
 - **Profiles still share no database and no credential store.** What one holds is invisible to
-  another; a note written through `personal` is simply absent in `work`.
+  another; a note written through `personal` is simply absent in `work`. This had two exceptions
+  when it was written — skills and provider manifests, both at the workspace root — and
+  [ADR-030](030-a-profile-owns-its-skills-and-manifests.md) removed them, so it is now true
+  without qualification.
 - **Every call records its profile** in the audit log.
 - **A mismatched pairing is refused.** The `connection` enum is a union across profiles, so a caller
   can name a valid profile and a connection belonging to a different one. That is checked before

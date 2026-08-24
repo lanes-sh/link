@@ -7,10 +7,32 @@ lanes-link.yaml          workspace settings: contract, default_profile
 profiles/
   personal.yaml
   work.yaml
-data/                   local state per profile, gitignored
+data/                   everything each profile owns, gitignored
+  personal/
+    state.kv/           connections, provider state, cursors
+    audit.log/          one object per event
+    credentials.enc     system credentials, and its .key
+    vault.enc           the owner's items, its own key
+    skills.d/           procedures, one <name>/SKILL.md each
+    providers.d/        your own provider manifests
+    <provider>/<connection>/…
+  work/
+    …
 ```
 
 A real config is gitignored; only `*.example.yaml` is committed.
+
+Nothing under `data/` is shared. Skills and provider manifests used to sit at the workspace root
+where every profile read them; [ADR-030](adr/030-a-profile-owns-its-skills-and-manifests.md) moved
+both into the profile that owns them. Two consequences worth knowing:
+
+- **A skill or manifest left at the old `skills/` or `providers/` loads for nobody.** There is no
+  migration. Move each one into the profile that should have it — `mv skills/review-diff
+  data/personal/skills.d/` — and delete what is left.
+- **`data/` is gitignored, so skills are no longer committable where they sit.** If you keep
+  procedures in version control, keep them in their own repository and copy them in. Un-ignoring a
+  path inside `data/` is not worth it: the directory beside them holds an encrypted credential
+  store and the key that opens it.
 
 ## A complete profile
 
@@ -138,13 +160,15 @@ preview, `--yes` skips the prompt, and `--target <name>` decommissions one targe
 profile itself in place.
 
 What goes: the profile's config, and — in **every target it declares** — its credentials, state,
-audit log, provider blobs, and vault. For a target whose home is a bucket, the copy of the config a
-deployed revision reads goes too.
+audit log, provider blobs, vault, skills, and provider manifests. For a target whose home is a
+bucket, the copy of the config a deployed revision reads goes too.
+
+Skills and manifests go because they are inside the profile's own directory
+([ADR-030](adr/030-a-profile-owns-its-skills-and-manifests.md)); before that they were shared and
+this command left them alone. Nothing another profile can see is deleted.
 
 What stays, and each for a reason:
 
-- **`skills/`** is workspace-wide. Every profile sees every skill, so one profile's removal has no
-  business taking them.
 - **`lanes-link.yaml`.** If it named this profile as `default_profile`, that key is cleared rather
   than repointed at whatever remains — choosing a new default would silently change what every
   other command in the workspace acts on.

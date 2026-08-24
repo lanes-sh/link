@@ -1,4 +1,4 @@
-import { layout, profilePath, type Config, type TargetConfig } from '#profile';
+import { layout, profilePath, workspacePath, type Config, type TargetConfig } from '#profile';
 import type { SecretStore } from '#secrets';
 import type { BlobStore } from '#stores/blobs';
 import { credentialRefFor, ownClientRefsFor, type ProviderRegistry } from '#registry';
@@ -154,12 +154,38 @@ export async function removalPlan(
     // data/work is exactly remove the work profile's data"), and one left
     // behind is silently reused by a later `profile add` of the same name.
     if (declared.storage.adapter === 'filesystem') {
+      const blobRoot = declared.storage.path ?? layout.blobs(profile);
       items.push({
         target: name,
         kind: 'file',
-        id: declared.storage.path ?? layout.blobs(profile),
+        id: blobRoot,
         note: 'the profile directory, once emptied',
       });
+
+      // Skills and manifests sit at fixed areas under `data/<profile>/`, the
+      // same way state and the log do — an explicit area, so a profile that
+      // declares its own `storage.path` moves its provider blobs and leaves
+      // these where `layout` says they are. The sweep above walks the blob root
+      // and would then walk straight past them, so they are named. Ordinary
+      // case: both are already inside `blobRoot` and the sweep has them, which
+      // is why this only fires when the two have been pointed apart.
+      //
+      // Resolved before comparing, because they are not compared as paths
+      // otherwise: `newProfileTemplate` writes `./data/<profile>` and
+      // `layout.blobs` returns `data/<profile>`, which is one directory spelled
+      // two ways — the same leading `./` that `profile/layout.ts` has a
+      // paragraph about. Comparing the strings names every default profile's
+      // skills twice in the preview an operator confirms.
+      if (workspacePath(root, blobRoot) !== workspacePath(root, layout.blobs(profile))) {
+        for (const area of [layout.skills(profile), layout.providers(profile)]) {
+          items.push({
+            target: name,
+            kind: 'file',
+            id: area,
+            note: 'outside the declared storage path, so not swept with it',
+          });
+        }
+      }
     }
 
     // A deployed revision reads its config from the bucket rather than the

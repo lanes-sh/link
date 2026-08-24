@@ -37,6 +37,7 @@ Nothing in the codebase depends on it.
 | [026](026-a-revision-rotates-its-own-credentials.md) | A revision may add a version to each secret it rotates, and may still never create one |
 | [028](028-a-hosted-oauth-client-is-the-default.md) | A client Lanes operates is what `connect` uses by default; `--own-client` registers your own |
 | [029](029-connecting-is-not-deploying.md) | Connecting publishes its own config and the endpoint re-reads it; deploying is only code |
+| [030](030-a-profile-owns-its-skills-and-manifests.md) | Skills and provider manifests move into `data/<profile>/`; nothing is shared between profiles any more |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 
@@ -59,6 +60,11 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
   those exclusions — the rule is about authorisation, not information — and names the two things
   that keep it there: it reports only what policy already permits, and it never reports whether a
   credential is present.
+- **ADR-030** supersedes ADR-012 §1's storage location and part of ADR-014 §2, and is the only
+  departure that makes the system guarantee *more* than it did: ADR-009's "profiles share no
+  database and no credential store" had two exceptions left in it, and now has none. The half of
+  ADR-012 §1 that survives is the one about self-selection — reading a skill's body stays in the
+  author bundle.
 - **ADR-029** amends ADR-004's "exposes no administrative API", which stops being true: there is one
   authenticated route that is not `/mcp`. The clause that carried the weight survives intact — a
   deployed instance still never mutates its own configuration, and `/reload` takes no parameters, so

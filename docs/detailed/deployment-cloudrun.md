@@ -262,8 +262,8 @@ Four bindings, each narrower than it looks:
 |---|---|---|
 | `roles/secretmanager.secretAccessor` | the project | Read at boot: OAuth refresh tokens, the endpoint's own bearer token. |
 | `roles/secretmanager.secretVersionAdder` | **one binding per secret it rotates** | The vault document, and each connection's OAuth token. Add a version, never create — see below. |
-| `roles/storage.objectAdmin` | **conditioned** on `data/` and `skills/` | What the endpoint owns and writes: state, the log, attachments, memory, and skills (writable under policy, ADR-014). |
-| `roles/storage.objectViewer` | the bucket | Reading its own config. Deliberately *not* admin — see below. |
+| `roles/storage.objectAdmin` | **conditioned** on `data/`, less each profile's `providers.d/` | What the endpoint owns and writes: state, the log, attachments, memory, and skills (writable under policy, ADR-014). Manifests are carved back out — they are config, and ADR-007 says a revision never rewrites its own. |
+| `roles/storage.objectViewer` | `profiles/`, `lanes-link.yaml`, and each `providers.d/` | Reading its own config. Deliberately *not* admin — see below. |
 
 `deploy` creates the account and all of them on a first run; `--dry-run` shows them, and
 `--service-account` names a different one.
@@ -479,11 +479,13 @@ the conditioned `objectAdmin` binding, which is why the condition is worth keepi
 
 What that costs is rollback. A revision no longer fully describes what it serves, so rolling back
 to an earlier revision does not roll back a config change made since; the bucket holds one current
-copy. The upload is an allowlist — `lanes-link.yaml`, `profiles/<profile>.yaml`, `providers/`,
-`skills/` — so `data/` cannot travel by accident, for the same reason `.dockerignore` excludes it.
+copy. The upload is an allowlist — `lanes-link.yaml`, `profiles/<profile>.yaml`, and the two
+authored directories inside the profile, `data/<profile>/skills.d/` and
+`data/<profile>/providers.d/` — so the rest of `data/` cannot travel by accident, for the same
+reason `.dockerignore` excludes it.
 
-**`data/` is excluded, and that exclusion is load bearing.** The local encrypted credential store and
-its key live there. The root `.dockerignore` keeps them out of the build context; a credential baked
+**Everything else under `data/` is excluded, and that exclusion is load bearing.** The local
+encrypted credential store and its key live there. The root `.dockerignore` keeps them out of the build context; a credential baked
 into an image is pushed to a registry, cached on every builder that touched it, and readable by anyone
 who can pull the tag. The deployed target reads credentials from Secret Manager and wants nothing from
 that directory.
@@ -539,8 +541,9 @@ Google's and the problem is real.
 
 **`GCS refused to write "…" (403)`** — the revision's service account is not granted
 `roles/storage.objectAdmin` on the bucket, or the deploy's IAM step was skipped. The message names
-the role. Note the grant is conditioned: the revision may write under `data/` and `skills/` and may
-only *read* the config paths, so a 403 on `profiles/…` is the guarantee working rather than a
+the role. Note the grant is conditioned: the revision may write under `data/` and may only *read*
+the config paths, so a 403 on `profiles/…` — or on a `providers.d/…` key, which sits inside `data/`
+and is excluded from the write grant by name — is the guarantee working rather than a
 misconfiguration.
 
 **The endpoint answers 401 for a token you just printed** — `claude mcp add` stores the substituted

@@ -62,7 +62,6 @@ export interface PrepareResult {
  * config and manifests only, and touches no credential.
  */
 export async function rotatableRefs(root: string, profile: string | undefined): Promise<string[]> {
-  const registry = await buildRegistryWithWorkspace(root);
   const refs = new Set<string>();
 
   for (const name of await listProfiles(root)) {
@@ -74,6 +73,12 @@ export async function rotatableRefs(root: string, profile: string | undefined): 
     } catch {
       continue;
     }
+
+    // Inside the loop because manifests are the profile's own (ADR-030): a
+    // connection in `work` naming a provider only `work` declares resolves to
+    // nothing against `personal`'s registry, and a missed ref here is a 403 an
+    // hour after the revision reports healthy.
+    const registry = await buildRegistryWithWorkspace(root, name);
 
     for (const connection of config.connections) {
       const manifest = registry.manifest(connection.provider);
@@ -119,7 +124,6 @@ export async function readableRefs(
   profile: string | undefined,
   declared: TargetConfig | undefined,
 ): Promise<string[]> {
-  const registry = await buildRegistryWithWorkspace(root);
   const refs = new Set<string>();
 
   if (declared?.vault?.adapter === 'secret') {
@@ -145,6 +149,10 @@ export async function readableRefs(
     if (config.auth.authorization?.mode === 'oidc') {
       refs.add(config.auth.authorization.client_id_ref);
     }
+
+    // Per profile, for the reason `rotatableRefs` gives: a manifest is this
+    // profile's, so the registry that resolves its connections must be too.
+    const registry = await buildRegistryWithWorkspace(root, name);
 
     for (const connection of config.connections) {
       const manifest = registry.manifest(connection.provider);
@@ -174,7 +182,7 @@ export async function prepareSecrets(input: PrepareInput): Promise<PrepareResult
   // The command is spelled out rather than described. This is the one manual
   // step a deploy genuinely cannot take for you, so it should cost a paste
   // rather than a trip to the docs to work out how the id is spelled.
-  const registry = await buildRegistryWithWorkspace(root);
+  const registry = await buildRegistryWithWorkspace(root, config.instance.profile);
   for (const connection of config.connections) {
     const ref = credentialRefFor(connection, registry.manifest(connection.provider));
     if (!ref || (await credentials.has(ref))) continue;

@@ -254,7 +254,7 @@ export async function removeProfile(name: string, flags: RemoveFlags): Promise<v
   announce(resolution);
 
   const root = resolution.workspaceRoot;
-  const registry = await buildRegistryWithWorkspace(root);
+  const registry = await buildRegistryWithWorkspace(root, name);
   const files = workspaceFiles(root);
 
   const plan = await removalPlan(config, root, name, registry, {

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import {
-  loadWorkspaceSkills,
+  loadProfileSkills,
   readSkill,
   removeSkill,
   renderSkill,
@@ -165,7 +165,7 @@ function managementCapabilities(
         'Every skill that exists, with its description and arguments. The prompt list shows only the ones policy permits; this shows what is stored.',
       inputSchema: z.object({}),
       async handler(_input, context) {
-        const skills = await loadWorkspaceSkills(store);
+        const skills = await loadProfileSkills(store);
 
         if (skills.length === 0) {
           return { content: [{ type: 'text', text: `No skills on ${context.connection.key}.` }] };

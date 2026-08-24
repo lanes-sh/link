@@ -534,7 +534,6 @@ Because provider code is trusted (see Security model), `docs/detailed/creating-a
     deployments/       # adapters/, local/, gcp/, azure/
   docs/
     adr/
-  skills/
 ```
 
 TypeScript on **Bun**, MCP SDK v2, Zod for schemas, and `bun:sqlite` directly for typed database access — the schema is four tables and every query is single-table, so an ORM would add a dependency and a migration toolchain for nothing this code needs. Modular monolith. No Kubernetes, Redis, Kafka, Temporal, or microservices.
@@ -751,8 +750,11 @@ Three owner providers, all local:
   `memory.search`. `memory.write` is a *separate* capability from read, precisely so read-only agents
   are a real configuration.
 - **`skills`** — reusable procedures, on the MCP prompts primitive reserved in M1. Authored as files
-  in `<workspace>/skills/`, the way custom providers are files in `<workspace>/providers/`; there is
-  no capability that writes one.
+  in `data/<profile>/skills.d/`, the way custom providers are files in the `providers.d/` beside
+  them ([ADR-030](adr/030-a-profile-owns-its-skills-and-manifests.md); both sat at the workspace
+  root until then). There is a capability that writes one, in a non-default bundle
+  ([ADR-014](adr/014-owner-layer-is-managed.md) §1) — this said there was none, and the reversal is
+  the argument that structural absence read stronger than it was.
 - **`vault`** — the owner's secret material. Tools only, never resources: resources are listable and
   cacheable, which is wrong for secrets. Default deny, per-item policy, aggressive audit redaction.
   Per-item is reached by making the item id part of the capability name, so an item written today is

@@ -53,6 +53,13 @@ now an IAM condition on the one bucket, along the boundary the layout already dr
 - `roles/storage.objectAdmin` on `data/` and `skills/` — skills are writable under policy (ADR-014)
 - `roles/storage.objectViewer` on `lanes-link.yaml`, `profiles/`, and `providers/`
 
+[ADR-030](030-a-profile-owns-its-skills-and-manifests.md) moved both of those root directories
+into `data/<profile>/`, so the boundary is now drawn inside one prefix rather than between two:
+the write grant is `data/` with each profile's `providers.d/` excluded by name, and the read grant
+picks the manifests back up. The property this section claims is unchanged — a revision still
+cannot rewrite what declares what it is — but the condition carries a negation to keep it, which
+is the part worth knowing before editing it.
+
 Conditions on `resource.name` work under the uniform bucket-level access `provision.ts` already
 sets. This is stronger than the version it replaces: image immutability protected config only for
 as long as config lived in the image.

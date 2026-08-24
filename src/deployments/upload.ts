@@ -1,5 +1,7 @@
 import {
+  DATA_DIR,
   WORKSPACE_FILE,
+  layout,
   listProfiles,
   workspaceFiles,
   type Config,
@@ -52,15 +54,45 @@ export function deployedWorkspace(declared: TargetConfig): string | undefined {
  * An allowlist because the failure modes are not symmetric: a config file this
  * forgets means an endpoint that will not boot, and a credential this includes
  * by accident means a credential in a bucket. Forgetting is loud.
+ *
+ * **Two areas inside `data/` are authored rather than accumulated**, since
+ * ADR-030 moved skills and provider manifests into the profile that owns them.
+ * They have to go up or a deployed instance loses both — the regression ADR-014
+ * §2 fixed for skills, reintroduced by where they now live. So this reaches
+ * into `data/` for exactly those two, by whole path segment and never by
+ * prefix: `data/personal/skills.detour/` is not `skills.d`, and the difference
+ * between matching it and not is a credential in a bucket.
  */
 export function isWorkspaceConfig(key: string, profile?: string | undefined): boolean {
   if (key === WORKSPACE_FILE) return true;
-  if (key.startsWith('providers/') || key.startsWith('skills/')) return true;
-  if (!key.startsWith('profiles/') || !key.endsWith('.yaml')) return false;
 
   // One profile when the deploy names one, so a workspace holding personal and
-  // work does not push both into a bucket only one of them is for.
+  // work does not push both into a bucket only one of them is for. The same
+  // question for both shapes, asked once.
+  const owner = authoredAreaOwner(key);
+  if (owner !== null) return profile === undefined || owner === profile;
+
+  if (!key.startsWith('profiles/') || !key.endsWith('.yaml')) return false;
   return profile === undefined || key === `profiles/${profile}.yaml`;
+}
+
+/**
+ * The profile whose authored area holds `key`, or null for anything else.
+ *
+ * Composed back out of `layout` rather than compared against literals, so a
+ * renamed directory moves both this and the store that reads it, or neither.
+ * Requires a fourth segment: `data/personal/skills.d` names the directory, and
+ * a directory is not a file to send.
+ */
+function authoredAreaOwner(key: string): string | null {
+  const segments = key.split('/');
+  if (segments.length < 4 || segments[0] !== DATA_DIR) return null;
+
+  const owner = segments[1]!;
+  if (owner.length === 0) return null;
+
+  const area = `${DATA_DIR}/${owner}/${segments[2]}`;
+  return area === layout.skills(owner) || area === layout.providers(owner) ? owner : null;
 }
 
 /**

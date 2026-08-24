@@ -71,7 +71,8 @@ calendar are the next step. **[Full quickstart →](docs/quickstart.md)**
 | **Skills** | your own procedures, handed to an agent as instructions | `lanes link skills` |
 | **Vault** | passwords and API keys, released only where you allow it | `lanes link vault` |
 
-Memory and skills are plain Markdown files, so a text editor and an agent reach the same bytes.
+Memory and skills are plain Markdown files, so a text editor and an agent reach the same bytes. All
+four belong to one profile: what you add under `work` is invisible under `personal`.
 
 ## Connect an account
 

@@ -1,13 +1,11 @@
-import { WORKSPACE_PROVIDER_DIR } from './load.ts';
-
 /**
  * The scaffold `lanes link` writes, one per connectivity type.
  *
  * A custom provider is the same declaration a built-in is — this is the *only*
  * difference between `#providers/google/gmail/` and a file an operator drops in
- * `~/.lanes-link/providers/`, and the point of the whole manifest design. So the
- * template offers one starting point per `connector.kind` rather than a single
- * generic one that would have to be edited into shape.
+ * their profile's `providers.d/`, and the point of the whole manifest design.
+ * So the template offers one starting point per `connector.kind` rather than a
+ * single generic one that would have to be edited into shape.
  */
 
 export function manifestTemplate(kind: 'mcp' | 'http' | 'imap' | 'dav' | 'fs'): string {

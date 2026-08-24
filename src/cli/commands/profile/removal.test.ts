@@ -235,16 +235,76 @@ describe('removalPlan', () => {
     expect(plan.items.some((item) => item.target === 'local')).toBe(true);
   });
 
-  test('skills are never planned — every profile sees them', async () => {
-    // The blob store is rooted at the profile's own tree, so workspace-wide
-    // skills are outside it by construction. Asserted because "shared by every
-    // profile" is exactly the thing a future refactor could quietly break.
+  test('skills and manifests go with the profile that owns them — ADR-030', async () => {
+    // They used to be workspace-wide, and this test used to assert the
+    // opposite: that removal never touched them, because every profile saw
+    // them. Now they are inside the profile's own blob root, so the sweep has
+    // them for the same reason it has state and the log.
     const plan = await removalPlan(config(), '/ws', 'personal', registry, {
       openSecrets: async () => fakeSecrets([]),
-      openBlobs: async () => fakeBlobs(['state.kv/a', 'audit.log/b']),
+      openBlobs: async () =>
+        fakeBlobs([
+          'state.kv/a',
+          'audit.log/b',
+          'skills.d/review-diff/SKILL.md',
+          'providers.d/acme.yaml',
+        ]),
     });
 
-    expect(plan.items.every((item) => !item.id.startsWith('skills/'))).toBe(true);
+    const blobs = plan.items.filter((item) => item.kind === 'blob').map((item) => item.id);
+    expect(blobs).toContain('skills.d/review-diff/SKILL.md');
+    expect(blobs).toContain('providers.d/acme.yaml');
+  });
+
+  test('a declared storage path does not leave the authored areas behind', async () => {
+    // `layout.skills` and `layout.providers` are explicit areas, like state and
+    // the log — so a profile that points `storage.path` elsewhere moves its
+    // provider blobs and nothing else. The sweep walks the declared root, so
+    // without these two items the skills and manifests would survive a removal
+    // that reported success.
+    const moved = config({
+      targets: { local: target({ storage: { adapter: 'filesystem', path: './elsewhere' } }) },
+    } as Partial<Config>);
+
+    const plan = await removalPlan(moved, '/ws', 'personal', registry, {
+      openSecrets: async () => fakeSecrets([]),
+      openBlobs: async () => fakeBlobs([]),
+    });
+
+    const files = plan.items.filter((item) => item.kind === 'file').map((item) => item.id);
+    expect(files).toContain('./elsewhere');
+    expect(files).toContain('data/personal/skills.d');
+    expect(files).toContain('data/personal/providers.d');
+  });
+
+  test('the ordinary layout names them once, not twice', async () => {
+    // Inside the blob root, the sweep already has them. A second `file` item
+    // for the same bytes would read as two things to delete in the preview the
+    // operator confirms.
+    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
+      openSecrets: async () => fakeSecrets([]),
+      openBlobs: async () => fakeBlobs(['skills.d/review-diff/SKILL.md']),
+    });
+
+    const files = plan.items.filter((item) => item.kind === 'file').map((item) => item.id);
+    expect(files).toEqual(['data/personal']);
+  });
+
+  test('"./data/personal" is the same directory as "data/personal"', async () => {
+    // What `newProfileTemplate` actually writes, against what `layout` returns.
+    // Compared as strings these differ, and every default profile would have
+    // its skills and manifests named twice in the preview.
+    const declared = config({
+      targets: { local: target({ storage: { adapter: 'filesystem', path: './data/personal' } }) },
+    } as Partial<Config>);
+
+    const plan = await removalPlan(declared, '/ws', 'personal', registry, {
+      openSecrets: async () => fakeSecrets([]),
+      openBlobs: async () => fakeBlobs([]),
+    });
+
+    const files = plan.items.filter((item) => item.kind === 'file').map((item) => item.id);
+    expect(files).toEqual(['./data/personal']);
   });
 });
 

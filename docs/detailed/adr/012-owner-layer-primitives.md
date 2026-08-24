@@ -1,8 +1,14 @@
 # ADR-012: The owner layer's primitives, and how the vault is governed
 
-**Status:** accepted, **§1 superseded in part by [ADR-014](014-owner-layer-is-managed.md)** ·
+**Status:** accepted, **§1 superseded in part by [ADR-014](014-owner-layer-is-managed.md) and
+again by [ADR-030](030-a-profile-owns-its-skills-and-manifests.md)** ·
 **Milestone:** M4 · **Extends [ADR-006](006-tools-resources-prompts.md)**
 
+> §1's *location* — `<workspace>/skills/` — was reversed by ADR-030, which moves skills into
+> `data/<profile>/skills.d/` on the grounds that "a procedure is not private to a profile" is not
+> true of any procedure worth writing. The primitive argument below is untouched: a skill is
+> still a prompt, still not a resource, and still routed by arguments.
+>
 > §1's conclusion that no capability may write a skill was reversed by ADR-014, which keeps the
 > argument and replaces the answer: authoring is a capability in a non-default bundle, the way
 > `memory.write` already was in §2 below. Reading a skill's body stays out of the read bundle, so the
@@ -45,7 +51,9 @@ more than the convenience of self-selection.
 **Consequences.**
 
 - Skills are authored **as files in `<workspace>/skills/`**, the way custom providers are files in
-  `<workspace>/providers/`. There is no `skills.write` capability, and there should not be: a skill
+  `<workspace>/providers/`. *(Both directories moved into the profile in ADR-030; the analogy
+  between them survived the move.)* There is no `skills.write` capability, and there should not
+  be: a skill
   *is* instructions, so an agent that could write one could author its own future behaviour and
   persist it. That is §2's problem in its sharpest form, and the answer is that the write path never
   existed rather than that it is default-denied.

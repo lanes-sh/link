@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { parseConfig } from '#profile';
 import { type ProviderRegistry } from '#registry';
-import { loadWorkspaceSkills } from '#providers/skills/store.ts';
+import { loadProfileSkills } from '#providers/skills/store.ts';
 import { createSkillsProvider } from '#providers/owner.ts';
 import { createMemoryBlobStore } from '#stores/blobs/testing.ts';
 import type { BlobStore } from '#stores/blobs';
@@ -57,7 +57,7 @@ function skillsFixture(): { store: BlobStore; refresh: (registry: ProviderRegist
 
     registry.replace(
       createSkillsProvider({
-        skills: await loadWorkspaceSkills(store),
+        skills: await loadProfileSkills(store),
         store,
         onChange: () => refresh(registry),
       }),
@@ -103,7 +103,7 @@ const author = startHarness({
   policy: '',
   providers: [
     createSkillsProvider({
-      skills: await loadWorkspaceSkills(authorFixture.store),
+      skills: await loadProfileSkills(authorFixture.store),
       store: authorFixture.store,
     }),
   ],
@@ -122,7 +122,7 @@ const invokeOnly = startHarness({
   token: 'llk_readonly_token_value',
   providers: [
     createSkillsProvider({
-      skills: await loadWorkspaceSkills(invokeFixture.store),
+      skills: await loadProfileSkills(invokeFixture.store),
       store: invokeFixture.store,
     }),
   ],

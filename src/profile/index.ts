@@ -71,7 +71,6 @@ export {
 
 export {
   DATA_DIR,
-  WORKSPACE_SKILL_DIR,
   layout,
   profileDir,
 } from './layout.ts';

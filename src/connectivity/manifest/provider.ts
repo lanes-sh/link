@@ -17,7 +17,7 @@ import { setupSchema } from './setup.ts';
  *
  *   - built-ins, written as typed TS modules under `#providers/` and validated
  *     at import
- *   - workspace manifests in `~/.lanes-link/providers/*.yaml`, validated on load
+ *   - the profile's own manifests in `data/<profile>/providers.d/*.yaml`, validated on load
  *
  * That second one is the scalability claim. A service nobody has integrated is
  * a YAML file the operator writes, not a pull request they wait on.

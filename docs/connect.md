@@ -119,7 +119,7 @@ output, and in any transcript.
 ## Add your own
 
 Any MCP server, any REST API with an OpenAPI spec, any IMAP mailbox, any CalDAV or CardDAV server.
-Most are a fifteen-line YAML manifest in `~/.lanes-link/providers/` and no code at all. See
+Most are a fifteen-line YAML manifest in `~/.lanes-link/data/<profile>/providers.d/` and no code at all. See
 [`detailed/creating-a-provider.md`](detailed/creating-a-provider.md).
 
 ---

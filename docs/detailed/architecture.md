@@ -15,7 +15,9 @@ instructions the model is asked to respect. Everything below exists to make that
 | **Skills** | `BlobStore` — one Markdown file per skill | prompts, plus `skills.manage.*` | `lanes link skills` |
 | **Vault** | one encrypted document, its own key | tools, tightly scoped | `lanes link vault` |
 
-All four are **providers** behind the same policy layer, audit log, profile boundary, and endpoint.
+All four are **providers** behind the same policy layer, audit log, profile boundary, and endpoint —
+and since [ADR-030](adr/030-a-profile-owns-its-skills-and-manifests.md) the profile boundary holds
+for all four rather than three, because a skill is no longer a workspace-wide file.
 `memory.search = allow` is evaluated by the identical code path as `gmail.search`. The core cannot
 tell them apart and must not try.
 

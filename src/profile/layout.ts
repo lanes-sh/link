@@ -3,15 +3,16 @@
  *
  * ```
  * ~/.lanes-link/
- * ├── lanes-link.yaml            which profiles exist, which is default
+ * ├── lanes-link.yaml           which profiles exist, which is default
  * ├── profiles/<name>.yaml      each profile's declared config
- * ├── providers/*.yaml          the operator's own provider manifests
- * ├── skills/<name>/SKILL.md    procedures, shared by every profile
  * └── data/
  *     └── <profile>/            everything one profile owns
- *         ├── lanes-link.db      state, connections, audit
+ *         ├── state.kv/         state, connections, cursors
+ *         ├── audit.log/        one object per event
  *         ├── credentials.enc   system credentials, and its .key
  *         ├── vault.enc         the owner's items, its own key
+ *         ├── skills.d/         procedures, one <name>/SKILL.md each
+ *         ├── providers.d/      the operator's own provider manifests
  *         └── <provider>/<connection>/…   whatever that provider stores
  * ```
  *
@@ -31,10 +32,20 @@
  * files beside it: a provider id is `[a-z][a-z0-9_]*` and every reserved name
  * here contains a dot.
  *
- * Skills stay workspace-wide rather than per-profile, which is how they have
- * always loaded: every profile sees every skill, and policy still gates
- * `skills.<name>` per profile. A procedure is not private to a profile the way
- * its knowledge is.
+ * **Skills and provider manifests are the profile's too**, which reverses where
+ * both used to sit. They were at the workspace root, shared by every profile, on
+ * the reasoning that a procedure is not private to a profile the way its
+ * knowledge is. That was wrong twice over. A skill is instructions an agent will
+ * be handed, and ADR-014 §1 already treats authoring one as a grant worth
+ * governing — an odd thing to say about a document every profile reads anyway.
+ * And a procedure written for work names work's accounts, its people, and its
+ * conventions, so it is exactly as private as the knowledge it operates on.
+ * ADR-030 has the argument; ADR-009's "profiles share nothing" is what it
+ * restores.
+ *
+ * The `.d` suffix is the dot rule above rather than decoration. A plain
+ * `data/<profile>/skills/` is precisely the namespace the skills provider's own
+ * blobs scope into, so the one name that could not be used is the obvious one.
  *
  * These are **defaults**. A profile that declares its own paths keeps them.
  *
@@ -42,14 +53,13 @@
  * workspace is profiles, credentials, and whatever the owner has stored, and
  * re-creating one is `lanes link profile add` plus `lanes link connect` per account. Machinery
  * to move an old one would be more code than the thing it moves, and it would
- * have to keep working forever to be worth having.
+ * have to keep working forever to be worth having. Skills and manifests left at
+ * the old workspace-root paths are the same case: they stop loading, and moving
+ * them is one `mv` per profile that should see them.
  */
 
 /** The directory under the workspace root that holds every profile's data. */
 export const DATA_DIR = 'data';
-
-/** Workspace-wide skills. Not per profile — see the note above. */
-export const WORKSPACE_SKILL_DIR = 'skills';
 
 /**
  * Everything one profile owns, relative to the workspace root.
@@ -80,6 +90,23 @@ export const layout = {
   credentials: (profile: string): string => `${profileDir(profile)}/credentials.enc`,
   /** The owner's own items, under their own key. */
   vault: (profile: string): string => `${profileDir(profile)}/vault.enc`,
+  /**
+   * This profile's skills — `<name>.md` or `<name>/SKILL.md`, either layout.
+   *
+   * The dot carries the same weight it does for `state` and `audit`, and here
+   * it is not hypothetical: `skills` is a real provider id, so `skills/` under
+   * the blob root is the prefix its own connection blobs would scope into.
+   */
+  skills: (profile: string): string => `${profileDir(profile)}/skills.d`,
+  /**
+   * The provider manifests this profile declares.
+   *
+   * Per profile for the same reason a connection is. A manifest names a host,
+   * an OpenAPI document, and the credential refs that reach them — which is a
+   * description of somebody's infrastructure, and work's is not personal's to
+   * read.
+   */
+  providers: (profile: string): string => `${profileDir(profile)}/providers.d`,
   /** The blob root every provider is namespaced under. */
   blobs: (profile: string): string => profileDir(profile),
   /**

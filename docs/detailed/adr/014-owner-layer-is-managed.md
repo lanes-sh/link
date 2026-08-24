@@ -1,7 +1,9 @@
 # ADR-014: the owner layer is managed — a write path for skills, one storage shape for all three
 
-**Status:** accepted · **Milestone:** M5 · **Supersedes [ADR-012](012-owner-layer-primitives.md) §1
-in part**, and closes a gap ADR-012 did not see.
+**Status:** accepted, **§2's placement of skills superseded by
+[ADR-030](030-a-profile-owns-its-skills-and-manifests.md)** · **Milestone:** M5 ·
+**Supersedes [ADR-012](012-owner-layer-primitives.md) §1 in part**, and closes a gap ADR-012 did
+not see.
 
 ## Context
 
@@ -99,6 +101,11 @@ the one store holding the owner's passwords.
 written before this keeps working. Skills follow the target for the same class of reason: a
 filesystem path is baked into a container image at build time, so a deployed instance could only ever
 serve the skills that existed when its image was built.
+
+> This section moved memory and the vault into the profile's directory and left skills at the
+> workspace root. ADR-030 finished the job — the reasoning for *following the target* is
+> unaffected by *which* prefix they follow it into, but the deploy's upload allowlist is, and
+> ADR-030 pays that cost rather than reintroducing the regression named just above.
 
 **There is no secret-manager adapter**, and that is a decision rather than an omission. The vault
 encrypts the whole document as one, so item *names* are encrypted alongside their values — a property

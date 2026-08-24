@@ -66,8 +66,9 @@ a different agent — so write when asked to remember something, not by habit.`;
 
 const SKILLS = `**Skills are the owner's procedures**, surfaced as prompts rather than tools.
 That is deliberate: a procedure is selected by the person, not chosen by the
-model, and you cannot read one's body. If a task has a skill for it, say so and
-let them invoke it rather than improvising your own version.`;
+model, and you cannot read one's body. They belong to one profile, so a skill
+you saw under one is not available under another. If a task has a skill for it,
+say so and let them invoke it rather than improvising your own version.`;
 
 const VAULT = `**Vault values are credentials.** Use one to do the thing that needs it. Do not
 quote it back, summarise it, or write it anywhere.`;

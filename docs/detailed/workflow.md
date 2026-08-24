@@ -290,8 +290,10 @@ $ lanes link skills remove review-diff
 ```
 
 A skill becomes the MCP prompt `skills_<name>`. A running endpoint picks up a new one within a few
-seconds — no restart. Agents can author skills too, under `skills.manage.*`, which is **not** in the
-default bundle; `lanes link connect skills` grants it anyway, so narrowing it is one line:
+seconds — no restart. Skills belong to the profile they were added under and no other sees them, so
+`--profile work` is worth being deliberate about here. Agents can author skills too, under
+`skills.manage.*`, which is **not** in the default bundle; `lanes link connect skills` grants it
+anyway, so narrowing it is one line:
 
 ```console
 $ lanes link policy deny skills.manage.*
