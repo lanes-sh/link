@@ -2,6 +2,7 @@ import { profilePath, type Config, type TargetConfig } from '#profile';
 import type { SecretStore } from '#secrets';
 import type { BlobStore } from '#stores/blobs';
 import { credentialRefFor, ownClientRefsFor, type ProviderRegistry } from '#registry';
+import { print, style, warn } from '../../output.ts';
 
 /**
  * What a profile's removal is allowed to delete, worked out before any of it
@@ -186,4 +187,52 @@ export async function removalPlan(
   }
 
   return { profile, items, untouched, warnings };
+}
+
+const KIND_LABEL: Record<RemovalItem['kind'], string> = {
+  secret: 'credential',
+  blob: 'object',
+  file: 'file',
+  config: 'config',
+  'workspace-key': 'workspace',
+};
+
+/**
+ * The plan, as the thing an operator decides from.
+ *
+ * Rendered from the same value that is executed, so there is no second
+ * description of the work to fall out of step with the first. It prints
+ * references and keys and never a value — the plan holds no values to print.
+ */
+export function renderPlan(plan: RemovalPlan): void {
+  print();
+  print(`Removing profile ${style.bold(plan.profile)} would delete:`);
+  print();
+
+  if (plan.items.length === 0) {
+    print(style.dim('  nothing — there is no trace of this profile left to remove.'));
+  }
+
+  const targets = [...new Set(plan.items.map((item) => item.target))];
+  for (const target of targets) {
+    const items = plan.items.filter((item) => item.target === target);
+    print(`  ${style.bold(target ?? 'workspace')}`);
+    for (const item of items) {
+      const note = item.note ? style.dim(` — ${item.note}`) : '';
+      print(`    ${KIND_LABEL[item.kind].padEnd(10)} ${item.id}${note}`);
+    }
+    print();
+  }
+
+  for (const { target, refs } of plan.untouched) {
+    // Named rather than counted, because the operator is the only one who can
+    // tell an orphan from another profile's live credential — and this command
+    // deliberately will not guess.
+    print(`  ${style.bold(target)}: present but not declared by this profile, so left alone`);
+    for (const ref of refs) print(style.dim(`    ${ref}`));
+    print();
+  }
+
+  for (const warning of plan.warnings) print(warn(warning));
+  if (plan.warnings.length > 0) print();
 }

@@ -6,6 +6,7 @@ import { buildRegistry } from '../../runtime/registry.ts';
 import {
   declaredRefs,
   removalPlan,
+  renderPlan,
   type RemovalItem,
   type RemovalPlan,
 } from './removal.ts';
@@ -244,5 +245,67 @@ describe('removalPlan', () => {
     });
 
     expect(plan.items.every((item) => !item.id.startsWith('skills/'))).toBe(true);
+  });
+});
+
+// --- renderPlan ------------------------------------------------------------
+
+function captured(body: () => void): string {
+  const write = process.stdout.write.bind(process.stdout);
+  let out = '';
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (process.stdout as any).write = (chunk: string) => ((out += chunk), true);
+  try {
+    body();
+  } finally {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (process.stdout as any).write = write;
+  }
+  return out;
+}
+
+const samplePlan = (over: Partial<RemovalPlan> = {}): RemovalPlan => ({
+  profile: 'personal',
+  items: [
+    { target: 'local', kind: 'secret', id: 'gmail/someone' },
+    { target: 'local', kind: 'blob', id: 'state.kv/a' },
+    { target: null, kind: 'config', id: '/ws/profiles/personal.yaml' },
+  ],
+  untouched: [],
+  warnings: [],
+  ...over,
+});
+
+describe('renderPlan', () => {
+  test('names the profile and groups what goes by target', () => {
+    const out = captured(() => renderPlan(samplePlan()));
+
+    expect(out).toContain('personal');
+    expect(out).toContain('local');
+    expect(out).toContain('gmail/someone');
+  });
+
+  test('says untouched refs are left alone, so they do not read as pending', () => {
+    const out = captured(() =>
+      renderPlan(samplePlan({ untouched: [{ target: 'cloud', refs: ['gmail/other'] }] })),
+    );
+
+    expect(out).toContain('gmail/other');
+    expect(out).toMatch(/left alone|not removed|leaves them/i);
+  });
+
+  test('prints every warning', () => {
+    const out = captured(() =>
+      renderPlan(samplePlan({ warnings: ['Target "cloud" is deployed.', 'Another thing.'] })),
+    );
+
+    expect(out).toContain('cloud');
+    expect(out).toContain('Another thing.');
+  });
+
+  test('an empty plan says so rather than printing a blank preview', () => {
+    const out = captured(() => renderPlan(samplePlan({ items: [] })));
+
+    expect(out).toMatch(/nothing/i);
   });
 });
