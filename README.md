@@ -97,6 +97,7 @@ One command per account. Run it again to add a second mailbox, a second calendar
 | iCloud Drive | `lanes link connect icloud_drive` |
 | Notion | `lanes link connect notion` |
 | Linear | `lanes link connect linear` |
+| GitHub | `lanes link connect github` |
 | Gmail (Google MCP) | `lanes link connect gmail_mcp` |
 | Drive (Google MCP) | `lanes link connect drive_mcp` |
 
