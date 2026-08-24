@@ -341,6 +341,32 @@ account.** The video becomes a public URL attached to the project. The rule agai
 identifiers in this repository exists because it was broken once and cost eighty-nine commits to
 undo; a video is worse, because there is no history to rewrite.
 
+## Before submitting
+
+Five checks, in the order they bite. The first is the only one that cannot be undone.
+
+**Submit the project that holds the Google-data client, not the one that signs people in.**
+[ADR-031](adr/031-sign-in-and-data-access-are-separate-projects.md) is the argument; the operational
+half is that a submission enters *every* client in that project into the review, and that the
+unverified-app cap is spent for the lifetime of a project and cannot be reset. Submitting the wrong
+one is not a mistake that gets corrected later.
+
+**Confirm the sign-in project's Data access page still lists nothing but `openid`, `email` and
+`profile`.** A sensitive scope registered there is what puts an unverified-app screen in front of
+someone who only clicked "sign in", and no test in any repository can see it. This is the check that
+keeps the two levels apart, and it is worth repeating whenever a scope is added anywhere.
+
+**Point the privacy policy field at <https://lanes.sh/privacy>, with no query string.** That page
+exists for this field, and says so in its own source: review tooling will not follow a query
+parameter into a client-side tab. A `?tab=` form resolves to the same document for a human and is a
+gratuitous chance for a reviewer to land somewhere unintended.
+
+**Fill the three fields on every sensitive and restricted scope** — justification, intended data
+usage, demo video — from the text above. The console refuses the submission until all three are
+present on all twelve; `drive.file` needs none.
+
+**Say what the broker is before anyone asks.** The next section is why.
+
 ## The security assessment, and the question that decides it
 
 The five restricted scopes are what raise it. Google's stated trigger is narrow, and it is worth

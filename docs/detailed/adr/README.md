@@ -38,6 +38,7 @@ Nothing in the codebase depends on it.
 | [028](028-a-hosted-oauth-client-is-the-default.md) | A client Lanes operates is what `connect` uses by default; `--own-client` registers your own |
 | [029](029-connecting-is-not-deploying.md) | Connecting publishes its own config and the endpoint re-reads it; deploying is only code |
 | [030](030-a-profile-owns-its-skills-and-manifests.md) | Skills and provider manifests move into `data/<profile>/`; nothing is shared between profiles any more |
+| [031](031-sign-in-and-data-access-are-separate-projects.md) | Signing in and reaching Google data are separate Cloud projects; the second is where every Google-data client goes |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 
