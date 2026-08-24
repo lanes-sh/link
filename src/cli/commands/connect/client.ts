@@ -96,9 +96,11 @@ export async function resolveOAuthClient(input: ClientChoice): Promise<OAuthClie
   // authorization code somewhere other than where the operator believes.
   const overridden = brokerOriginOverride();
   if (overridden) {
-    warn(
-      `${BROKER_ORIGIN_ENV} is set — the authorization code will be exchanged at ${overridden}, ` +
-        `not by ${broker.operator}.`,
+    progress(
+      warn(
+        `${BROKER_ORIGIN_ENV} is set — the authorization code will be exchanged at ${overridden}, ` +
+          `not by ${broker.operator}.`,
+      ),
     );
   }
 
@@ -149,8 +151,12 @@ export async function resolveOAuthClient(input: ClientChoice): Promise<OAuthClie
     // still admits accounts that have already granted once, so refusing here
     // would lock out exactly the people it would still let through.
     if (left <= 10) {
-      warn(
-        `The ${broker.operator} client is near capacity (${config.capacity.accounts} of ${config.capacity.cap} accounts).`,
+      // `warn` formats; `progress` is what puts it on the stream. Called bare it
+      // builds the sentence and drops it, which is how this one went unsaid.
+      progress(
+        warn(
+          `The ${broker.operator} client is near capacity (${config.capacity.accounts} of ${config.capacity.cap} accounts).`,
+        ),
       );
     }
   }

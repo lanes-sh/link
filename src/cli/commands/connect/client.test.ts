@@ -303,3 +303,83 @@ describe('hostedClientRefusal', () => {
     expect(message).not.toContain('--own-client');
   });
 });
+
+/**
+ * Notes on the way to a connection go to stderr, and they have to actually
+ * arrive there.
+ *
+ * `warn` formats a line; `progress` is what writes it. Calling `warn` bare
+ * type-checks, runs, builds the sentence and discards it — which is what had
+ * happened to the near-capacity notice below. Nothing but a test that reads the
+ * stream catches that, because every other signal says the code ran.
+ */
+async function captured(body: () => Promise<void>): Promise<string> {
+  const errWrite = process.stderr.write.bind(process.stderr);
+  let err = '';
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (process.stderr as any).write = (chunk: string) => ((err += chunk), true);
+  try {
+    await body();
+  } finally {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (process.stderr as any).write = errWrite;
+  }
+  return err;
+}
+
+describe('what a brokered connect says out loud', () => {
+  test('says the shared client is filling up, on the stream', async () => {
+    const nearlyFull = {
+      success: true,
+      data: { ...OPEN.data, capacity: { accounts: 93, cap: 100 } },
+    };
+
+    const err = await captured(async () => {
+      await resolveOAuthClient(await choice({ fetch: brokerAnswering(nearlyFull) }));
+    });
+
+    expect(err).toContain('near capacity');
+    expect(err).toContain('93 of 100');
+  });
+
+  test('stays quiet while there is room, so the notice keeps its weight', async () => {
+    const roomy = {
+      success: true,
+      data: { ...OPEN.data, capacity: { accounts: 12, cap: 100 } },
+    };
+
+    const err = await captured(async () => {
+      await resolveOAuthClient(await choice({ fetch: brokerAnswering(roomy) }));
+    });
+
+    expect(err).not.toContain('near capacity');
+  });
+
+  test('says so when the broker origin has been moved', async () => {
+    // The case worth catching is not the deliberate one — it is the variable
+    // still exported in a shell three days later, deciding where a real
+    // authorization code goes.
+    const before = process.env['LANES_LINK_BROKER_ORIGIN'];
+    process.env['LANES_LINK_BROKER_ORIGIN'] = 'http://127.0.0.1:8080';
+    try {
+      const err = await captured(async () => {
+        await resolveOAuthClient(await choice());
+      });
+
+      expect(err).toContain('LANES_LINK_BROKER_ORIGIN is set');
+      expect(err).toContain('http://127.0.0.1:8080');
+      expect(err).toContain('not by Someone');
+    } finally {
+      if (before === undefined) delete process.env['LANES_LINK_BROKER_ORIGIN'];
+      else process.env['LANES_LINK_BROKER_ORIGIN'] = before;
+    }
+  });
+
+  test('says nothing about an origin nobody moved', async () => {
+    const err = await captured(async () => {
+      await resolveOAuthClient(await choice());
+    });
+
+    expect(err).not.toContain('LANES_LINK_BROKER_ORIGIN');
+  });
+});
