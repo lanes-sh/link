@@ -91,6 +91,7 @@ limitation. `RESERVED` names a compatibility slot with no implementation.
 | `transport.stateless` | ENFORCED | restart-mid-session test |
 | `credentials.encrypted-at-rest` | ENFORCED (file adapter) | nothing readable on disk; tamper detection |
 | `profile.isolated` | ENFORCED | cross-profile token, state, and audit tests, plus `src/cli/runtime/scoping.test.ts` for the owner layer. Two things were shared until [ADR-030](adr/030-a-profile-owns-its-skills-and-manifests.md) — skills and provider manifests, both at the workspace root — so this row was previously true of credentials, state and the log rather than of everything a profile holds |
+| `token.rotation-takes-effect` | ENFORCED **within a five-second window** | `src/auth/index.test.ts` covers both halves against a real credential store: the replacement is accepted on its first call, and the rotated-away token stops working once the window passes. Both caches are dropped together — the authenticator's and the credential store's — because dropping only one re-reads the same stale value |
 | `limits.per-profile` | ENFORCED per instance | rate limit tests |
 | `audit.every-invocation` | ENFORCED **with two documented exceptions** | see below |
 | `credentials.client-secret-never-local` | ENFORCED (hosted client) | there is no client secret on the machine to hold. `resolveSecretRefs` grants no client reference at all for a connection authorised this way, asserted in `src/dispatch/context.test.ts` |
@@ -185,6 +186,10 @@ weekly schedule — so `invalid_grant` is detected specifically and the error na
 
 - **Bearer tokens are bearer authorization.** Anyone holding the profile token is the principal.
   Tokens are not bound to a device. Revocation means rotating the token and reconciling.
+  A running endpoint notices a rotation within five seconds rather than instantly: the expected
+  value is cached for that long so the common case is a comparison rather than a decrypt. The
+  replacement works immediately — a token that does not match a cached value forces a re-read
+  before it is rejected, which is what makes the rotated-in credential usable on its first call.
 - **Agent config files are a real exposure.** MCP client configuration often sits in plaintext on
   disk, so a token is roughly as protected as that file.
 - **One token per profile.** Two agents cannot hold different permissions against the same profile;

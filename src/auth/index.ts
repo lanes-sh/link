@@ -117,25 +117,57 @@ export interface AuthenticatorOptions {
   readonly profile: string;
   readonly tokenRef: SecretRef;
   readonly credentials: SecretStore;
+  /** Injectable for tests. Only the cache window reads it. */
+  readonly now?: () => number;
 }
+
+/**
+ * How long a cached token may answer before the store is consulted again.
+ *
+ * The cache is here so the common case — a valid token, on every request — is a
+ * comparison rather than a file read or a Secret Manager call. What it must not
+ * do is outlive a rotation. `lanes link token rotate` is the only revocation
+ * this system has, and an unbounded cache meant a revoked token kept opening the
+ * endpoint until the process restarted, while the replacement was refused.
+ *
+ * Five seconds makes rotation effectively immediate and still collapses a burst
+ * of calls onto one read.
+ */
+const CACHE_TTL_MS = 5_000;
 
 export class BearerAuthenticator implements Authenticator {
   readonly #options: AuthenticatorOptions;
+  readonly #now: () => number;
   #cached: string | null = null;
+  #readAt = 0;
 
   constructor(options: AuthenticatorOptions) {
     this.#options = options;
+    this.#now = options.now ?? Date.now;
   }
 
   async authenticate(authorizationHeader: string | null | undefined): Promise<AuthOutcome> {
-    const { profile, tokenRef, credentials } = this.#options;
+    const { profile } = this.#options;
 
     const presented = parseBearer(authorizationHeader);
     if (presented === null) {
       return { ok: false, reason: authorizationHeader ? 'malformed' : 'missing' };
     }
 
-    const expected = (this.#cached ??= await credentials.get(tokenRef));
+    const fresh = this.#cached !== null && this.#now() - this.#readAt < CACHE_TTL_MS;
+    let expected = fresh ? this.#cached : await this.#reload();
+
+    // A mismatch against a *cached* value is ambiguous: either the credential is
+    // wrong, or it is the right one and this process has not seen the rotation
+    // that produced it. One re-read separates the two, and it is what makes a
+    // rotated-in token work on its first call rather than after the window.
+    // Only a cached comparison can be wrong this way, so a fresh read never
+    // pays for a second one — which is what keeps a wrong token from costing a
+    // store read per attempt.
+    if (fresh && (expected === null || !tokensMatch(presented, expected))) {
+      expected = await this.#reload();
+    }
+
     if (expected === null) {
       // The profile has no token yet. Fail closed and let `lanes link doctor` explain.
       return { ok: false, reason: 'not_configured' };
@@ -146,7 +178,22 @@ export class BearerAuthenticator implements Authenticator {
       : { ok: false, reason: 'invalid' };
   }
 
-  /** Called after `lanes link token rotate` so a running instance picks up the change. */
+  async #reload(): Promise<string | null> {
+    // Both caches, or neither: the store holds its own decrypted copy, so
+    // re-reading without dropping that first re-reads the same stale value.
+    this.#options.credentials.refresh?.();
+    this.#cached = await this.#options.credentials.get(this.#options.tokenRef);
+    this.#readAt = this.#now();
+    return this.#cached;
+  }
+
+  /**
+   * Drop the cached value immediately.
+   *
+   * The window above already bounds how long a rotation goes unnoticed, so this
+   * is an optimisation rather than the mechanism — nothing's correctness may
+   * depend on it being called, because for a long time nothing called it.
+   */
   invalidateCache(): void {
     this.#cached = null;
   }

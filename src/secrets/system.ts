@@ -131,8 +131,14 @@ class DocumentSecretStore implements SecretStore {
     return [...entries.keys()].filter((ref) => !prefix || ref.startsWith(prefix)).sort();
   }
 
-  /** Drop the decrypted copy from memory. */
-  forget(): void {
+  /**
+   * Drop the decrypted copy from memory.
+   *
+   * Named for the interface it satisfies rather than for the hygiene it also
+   * provides. It was `forget()` and nothing ever called it, which is precisely
+   * how a rotated token stayed invisible to a running endpoint.
+   */
+  refresh(): void {
     this.#cache = undefined;
   }
 
