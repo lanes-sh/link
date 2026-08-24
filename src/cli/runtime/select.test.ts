@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdtemp } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Config } from '#profile';
@@ -54,6 +55,22 @@ describe('openBlobStoreFor', () => {
     await own.put('a.txt', new TextEncoder().encode('x'));
 
     expect((await elsewhere.list()).map((blob) => blob.key)).not.toContain('a.txt');
+  });
+
+  test('a declared storage path wins over the layout default', async () => {
+    // Layout entries are defaults, and `layout.ts` says so: a profile that
+    // declares its own paths keeps them. Removal enumerates whatever the store
+    // is rooted at, so assuming `data/<profile>/` would quietly half-remove
+    // any profile that declares somewhere else.
+    const root = await workspace();
+    const declared = config();
+    (declared.targets['local'] as { storage: { path?: string } }).storage.path = 'elsewhere/mine';
+
+    const store = await openBlobStoreFor(declared, root, 'local');
+    await store.put('note.txt', new TextEncoder().encode('x'));
+
+    expect(existsSync(join(root, 'elsewhere/mine/note.txt'))).toBe(true);
+    expect(existsSync(join(root, 'data/personal/note.txt'))).toBe(false);
   });
 
   test('refuses a target the profile does not declare', async () => {
