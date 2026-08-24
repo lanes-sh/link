@@ -2,6 +2,7 @@ import { loadConfigFile } from '#profile';
 import { ConfigDocument } from '../../config-edit.ts';
 import { announce, heading, ok, print, style, table } from '../../output.ts';
 import { resolveProfile, type GlobalFlags } from '../../runtime.ts';
+import { nextAfterEdit, publishProfileEdit } from '../../publish.ts';
 
 /**
  * `lanes link policy` and `lanes link config show` — reading and editing what is granted.
@@ -44,7 +45,7 @@ export async function policyRule(
   capability: string,
   flags: GlobalFlags,
 ): Promise<void> {
-  const { resolution, config } = await resolveProfile(flags);
+  const { resolution, config, target } = await resolveProfile(flags);
   const document = await ConfigDocument.open(resolution.workspaceRoot, resolution.profile);
 
   if (config.policy[effect].some((rule) => rule.capability === capability)) {
@@ -65,6 +66,10 @@ export async function policyRule(
   if (effect === 'deny' && config.policy.allow.some((rule) => rule.capability === '*')) {
     print(style.dim('  This narrows the catch-all allow; a deny always wins.'));
   }
+
+  // A deny the endpoint has not heard about is still granting what it names, so
+  // a policy edit publishes itself exactly as connecting does (ADR-029).
+  print(style.dim(`  ${nextAfterEdit(await publishProfileEdit({ resolution, config, target }))}`));
 }
 
 export async function configShow(flags: GlobalFlags): Promise<void> {

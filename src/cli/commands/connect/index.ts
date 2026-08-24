@@ -8,7 +8,8 @@ import { openRuntime, type GlobalFlags } from '../../runtime.ts';
 import { credentialApp, matchesRule, moveCredential, siblingAccountId } from './accounts.ts';
 import { authorise, oauthProviderFor } from './authorise.ts';
 import { preflight } from './requirements.ts';
-import { ALREADY, NOTHING, nextAfterConnect, renderOutcome, type ConnectOutcome } from './outcome.ts';
+import { ALREADY, NOTHING, renderOutcome, type ConnectOutcome } from './outcome.ts';
+import { nextAfterEdit, publishRuntimeEdit } from '#cli/publish.ts';
 import { ensureStaticCredential } from './setup.ts';
 import { settleIdentity } from './settle.ts';
 
@@ -376,6 +377,10 @@ async function runConnect(target: string, options: ConnectOptions): Promise<Conn
 
     await document.save();
 
+    // Where the endpoint that has to serve this reads its config, and then a
+    // nudge to re-read it. Neither is a deploy (ADR-029).
+    const publish = await publishRuntimeEdit(runtime);
+
     return {
       ok: true,
       key: connectionKey,
@@ -385,12 +390,7 @@ async function runConnect(target: string, options: ConnectOptions): Promise<Conn
       ...(notes.length > 0 ? { notes } : {}),
       discovered: discovered.length,
       writable: discovered.filter((c) => c.bundle === WRITE_BUNDLE).length,
-      // A running endpoint reads its config once, at startup. Saying "start"
-      // to someone who already has one running reads as "you are done", and
-      // they then ask an agent that cannot see the connection yet. Which
-      // endpoint to say depends on the target: a deployment is replaced by
-      // `deploy`, not restarted by hand.
-      next: nextAfterConnect(runtime.config.targets[runtime.target]?.deploy !== undefined),
+      next: nextAfterEdit(publish),
     };
   } finally {
     await runtime.close();

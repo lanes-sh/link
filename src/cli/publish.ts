@@ -1,0 +1,181 @@
+import type { SecretStore } from '#secrets';
+import type { Config } from '#profile';
+import { publishWorkspace } from '#deployments/upload.ts';
+import { openSecretStoreFor, type Runtime } from './runtime.ts';
+import { endpointUrl } from './endpoint-url.ts';
+
+/**
+ * Getting an edit to the endpoint that has to serve it.
+ *
+ * A config edit used to reach a deployed endpoint by exactly one route: roll a
+ * new revision. That put "which accounts can this reach" on the same command as
+ * "what code does this run", and made connecting an account cost a Docker
+ * build. ADR-029 separates them — an edit publishes itself and says so, and
+ * `deploy` goes back to being about code.
+ *
+ * Two steps, and the second is allowed to fail. Publishing is what makes the
+ * change *durable* for the next instance to boot; notifying is what makes it
+ * visible to the one already running. An endpoint that is not up yet, is
+ * scaled to zero, or sits behind a network this machine cannot cross is not a
+ * failed edit — it will read the published config when it next starts. So a
+ * notify that cannot land is reported, never thrown.
+ */
+
+/** How long to wait for a running endpoint to answer. */
+const NOTIFY_TIMEOUT_MS = 10_000;
+
+export interface PublishOutcome {
+  /** Where the config was copied, when the target reads from a store. */
+  readonly published?: string;
+  /** Whether a running endpoint confirmed it is now serving the edit. */
+  readonly served: boolean;
+  /** The endpoint that was told, or would have been. */
+  readonly url?: string;
+  /** Why it is not being served yet, in a form fit to print. */
+  readonly reason?: string;
+}
+
+/**
+ * Copy the config where this target reads it, then tell it to re-read.
+ *
+ * The order is load-bearing: an endpoint told to reload before the config it
+ * should read has landed would reload the previous config and report success.
+ */
+export async function publishAndNotify(input: {
+  readonly config: Config;
+  readonly workspaceRoot: string;
+  readonly target: string;
+  readonly profile: string;
+  readonly credentials: SecretStore;
+}): Promise<PublishOutcome> {
+  let published: string | null = null;
+
+  try {
+    published = await publishWorkspace(input);
+  } catch (error) {
+    // The local edit already succeeded and is already on disk. What failed is
+    // getting it to the bucket, which means the *next* revision would not see
+    // it either — worth saying loudly, and not worth undoing the edit for.
+    return {
+      served: false,
+      reason: `could not publish the config to this target: ${message(error)}`,
+    };
+  }
+
+  const notified = await notifyReload(input);
+  return { ...(published ? { published } : {}), ...notified };
+}
+
+/** The same thing, for a command that already holds an open runtime. */
+export function publishRuntimeEdit(runtime: Runtime): Promise<PublishOutcome> {
+  return publishAndNotify({
+    config: runtime.config,
+    workspaceRoot: runtime.resolution.workspaceRoot,
+    target: runtime.target,
+    profile: runtime.resolution.profile,
+    credentials: runtime.credentials,
+  });
+}
+
+/**
+ * The same thing for a command that resolved a profile but opened no runtime.
+ *
+ * `policy allow` and `policy deny` edit the config without needing a registry,
+ * a dispatcher or a state handle — and a deny that a deployed endpoint has not
+ * heard about is the one kind of staleness worth being strict about, so they
+ * still have to publish. `openSecretStoreFor` is the cheap half of a runtime:
+ * the credential store alone, which is all the notify needs to authenticate.
+ */
+export async function publishProfileEdit(input: {
+  readonly resolution: { readonly workspaceRoot: string; readonly profile: string };
+  readonly config: Config;
+  readonly target: string;
+}): Promise<PublishOutcome> {
+  const credentials = await openSecretStoreFor(
+    input.config,
+    input.resolution.workspaceRoot,
+    input.target,
+  );
+
+  return publishAndNotify({
+    config: input.config,
+    workspaceRoot: input.resolution.workspaceRoot,
+    target: input.target,
+    profile: input.resolution.profile,
+    credentials,
+  });
+}
+
+/** Ask a running endpoint to re-read its config. Never throws. */
+async function notifyReload(input: {
+  readonly config: Config;
+  readonly target: string;
+  readonly credentials: SecretStore;
+}): Promise<PublishOutcome> {
+  let url: string;
+  try {
+    // Answers for a deployed target as well as a local one — a loopback URL
+    // sent to a deployment reaches a port with nothing behind it, which is the
+    // bug this function's own doc comment records.
+    url = (await endpointUrl(input.config, input.target)).replace(/\/mcp$/, '/reload');
+  } catch (error) {
+    return { served: false, reason: `could not work out where the endpoint is: ${message(error)}` };
+  }
+
+  const token = await input.credentials.get(input.config.auth.token_ref);
+  if (!token) {
+    return {
+      served: false,
+      url,
+      reason: `no profile token at "${input.config.auth.token_ref}" to authenticate with`,
+    };
+  }
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(NOTIFY_TIMEOUT_MS),
+    });
+
+    if (!response.ok) {
+      return { served: false, url, reason: `the endpoint answered ${response.status}` };
+    }
+
+    const body = (await response.json()) as { reloaded?: unknown; reason?: unknown };
+    if (body.reloaded !== true) {
+      return {
+        served: false,
+        url,
+        reason:
+          typeof body.reason === 'string'
+            ? `the endpoint could not reload: ${body.reason}`
+            : 'the endpoint did not reload',
+      };
+    }
+
+    return { served: true, url };
+  } catch {
+    // Nothing listening, scaled to zero, or unreachable from here — all of
+    // which resolve themselves the next time the endpoint starts, because the
+    // config it reads on the way up is the one just published.
+    return { served: false, url, reason: 'no endpoint answered' };
+  }
+}
+
+function message(error: unknown): string {
+  return error instanceof Error ? (error.message.split('\n')[0] ?? error.message) : String(error);
+}
+
+/**
+ * The line `connect` and friends print last.
+ *
+ * It used to be a guess derived from whether the target was deployable —
+ * "restart it" or "roll a revision" — because there was no way to know. There
+ * is now: the endpoint either answered or it did not.
+ */
+export function nextAfterEdit(outcome: PublishOutcome): string {
+  if (outcome.served) return 'Serving it now — the endpoint has re-read its config.';
+
+  return `${outcome.reason ?? 'no endpoint answered'} — saved, and the endpoint will serve this when it next starts.`;
+}
