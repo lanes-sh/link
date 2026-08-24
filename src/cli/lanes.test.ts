@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -169,5 +170,43 @@ describe('token rotate', () => {
     // The part that has to stay loud: nothing re-reads the token on its own.
     const run = await workspace();
     expect(run(['link', 'token', 'rotate']).stdout).toContain('re-registered');
+  });
+});
+
+/**
+ * `--version`, at both levels of the grammar.
+ *
+ * Asked for because installing from npm makes two versions of this CLI able to
+ * exist on two machines at once, and a bug report that cannot name which one it
+ * came from is a bug report that has to be reproduced from scratch. There was
+ * no way to ask before.
+ *
+ * Both spellings, because both get typed: `lanes --version` is the reflex for
+ * anything on a PATH, and `lanes link version` is what the grammar in this file
+ * would predict. They must not be allowed to drift apart, so the test holds all
+ * three — the two commands and the manifest — to one string.
+ */
+describe('version', () => {
+  const declared = (): string => {
+    const path = fileURLToPath(new URL('../../package.json', import.meta.url));
+    return JSON.parse(readFileSync(path, 'utf8')).version;
+  };
+
+  test('`lanes --version` prints the version and nothing else', () => {
+    const { code, stdout } = runBin(['--version']);
+    expect(code).toBe(0);
+    // Bare, so `$(lanes --version)` is usable without trimming a label off it.
+    expect(stdout.trim()).toBe(declared());
+    expect(stdout.trim()).toMatch(/^\d+\.\d+\.\d+/);
+  });
+
+  test('`-v` is the same thing', () => {
+    expect(runBin(['-v']).stdout.trim()).toBe(declared());
+  });
+
+  test('`lanes link version` agrees with it', () => {
+    const { code, stdout } = runBin(['link', 'version']);
+    expect(code).toBe(0);
+    expect(stdout.trim()).toBe(declared());
   });
 });

@@ -1,0 +1,86 @@
+# Publishing `@lanes-sh/link` to npm, on a tag.
+#
+# The tag is the trigger and the record: `git push --follow-tags` on `v0.2.0` is
+# the whole release, and what shipped is afterwards recoverable from the tag
+# rather than from anyone's shell history.
+#
+# The same two commands CONTRIBUTING.md requires run here before anything is
+# published, because `ci.yml` gates pull requests and a tag is not one — a
+# release could otherwise ship a tree no reviewer ever saw green.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  # `contents: write` creates the GitHub release. `id-token: write` is what lets
+  # npm mint a short-lived OIDC credential for the publish, so that no long-lived
+  # write token has to exist — see "Credentials" below.
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    name: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          # The same pin as ci.yml, for the same reason: a Bun release must not
+          # be able to change what green means without a commit saying so.
+          bun-version: 1.3.11
+
+      - run: bun install --frozen-lockfile
+
+      - run: bun test
+      - run: bun run typecheck
+
+      # The tag and the manifest have to agree before anything leaves the runner.
+      # A `v0.2.0` tag on a tree still declaring 0.1.0 publishes 0.1.0, and npm
+      # does not allow a version to be republished — so the mistake is permanent
+      # and the only fix is to burn a version number.
+      - name: the tag is the version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(bun --print 'require("./package.json").version')"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "tag $GITHUB_REF_NAME declares $TAG, package.json declares $PKG" >&2
+            exit 1
+          fi
+          echo "publishing $PKG"
+
+      # Publishing is the one step that is not Bun. `bun publish` does not
+      # implement npm's OIDC trusted publishing (oven-sh/bun#24855), which is the
+      # whole reason this workflow needs no stored credential. npm reads the same
+      # package.json and packs the same `files`, so the artefact is identical.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+
+      # Trusted publishing needs npm 11.5.1+, and the npm bundled with Node 22 is
+      # older than that.
+      - run: npm install -g npm@latest
+
+      # `--provenance` is passed rather than relied on: npm documents it as
+      # automatic under OIDC and it does not reliably fire. It attests that this
+      # tarball was built by this workflow from this repository, which is the
+      # claim worth making for something that holds people's credentials.
+      #
+      # Credentials: until `@lanes-sh/link` exists on the registry it cannot have
+      # a trusted publisher configured, so the first release authenticates with a
+      # short-lived NPM_TOKEN. Once it is published, configure the trusted
+      # publisher on the package's npm settings page, then delete both the secret
+      # and the `env:` block below — `id-token: write` above is all that is left
+      # to need.
+      - run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: github release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" --generate-notes --verify-tag

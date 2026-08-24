@@ -16,7 +16,13 @@ $ bun run typecheck
 ```console
 $ bun run lanes link <command>      # via the root script
 $ bun run src/cli/lanes.ts link …  # directly
+$ bun link                          # or put this checkout's `lanes` on your PATH
 ```
+
+`bun link` is what people who installed `@lanes-sh/link` from npm get, pointed at your checkout
+instead: it reads the same `bin` entry, so `lanes` runs `bin/lanes`, which runs this tree. Prefer it
+over the two lines above once you are running more than one command at a time — and note that it
+replaces any published `lanes` on your `PATH` until you `bun unlink`.
 
 Use a throwaway workspace so you never touch a real profile:
 

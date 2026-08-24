@@ -43,7 +43,7 @@ the middle of your data.
 Needs [Bun](https://bun.com) 1.3.11+. Nothing else — no account anywhere.
 
 ```console
-$ bun install && bun link                      # puts `lanes` on your PATH
+$ bun install -g @lanes-sh/link                # puts `lanes` on your PATH
 $ lanes link profile add personal --default
 $ lanes link start
 ok    serving http://127.0.0.1:7337/mcp

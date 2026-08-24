@@ -88,6 +88,7 @@ ${style.bold('Inspection')}
   ${PROGRAM} audit tail [--limit N] [--denied-only] [--format md]
   ${PROGRAM} audit verify           has anything in the log been altered or removed
   ${PROGRAM} config show
+  ${PROGRAM} version                    which release this is — same as lanes --version
 
 ${style.bold('Attachments')}
   ${PROGRAM} attach <file> --connection <provider>.<account>

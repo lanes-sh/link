@@ -39,6 +39,7 @@ import {
 } from './commands/owner.ts';
 import { globalFlags, ownerFlags, parseArgv, text } from './argv.ts';
 import { PROGRAM, USAGE } from './usage.ts';
+import { version } from './version.ts';
 import { print } from './output.ts';
 
 /**
@@ -321,6 +322,10 @@ export async function run(argv: readonly string[]): Promise<void> {
         default:
           throw new Error(`Unknown: ${PROGRAM} secrets ${second}`);
       }
+
+    case 'version':
+      print(version());
+      return;
 
     default:
       throw new Error(`Unknown command "${first}". Run: ${PROGRAM} help`);

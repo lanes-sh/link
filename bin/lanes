@@ -1,0 +1,42 @@
+#!/bin/sh
+#
+# The `lanes` command, as installed from npm.
+#
+# `src/cli/lanes.ts` carries `#!/usr/bin/env bun`, and pointing package.json's
+# `bin` straight at it was the obvious thing — until a machine without Bun
+# installs cleanly and then answers every invocation with
+# `env: bun: No such file or directory`, which names neither this project nor
+# the thing it is missing. A `#!/usr/bin/env node` shim inverts the problem for
+# anyone who has Bun and not Node. `/bin/sh` is the one interpreter present in
+# both cases, so the check lives here.
+#
+# This is also what `bun link` puts on the PATH during development, so the
+# installed path and the contributor path are one path rather than two.
+
+set -e
+
+# npm and bun both install a bin as a symlink in a global directory, so "$0" is
+# the link rather than this file, and "$(dirname "$0")/.." is that directory's
+# parent rather than the package. `readlink -f` would resolve it in one call and
+# does not exist on macOS, which is where most of these installs land.
+self=$0
+while [ -L "$self" ]; do
+  link=$(readlink "$self")
+  case $link in
+    /*) self=$link ;;
+    *) self=$(dirname "$self")/$link ;;
+  esac
+done
+root=$(cd "$(dirname "$self")/.." && pwd)
+
+if ! command -v bun >/dev/null 2>&1; then
+  echo "lanes needs Bun 1.3.11+ to run — it is not on your PATH." >&2
+  echo "" >&2
+  echo "  curl -fsSL https://bun.sh/install | bash" >&2
+  echo "  brew install bun" >&2
+  echo "" >&2
+  echo "Then run this command again. Nothing else is needed." >&2
+  exit 1
+fi
+
+exec bun run "$root/src/cli/lanes.ts" "$@"
