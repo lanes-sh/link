@@ -76,6 +76,7 @@ function deps(over: Partial<RunDeps> = {}): RunDeps & { removedConfig: string[];
     openSecrets: async () => store(['gmail/someone']),
     openBlobs: async () => blobs(['state.kv/a']),
     removeConfig: async (path: string) => void removedConfig.push(path),
+    removeDirectory: async (path: string) => void removedConfig.push(path),
     clearDefaultProfile: async () => void (cleared += 1),
     ...over,
   } as RunDeps & { removedConfig: string[]; cleared: number };

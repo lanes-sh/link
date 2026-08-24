@@ -6,9 +6,11 @@ import {
   readWorkspace,
   readWorkspaceFile,
   workspaceFiles,
+  workspacePath,
   writeWorkspaceFile,
 } from '#profile';
 import { parseDocument } from 'yaml';
+import { rm } from 'node:fs/promises';
 import { terminalPrompter, type Prompter } from '../../prompt.ts';
 import { announce, emit, fail, ok, print, style } from '../../output.ts';
 import {
@@ -49,6 +51,8 @@ export interface RunDeps {
   openSecrets: (target: string) => Promise<SecretStore>;
   openBlobs: (target: string, area?: string) => Promise<BlobStore>;
   removeConfig: (path: string) => Promise<void>;
+  /** The emptied profile directory. A blob delete cannot remove a directory. */
+  removeDirectory: (path: string) => Promise<void>;
   clearDefaultProfile: () => Promise<void>;
   retry?: ((item: RemovalItem, cause: string) => string | undefined) | undefined;
 }
@@ -119,7 +123,7 @@ export async function executeRemoval(
           break;
 
         case 'file':
-          await deps.removeConfig(item.id);
+          await deps.removeDirectory(item.id);
           break;
       }
 
@@ -274,6 +278,7 @@ export async function removeProfile(name: string, flags: RemoveFlags): Promise<v
     openSecrets: (target) => openSecretStoreFor(config, root, target),
     openBlobs: (target, area) => openBlobStoreFor(config, root, target, area),
     removeConfig: async (path) => await files.delete(relativeToRoot(root, path)),
+    removeDirectory: async (path) => await rm(workspacePath(root, path), { recursive: true, force: true }),
     clearDefaultProfile: async () => await clearDefault(root),
     retry: retryCommand,
   });

@@ -1,4 +1,4 @@
-import { profilePath, type Config, type TargetConfig } from '#profile';
+import { layout, profilePath, type Config, type TargetConfig } from '#profile';
 import type { SecretStore } from '#secrets';
 import type { BlobStore } from '#stores/blobs';
 import { credentialRefFor, ownClientRefsFor, type ProviderRegistry } from '#registry';
@@ -146,6 +146,20 @@ export async function removalPlan(
       warnings.push(
         `Target "${name}": its storage could not be opened (${reason(cause)}), so nothing in it will be removed.`,
       );
+    }
+
+    // The blob store's root is the profile's own directory, and an adapter must
+    // never delete the root it was configured with — so emptying it leaves the
+    // directory. `layout.ts` frames that directory as the unit ("rm -r
+    // data/work is exactly remove the work profile's data"), and one left
+    // behind is silently reused by a later `profile add` of the same name.
+    if (declared.storage.adapter === 'filesystem') {
+      items.push({
+        target: name,
+        kind: 'file',
+        id: declared.storage.path ?? layout.blobs(profile),
+        note: 'the profile directory, once emptied',
+      });
     }
 
     // A deployed revision reads its config from the bucket rather than the

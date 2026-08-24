@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import type { BlobKey, BlobMetadata, BlobStore } from '#stores/blobs';
@@ -20,6 +20,31 @@ export interface FilesystemBlobStoreOptions {
 
 export function createFilesystemBlobStore(options: FilesystemBlobStoreOptions): BlobStore {
   const root = resolve(options.root);
+
+  /**
+   * Remove directories a delete has just emptied, up to but never including
+   * the root.
+   *
+   * An object store has no directories: `a/b/c.txt` is one flat key, and
+   * removing it leaves nothing called `a/b`. This adapter emulates that
+   * interface, so a surviving empty directory is a filesystem artifact leaking
+   * through it — and the one that matters is `data/<profile>`, which would
+   * otherwise outlive the profile whose objects it held.
+   *
+   * `rmdir` rather than a recursive remove, and the error swallowed: it fails
+   * when the directory is not empty, which is exactly the signal to stop.
+   */
+  const pruneEmptyParents = async (directory: string): Promise<void> => {
+    let current = directory;
+    while (current.startsWith(root) && current !== root) {
+      try {
+        await rmdir(current);
+      } catch {
+        return;
+      }
+      current = dirname(current);
+    }
+  };
 
   /**
    * Resolve a key to an absolute path, refusing anything that lands outside
@@ -85,6 +110,7 @@ export function createFilesystemBlobStore(options: FilesystemBlobStoreOptions): 
       const path = pathFor(key);
       await rm(path, { force: true });
       await rm(`${path}.meta`, { force: true });
+      await pruneEmptyParents(dirname(path));
     },
 
     async list(prefix) {
