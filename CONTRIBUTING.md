@@ -64,8 +64,13 @@ provider, and `src/profile/docs.test.ts` parses the YAML examples out of the ref
 ## Releasing
 
 You do not tag anything. Merging a change under `src/`, `bin/`, `instructions/`, `package.json`, or
-`bun.lock` opens a **"Release x.y.z" pull request** carrying the patch bump and a list of what is
-going out. Merging that pull request publishes to npm and cuts the tag.
+`bun.lock` pushes a **`release/next`** branch carrying the patch bump, and the run summary links
+straight to the pull request it opens — already titled and described, because the bump commit's
+message is the release note. Merging that pull request publishes to npm and cuts the tag.
+
+One workflow does both halves. Which half it runs is decided by whether the version in
+`package.json` already has a tag: tagged means published, so propose the next patch; untagged means
+somebody set it deliberately, so publish it.
 
 For a **minor or major**, put the version you want in `package.json` in your own pull request. It
 arrives on `main` with no tag behind it and is published as declared — so the judgement that
@@ -73,10 +78,13 @@ something earns more than a patch is made in review, beside the change that earn
 
 Two things will look wrong and are not:
 
-- **The release pull request shows `ci` as never reporting.** GitHub does not run workflows on pull
-  requests it opened itself, so it needs an admin merge. Both gates run again in `release.yml`
+- **The release pull request shows `ci` as never reporting.** GitHub does not run workflows on
+  branches it pushed itself, so it needs an admin merge. Both gates run again in `release.yml`
   against the exact tree being published, which is the run that matters — the registry does not give
   a version back.
+- **The workflow does not open the pull request for you.** Doing that needs "Allow GitHub Actions to
+  create and approve pull requests", and the approving half of that permission would let a workflow
+  satisfy the review this repository requires. One click is cheaper than that.
 - **Nothing is pushed to `main` by CI, ever.** A workflow cannot: the ruleset requires a pull
   request, and the built-in `GITHUB_TOKEN` cannot be added to its bypass list. Doing it anyway would
   mean storing a GitHub App key or a personal access token with write access to `main` — a larger
