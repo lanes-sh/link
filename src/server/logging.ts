@@ -1,5 +1,7 @@
 import type { Logger } from '#connectivity';
 
+export type { Logger };
+
 /**
  * Where an endpoint's operational events go.
  *

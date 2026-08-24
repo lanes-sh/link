@@ -812,6 +812,9 @@ ${policy}
     } finally {
       await harness.stop();
     }
+  });
+});
+
 describe('the authentication edge', () => {
   const probed = startHarness({
     profile: 'personal',
