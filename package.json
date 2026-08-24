@@ -38,6 +38,7 @@
     "#secrets/*": "./src/secrets/*",
     "#server": "./src/server/index.ts",
     "#server/endpoint.ts": "./src/server/endpoint.ts",
+    "#server/logging.ts": "./src/server/logging.ts",
     "#server/mcp": "./src/server/mcp/index.ts",
     "#stores/blobs": "./src/stores/blobs/index.ts",
     "#stores/blobs/*": "./src/stores/blobs/*",

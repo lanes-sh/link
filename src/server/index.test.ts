@@ -847,3 +847,37 @@ describe('the authentication edge', () => {
     expect((await rpc(probed.server.url, 'tools/list', {}, { token: TEST_TOKEN })).status).toBe(200);
   });
 });
+
+describe('operational logging', () => {
+  test('a rejected request is reported to the logger', async () => {
+    // The warning existed and went nowhere: every caller of `serve()` passed a
+    // logger whose methods were empty, so a public endpoint had no signal at
+    // all that someone was trying credentials against it.
+    const warnings: Array<{ message: string; detail?: Record<string, unknown> }> = [];
+    const listening = startHarness({
+      profile: 'personal',
+      port: allocatePort(),
+      policy: `  allow:
+    - "example.*"`,
+      log: {
+        debug() {},
+        info() {},
+        error() {},
+        warn(message, detail) {
+          warnings.push({ message, ...(detail ? { detail } : {}) });
+        },
+      },
+    });
+
+    try {
+      await rpc(listening.server.url, 'tools/list', {}, { token: 'llk_not_the_token' });
+
+      expect(warnings.map((entry) => entry.message)).toContain('rejected request');
+      expect(warnings.find((entry) => entry.message === 'rejected request')?.detail).toEqual({
+        reason: 'invalid',
+      });
+    } finally {
+      await listening.stop();
+    }
+  });
+});

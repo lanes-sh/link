@@ -13,6 +13,8 @@ import { ProviderRegistry, toPolicyDocument } from '#registry';
 import { Dispatcher } from '#dispatch';
 import { createMemoryCredentials, createMemoryState } from '#stores/state/testing.ts';
 import { RateLimiter } from '#policy';
+import type { Logger } from '#connectivity';
+import { silentLogger } from './logging.ts';
 import { createMemoryBlobStore } from '#stores/blobs/testing.ts';
 import { exampleProvider } from '#providers/example/provider.ts';
 import { createLocalConnector } from '#connectivity/transports';
@@ -84,6 +86,8 @@ export { parseConfig } from '#profile';
 
 export interface HarnessOptions {
   profile: string;
+  /** Where the endpoint's operational events go. Silent unless a test asks. */
+  log?: Logger;
   port: number;
   policy: string;
   token?: string;
@@ -233,7 +237,7 @@ export function startHarness(options: HarnessOptions): Harness {
       }
     : null;
 
-  const log = { debug() {}, info() {}, warn() {}, error() {} };
+  const log = options.log ?? silentLogger();
 
   const nothing = () => Promise.resolve();
   const generations = new Generations(

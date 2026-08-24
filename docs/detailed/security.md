@@ -130,6 +130,17 @@ per profile, which registers a client of their own and keeps the exchange betwee
 Google. Declaring `oauth_apps` in a profile is the same choice expressed in config, and a profile
 that declares it is never moved off it.
 
+### Failed authentication is logged, not audited
+
+A refusal record needs a principal, and failing authentication is precisely not having one — so a
+rejected credential cannot be an audit row without inventing a caller to attribute it to. It goes to
+the endpoint's operational log instead: stderr for `lanes link start`, stdout for the container,
+where Cloud Run collects it. The line names the reason (`invalid`, `malformed`, `missing`,
+`not_configured`) and never the value presented.
+
+This is a change. The warning was written from the start and every caller passed a logger whose
+methods were empty, so on a public URL a sustained probe left no trace anywhere.
+
 ### The documented exceptions to `audit.every-invocation`
 
 Every call that reaches dispatch is audited, allowed or denied. A call naming a **capability that
