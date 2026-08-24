@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { startEndpoint } from './endpoint.ts';
+import { streamLogger } from './logging.ts';
 
 /**
  * The container entrypoint — `src/deployments/gcp/Dockerfile` runs this.
@@ -56,6 +57,9 @@ try {
     host,
     // A deployed instance never mints its own token: see `endpoint.ts`.
     mintToken: false,
+    // Stdout is where Cloud Run collects logs, and a rejected credential on a
+    // public URL is the event this exists for.
+    log: streamLogger((line) => process.stdout.write(`${line}\n`)),
     reporter: {
       reconciled({ profile, plan }) {
         // Reconcile output is the record of what a deploy changed, and it is

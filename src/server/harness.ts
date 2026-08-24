@@ -13,6 +13,7 @@ import { ProviderRegistry, toPolicyDocument } from '#registry';
 import { Dispatcher } from '#dispatch';
 import { createMemoryCredentials, createMemoryState } from '#stores/state/testing.ts';
 import { RateLimiter } from '#policy';
+import { silentLogger, type Logger } from './logging.ts';
 import { createMemoryBlobStore } from '#stores/blobs/testing.ts';
 import { exampleProvider } from '#providers/example/provider.ts';
 import { createLocalConnector } from '#connectivity/transports';
@@ -84,6 +85,7 @@ export { parseConfig } from '#profile';
 
 export interface HarnessOptions {
   profile: string;
+  log?: Logger;
   port: number;
   policy: string;
   token?: string;
@@ -144,7 +146,6 @@ export function wireProfiles(options: HarnessOptions): WiredProfiles {
   registry.register(exampleProvider);
   for (const provider of options.providers ?? []) registry.register(provider);
 
-  const silent = { debug() {}, info() {}, warn() {}, error() {} };
   const policy = toPolicyDocument(config);
 
   const dispatcher = new Dispatcher({
@@ -160,7 +161,7 @@ export function wireProfiles(options: HarnessOptions): WiredProfiles {
     credentials,
     storage: createMemoryBlobStore(),
     limiter: new RateLimiter(),
-    log: silent,
+    log: silentLogger(),
   });
 
   // Each extra profile gets its own state and its own log, so the isolation
@@ -197,7 +198,7 @@ export function wireProfiles(options: HarnessOptions): WiredProfiles {
         credentials,
         storage: createMemoryBlobStore(),
         limiter: new RateLimiter(),
-        log: silent,
+        log: silentLogger(),
       }),
     });
   }
@@ -233,7 +234,7 @@ export function startHarness(options: HarnessOptions): Harness {
       }
     : null;
 
-  const log = { debug() {}, info() {}, warn() {}, error() {} };
+  const log = options.log ?? silentLogger();
 
   const nothing = () => Promise.resolve();
   const generations = new Generations(
@@ -288,7 +289,7 @@ export async function startStdioHarness(
   const surface = serveOverStdio({
     profiles,
     primary: options.profile,
-    log: { debug() {}, info() {}, warn() {}, error() {} },
+    log: silentLogger(),
     transport: serverSide,
     ...(options.clientLabel ? { clientLabel: options.clientLabel } : {}),
   });

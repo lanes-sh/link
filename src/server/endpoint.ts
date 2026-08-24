@@ -14,6 +14,7 @@ import {
   type Authenticator,
 } from '#auth';
 import type { Logger } from '#connectivity';
+import { silentLogger } from './logging.ts';
 import { listProfiles } from '#profile';
 import {
   applyReconcile,
@@ -62,6 +63,8 @@ export interface EndpointOptions {
    */
   readonly mintToken?: boolean | undefined;
   readonly reporter?: EndpointReporter | undefined;
+  /** Operational events. Silent when absent, which is what the tests want. */
+  readonly log?: Logger | undefined;
 }
 
 export interface RunningEndpoint {
@@ -273,7 +276,7 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
       authenticator: gate
         ? new AuthenticatorChain([primary.authenticator, gate.authenticator])
         : primary.authenticator,
-      log: { debug() {}, info() {}, warn() {}, error() {} },
+      log: options.log ?? silentLogger(),
       ...(gate ? { authorization: gate.surface } : {}),
       ...(options.port !== undefined ? { port: options.port } : {}),
       ...(options.host !== undefined ? { host: options.host } : {}),
@@ -331,7 +334,7 @@ export async function startStdioEndpoint(
     const surface = serveOverStdio({
       profiles: profileRuntimes(runtimes),
       primary: primary.resolution.profile,
-      log: options.log ?? { debug() {}, info() {}, warn() {}, error() {} },
+      log: options.log ?? silentLogger(),
       ...(options.clientLabel ? { clientLabel: options.clientLabel } : {}),
     });
 

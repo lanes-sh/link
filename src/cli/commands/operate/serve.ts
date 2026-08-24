@@ -1,4 +1,5 @@
 import { startEndpoint } from '#server/endpoint.ts';
+import { streamLogger } from '#server/logging.ts';
 import { announce, ok, print, style, warn } from '../../output.ts';
 import { resolveProfile, type GlobalFlags } from '../../runtime.ts';
 
@@ -22,6 +23,10 @@ export async function start(
     port: flags.port,
     only: flags.only,
     mintToken: true,
+    // Stderr, not stdout: `--json` and `--raw` callers parse the other stream.
+    // A refused credential is the event worth seeing while this runs in the
+    // foreground, and until now nothing printed it.
+    log: streamLogger((line) => process.stderr.write(`${line}\n`)),
     reporter: {
       reconciled({ profile, plan, ofMany }) {
         if (ofMany) print(style.dim(`  ${profile}`));

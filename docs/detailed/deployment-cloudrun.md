@@ -512,7 +512,9 @@ $ docker run --rm -p 8080:8080 \
 ## Troubleshooting
 
 **`No profile token at "profile/token"`** — the container refuses to invent one. Run
-`lanes link token rotate --target cloud`, then redeploy or let the next request hit a fresh instance.
+`lanes link token rotate --target cloud`. A running revision re-reads within five seconds, so
+neither a redeploy nor a fresh instance is needed; it used to be, because the value was cached for
+the life of the process.
 
 **`PERMISSION_DENIED: Permission "secretmanager.versions.access" denied`** — the revision's service
 account is missing `roles/secretmanager.secretAccessor`. The adapter passes Google's message through

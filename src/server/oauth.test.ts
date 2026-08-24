@@ -351,6 +351,46 @@ describe('refresh', () => {
     expect(await replayed.json()).toMatchObject({ error: 'invalid_grant' });
   });
 
+  test('a replayed refresh token kills the chain minted from it', async () => {
+    // The case rotation alone does not cover. A thief who refreshes first holds
+    // a live pair; the real client then presents the token it still has, which
+    // is the only signal that anything went wrong. Answering it by rejecting
+    // only the presented token leaves the thief's pair working and breaks the
+    // owner's connector instead — exactly backwards.
+    const { clientId, refresh } = await issue();
+
+    const stolen = (await (
+      await tokenRequest({
+        grant_type: 'refresh_token',
+        refresh_token: refresh,
+        client_id: clientId,
+      })
+    ).json()) as { access_token: string; refresh_token: string };
+
+    const opens = async (token: string): Promise<number> =>
+      (
+        await fetch(`${origin}/mcp`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}` },
+        })
+      ).status;
+
+    expect(await opens(stolen.access_token)).not.toBe(401);
+
+    // The retry and the theft are indistinguishable from here, so both get the
+    // expensive answer.
+    await tokenRequest({ grant_type: 'refresh_token', refresh_token: refresh, client_id: clientId });
+
+    expect(await opens(stolen.access_token)).toBe(401);
+
+    const reused = await tokenRequest({
+      grant_type: 'refresh_token',
+      refresh_token: stolen.refresh_token,
+      client_id: clientId,
+    });
+    expect(reused.status).toBe(400);
+  });
+
   test('a refresh token does not open the resource', async () => {
     // The two are indistinguishable as strings, so the kind check is the only
     // thing keeping a token meant for the token endpoint out of the MCP path.

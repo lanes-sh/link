@@ -3,6 +3,11 @@ import { ensureProfileToken, openRuntime, type GlobalFlags } from '../../runtime
 
 /** `lanes link token` — the one bearer token this endpoint accepts. */
 
+/** The token, or enough of it to recognise. One shape, so the two commands agree. */
+function show(token: string, reveal: boolean | undefined): string {
+  return reveal ? token : `${token.slice(0, 8)}…  ${style.dim('(--show to reveal)')}`;
+}
+
 export async function tokenShow(
   flags: GlobalFlags & { show?: boolean | undefined; raw?: boolean | undefined },
 ): Promise<void> {
@@ -28,13 +33,15 @@ export async function tokenShow(
 
     announce(runtime.resolution);
     if (created) print(warn('no token existed; a new one was minted'));
-    print(flags.show ? token : `${token.slice(0, 8)}…  ${style.dim('(--show to reveal)')}`);
+    print(show(token, flags.show));
   } finally {
     await runtime.close();
   }
 }
 
-export async function tokenRotate(flags: GlobalFlags): Promise<void> {
+export async function tokenRotate(
+  flags: GlobalFlags & { show?: boolean | undefined },
+): Promise<void> {
   const runtime = await openRuntime(flags);
   try {
     announce(runtime.resolution);
@@ -44,7 +51,11 @@ export async function tokenRotate(flags: GlobalFlags): Promise<void> {
     await runtime.credentials.set(runtime.config.auth.token_ref, token);
 
     print(ok('token rotated'));
-    print(`  ${token}`);
+    // Gated the way `tokenShow` gates it, and for the reason given above: a
+    // token printed here goes into the transcript of whatever ran the command.
+    // Rotating is what an operator does *because* a token leaked, so printing
+    // the replacement unasked is the one moment it costs the most.
+    print(`  ${show(token, flags.show)}`);
     print();
     // Rotating invalidates every agent using this endpoint, which is the cost
     // of one token per endpoint rather than one per agent. Say so plainly —

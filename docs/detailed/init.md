@@ -612,7 +612,7 @@ Each validates the resulting document before writing, so the file is never left 
 ```
 lanes link connect gmail.side                  # re-authorises one existing account
 lanes link connect gmail.side --add write      # widening scope needs browser re-consent
-lanes link token show [--show] | lanes link token rotate
+lanes link token show [--show] | lanes link token rotate [--show]
 lanes link secrets push --from local --to cloud
 ```
 

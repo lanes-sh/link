@@ -91,6 +91,8 @@ limitation. `RESERVED` names a compatibility slot with no implementation.
 | `transport.stateless` | ENFORCED | restart-mid-session test |
 | `credentials.encrypted-at-rest` | ENFORCED (file adapter) | nothing readable on disk; tamper detection |
 | `profile.isolated` | ENFORCED | cross-profile token, state, and audit tests, plus `src/cli/runtime/scoping.test.ts` for the owner layer. Two things were shared until [ADR-030](adr/030-a-profile-owns-its-skills-and-manifests.md) — skills and provider manifests, both at the workspace root — so this row was previously true of credentials, state and the log rather than of everything a profile holds |
+| `oauth.refresh-replay-revokes-the-chain` | ENFORCED | a spent refresh token is tombstoned rather than deleted, so presenting it again is detectable; the whole family goes, tested over real HTTP in `src/server/oauth.test.ts`. A client retrying and a thief replaying are indistinguishable, and re-authorising is the cheaper mistake |
+| `token.rotation-takes-effect` | ENFORCED **within a five-second window** | `src/auth/index.test.ts` covers both halves against a real credential store: the replacement is accepted on its first call, and the rotated-away token stops working once the window passes. Both caches are dropped together — the authenticator's and the credential store's — because dropping only one re-reads the same stale value |
 | `limits.per-profile` | ENFORCED per instance | rate limit tests |
 | `audit.every-invocation` | ENFORCED **with two documented exceptions** | see below |
 | `credentials.client-secret-never-local` | ENFORCED (hosted client) | there is no client secret on the machine to hold. `resolveSecretRefs` grants no client reference at all for a connection authorised this way, asserted in `src/dispatch/context.test.ts` |
@@ -127,6 +129,17 @@ An operator who does not want to make it runs `lanes link connect <provider> --o
 per profile, which registers a client of their own and keeps the exchange between this machine and
 Google. Declaring `oauth_apps` in a profile is the same choice expressed in config, and a profile
 that declares it is never moved off it.
+
+### Failed authentication is logged, not audited
+
+A refusal record needs a principal, and failing authentication is precisely not having one — so a
+rejected credential cannot be an audit row without inventing a caller to attribute it to. It goes to
+the endpoint's operational log instead: stderr for `lanes link start`, stdout for the container,
+where Cloud Run collects it. The line names the reason (`invalid`, `malformed`, `missing`,
+`not_configured`) and never the value presented.
+
+This is a change. The warning was written from the start and every caller passed a logger whose
+methods were empty, so on a public URL a sustained probe left no trace anywhere.
 
 ### The documented exceptions to `audit.every-invocation`
 
@@ -185,6 +198,10 @@ weekly schedule — so `invalid_grant` is detected specifically and the error na
 
 - **Bearer tokens are bearer authorization.** Anyone holding the profile token is the principal.
   Tokens are not bound to a device. Revocation means rotating the token and reconciling.
+  A running endpoint notices a rotation within five seconds rather than instantly: the expected
+  value is cached for that long so the common case is a comparison rather than a decrypt. The
+  replacement works immediately — a token that does not match a cached value forces a re-read
+  before it is rejected, which is what makes the rotated-in credential usable on its first call.
 - **Agent config files are a real exposure.** MCP client configuration often sits in plaintext on
   disk, so a token is roughly as protected as that file.
 - **One token per profile.** Two agents cannot hold different permissions against the same profile;
@@ -201,6 +218,9 @@ weekly schedule — so `invalid_grant` is detected specifically and the error na
   token. It does mean an unauthenticated caller can write rows, so the list is capped at 200 and the
   oldest without a live token are evicted — a connector in use is never dropped to make room.
 - **Rate limits are per instance.** On a horizontally scaled deployment they are not global.
+  This now includes a ceiling on *failed* authentication at the HTTP edge, which exists to bound
+  the credential-store re-read a mismatch triggers rather than to make guessing harder — 256 bits
+  already does that. Only a failure spends the budget, so a valid token is never refused by it.
 - **No egress control**, no provider sandbox, no secret scanning on write.
 - **Content leaving the boundary is not recoverable.** Lanes Link governs what an agent may fetch,
   not what happens to it afterwards.

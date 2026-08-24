@@ -63,6 +63,16 @@ export interface SecretStore {
   has(ref: SecretRef): Promise<boolean>;
   delete(ref: SecretRef): Promise<void>;
   list(prefix?: string): Promise<SecretRef[]>;
+  /**
+   * Drop whatever is held in memory so the next read reaches the store.
+   *
+   * Optional because most adapters hold nothing to drop. It exists for the one
+   * caller that has to see a value it did not write itself: the endpoint
+   * checking a bearer token that `lanes link token rotate` replaced from a
+   * different process. The file adapter keeps the whole decrypted document
+   * cached, so without this a re-read is served the copy it already had.
+   */
+  refresh?(): void;
 }
 
 /**
