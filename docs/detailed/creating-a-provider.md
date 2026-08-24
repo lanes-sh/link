@@ -17,6 +17,23 @@ auth:      { kind: oauth, registration: dynamic }
 ```
 
 ```yaml
+# An MCP server that will not register a client for you — so you paste a token instead.
+# `headers` is for configuration the *server* offers; the credential is never one of them.
+id: acme_token
+name: Acme
+connector:
+  kind: mcp
+  endpoint: https://mcp.acme.com/mcp
+  headers: { X-Acme-Toolsets: "issues,repos" }
+auth: { kind: bearer }
+setup:
+  docs_url: https://acme.com/settings/tokens
+  steps: ["Generate a token at https://acme.com/settings/tokens and copy it."]
+  prompts:
+    - { key: token, label: Acme API token, secret: true, scope: connection }
+```
+
+```yaml
 # Any REST API with a spec. The method decides the bundle: GET/HEAD read, the rest write.
 id: mything
 name: My Thing

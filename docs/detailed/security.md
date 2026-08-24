@@ -43,7 +43,7 @@ damaging single mistake available.
 
 | | **Credentials** (`SecretStore`) | **Vault items** (M3) |
 |---|---|---|
-| What | refresh tokens, the profile token, and an OAuth client secret where the operator registered one of their own | the owner's own passwords, API keys |
+| What | refresh tokens, app-specific passwords, pasted API tokens, the profile token, and an OAuth client secret where the operator registered one of their own | the owner's own passwords, API keys |
 | Authorises | the system itself | nothing — they are data the owner stores |
 | Agent-reachable | **never, in any form** | yes, under policy, default deny |
 | Store | encrypted file, its own key | separate store, **separate key** |
@@ -188,6 +188,21 @@ Access tokens are derived at runtime and **cached in memory only, never persiste
 short-lived by design, so storing one would create a second credential to protect for no benefit.
 The cache is keyed per connection, so two accounts never share a token, and a stateless server
 starts cold with an empty cache.
+
+**Not every upstream credential is an OAuth token, and the ones that are not are weaker in two
+ways.** iCloud takes an app-specific password; GitHub and Slack take a token the operator generates
+and pastes, because neither vendor's MCP server will register a client for us (ADR-033). Such a
+credential is long-lived and *is* persisted — there is no refresh, so the stored value is the
+credential itself rather than a means of obtaining one. Rotation is manual: `connect --replace`,
+after revoking upstream.
+
+The second difference is the one worth saying out loud. For an OAuth provider, `connect` shows what
+is about to be granted and refuses to proceed if the scopes have widened without being agreed —
+`confirmScopes` is that gate. There is no equivalent here, and there cannot be: what a pasted token
+can do is chosen in the vendor's own console, and this endpoint has no way to read it back. So the
+guarantee for these providers is narrower — the policy layer still bounds what an agent may *call*,
+but the credential's own reach is the operator's to bound, at the vendor, when they create it. Both
+setup pages say so at the point the token is generated.
 
 **A Google Cloud project left in "Testing" publishing status expires refresh tokens after seven
 days.** That is a policy setting, not a bug, but it presents as an authentication failure on a
