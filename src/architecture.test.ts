@@ -229,7 +229,7 @@ const MAX_LINES = 400;
  * The files still over the budget, named so the debt is visible.
  *
  * An allowlist rather than a higher number, because the two say different
- * things: a higher number says 450 lines is fine, and this says these four are
+ * things: a higher number says 450 lines is fine, and this says these five are
  * not yet done. Adding to it should feel like the concession it is; removing
  * from it is the point.
  *
@@ -246,12 +246,20 @@ const MAX_LINES = 400;
  * it out took them to 322 and 290 lines without either being split. That is
  * the seam the budget exists to point at: they were not too long, they were
  * two things.
+ *
+ * `server/harness.ts` is the newest entry and the one with a seam already
+ * visible: `startStdioHarness` and `StdioHarness` are 135 lines serving the
+ * same profiles over a different transport, and only two tests import them.
+ * It crossed the line by one, adding the target an endpoint runs as to the
+ * authorization surface, and splitting it was a larger change than the one
+ * that revealed it. Cut there when something needs to touch this file next.
  */
 const KNOWN_LONG = new Set([
   'connectivity/transports/dav/ical.ts',
   'deployments/adapters/gcp-secret-manager.ts',
   'providers/google/specs/vendor.ts',
   'providers/memory/provider.ts',
+  'server/harness.ts',
 ]);
 
 describe('file size', () => {

@@ -118,6 +118,8 @@ export interface ApprovalPage {
   readonly action: string;
   /** A previous attempt presented the wrong token. */
   readonly retry: boolean;
+  /** The target this endpoint runs as, so the hint below names the right store. */
+  readonly target: string;
 }
 
 /**
@@ -128,6 +130,12 @@ export interface ApprovalPage {
  * the endpoint token — the string `lanes link outputs` prints — because that is
  * already the proof of being the owner and inventing a second one would mean
  * inventing a password to go with it.
+ *
+ * The hint names the target rather than leaving it out. Credentials are
+ * per-target, and the reader runs that command in a shell resolving a target of
+ * its own — `local` by default, which is the one store a deployed endpoint's
+ * token is never in. Omitting it sends them to fetch the wrong secret, and
+ * `outputs` mints a fresh one when that store is empty rather than saying so.
  *
  * `autocomplete="off"` and `type="password"` are not theatre: this form is
  * submitted in whatever browser the phone opened, and a token remembered by a
@@ -150,7 +158,7 @@ ${hidden}
 <input class="field" type="password" name="token" placeholder="Endpoint token" autocomplete="off" autofocus required>
 <button class="go" type="submit">Approve</button>
 </form>
-<p class="detail small">Printed by <code>lanes link outputs --show</code>.</p>`;
+<p class="detail small">Printed by <code>lanes link outputs --show --target ${escapeHtml(page.target)}</code>.</p>`;
 
   return page.retry ? shell(body, 'Authorise', 401) : shell(body, 'Authorise', 200);
 }

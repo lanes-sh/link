@@ -199,7 +199,11 @@ export async function deploy(flags: DeployFlags): Promise<void> {
 
   const url = await driver.url(deployConfig);
   if (!url) {
-    print(warn('deployed, but the platform reported no URL yet — run: lanes link outputs'));
+    print(
+      warn(
+        `deployed, but the platform reported no URL yet — run: lanes link outputs --target ${target}`,
+      ),
+    );
     return;
   }
 
@@ -207,7 +211,7 @@ export async function deploy(flags: DeployFlags): Promise<void> {
   print(`  ${url}/mcp`);
   print(await healthLine(url));
   print('');
-  print(style.dim('  Register it with: lanes link outputs'));
+  print(style.dim(`  Register it with: lanes link outputs --target ${target}`));
 
   reportUnauthorised(prepared.warnings, target);
 }

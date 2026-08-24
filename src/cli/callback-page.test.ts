@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { completionPage } from './callback-page.ts';
+import { approvalPage, completionPage } from './callback-page.ts';
 
 /**
  * The page nobody sees until the one moment it is the whole product.
@@ -124,5 +124,44 @@ describe('untrusted text', () => {
     expect(body).not.toContain('<script>alert(1)</script>');
     expect(body).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
     expect(body).toContain('Tom &amp; Jerry &quot;quoted&quot;');
+  });
+});
+
+describe('the approval page', () => {
+  const approval = (target: string) =>
+    approvalPage({
+      client: 'Claude',
+      redirectHost: 'claude.ai',
+      action: 'https://endpoint.example/authorize',
+      fields: { client_id: 'abc' },
+      retry: false,
+      target,
+    });
+
+  test('names the target whose store holds the token it is asking for', async () => {
+    // The reader runs this in a shell that resolves a target of its own, and
+    // credentials are per-target. A bare `--show` sends the owner of a deployed
+    // endpoint to the local store, which either holds a token this endpoint
+    // will refuse or holds none and has one minted on the spot.
+    const body = await html(approval('cloud'));
+
+    expect(body).toContain('lanes link outputs --show --target cloud');
+    expect(body).not.toContain('outputs --show</code>');
+  });
+
+  test('names it even when it is the default, so the flag is never ambiguous', async () => {
+    const body = await html(approval('local'));
+
+    expect(body).toContain('lanes link outputs --show --target local');
+  });
+
+  test('a target name cannot inject markup', async () => {
+    // It comes from config rather than from a request, but everything else on
+    // this page is escaped and a value reaching HTML is not where to make an
+    // exception.
+    const body = await html(approval('<script>alert(1)</script>'));
+
+    expect(body).not.toContain('<script>alert(1)</script>');
+    expect(body).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
   });
 });
