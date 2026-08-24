@@ -24,6 +24,8 @@ export interface McpConnectorOptions {
   readonly endpoint: string;
   /** Supplies the bearer token for an upstream call; refreshes if needed. */
   readonly accessToken: () => Promise<string | null>;
+  /** Whatever the manifest's connector declares, sent on every request. */
+  readonly headers?: Record<string, string> | undefined;
   readonly fetch?: typeof globalThis.fetch;
 }
 
@@ -127,7 +129,14 @@ export function createMcpConnector(options: McpConnectorOptions): Connector {
 
     const transport = new StreamableHTTPClientTransport(new URL(options.endpoint), {
       requestInit: {
-        headers: token ? { authorization: `Bearer ${token}` } : {},
+        // The declared headers first, so the credential cannot be displaced by
+        // one. `defineProvider` already refuses a declared `Authorization`, and
+        // this order means a manifest loaded some other way fails safe rather
+        // than sending someone else's header in its place.
+        headers: {
+          ...(options.headers ?? {}),
+          ...(token ? { authorization: `Bearer ${token}` } : {}),
+        },
       },
       ...(options.fetch ? { fetch: options.fetch } : {}),
     } as never);

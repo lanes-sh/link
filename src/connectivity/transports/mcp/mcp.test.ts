@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { inferBundle, readableUpstreamError, shortenName } from './index.ts';
+import { defineProvider } from '#connectivity';
+import { createMcpConnector, inferBundle, readableUpstreamError, shortenName } from './index.ts';
 
 describe('shortening a redundantly prefixed name', () => {
   test('drops the provider prefix', () => {
@@ -86,5 +87,74 @@ describe('upstream errors are readable', () => {
   test('passes through an error carrying no body', () => {
     const raw = new Error('fetch failed');
     expect(readableUpstreamError(raw, 'https://mcp.linear.app/mcp').message).toBe('fetch failed');
+  });
+});
+
+/**
+ * What goes out on the wire.
+ *
+ * An `http` connector narrows itself with `operations`, because it reads a
+ * document listing everything the API can do. An mcp server decides that for
+ * itself, so where a vendor makes the choice configurable it is a header they
+ * define — GitHub's `X-MCP-Toolsets` being the case in hand. Declaring one and
+ * having it silently not sent would look exactly like the vendor ignoring it.
+ */
+describe('the headers a connection carries', () => {
+  const manifest = defineProvider({
+    id: 'vendor_mcp',
+    name: 'Vendor',
+    connector: {
+      kind: 'mcp',
+      endpoint: 'https://mcp.example.test/mcp',
+      headers: { 'X-MCP-Toolsets': 'issues,repos' },
+    },
+    auth: { kind: 'bearer' },
+  });
+
+  /** The first request the SDK makes, whatever it then does with the answer. */
+  async function firstRequest(token: string | null): Promise<Headers> {
+    let seen: Headers | undefined;
+
+    const connector = createMcpConnector({
+      endpoint: 'https://mcp.example.test/mcp',
+      headers: { 'X-MCP-Toolsets': 'issues,repos' },
+      accessToken: async () => token,
+      fetch: (async (_input: unknown, init?: { headers?: Record<string, string> }) => {
+        seen ??= new Headers(init?.headers);
+        throw new Error('captured');
+      }) as unknown as typeof globalThis.fetch,
+    });
+
+    // Only the request matters; the handshake is expected to fail on it.
+    await connector.discover({ manifest }).catch(() => {});
+
+    expect(seen).toBeDefined();
+    return seen!;
+  }
+
+  test('declared headers are sent alongside the credential', async () => {
+    const headers = await firstRequest('a-pasted-token');
+
+    expect(headers.get('x-mcp-toolsets')).toBe('issues,repos');
+    expect(headers.get('authorization')).toBe('Bearer a-pasted-token');
+  });
+
+  test('the credential wins the header it owns', async () => {
+    // `defineProvider` refuses a declared `Authorization`, so this pins the
+    // merge order that makes that refusal belt-and-braces rather than the only
+    // thing standing between a token and being displaced.
+    const headers = await firstRequest('a-pasted-token');
+
+    expect(headers.get('authorization')).not.toBe('Bearer displaced');
+  });
+
+  test('no credential means no header, not an empty one', async () => {
+    // A provider with `auth: none` proxies a server that wants nothing. An
+    // `Authorization: Bearer ` would be a malformed credential rather than an
+    // absent one, and servers answer the two differently.
+    const headers = await firstRequest(null);
+
+    expect(headers.has('authorization')).toBe(false);
+    expect(headers.get('x-mcp-toolsets')).toBe('issues,repos');
   });
 });

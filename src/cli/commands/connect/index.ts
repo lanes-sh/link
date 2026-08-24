@@ -1,4 +1,5 @@
 import { createMcpConnector } from '#connectivity/transports';
+import { bearerTokenAsStored } from '#connectivity/auth/index.ts';
 import type { DiscoveredCapability } from '#connectivity';
 import { credentialRefForConnection, WRITE_BUNDLE } from '#connectivity';
 import { ConfigDocument, ensureSetupConnection, repaired } from '../../config-edit.ts';
@@ -6,7 +7,7 @@ import { emit, print, progress, style } from '../../output.ts';
 import { nonInteractivePrompter, terminalPrompter, type Prompter } from '../../prompt.ts';
 import { openRuntime, type GlobalFlags } from '../../runtime.ts';
 import { credentialApp, matchesRule, moveCredential, siblingAccountId } from './accounts.ts';
-import { authorise, oauthProviderFor } from './authorise.ts';
+import { authorise } from './authorise.ts';
 import { preflight } from './requirements.ts';
 import { ALREADY, NOTHING, renderOutcome, type ConnectOutcome } from './outcome.ts';
 import { nextAfterEdit, publishRuntimeEdit } from '#cli/publish.ts';
@@ -266,17 +267,15 @@ async function runConnect(target: string, options: ConnectOptions): Promise<Conn
 
       // MCP is the one kind that does not use the runtime's connector here: it
       // wants the token exactly as just written, without the refresh machinery
-      // that `resolveUpstreamToken` wraps around it. Every other kind carries
-      // whatever credential it needs from the factory.
+      // that `bearerToken` wraps around it. Every other kind carries whatever
+      // credential it needs from the factory.
       const connector =
         manifest.connector.kind === 'mcp'
           ? createMcpConnector({
               endpoint: manifest.connector.endpoint,
-              accessToken: async () => {
-                const provider = oauthProviderFor(manifest, connectionId, runtime.credentials);
-                const tokens = (await provider.tokens()) as { access_token?: string } | undefined;
-                return tokens?.access_token ?? null;
-              },
+              ...(manifest.connector.headers ? { headers: manifest.connector.headers } : {}),
+              accessToken: () =>
+                bearerTokenAsStored(manifest, connectionId, runtime.credentials),
             })
           : runtime.connectorFor(providerId, connectionId);
 

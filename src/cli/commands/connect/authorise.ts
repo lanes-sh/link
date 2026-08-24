@@ -21,7 +21,14 @@ import { ensureOAuthApp } from './setup.ts';
  * nothing and the manifest has to name its endpoints.
  */
 
-export function oauthProviderFor(
+/**
+ * No longer exported. `#cli` used to reach for this to answer "what token does
+ * this manifest authenticate with", which is a question the auth component
+ * owns — and answering it here is what let a `bearer` manifest slip through
+ * returning null. `bearerTokenAsStored` is the answer now; this builds the
+ * provider for the browser flow below, which is the one thing it is for.
+ */
+function oauthProviderFor(
   manifest: ProviderManifest,
   connectionId: string,
   credentials: SecretStore,

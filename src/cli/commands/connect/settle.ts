@@ -1,4 +1,5 @@
 import { createMcpConnector } from '#connectivity/transports';
+import { bearerTokenAsStored } from '#connectivity/auth/index.ts';
 import type { SecretStore } from '#secrets';
 import type { Config } from '#profile';
 import type { AnyConnector, ProviderManifest } from '#connectivity';
@@ -6,7 +7,6 @@ import { idFromAccount, resolveAccount } from '../../identity.ts';
 import { style } from '../../output.ts';
 import { terminalPrompter, type Prompter } from '../../prompt.ts';
 import { accountSiblings } from './accounts.ts';
-import { oauthProviderFor } from './authorise.ts';
 
 /**
  * Settle which connection this is, and whose account it belongs to.
@@ -49,12 +49,10 @@ export async function settleIdentity(input: {
   }
 
   if (!account) {
+    const token = () => bearerTokenAsStored(manifest, provisionalId, runtime.credentials);
+
     account = await resolveAccount(manifest, {
-      accessToken: async () => {
-        const provider = oauthProviderFor(manifest, provisionalId, runtime.credentials);
-        const tokens = (await provider.tokens()) as { access_token?: string } | undefined;
-        return tokens?.access_token ?? null;
-      },
+      accessToken: token,
       // A protocol that authenticates by username has nothing to GET and no
       // tool to call — it knows, once the server has accepted the login.
       identify: async () =>
@@ -62,13 +60,18 @@ export async function settleIdentity(input: {
       ...(manifest.connector.kind === 'mcp'
         ? {
             callTool: async (name: string, args: Record<string, unknown>) => {
+              // Cast for the same reason `endpoint` already was: the
+              // narrowing that reached this branch does not survive into the
+              // closure. Named field by field rather than spread, so a future
+              // connector field does not silently become a transport option.
+              const mcp = manifest.connector as {
+                endpoint: string;
+                headers?: Record<string, string>;
+              };
               const connector = createMcpConnector({
-                endpoint: (manifest.connector as { endpoint: string }).endpoint,
-                accessToken: async () => {
-                  const provider = oauthProviderFor(manifest, provisionalId, runtime.credentials);
-                  const tokens = (await provider.tokens()) as { access_token?: string } | undefined;
-                  return tokens?.access_token ?? null;
-                },
+                endpoint: mcp.endpoint,
+                ...(mcp.headers ? { headers: mcp.headers } : {}),
+                accessToken: token,
               });
               return connector.invoke({ name, inputSchema: {}, description: '' } as never, args, {
                 manifest,

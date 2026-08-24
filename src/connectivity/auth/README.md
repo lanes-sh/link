@@ -3,7 +3,8 @@
 One folder per method. Each owns both halves of its job: `resolve*` turns the
 stored secret into a `ResolvedCredential`, and `attach*` puts that shape on an
 outbound request. `resolve.ts` and `authorize.ts` are the only files that know
-the whole set.
+the whole set — plus `token.ts`, which answers the narrower question a
+transport asks when it has a token to send and no request to attach it to.
 
 | Folder | `auth.kind` | What is stored |
 |---|---|---|

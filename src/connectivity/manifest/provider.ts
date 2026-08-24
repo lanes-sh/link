@@ -196,6 +196,45 @@ export function defineProvider(input: unknown): ProviderManifest {
     );
   }
 
+  if (manifest.connector.kind === 'mcp') {
+    const auth = manifest.auth;
+
+    // The transport sends exactly one header, `Authorization: Bearer <token>`,
+    // because that is what the MCP specification says a client sends. Every
+    // other token kind puts the secret somewhere the transport has nowhere to
+    // put it: `api_key` in a query string or a named header, `header` under a
+    // name of its own, `basic` in a different scheme entirely. Such a manifest
+    // validates and then connects *unauthenticated* — no error, an empty tool
+    // list, and nothing to read that says why.
+    if (auth.kind !== 'none' && auth.kind !== 'oauth' && auth.kind !== 'bearer') {
+      throw new Error(
+        `Provider "${manifest.id}": an mcp connector authenticates with "Authorization: Bearer", so its auth must be "none", "oauth", or "bearer" — not "${auth.kind}". There is nowhere else on the request for the transport to put a credential.`,
+      );
+    }
+
+    // Same failure, one field further in. `bearer` may rename its header, and
+    // `resolveBearer` honours that — but the mcp transport does not read the
+    // resolved credential at all, only the token, so a renamed header would be
+    // silently ignored and the token sent under `Authorization` regardless.
+    if (auth.kind === 'bearer' && auth.header) {
+      throw new Error(
+        `Provider "${manifest.id}": an mcp connector always sends its token as "Authorization: Bearer", so auth.header ("${auth.header}") cannot be honoured. Remove it, or reach this service with an http connector.`,
+      );
+    }
+
+    // The third spelling of the same collision. Connector headers are for what
+    // the *server* offers as configuration; the credential is the auth block's,
+    // and a manifest setting both would have one quietly overwrite the other
+    // depending on which the transport merged last.
+    for (const name of Object.keys(manifest.connector.headers ?? {})) {
+      if (name.toLowerCase() === 'authorization') {
+        throw new Error(
+          `Provider "${manifest.id}": connector.headers may not set "${name}" — the credential comes from auth, and setting both would leave which one is sent up to merge order.`,
+        );
+      }
+    }
+  }
+
   const names = new Set<string>();
   for (const bundle of manifest.bundles ?? []) {
     if (names.has(bundle.name)) {

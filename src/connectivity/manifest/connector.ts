@@ -17,6 +17,21 @@ import { z } from 'zod';
 export const mcpConnectorSchema = z.object({
   kind: z.literal('mcp'),
   endpoint: z.url(),
+  /**
+   * Sent on every request to this server, discovery included.
+   *
+   * The `http` connector filters what it exposes with `operations` above,
+   * because it reads a document listing everything the API can do. An mcp
+   * server decides that for itself and answers `tools/list` with whatever it
+   * chose — so where a vendor makes the choice configurable, the configuration
+   * is a header they define. GitHub's `X-MCP-Toolsets` is the case in hand: the
+   * default is broad and `all` is broader, and this is the only way to ask for
+   * less.
+   *
+   * Never `Authorization` — that one belongs to `auth:`, and the check in
+   * `./provider.ts` refuses it rather than letting the two disagree silently.
+   */
+  headers: z.record(z.string(), z.string()).optional(),
 });
 
 /**
