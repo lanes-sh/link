@@ -53,7 +53,7 @@ ${style.bold('Permissions')}
   ${PROGRAM} policy allow <capability>  e.g. gmail.* or gmail.send_message
   ${PROGRAM} policy deny  <capability>
   ${PROGRAM} token show [--show|--raw]  --raw prints only the token, for $(…)
-  ${PROGRAM} token rotate
+  ${PROGRAM} token rotate [--show]
 
 ${style.bold('Your own context')}
   ${PROGRAM} memory list [--tag t]      what you have stored

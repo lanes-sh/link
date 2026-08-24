@@ -117,3 +117,57 @@ targets:
     expect(token.length).toBeGreaterThan(0);
   });
 });
+
+describe('token rotate', () => {
+  const homes: string[] = [];
+
+  afterAll(async () => {
+    await Promise.all(homes.map((home) => rm(home, { recursive: true, force: true })));
+  });
+
+  async function workspace(): Promise<(args: string[]) => { stdout: string; stderr: string }> {
+    const home = await mkdtemp(join(tmpdir(), 'lanes-link-rotate-'));
+    homes.push(home);
+    const env = { ...process.env, LANES_LINK_HOME: home };
+    const run = (args: string[]): { stdout: string; stderr: string } => {
+      const result = Bun.spawnSync(['bun', 'run', BIN, ...args], { env });
+      return {
+        stdout: new TextDecoder().decode(result.stdout),
+        stderr: new TextDecoder().decode(result.stderr),
+      };
+    };
+    run(['link', 'profile', 'add', 'scratch', '--default']);
+    return run;
+  }
+
+  test('does not print the new token unless asked', async () => {
+    // `token show` has always truncated without `--show`, for a stated reason:
+    // a token on stdout passes through an agent's context and into its
+    // transcript. `rotate` mints one and printed it unconditionally, which is
+    // the same disclosure at the one moment the operator is responding to a
+    // leak.
+    const run = await workspace();
+
+    const rotated = run(['link', 'token', 'rotate']);
+    const minted = run(['link', 'token', 'show', '--raw']).stdout.trim();
+
+    expect(minted).toStartWith('llk_');
+    expect(rotated.stdout).toContain('token rotated');
+    expect(rotated.stdout).not.toContain(minted);
+  });
+
+  test('prints it with --show, the way `token show` does', async () => {
+    const run = await workspace();
+
+    const rotated = run(['link', 'token', 'rotate', '--show']);
+    const minted = run(['link', 'token', 'show', '--raw']).stdout.trim();
+
+    expect(rotated.stdout).toContain(minted);
+  });
+
+  test('still says every agent must be re-registered', async () => {
+    // The part that has to stay loud: nothing re-reads the token on its own.
+    const run = await workspace();
+    expect(run(['link', 'token', 'rotate']).stdout).toContain('re-registered');
+  });
+});

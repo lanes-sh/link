@@ -158,7 +158,7 @@ export async function run(argv: readonly string[]): Promise<void> {
         case undefined:
           return tokenShow({ ...global, show, raw });
         case 'rotate':
-          return tokenRotate(global);
+          return tokenRotate({ ...global, show });
         default:
           throw new Error(`Unknown: ${PROGRAM} token ${second}`);
       }
