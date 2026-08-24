@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import type { SecretRef, SecretStore } from '#secrets';
 import type { BlobMetadata, BlobStore } from '#stores/blobs';
+import type { Prompter } from '../../prompt.ts';
 import type { RemovalItem, RemovalPlan } from './removal.ts';
 import {
+  confirmedByName,
   executeRemoval,
   renderOutcome,
   type RemovalOutcome,
@@ -281,5 +283,51 @@ describe('renderOutcome', () => {
 
     expect(out).toMatch(/again|re-run|rerun/i);
     process.exitCode = 0;
+  });
+});
+
+// --- confirmedByName -------------------------------------------------------
+
+function prompter(answer: string, interactive = true): Prompter & { asked: string[] } {
+  const asked: string[] = [];
+  return {
+    asked,
+    interactive,
+    ask: async (question: string) => {
+      asked.push(question);
+      return answer;
+    },
+    askSecret: async () => '',
+    confirm: async () => true,
+  };
+}
+
+describe('confirmedByName', () => {
+  test('--yes proceeds without asking anything', async () => {
+    const p = prompter('');
+
+    expect(await confirmedByName('personal', { yes: true, prompter: p })).toBe(true);
+    expect(p.asked).toHaveLength(0);
+  });
+
+  test('refuses when there is nobody to ask, and says how to proceed', async () => {
+    // Fails closed. The same shape `agreed()` uses, for the same reason: a
+    // non-interactive run must not be able to default its way into a deletion.
+    await expect(
+      confirmedByName('personal', { prompter: prompter('personal', false) }),
+    ).rejects.toThrow(/--yes/);
+  });
+
+  test('the wrong name does not proceed', async () => {
+    expect(await confirmedByName('personal', { prompter: prompter('persona') })).toBe(false);
+  });
+
+  test('the exact name proceeds', async () => {
+    expect(await confirmedByName('personal', { prompter: prompter('personal') })).toBe(true);
+  });
+
+  test('surrounding whitespace is forgiven, a different name is not', async () => {
+    expect(await confirmedByName('personal', { prompter: prompter('  personal \n') })).toBe(true);
+    expect(await confirmedByName('personal', { prompter: prompter('work') })).toBe(false);
   });
 });

@@ -1,5 +1,7 @@
 import type { SecretStore } from '#secrets';
 import type { BlobStore } from '#stores/blobs';
+import { ConfigError } from '#profile';
+import { terminalPrompter, type Prompter } from '../../prompt.ts';
 import { fail, ok, print, style } from '../../output.ts';
 import type { RemovalItem, RemovalPlan } from './removal.ts';
 
@@ -168,4 +170,47 @@ export function renderOutcome(outcome: RemovalOutcome): void {
 
   // A live credential left behind must not look like success to a script.
   process.exitCode = 1;
+}
+
+/**
+ * The confirmation, which asks for the name rather than a keystroke.
+ *
+ * A step up from `agreed()`, deliberately. That helper is `y/N` and is right
+ * for `vault remove`, which drops one item the operator can put back. This
+ * drops every live OAuth refresh token a profile holds, and putting those back
+ * means visiting each vendor again — so the gesture should be one you cannot
+ * make by leaning on the keyboard.
+ *
+ * Local rather than shared for the same reason it is not `agreed()`: the shape
+ * differs, and bending the existing helper for a single caller in another
+ * command folder would leave both worse. If a second consumer appears, promote
+ * it then.
+ */
+export async function confirmedByName(
+  profile: string,
+  options: { yes?: boolean | undefined; prompter?: Prompter | undefined },
+): Promise<boolean> {
+  if (options.yes) return true;
+
+  // A prompter that was passed in is the caller's answer to "is there anyone
+  // to ask" — the console passes one that replays a form. Only the default
+  // needs stdin consulted, and conflating the two makes an injected prompter
+  // untestable and a real terminal the only place this works.
+  const prompter = options.prompter ?? terminalPrompter;
+  const someoneToAsk = options.prompter ? prompter.interactive : process.stdin.isTTY;
+
+  if (!someoneToAsk) {
+    throw new ConfigError(
+      `Removing "${profile}" cannot be undone, and stdin is not a terminal, so there is nobody to ask. Pass --yes to proceed.`,
+    );
+  }
+
+  const typed = (await prompter.ask(`Type ${profile} to remove it, or anything else to stop: `))
+    .trim();
+
+  if (typed !== profile) {
+    print(style.dim('  cancelled — nothing was removed'));
+    return false;
+  }
+  return true;
 }
