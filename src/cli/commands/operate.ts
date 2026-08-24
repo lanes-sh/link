@@ -20,6 +20,7 @@
 export { check, doctor, plan } from './operate/inspect.ts';
 export { status } from './operate/status.ts';
 export { outputs, type OutputsFlags } from './operate/outputs.ts';
+export { tools, type ToolsFlags } from './operate/tools.ts';
 export { start } from './operate/serve.ts';
 export { auditTail, auditVerify, markdownCell } from './operate/audit.ts';
 export { attachFile } from './operate/attach.ts';

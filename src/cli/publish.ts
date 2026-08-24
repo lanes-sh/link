@@ -29,6 +29,14 @@ export interface PublishOutcome {
   readonly published?: string;
   /** Whether a running endpoint confirmed it is now serving the edit. */
   readonly served: boolean;
+  /**
+   * How many tools the endpoint advertises now, when it answered.
+   *
+   * Reported rather than inferred, for the same reason `served` is: the number
+   * that matters is the one the endpoint would hand a client, and only the
+   * endpoint knows it.
+   */
+  readonly tools?: number;
   /** The endpoint that was told, or would have been. */
   readonly url?: string;
   /** Why it is not being served yet, in a form fit to print. */
@@ -142,7 +150,11 @@ async function notifyReload(input: {
       return { served: false, url, reason: `the endpoint answered ${response.status}` };
     }
 
-    const body = (await response.json()) as { reloaded?: unknown; reason?: unknown };
+    const body = (await response.json()) as {
+      reloaded?: unknown;
+      reason?: unknown;
+      tools?: unknown;
+    };
     if (body.reloaded !== true) {
       return {
         served: false,
@@ -154,7 +166,11 @@ async function notifyReload(input: {
       };
     }
 
-    return { served: true, url };
+    return {
+      served: true,
+      url,
+      ...(typeof body.tools === 'number' ? { tools: body.tools } : {}),
+    };
   } catch {
     // Nothing listening, scaled to zero, or unreachable from here — all of
     // which resolve themselves the next time the endpoint starts, because the
@@ -175,7 +191,34 @@ function message(error: unknown): string {
  * is now: the endpoint either answered or it did not.
  */
 export function nextAfterEdit(outcome: PublishOutcome): string {
-  if (outcome.served) return 'Serving it now — the endpoint has re-read its config.';
+  if (outcome.served) {
+    const served = 'Serving it now — the endpoint has re-read its config.';
+    if (outcome.tools === undefined) return served;
+
+    // The second half of the truth, and the half an operator is actually
+    // looking at. The endpoint re-reading its config is not the same event as
+    // the client in front of them learning about it: a client fetches
+    // `tools/list` when it connects and holds the answer, and this endpoint
+    // cannot tell it otherwise — it is stateless, so there is no stream on
+    // which to send `notifications/tools/list_changed`, and it no longer claims
+    // there is (ADR-032).
+    //
+    // So the tool count goes here, where the change happened, and so does the
+    // one action that picks it up. Without this line the command reports
+    // success and the operator watches a connector that never changes.
+    //
+    // Worded for either direction, because `policy deny` prints this too and a
+    // deny is the case this file already calls "the one kind of staleness worth
+    // being strict about". "Pick them up" was written for a `connect` and read
+    // as nonsense after a deny, where the client is holding one tool too many
+    // rather than one too few — and where the stale entry is a tool the model
+    // will keep calling until it is gone.
+    return (
+      `${served}\n` +
+      `  ${outcome.tools} tools are advertised now. A client connected before this is still\n` +
+      `  holding the list it fetched then — reconnect it to match.`
+    );
+  }
 
   // Naming the URL, because the likeliest reason nothing answered is that the
   // endpoint is somewhere else: `lanes link start --port` moves the socket

@@ -84,6 +84,7 @@ ${style.bold('Deploying')}
 ${style.bold('Inspection')}
   ${PROGRAM} check                      static validation, no external calls
   ${PROGRAM} doctor [--json]            credentials resolve, stores reachable
+  ${PROGRAM} tools [--json]             what the endpoint advertises to a client
   ${PROGRAM} plan                       what reconcile would change
   ${PROGRAM} audit tail [--limit N] [--denied-only] [--format md]
   ${PROGRAM} audit verify           has anything in the log been altered or removed

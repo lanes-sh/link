@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { Generations, type OpenedWorkspace } from './generations.ts';
+import { EMPTY_POLICY } from '#policy';
 import type { ProfileRuntime } from './mcp/index.ts';
 
 /**
@@ -13,9 +14,26 @@ import type { ProfileRuntime } from './mcp/index.ts';
 
 const SILENT = { debug() {}, info() {}, warn() {}, error() {} };
 
+/**
+ * A runtime with nothing in it, but the right shape.
+ *
+ * It used to be `{} as ProfileRuntime`, which held while nothing on the reload
+ * path looked inside one. A reload now counts what the new generation
+ * advertises — so it reads the registry and the policy, and an empty object
+ * throws. Empty *contents* still say everything these tests are about; an empty
+ * *object* only ever said that nobody had looked yet.
+ */
+function emptyRuntime(): ProfileRuntime {
+  return {
+    config: { connections: [] },
+    registry: { revision: 0, capabilities: () => [] },
+    policy: EMPTY_POLICY,
+  } as unknown as ProfileRuntime;
+}
+
 /** A workspace that records whether it was closed, and how often. */
 function stub(name: string): OpenedWorkspace & { closes: number } {
-  const profiles = new Map<string, ProfileRuntime>([[name, {} as ProfileRuntime]]);
+  const profiles = new Map<string, ProfileRuntime>([[name, emptyRuntime()]]);
   return {
     profiles,
     closes: 0,

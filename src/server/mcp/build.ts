@@ -45,7 +45,42 @@ export function buildMcpServer(options: BuildServerOptions): McpServer {
     // Second argument, not the first: `instructions` is a `ServerOptions` field,
     // and `Implementation` would take it as an unknown extra and drop it from
     // `initialize` without complaining.
-    { instructions: serverInstructions(names, merged) },
+    {
+      instructions: serverInstructions(names, merged),
+      // Declared `false` because it is false, and the SDK defaults it to `true`.
+      //
+      // `listChanged` is a promise to send `notifications/tools/list_changed`
+      // when the surface changes. This endpoint cannot keep it: it is stateless
+      // streamable HTTP, so there is no stream to deliver a notification on and
+      // this very server instance is discarded once the response is written.
+      // Nothing in `src/` sends one, and nothing can.
+      //
+      // Leaving the default on is not a harmless inaccuracy. A client that
+      // believes it will be told has no reason to ask again, so it keeps the
+      // list it captured when it first connected — and the surface here grows
+      // every time an account is connected (ADR-029). That combination cost a
+      // connector registered before `connect` ran its whole tool list: it held
+      // the two setup tools for as long as it lived, and no refresh replaced
+      // them, because the refresh was an `initialize` that never went on to ask
+      // for `tools/list`.
+      //
+      // Saying `false` costs a re-list per session and buys a surface that is
+      // never stale.
+      //
+      // `tools` unconditionally, because the argument above is about tools and
+      // an endpoint that serves none should still answer "none right now"
+      // rather than "this server does not do tools". Resources and prompts only
+      // when the profile has some: declaring a capability installs its handler
+      // set, so a client that gates its list calls on what is advertised would
+      // otherwise issue `resources/list`, `resources/templates/list` and
+      // `prompts/list` — three stateless POSTs, each rebuilding the whole
+      // server — to be told nothing is there.
+      capabilities: {
+        tools: { listChanged: false },
+        ...(offers(merged, isResource) ? { resources: { listChanged: false } } : {}),
+        ...(offers(merged, isPrompt) ? { prompts: { listChanged: false } } : {}),
+      },
+    },
   );
 
   for (const [id, entry] of merged) {
@@ -65,4 +100,23 @@ export function buildMcpServer(options: BuildServerOptions): McpServer {
   }
 
   return server;
+}
+
+/**
+ * Whether any reachable capability registers as this kind.
+ *
+ * Reads the same `merged` map the registration loop below consumes and asks it
+ * the same question `isResource`/`isPrompt` answer there, so what is advertised
+ * and what is registered cannot disagree. A discovered capability is always a
+ * tool, which is why it is not consulted here.
+ */
+function offers(
+  merged: ReturnType<typeof mergeCapabilities>,
+  kind: typeof isResource | typeof isPrompt,
+): boolean {
+  for (const entry of merged.values()) {
+    if (!entry.discovered && entry.capability && kind(entry.capability)) return true;
+  }
+
+  return false;
 }

@@ -1,17 +1,12 @@
 import { listProfiles } from '#profile';
 import { fileURLToPath } from 'node:url';
-import { deployedUrl, endpointUrl } from '../../endpoint-url.ts';
+import { deployedUrl, endpointHealth, localUrl } from '../../endpoint-url.ts';
 import { announce, heading, print, style, warn } from '../../output.ts';
 import { ensureProfileToken, openRuntime, type GlobalFlags } from '../../runtime.ts';
 
 export interface OutputsFlags extends GlobalFlags {
   readonly show?: boolean | undefined;
   readonly json?: boolean | undefined;
-}
-
-interface Health {
-  readonly profile: string;
-  readonly profiles: readonly string[];
 }
 
 /**
@@ -34,9 +29,11 @@ export async function outputs(flags: OutputsFlags): Promise<void> {
     const { token } = await ensureProfileToken(runtime.credentials, runtime.config.auth.token_ref);
     const declared = runtime.config.targets[runtime.target]?.deploy;
     const deployed = await deployedUrl(declared);
-    const url = deployed ?? (await endpointUrl(runtime.config, runtime.target));
+    // Not `endpointUrl`, which would ask the platform a second time for an
+    // answer this line already has.
+    const url = deployed ?? localUrl(runtime.config);
 
-    const live = await health(url, token);
+    const live = await endpointHealth(url, token);
     const mine = live?.profile === runtime.resolution.profile;
 
     // Live if it is up, otherwise what `start` would serve: the whole
@@ -174,33 +171,3 @@ async function tokenInvocation(
   return { command: `bun run ${entry} link token show --raw${suffix}`, onPath: false };
 }
 
-/**
- * Ask the endpoint who it is.
- *
- * The profile name is checked by the caller, not just the port: two workspaces
- * can assign the same port, and reporting "running" because something
- * unrelated answers would send someone to register an endpoint serving another
- * workspace's accounts.
- *
- * The token is sent because `/health` names profiles only to a caller that
- * holds one. Anonymously it answers `{status: "ok"}` and nothing else — that
- * list is what this endpoint holds, and a deployed URL is readable by anyone.
- * An endpoint that answers without naming itself is therefore reported as
- * something else's, which is the honest reading: this token does not open it.
- */
-async function health(url: string, token: string): Promise<Health | null> {
-  try {
-    const probe = new URL(url);
-    probe.pathname = '/health';
-    const response = await fetch(probe, {
-      headers: { authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(700),
-    });
-    if (!response.ok) return null;
-
-    const body = (await response.json()) as Partial<Health>;
-    return body.profile ? { profile: body.profile, profiles: body.profiles ?? [body.profile] } : null;
-  } catch {
-    return null;
-  }
-}

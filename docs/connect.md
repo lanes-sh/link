@@ -67,14 +67,41 @@ endpoint reads it, and asks that endpoint to re-read it — so a running `lanes 
 up without a restart, and a deployed endpoint picks it up without a new revision. Deploying is how
 new code gets to an endpoint; authorising an account changes no code (ADR-029).
 
-The last line says which happened:
+The last line says which happened, and how many tools the endpoint now advertises:
 
 ```console
 Next: Serving it now — the endpoint has re-read its config.
+  42 tools are advertised now. A client connected before this keeps the
+  list it already fetched — reconnect it to pick them up.
 ```
 
 If no endpoint was running, or this machine cannot reach a deployed one, it says that instead. The
 connection is saved either way and is served the next time that endpoint starts.
+
+## Your agent needs reconnecting, though
+
+An MCP client reads the tool list when it connects and keeps it. This endpoint cannot tell it
+otherwise — it holds no session, so there is no channel to send a change on, and it says as much
+rather than claiming there is (ADR-032). So a client registered before this connection still shows
+the tools it saw then.
+
+Remove and re-add it. For a hosted connector that is Disconnect and add the URL again; for a local
+one, whatever your agent's equivalent is.
+
+To see what a client would be handed right now:
+
+```console
+$ lanes link tools                # names by provider, payload size
+$ lanes link tools --target cloud # ask the deployed endpoint instead
+```
+
+If that count matches your client, its tools are current. If it does not, the client is holding an
+old list and reconnecting is the fix.
+
+Tools only, though. A skill is a *prompt*, not a tool, so adding one moves neither the count nor
+the line `connect` prints — and skills are picked up by a running endpoint without a reload, so
+nothing announces them either. After `lanes link skills add`, reconnect the client on the same
+reasoning and without waiting for a number to change.
 
 ## See what one takes before you start
 

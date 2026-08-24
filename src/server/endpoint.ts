@@ -267,7 +267,13 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
           close: () => closeAll(reopened.runtimes).then(() => {}),
         };
       },
-      { primary: primary.resolution.profile, log: { debug() {}, info() {}, warn() {}, error() {} } },
+      // The same logger the request handler gets, rather than the inline no-op
+      // this used to be. What a generation has to say is exactly what nobody
+      // could see when a reload went wrong: `could not reload config`, `could
+      // not refresh skills`, and every `mcp handler error` the endpoint raises
+      // all went to those empty methods. A silent endpoint is not a quiet one —
+      // it is one whose failures have to be reconstructed from request sizes.
+      { primary: primary.resolution.profile, log: options.log ?? silentLogger() },
     );
 
     const server = serve({
@@ -281,6 +287,10 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
       ...(options.port !== undefined ? { port: options.port } : {}),
       ...(options.host !== undefined ? { host: options.host } : {}),
     });
+
+    // After `serve()`, so the record means the socket is bound. Recording it
+    // from the constructor claimed an endpoint that a failed bind never served.
+    generations.announce();
 
     return {
       url: server.url,

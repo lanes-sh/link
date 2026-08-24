@@ -112,6 +112,56 @@ describe('vendored specs yield registrable tools', () => {
   );
 
   /**
+   * The size nobody was measuring: the whole list, not one tool in it.
+   *
+   * `BUDGET_KB` is a floor under a single runaway schema. Every provider can sit
+   * comfortably under it while the list a client is handed grows without limit,
+   * one vendored operation at a time — and that total is what actually travels
+   * on every `tools/list`, what a hosted client has to accept in one response,
+   * and what decides whether a client injects the tools or hides them behind a
+   * search of its own.
+   *
+   * Measured as what `registerDiscoveredTool` actually registers — `title`,
+   * `description` and `inputSchema` — rather than as the whole discovered
+   * capability. The difference is not a rounding error: a capability also
+   * carries its `target`, the HTTP method, path and parameter mapping the
+   * dispatcher routes with, and that never reaches a client. It is 53% of
+   * Gmail's object and 29% of Drive's, so measuring the object would let a
+   * provider trip this budget by growing a routing table that costs a client
+   * nothing, and let one double its real payload while staying under.
+   *
+   * The number is a ratchet, not a target. Drive is 127KB on the wire across
+   * nine operations, most of it the `File` resource inlined once per write.
+   * Cutting that means `makeOpaque`, which buys bytes by taking away the schema
+   * the model composes a request body against — a real trade, worth making
+   * deliberately rather than to satisfy a test. So this carries the same
+   * headroom the per-tool budget does: enough to catch a surface that grew by an
+   * order of magnitude, not so tight that it demands the trade today.
+   */
+  const SURFACE_BUDGET_KB = 192;
+
+  test.each(httpProviders.map((m) => [m.id, m] as const))(
+    '%s keeps its whole advertised surface inside the budget',
+    async (_id, manifest) => {
+      const connector = manifest.connector as { base_url: string; openapi: string };
+      const capabilities = await createHttpConnector({
+        baseUrl: connector.base_url,
+        openapi: connector.openapi,
+      }).discover({ manifest });
+
+      // What `registerDiscoveredTool` reads, and therefore what a client is
+      // sent. The routing `target` beside it is the dispatcher's business.
+      const bytes = capabilities.reduce(
+        (total, { title, description, inputSchema }) =>
+          total + JSON.stringify({ title, description, inputSchema }).length,
+        0,
+      );
+
+      expect(Math.round(bytes / 1024)).toBeLessThanOrEqual(SURFACE_BUDGET_KB);
+    },
+  );
+
+  /**
    * A hint that is declared but not delivered.
    *
    * `specs.test.ts` checks that a `hints` key names a real capability. This
