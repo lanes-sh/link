@@ -98,13 +98,16 @@ One command per account. Run it again to add a second mailbox, a second calendar
 | Notion | `lanes link connect notion` |
 | Linear | `lanes link connect linear` |
 | GitHub | `lanes link connect github` |
+| Slack | `lanes link connect slack` |
 | Gmail (Google MCP) | `lanes link connect gmail_mcp` |
 | Drive (Google MCP) | `lanes link connect drive_mcp` |
 
-Two things worth knowing up front: `lanes link connect icloud` sets up Mail, Calendar, and Contacts
-together, because one app-specific password covers all three. And Google needs no OAuth client of
-your own: `lanes link connect gmail` authorises against the one Lanes operates, so there is no
-Cloud console to visit. Add `--own-client` if you would rather register your own.
+Three things worth knowing up front. `lanes link connect icloud` sets up Mail, Calendar, and
+Contacts together, because one app-specific password covers all three. Google needs no OAuth client
+of your own: `lanes link connect gmail` authorises against the one Lanes operates, so there is no
+Cloud console to visit — add `--own-client` if you would rather register your own. And GitHub and
+Slack take a token you paste rather than a browser sign-in, because neither will register a client
+for us; for Slack that means creating a Slack app once, which is the one console visit left here.
 
 Full guide — what each one gives your agent, what it needs, and adding your own:
 **[docs/connect.md](docs/connect.md)**.
