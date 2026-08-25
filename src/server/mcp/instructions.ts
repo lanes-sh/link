@@ -34,10 +34,10 @@ import type { MergedCapability } from './visibility.ts';
 /**
  * The habits, in the order they are needed.
  *
- * Routing first because it gates every call; refusals last because that is when
- * an agent is most tempted to improvise. Second person, and specific about what
- * *not* to do — "ask which profile" is advice, "do not default to the first" is
- * a rule.
+ * Routing first because it gates every call; the two ways a call ends badly last,
+ * because that is when an agent is most tempted to improvise. Second person, and
+ * specific about what *not* to do — "ask which profile" is advice, "do not
+ * default to the first" is a rule.
  *
  * **Four of these are conditional**, and that is a correctness property rather
  * than a saving. This used to be one fixed string that told every client to
@@ -95,6 +95,27 @@ const REFUSAL = `**A refused call is the permission system working**, not an obs
 around. Report what was refused and let the owner decide whether to widen it.
 Every call, including a refused one, is recorded.`;
 
+/**
+ * The one about not reaching here at all.
+ *
+ * Only for a client that authorises against this endpoint over the network —
+ * the one that cannot be handed the bundled skill, and the one whose connector
+ * decides on its own whether this endpoint is available. Observed: with the
+ * endpoint up and idle, a connector reported it unreachable without issuing a
+ * request at all, and the model read that as a fault, then re-derived an answer
+ * it had already given and re-composed an entry it had already written. Nothing
+ * here can prevent it, because nothing here is consulted — the call never
+ * arrives. Telling the model what the state means is the whole of what is left.
+ *
+ * Deliberately *not* "the endpoint is asleep". Usually it is not, and prose
+ * asserting a cause the model cannot check is how a wrong diagnosis gets
+ * repeated with confidence.
+ */
+const AVAILABILITY = `**A call may simply not go through.** This endpoint is one machine its owner
+runs, and a client can report it unreachable while it is up. That is ordinary —
+not a fault to diagnose, and not authorization you have lost. Say the call did
+not land, do not redo what already succeeded, and offer to retry.`;
+
 /** Which paragraph each owner-layer provider brings, when it is reachable. */
 const OWNER_HABITS: Record<string, string> = {
   memory: MEMORY,
@@ -111,6 +132,11 @@ const OWNER_HABITS: Record<string, string> = {
  * it is the prompt to ask whether the paragraph belongs in the skill instead,
  * where it is loaded only when relevant.
  *
+ * It was raised once, from 2000, for `AVAILABILITY` — and that question was
+ * asked and answered the other way: the client that paragraph exists for is
+ * precisely the one that holds no skills directory, so the skill is not a place
+ * it can go. Only an endpoint serving remote clients spends it.
+ *
  * Exported because the test asserted `2000` as a literal while the code
  * reserved room against a second, differently-derived number — so the two could
  * disagree, and did. There is no separate listing allowance any more: `spent`
@@ -118,7 +144,7 @@ const OWNER_HABITS: Record<string, string> = {
  * exactly the final length, because `join` adds the same two characters the
  * reduce already counted.
  */
-export const MAX_INSTRUCTIONS = 2000;
+export const MAX_INSTRUCTIONS = 2300;
 
 /** Which of the owner-layer providers this principal can actually reach. */
 function ownerProviders(merged: ReadonlyMap<string, MergedCapability>): string[] {
@@ -172,6 +198,9 @@ function connectionsByProfile(
 export function serverInstructions(
   profiles: readonly string[],
   merged: ReadonlyMap<string, MergedCapability>,
+  /** Whether a client authorises against this endpoint rather than being handed
+   * a token — see `AVAILABILITY`, the only paragraph that reads it. */
+  remoteClients = false,
 ): string {
   const reachable = connectionsByProfile(profiles, merged);
   const owner = ownerProviders(merged);
@@ -185,6 +214,7 @@ export function serverInstructions(
     ...owner.map((id) => OWNER_HABITS[id]).filter((habit): habit is string => habit !== undefined),
     FILES,
     REFUSAL,
+    ...(remoteClients ? [AVAILABILITY] : []),
   ];
 
   if (reachable.size === 0) {

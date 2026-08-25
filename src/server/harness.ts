@@ -86,6 +86,14 @@ export { parseConfig } from '#profile';
 export interface HarnessOptions {
   profile: string;
   log?: Logger;
+  /**
+   * The clock the authorization server and its store share.
+   *
+   * Shared deliberately: a tombstone's `consumedAt` is written by the store and
+   * compared by the server, so two clocks would make the reuse interval
+   * untestable in the one direction that matters. Absent means `Date.now`.
+   */
+  now?: () => number;
   port: number;
   policy: string;
   token?: string;
@@ -218,13 +226,17 @@ export function startHarness(options: HarnessOptions): Harness {
   // The real wiring from `endpoint.ts`, not a stand-in: the flow under test is
   // the one a connector drives over HTTP, and a fake authorization server would
   // demonstrate that the fake works.
-  const store = options.authorization ? new OAuthStore(state.kv) : null;
+  const log = options.log ?? silentLogger();
+
+  const store = options.authorization ? new OAuthStore(state.kv, options.now) : null;
   const gate = store
     ? {
         surface: {
           server: new OAuthServer({
             store,
             accessTokenTtlMs: 3_600_000,
+            log,
+            ...(options.now ? { now: options.now } : {}),
             verifyOwner: (presented) => Promise.resolve(tokensMatch(presented, token)),
           }),
           issuer: (origin: string) => origin,
@@ -234,8 +246,6 @@ export function startHarness(options: HarnessOptions): Harness {
         authenticator: new IssuedTokenAuthenticator(store, options.profile),
       }
     : null;
-
-  const log = options.log ?? silentLogger();
 
   const nothing = () => Promise.resolve();
   const generations = new Generations(

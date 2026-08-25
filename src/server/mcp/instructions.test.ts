@@ -22,6 +22,48 @@ function reaching(reachable: Record<string, string[]>): MergedCapability {
   };
 }
 
+describe('reaching the endpoint at all', () => {
+  const one = new Map([['a.read', reaching({ personal: ['example.a'] })]]);
+
+  test('a remote client is told a call may not land, and what that is not', () => {
+    const text = serverInstructions(['personal'], one, true);
+
+    expect(text).toContain('may simply not go through');
+    // The two readings it exists to head off: a fault to chase, and lost
+    // authorization. Both were observed in a transcript.
+    expect(text).toContain('not authorization you have lost');
+    expect(text).toContain('do not redo what already succeeded');
+  });
+
+  test('a local client is not, and pays nothing for it', () => {
+    // Over a pipe or on loopback the client holds the skill, and the transport
+    // cannot fail the way that paragraph describes. Two hundred characters on
+    // every request is not a rounding error when it is every request forever.
+    const remote = serverInstructions(['personal'], one, true);
+    const local = serverInstructions(['personal'], one);
+
+    expect(local).not.toContain('may simply not go through');
+    expect(local.length).toBeLessThan(remote.length);
+  });
+
+  test('it does not cost the connection listing its detail', () => {
+    // The listing degrades to a count when the prose crowds it out, which is
+    // the failure mode of adding a paragraph. A workspace of one profile and a
+    // handful of connections must still get the names.
+    const text = serverInstructions(
+      ['personal'],
+      new Map([
+        ['a.read', reaching({ personal: ['example.a', 'example.b', 'example.c'] })],
+        ['a.write', reaching({ personal: ['example.d', 'example.e'] })],
+      ]),
+      true,
+    );
+
+    expect(text).toContain('personal: example.a, example.b, example.c, example.d, example.e');
+    expect(text.length).toBeLessThan(MAX_INSTRUCTIONS);
+  });
+});
+
 describe('the facts under the prose', () => {
   test('lists every profile served, with its connections', () => {
     const text = serverInstructions(

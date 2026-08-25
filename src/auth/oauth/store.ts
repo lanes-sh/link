@@ -53,6 +53,9 @@ export interface AuthorizationCode {
  * it arrived. A tombstone keeps the family id and nothing else useful, and it
  * opens no more than a deleted row does — every check that admits a credential
  * tests for `access` by name.
+ *
+ * What is *done* about a detected replay changed in ADR-035: the presented
+ * token is refused and the replay logged, rather than the family revoked.
  */
 export type TokenKind = 'access' | 'refresh' | 'consumed';
 
@@ -71,6 +74,15 @@ export interface IssuedToken {
    * the theft and the retry look identical from here.
    */
   readonly family: string;
+  /**
+   * When this token was spent, on a `consumed` tombstone and nowhere else.
+   *
+   * What makes the reuse interval possible: without it a spent token carries no
+   * hint whether it was spent a second ago or a month ago, and those are a retry
+   * and a replay. A tombstone written before this existed has no `consumedAt`
+   * and is read as the older one, which is the safe direction.
+   */
+  readonly consumedAt?: number;
 }
 
 export function hashToken(value: string): string {
@@ -182,16 +194,18 @@ export class OAuthStore {
     const key = hashToken(token);
     const record = await this.#read<IssuedToken>(TOKENS, key);
     if (!record) return;
-    await this.#state.set(TOKENS, key, JSON.stringify({ ...record, kind: 'consumed' }));
+    const spent: IssuedToken = { ...record, kind: 'consumed', consumedAt: this.#now() };
+    await this.#state.set(TOKENS, key, JSON.stringify(spent));
   }
 
   /**
    * Drop every token in a refresh family.
    *
-   * Called when a rotated-away refresh token is presented again, which is
-   * either a client retrying or a thief replaying. Both are answered the same
-   * way, because from here they are indistinguishable and the safe reading is
-   * the expensive one.
+   * A replay no longer calls this, and a replay was the only thing that did —
+   * see `OAuthServer.#refresh` and ADR-035. Kept because it is the shape a
+   * deliberate revocation takes: one authorization's whole chain, dropped on
+   * purpose. Nothing in `src/` reaches it today, so read a call site as new
+   * policy rather than as the old one returning.
    */
   async revokeFamily(family: string): Promise<void> {
     for (const key of await this.#state.keys(TOKENS)) {

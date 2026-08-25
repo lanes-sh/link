@@ -1,4 +1,5 @@
-import { MCP_SCOPE } from './metadata.ts';
+import { grantableScope, MCP_SCOPE } from './metadata.ts';
+import { isSafeRedirect, matchesRegistered } from './redirects.ts';
 import {
   hashToken,
   randomToken,
@@ -25,6 +26,21 @@ import {
 /** Codes live about as long as a redirect takes. */
 const CODE_TTL_MS = 60_000;
 const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/**
+ * How long a spent refresh token still answers.
+ *
+ * A client whose refresh succeeded but whose *response* was lost holds a token
+ * the server has already spent, and retrying with it is the only move it has.
+ * Without a window that retry is `invalid_grant`, and the reference MCP client
+ * rethrows every `OAuthError` but `server_error` rather than recovering — so
+ * the connector dies and its owner is sent to a browser, over a network blip.
+ *
+ * Thirty seconds is the band Auth0's reuse interval (0–60 s) and Okta's grace
+ * period occupy. What it costs: a captured refresh token keeps working for up
+ * to this long after the real client next rotates it.
+ */
+const REFRESH_REUSE_MS = 30_000;
 
 export type OAuthResult =
   | { readonly kind: 'json'; readonly status: number; readonly body: unknown }
@@ -61,6 +77,9 @@ export interface OAuthServerOptions {
   /** Proof of being the owner. The same token the endpoint already accepts. */
   readonly verifyOwner: (presented: string) => Promise<boolean>;
   readonly accessTokenTtlMs: number;
+  /** Where a replayed refresh token is recorded. Structural, because this layer
+   * may not import `#connectivity`; the endpoint's own logger satisfies it. */
+  readonly log?: { warn(message: string, detail?: Record<string, unknown>): void };
   readonly now?: () => number;
 }
 
@@ -163,7 +182,11 @@ export class OAuthServer {
         redirectUri,
         codeChallenge: challenge,
         state: params.get('state') ?? undefined,
-        scope: params.get('scope') || MCP_SCOPE,
+        // The grantable part of what was asked for, not the request verbatim.
+        // Echoing it back through `#issue` was granting by echo, which was inert
+        // while `mcp` was the only scope and stops being inert now that there is
+        // a second one that means something.
+        scope: grantableScope(params.get('scope')) || MCP_SCOPE,
         resource: params.get('resource') ?? undefined,
       },
     };
@@ -198,7 +221,12 @@ export class OAuthServer {
       clientId: request.clientId,
       redirectUri: request.redirectUri,
       codeChallenge: request.codeChallenge,
-      scope: request.scope,
+      // Narrowed here as well as in `authorize`, and this is the one that
+      // matters: the request arrives back through hidden form fields, so a
+      // caller can post any scope it likes straight to this endpoint. Nothing
+      // round-tripped through the form is trusted — the client and the redirect
+      // URI are re-checked above for the same reason.
+      scope: grantableScope(request.scope) || MCP_SCOPE,
       ...(request.resource ? { resource: request.resource } : {}),
       expiresAt: this.#now() + CODE_TTL_MS,
     };
@@ -252,15 +280,25 @@ export class OAuthServer {
       return invalid('invalid_grant', 'That refresh token is unknown or expired.');
     }
 
-    // A spent token presented again is the one signal that it has been copied.
-    // Rotation alone does not answer it: whoever refreshes first walks away
-    // with a live pair, and rejecting only the token in hand leaves that pair
-    // working while the other party — usually the real client — is locked out.
-    // So the whole chain goes. A client retrying a response it never saw and a
-    // thief replaying are indistinguishable from here, and re-authorising is
-    // the cheaper of the two mistakes.
+    // A spent token presented again used to take its whole family with it, on
+    // the reading that a replay is a theft. Against a real connector that was
+    // wrong twice over, and ADR-035 has the evidence. Two answers replace it,
+    // and the tombstone's age is what tells them apart.
     if (record.kind === 'consumed') {
-      await this.#options.store.revokeFamily(record.family);
+      // Inside the window it is a retry of a request already answered, and the
+      // client is owed the answer rather than a dead connector. Not re-consumed:
+      // a client retrying twice is still retrying.
+      const spentAt = record.consumedAt;
+      if (spentAt !== undefined && this.#now() - spentAt <= REFRESH_REUSE_MS) {
+        return this.#issue(record.clientId, record.scope, randomToken('llr'), record.family);
+      }
+
+      // Outside it, refused on its own — and the family survives, which is the
+      // half that was taking live sessions down with it.
+      this.#options.log?.warn('refresh token replayed', {
+        clientId: record.clientId,
+        family: record.family,
+      });
       return invalid('invalid_grant', 'That refresh token has already been used.');
     }
 
@@ -322,64 +360,6 @@ function invalid(error: string, description: string): OAuthResult {
   // `invalid_grant` specifically; anything else and it retries forever or gives
   // up without re-authorising.
   return { kind: 'json', status: 400, body: { error, error_description: description } };
-}
-
-/**
- * https, or loopback for a native client.
- *
- * A native client cannot receive an https redirect, so RFC 8252 has it listen
- * on a loopback port instead. Everything else is refused: a redirect to `http://`
- * on a routable host puts an authorization code on the wire in clear text.
- */
-function isSafeRedirect(uri: string): boolean {
-  let parsed: URL;
-  try {
-    parsed = new URL(uri);
-  } catch {
-    return false;
-  }
-
-  if (parsed.protocol === 'https:') return true;
-  return parsed.protocol === 'http:' && isLoopbackHost(parsed.hostname);
-}
-
-function isLoopbackHost(hostname: string): boolean {
-  return hostname === '127.0.0.1' || hostname === '::1' || hostname === '[::1]' || hostname === 'localhost';
-}
-
-/**
- * Exact match, except for the port of a loopback URI.
- *
- * RFC 8252 §7.3 requires ignoring the port for the IP-literal form, because a
- * native client binds an ephemeral one it cannot know at registration time.
- * Claude Code declares `http://localhost/callback` and `http://127.0.0.1/callback`
- * and then listens on whatever port it got, so the same allowance has to cover
- * `localhost` or it never connects.
- */
-export function matchesRegistered(candidate: string, registered: readonly string[]): boolean {
-  if (registered.includes(candidate)) return true;
-
-  let parsed: URL;
-  try {
-    parsed = new URL(candidate);
-  } catch {
-    return false;
-  }
-  if (!isLoopbackHost(parsed.hostname)) return false;
-
-  return registered.some((uri) => {
-    try {
-      const other = new URL(uri);
-      return (
-        isLoopbackHost(other.hostname) &&
-        other.protocol === parsed.protocol &&
-        other.hostname === parsed.hostname &&
-        other.pathname === parsed.pathname
-      );
-    } catch {
-      return false;
-    }
-  });
 }
 
 export { hashToken };

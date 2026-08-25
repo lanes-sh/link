@@ -169,6 +169,7 @@ function closeAll(runtimes: ReadonlyMap<string, Runtime>): Promise<unknown> {
  */
 async function openAuthorization(
   primary: Runtime,
+  log: Logger,
 ): Promise<{ surface: AuthorizationSurface; authenticator: Authenticator } | null> {
   const declared = primary.config.auth.authorization;
   if (!declared) return null;
@@ -210,6 +211,10 @@ async function openAuthorization(
   const server = new OAuthServer({
     store,
     accessTokenTtlMs: declared.access_token_ttl_minutes * 60_000,
+    // So a replayed refresh token leaves a line. It is refused rather than
+    // acted on (ADR-035), and a refusal nobody can see is how a connector
+    // losing its authorization came to need log forensics to explain.
+    log,
     // Approval is proof of holding the endpoint token, compared the same way
     // the request path compares it. There is one person behind this endpoint
     // and they already have exactly one credential; a second one invented for
@@ -228,6 +233,7 @@ async function openAuthorization(
 
 export async function startEndpoint(options: EndpointOptions): Promise<RunningEndpoint> {
   const reporter = options.reporter ?? SILENT;
+  const log = options.log ?? silentLogger();
   const { primary, runtimes } = await openReconciled(options);
 
   try {
@@ -251,7 +257,7 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
       }
     }
 
-    const gate = await openAuthorization(primary);
+    const gate = await openAuthorization(primary, log);
 
     // The authenticator and the authorization gate are built once, from the
     // runtime this endpoint booted with, and are deliberately not part of what
@@ -273,7 +279,10 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
       // not refresh skills`, and every `mcp handler error` the endpoint raises
       // all went to those empty methods. A silent endpoint is not a quiet one —
       // it is one whose failures have to be reconstructed from request sizes.
-      { primary: primary.resolution.profile, log: options.log ?? silentLogger() },
+      // `remoteClients` is the gate's existence, not a second setting: a profile
+      // declaring `auth.authorization` is one a connector reaches by URL, which
+      // is exactly the client the extra paragraph is written for.
+      { primary: primary.resolution.profile, log, ...(gate ? { remoteClients: true } : {}) },
     );
 
     const server = serve({
@@ -282,7 +291,7 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
       authenticator: gate
         ? new AuthenticatorChain([primary.authenticator, gate.authenticator])
         : primary.authenticator,
-      log: options.log ?? silentLogger(),
+      log,
       ...(gate ? { authorization: gate.surface } : {}),
       ...(options.port !== undefined ? { port: options.port } : {}),
       ...(options.host !== undefined ? { host: options.host } : {}),

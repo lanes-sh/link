@@ -127,6 +127,9 @@ export async function surveyCloudRun(input: SurveyInput): Promise<SurveyResult> 
 
   const deploy: DeployConfig = {
     platform: 'cloudrun',
+    // Not asked about. Zero is right for almost every target and the question
+    // would cost every operator a decision to buy one of them a knob.
+    min_instances: current.min_instances ?? 0,
     project,
     region,
     service,

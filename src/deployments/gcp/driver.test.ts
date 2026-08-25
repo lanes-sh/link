@@ -17,6 +17,7 @@ const cloudrun = {
   region: 'europe-west1',
   service: 'lanes-link',
   access: 'iam',
+  min_instances: 0,
 } as const satisfies DeployConfig;
 
 const plan = (overrides: Partial<DeployConfig> = {}, rest: { profile?: string } = {}) =>
@@ -108,6 +109,16 @@ describe('who can reach the endpoint', () => {
     const deploy = rollout({ access: 'public' });
     expect(deploy.argv).toContain('--allow-unauthenticated');
     expect(deploy.argv).not.toContain('--no-allow-unauthenticated');
+  });
+
+  test('scaling is stated on every rollout, including the zero', () => {
+    // Sent unconditionally so config is what decides. A flag passed only when
+    // non-zero would let the value be raised and never lowered — the revision
+    // would keep whatever the last deploy that bothered to mention it set, and
+    // a target reading `min_instances: 0` would go on billing for an instance.
+    expect(plan().find((step) => step.title === 'roll a revision')?.argv).toContain('--min-instances');
+    expect(plan().find((step) => step.title === 'roll a revision')?.argv).toContain('0');
+    expect(plan({ min_instances: 2 }).find((step) => step.title === 'roll a revision')?.argv).toContain('2');
   });
 
   test('secret-backed environment is mounted by reference, never by value', () => {

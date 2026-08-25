@@ -204,6 +204,7 @@ export class Generation {
           principal,
           clientLabel,
           ...(this.#deps.version ? { version: this.#deps.version } : {}),
+          ...(this.#deps.remoteClients ? { remoteClients: true } : {}),
         }),
       {
         onerror: (error: Error) =>

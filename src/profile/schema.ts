@@ -178,6 +178,20 @@ export const deployTargetSchema = z.object({
   billing_account: z.string().optional(),
   /** The identity the running revision assumes. Needs read access to the credential store. */
   service_account: z.string().optional(),
+  /**
+   * Instances kept running when nothing is calling.
+   *
+   * Zero is the default and the right answer for almost everything here: a cold
+   * start on the MCP path measures under three seconds, and the platform queues
+   * the request behind it, so scaling to zero is invisible to a caller.
+   *
+   * It is a knob because one path is not a caller. A client refreshes its token
+   * exactly when it wakes after an idle gap — which is exactly when the instance
+   * is cold — and a refresh that fails at the network level sends a remote
+   * client through a fresh browser authorization rather than surfacing an error.
+   * Raise it if a re-authorization ever lines up with a cold `/token`.
+   */
+  min_instances: z.number().int().min(0).max(10).default(0),
 });
 
 /**
@@ -221,7 +235,18 @@ export const targetSchema = z
   .transform(({ cloudrun, ...target }) =>
     target.deploy || !cloudrun
       ? target
-      : { ...target, deploy: { ...cloudrun, platform: 'cloudrun' as const, access: 'iam' as const } },
+      : {
+          ...target,
+          // The pre-`deploy` spelling predates both of these, so it gets the
+          // same defaults the current one would: the closed door, and no
+          // instance kept warm.
+          deploy: {
+            ...cloudrun,
+            platform: 'cloudrun' as const,
+            access: 'iam' as const,
+            min_instances: 0,
+          },
+        },
   );
 
 /**

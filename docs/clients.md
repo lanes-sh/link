@@ -116,6 +116,38 @@ $ curl -s https://…run.app/.well-known/oauth-protected-resource | jq
 $ curl -s https://…run.app/.well-known/oauth-authorization-server | jq
 ```
 
+### When a working connector drops
+
+A connector that *was* working and then reports the server as unreachable — or asks to be
+authorised again — is one of four things, and the endpoint's own log separates them. Read the
+minute it happened:
+
+| In the log | What it was |
+|---|---|
+| `rejected request {"reason":"missing"}` | the client sent no credential. It discarded its own, or is starting discovery |
+| `rejected request {"reason":"invalid"}` | it sent one this endpoint does not know |
+| `warn refresh token replayed` | a second copy of the client presented a spent refresh token. Refused, and the live session is untouched — see [ADR-035](detailed/adr/035-a-replayed-refresh-token-must-not-log-the-owner-out.md) |
+| **nothing at all** | the call never left the client |
+| a browser prompt with no `/token` line | the client's refresh failed at the network level. It is swallowed rather than surfaced, so a re-authorization appears with no error behind it |
+
+The last row is the one worth knowing, because from the outside it looks exactly like the others
+and it is the only one where the endpoint is not involved. No line means no request: no cold
+start, no timeout, no refusal. The connector decided by itself that this endpoint was
+unavailable. Reconnect it — there is nothing here to change.
+
+Ruling that out first is worth the one query it costs:
+
+```console
+$ gcloud logging read \
+    'resource.labels.service_name="<service>" AND timestamp>="2026-01-01T09:00:00Z"' \
+    --project <project-id> --limit 50 \
+    --format='value(timestamp, textPayload, httpRequest.status, httpRequest.requestUrl)'
+```
+
+A deployment scaling to zero is not this. It shuts down and restarts many times a day, requests
+queue behind the boot, and a cold start is a couple of seconds — visible in the latency column,
+not as a failure.
+
 ## Anything else
 
 ```console
