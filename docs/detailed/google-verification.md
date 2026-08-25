@@ -143,6 +143,25 @@ in 1000 characters shared by seven scopes the space goes to what is being asked 
 boxes still make it, because `drive.file` versus `drive.readonly` and the absence of
 `mail.google.com` are the questions those reviewers actually arrive with.
 
+### Additional info — 974 characters
+
+A fourth box, at the end of the submission after the scope justifications and the video link, and
+the only one on the form that is optional. It is where [the broker](#the-security-assessment-and-the-question-that-decides-it)
+gets stated, because there is nowhere in a scope justification that it fits and being asked is worse
+than volunteering. Google also asks outright here for "the project IDs of any other projects that
+use OAuth", which for this application is the sign-in project ADR-031 keeps separate — so answer it.
+
+`PROJECT_ID` is a placeholder: the sign-in project's id goes there when this is pasted, and does not
+get written back into this file. The measured length leaves room for it.
+
+> Two things, stated before you ask.
+>
+> 1. Where user data goes. Lanes Link is an open-source CLI the user installs and runs themselves (github.com/lanes-sh/link). Their Google data moves directly between that machine and Google: we operate no server in that path and keep no copy. What does reach a Lanes server is the OAuth authorization code and the refresh token, in transit through our token broker and not retained, plus a salted one-way hash of the account id, used to rate-limit the shared client. An installed app cannot hold a client secret, which is the only reason the broker exists. --own-client registers the user's own client and removes us from that path too.
+>
+> 2. Other OAuth projects. Sign-in and data access are deliberately separate. The sign-in client lives in project PROJECT_ID and requests only openid, email and profile: no sensitive or restricted scopes.
+>
+> To try it: bun install -g @lanes-sh/link, then lanes link connect gmail. No Lanes account needed.
+
 ## The shared handling paragraph
 
 This is the full statement of what becomes of the data, and it no longer fits in the console: the
