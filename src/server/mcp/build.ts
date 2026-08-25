@@ -46,7 +46,7 @@ export function buildMcpServer(options: BuildServerOptions): McpServer {
     // and `Implementation` would take it as an unknown extra and drop it from
     // `initialize` without complaining.
     {
-      instructions: serverInstructions(names, merged),
+      instructions: serverInstructions(names, merged, options.remoteClients),
       // Declared `false` because it is false, and the SDK defaults it to `true`.
       //
       // `listChanged` is a promise to send `notifications/tools/list_changed`

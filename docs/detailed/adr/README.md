@@ -42,6 +42,7 @@ Nothing in the codebase depends on it.
 | [032](032-a-stateless-endpoint-does-not-announce-its-tools.md) | `listChanged` is declared false because it is false; a reload reports its tool count and `lanes link tools` asks the endpoint |
 | [033](033-a-pasted-token-for-an-mcp-server.md) | Where a vendor's MCP server will not register a client, the operator's own token is the credential — so an mcp connector's auth is exactly none, oauth, or bearer |
 | [034](034-updating-is-a-reinstall.md) | Updating is replacing the installed package; Bun is the only installer driven, a checkout is refused, and nothing updates itself |
+| [035](035-a-replayed-refresh-token-must-not-log-the-owner-out.md) | A replayed refresh token is refused on its own and recorded; the family it belongs to survives |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 
@@ -75,3 +76,9 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
   the only thing it can be asked for is a re-read of what the CLI already wrote. It also supersedes
   ADR-019's "a new connection is not served until the endpoint restarts", which named this as a
   decision someone would have to take, and pays one of the five costs ADR-025 listed as blocking.
+
+- **ADR-035** supersedes the replay half of ADR-018, and is the second record here to make the
+  system guarantee *less* than it did. ADR-018 chose to issue tokens in the application and to
+  answer a replayed refresh token by revoking its whole chain; the issuing stands and the answer
+  does not. What changed is evidence rather than reasoning: a family is minted once and never
+  rotates, so the expensive answer was reaching an approved client roughly daily and a thief never.

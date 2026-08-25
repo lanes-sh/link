@@ -61,6 +61,9 @@ export interface OAuthServerOptions {
   /** Proof of being the owner. The same token the endpoint already accepts. */
   readonly verifyOwner: (presented: string) => Promise<boolean>;
   readonly accessTokenTtlMs: number;
+  /** Where a replayed refresh token is recorded. Structural, because this layer
+   * may not import `#connectivity`; the endpoint's own logger satisfies it. */
+  readonly log?: { warn(message: string, detail?: Record<string, unknown>): void };
   readonly now?: () => number;
 }
 
@@ -252,15 +255,22 @@ export class OAuthServer {
       return invalid('invalid_grant', 'That refresh token is unknown or expired.');
     }
 
-    // A spent token presented again is the one signal that it has been copied.
-    // Rotation alone does not answer it: whoever refreshes first walks away
-    // with a live pair, and rejecting only the token in hand leaves that pair
-    // working while the other party — usually the real client — is locked out.
-    // So the whole chain goes. A client retrying a response it never saw and a
-    // thief replaying are indistinguishable from here, and re-authorising is
-    // the cheaper of the two mistakes.
+    // A spent token presented again used to take its whole family with it, on
+    // the reading that a replay is a theft and re-authorising is the cheaper
+    // mistake. Against a real connector that was wrong, and expensive: a family
+    // is minted once and carried through every rotation, and a tombstone lives
+    // the refresh TTL, so a stale copy from any point in thirty days could
+    // delete the pair actually in use — which logged the owner out mid
+    // conversation roughly daily. What presents one is a second session or a
+    // retry, and every client here was approved by hand at a consent screen
+    // demanding the endpoint token. So the token is refused on its own and the
+    // family survives. Rotation is unchanged, and the tombstone now earns its
+    // keep by making the replay visible rather than by triggering it. ADR-035.
     if (record.kind === 'consumed') {
-      await this.#options.store.revokeFamily(record.family);
+      this.#options.log?.warn('refresh token replayed', {
+        clientId: record.clientId,
+        family: record.family,
+      });
       return invalid('invalid_grant', 'That refresh token has already been used.');
     }
 

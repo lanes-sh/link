@@ -218,6 +218,8 @@ export function startHarness(options: HarnessOptions): Harness {
   // The real wiring from `endpoint.ts`, not a stand-in: the flow under test is
   // the one a connector drives over HTTP, and a fake authorization server would
   // demonstrate that the fake works.
+  const log = options.log ?? silentLogger();
+
   const store = options.authorization ? new OAuthStore(state.kv) : null;
   const gate = store
     ? {
@@ -225,6 +227,7 @@ export function startHarness(options: HarnessOptions): Harness {
           server: new OAuthServer({
             store,
             accessTokenTtlMs: 3_600_000,
+            log,
             verifyOwner: (presented) => Promise.resolve(tokensMatch(presented, token)),
           }),
           issuer: (origin: string) => origin,
@@ -234,8 +237,6 @@ export function startHarness(options: HarnessOptions): Harness {
         authenticator: new IssuedTokenAuthenticator(store, options.profile),
       }
     : null;
-
-  const log = options.log ?? silentLogger();
 
   const nothing = () => Promise.resolve();
   const generations = new Generations(

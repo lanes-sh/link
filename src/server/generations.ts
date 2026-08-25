@@ -52,6 +52,8 @@ export interface GenerationDeps {
   readonly primary: string;
   readonly log: Logger;
   readonly version?: string | undefined;
+  /** Whether an authorization surface is published. See `BuildServerOptions`. */
+  readonly remoteClients?: boolean | undefined;
 }
 
 /** What a reload did, as the `/reload` route reports it. */

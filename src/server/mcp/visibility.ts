@@ -53,6 +53,15 @@ export interface BuildServerOptions {
   /** Self-reported by the client. Recorded in audit; never used to authorize. */
   readonly clientLabel?: string | undefined;
   readonly version?: string;
+  /**
+   * Whether this endpoint publishes an authorization surface, and therefore
+   * serves clients that arrived by URL alone.
+   *
+   * Read only by the instructions, which gain a paragraph for them. Absent over
+   * a pipe and on a loopback endpoint, where the client holds the skill and the
+   * transport cannot fail the way this describes.
+   */
+  readonly remoteClients?: boolean | undefined;
 }
 
 /** One profile as the map the builder wants. */

@@ -34,11 +34,20 @@ const selfAuthorizationSchema = z.object({
   /**
    * How long an issued access token lives.
    *
-   * Short by design and refreshed rather than lengthened: a client that holds a
-   * long-lived token has something worth stealing, and the refresh path is the
-   * one that can be revoked by dropping a row.
+   * Twelve hours, where this used to be one. The old reading — short by design,
+   * refreshed rather than lengthened — assumed the refresh happens. Expiry is
+   * in practice where a remote client loses its session: one observed against
+   * this endpoint let its access token lapse and reported needing authorization
+   * while the matching refresh token sat in the store unused, weeks from its
+   * own expiry. That is the client's bug and nothing here can fix it. What the
+   * endpoint can do is stop offering the chance twenty-four times a day.
+   *
+   * What is given up is real and bounded: a stolen access token is useful for
+   * longer. The revocable half is unchanged — the refresh path is still what a
+   * dropped row closes — and the refresh token was already the longer-lived of
+   * the pair at thirty days. `1440` is the ceiling, for one window a day.
    */
-  access_token_ttl_minutes: z.number().int().positive().max(1440).default(60),
+  access_token_ttl_minutes: z.number().int().positive().max(1440).default(720),
 });
 
 const oidcAuthorizationSchema = z.object({

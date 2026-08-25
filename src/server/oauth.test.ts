@@ -21,12 +21,27 @@ const REDIRECT = 'https://claude.ai/api/mcp/auth_callback';
 let harness: Harness;
 let origin: string;
 
+/**
+ * What the endpoint warned about.
+ *
+ * Captured rather than discarded because one of the refusals below has to be
+ * *visible*: a replay that is refused silently is what made a connector losing
+ * its authorization reconstructable only from object timestamps in a bucket.
+ */
+const warned: { message: string; detail?: Record<string, unknown> }[] = [];
+
 beforeAll(() => {
   harness = startHarness({
     profile: 'personal',
     port: allocatePort(),
     policy: `  allow:\n    - "example.*"`,
     authorization: true,
+    log: {
+      debug() {},
+      info() {},
+      warn: (message, detail) => void warned.push({ message, ...(detail ? { detail } : {}) }),
+      error() {},
+    },
   });
   origin = new URL(harness.server.url).origin;
 });
@@ -354,15 +369,14 @@ describe('refresh', () => {
     expect(await replayed.json()).toMatchObject({ error: 'invalid_grant' });
   });
 
-  test('a replayed refresh token kills the chain minted from it', async () => {
-    // The case rotation alone does not cover. A thief who refreshes first holds
-    // a live pair; the real client then presents the token it still has, which
-    // is the only signal that anything went wrong. Answering it by rejecting
-    // only the presented token leaves the thief's pair working and breaks the
-    // owner's connector instead — exactly backwards.
+  test('a replayed refresh token does not kill the chain minted from it', async () => {
+    // The reversal in ADR-035. A retry and a theft are still indistinguishable
+    // from here, but the expensive answer was going to the wrong one far more
+    // often: a family is minted once and never rotates, so revoking on replay
+    // took out whichever pair happened to be in use at the time.
     const { clientId, refresh } = await issue();
 
-    const stolen = (await (
+    const rotated = (await (
       await tokenRequest({
         grant_type: 'refresh_token',
         refresh_token: refresh,
@@ -378,20 +392,77 @@ describe('refresh', () => {
         })
       ).status;
 
-    expect(await opens(stolen.access_token)).not.toBe(401);
+    expect(await opens(rotated.access_token)).not.toBe(401);
 
-    // The retry and the theft are indistinguishable from here, so both get the
-    // expensive answer.
-    await tokenRequest({ grant_type: 'refresh_token', refresh_token: refresh, client_id: clientId });
-
-    expect(await opens(stolen.access_token)).toBe(401);
-
-    const reused = await tokenRequest({
+    const replayed = await tokenRequest({
       grant_type: 'refresh_token',
-      refresh_token: stolen.refresh_token,
+      refresh_token: refresh,
       client_id: clientId,
     });
-    expect(reused.status).toBe(400);
+    expect(replayed.status).toBe(400);
+    expect(await replayed.json()).toMatchObject({ error: 'invalid_grant' });
+
+    // The whole point: somebody else's stale copy does not reach the pair in
+    // use. It still opens the resource, and it still refreshes.
+    expect(await opens(rotated.access_token)).not.toBe(401);
+
+    const still = await tokenRequest({
+      grant_type: 'refresh_token',
+      refresh_token: rotated.refresh_token,
+      client_id: clientId,
+    });
+    expect(still.status).toBe(200);
+  });
+
+  test('a replay from any depth in the chain leaves the live pair working', async () => {
+    // Two rotations deep, because nothing bounds how stale a copy can be: a
+    // tombstone lives as long as the refresh token it replaced would have, so
+    // the oldest token in a family has to be as harmless as the newest. The
+    // incident this came from replayed one forty-four minutes after it was
+    // spent, with a rotation in between.
+    const { clientId, refresh: first } = await issue();
+
+    const rotate = async (token: string): Promise<{ access_token: string; refresh_token: string }> =>
+      (await (
+        await tokenRequest({
+          grant_type: 'refresh_token',
+          refresh_token: token,
+          client_id: clientId,
+        })
+      ).json()) as { access_token: string; refresh_token: string };
+
+    const second = await rotate(first);
+    const live = await rotate(second.refresh_token);
+
+    for (const stale of [first, second.refresh_token]) {
+      const replayed = await tokenRequest({
+        grant_type: 'refresh_token',
+        refresh_token: stale,
+        client_id: clientId,
+      });
+      expect(replayed.status).toBe(400);
+    }
+
+    const opened = await fetch(`${origin}/mcp`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${live.access_token}` },
+    });
+    expect(opened.status).not.toBe(401);
+  });
+
+  test('a replay is recorded, because refusing it quietly explains nothing', async () => {
+    // Refusing the token is half the answer; the other half is that the owner
+    // can find out it happened. Nothing else in the endpoint's logs
+    // distinguishes a replay from a client that simply never sent a credential.
+    const { clientId, refresh } = await issue();
+    await tokenRequest({ grant_type: 'refresh_token', refresh_token: refresh, client_id: clientId });
+    warned.length = 0;
+
+    await tokenRequest({ grant_type: 'refresh_token', refresh_token: refresh, client_id: clientId });
+
+    const replay = warned.find((entry) => entry.message === 'refresh token replayed');
+    expect(replay).toBeDefined();
+    expect(replay?.detail).toMatchObject({ clientId });
   });
 
   test('a refresh token does not open the resource', async () => {

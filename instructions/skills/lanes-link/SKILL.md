@@ -185,3 +185,20 @@ URL and a token.
 user the command rather than backgrounding it silently on their behalf.
 Registration works while it is down — the harness simply cannot reach it yet,
 and the first symptom is a failed call much later.
+
+## When a call does not land
+
+Different from the above, and more common: calls were working, and then one does
+not go through. A deployed endpoint is one machine its owner runs, and a client
+can report it unreachable while it is up — sometimes without sending anything at
+all, which is why the endpoint's own log can show no trace of the attempt.
+
+Treat it as ordinary. **Say the call did not land, and stop there.** It is not a
+fault to diagnose, and it is not authorization that has lapsed — do not tell them
+to sign in again unless the endpoint itself said so.
+
+**Do not redo what already succeeded.** A call that returned is done, and the
+next one failing does not undo it. Re-deriving a finished answer, or rewriting a
+memory entry that was already written, is the expensive mistake here and the one
+that actually gets made. Say which parts landed, which did not, and offer to
+retry the rest.
