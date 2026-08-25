@@ -1,8 +1,8 @@
 # Google verification: what goes in the console
 
 Google Auth Platform → **Data access** refuses a submission until every sensitive and restricted
-scope carries three things: a **scope justification**, an **intended data usage** statement, and a
-**demo video** URL. None of them are settings. They are free text on a console form, and a
+scope is accounted for: the feature that needs it, what becomes of the data, and **why a narrower
+scope will not work**. None of them are settings. They are free text on a console form, and a
 submission is rejected on what they say.
 
 This file is that text, kept here rather than only in the form, for three reasons. Verification is
@@ -19,11 +19,22 @@ Everything below is about the **hosted client** — the one Lanes operates, whic
 
 ## Where each field lives
 
+The console used to ask three questions of each of the twelve scopes on its own form. It now
+groups them — **one box for all seven sensitive scopes together, one box per restricted API
+family** — and merges the justification and the intended-data-usage statement into a single
+question, capped at **1000 characters**.
+
 | Field | Where | What it has to contain |
 |---|---|---|
-| Scope justification | Data access → **Fix the issue** → per-scope form | The feature that needs the scope, and **why a narrower scope will not work** — an explanation naming what would break. Omitting the second half is the common rejection. |
-| Intended data usage | The same form | What happens to data obtained under this scope. |
-| Demo video | The same form | One YouTube URL, unlisted is fine, reused for every scope. |
+| How will the scopes be used? | **Your sensitive scopes** — one box, all seven | Per scope: the feature that needs it, and **why a narrower scope will not work** — an explanation naming what would break. Omitting the second half is the common rejection. |
+| How will the scopes be used? | **Your restricted scopes** → **Drive scopes** | The same for `drive.readonly`, plus what becomes of the data. |
+| How will the scopes be used? | **Your restricted scopes** → **Gmail scopes** | The same for the four Gmail scopes. |
+| What features will you use? | A multi-select above each restricted family's box | Google's own categories. Drive: **Drive productivity** alone. Gmail: **Email client** and **Email productivity**. Claiming a category the application does not have is a rejection by itself, so "Select all" is the wrong answer to a question that offers it. |
+| Demo video | **Not on this page** — the final submission step | One YouTube URL, unlisted is fine, covering every scope. |
+
+The prompt under each box asks for three things — "why you need these scopes, how you will use
+them, and why more limited scopes aren't sufficient" — which is the old justification and the old
+intended data usage in one field. Both have to come out of the same 1000 characters.
 
 `openid` and `email` are added on the brokered path at connect time rather than declared in a
 manifest, and the console does not list them. Nothing is needed for either.
@@ -63,10 +74,74 @@ deletion, and does not request unrestricted `drive`. Permanent deletion is not o
 `messages.delete`, `threads.delete` and `files.delete` are deliberately absent, and trash is the
 recoverable form of the same intent.
 
+## What goes in the console today
+
+Three boxes, three texts, each measured against the 1000-character cap and each carrying all three
+of the things the prompt asks for. This is what is pasted. Everything from [the shared handling
+paragraph](#the-shared-handling-paragraph) onward is the long-form reasoning these were condensed
+out of, kept because it is what answers a reviewer's follow-up and because it is where the argument
+for a scope is maintained when the scope changes.
+
+All three end their opening paragraph by volunteering that the hosted client is optional. That
+sentence is there deliberately: a reviewer assessing restricted scopes is deciding whether this
+application can reach user data through a third-party server, and the honest answer is easier to
+accept when it arrives unprompted and with the escape hatch attached. It is the same argument [the
+security assessment](#the-security-assessment-and-the-question-that-decides-it) section makes at
+length, compressed to one clause. Do not drop it to buy characters for something else.
+
+### Your sensitive scopes — 998 characters
+
+> Lanes Link is an open-source MCP endpoint the user runs on their own machine so their agent acts on their accounts. Requests go from that machine straight to Google and back: no Lanes server in that path, no copy kept, never sold, advertised against, or used to train AI. Our shared OAuth client is optional; --own-client uses the user's own.
+>
+> calendar.readonly: calendarList.list (which calendars exist, and the time zone new events need) and freebusy.query ("when am I free"); calendar.events grants neither.
+> calendar.events: read events and insert/patch/move them. .readonly cannot create; .owned drops shared calendars.
+> documents, spreadsheets: read and edit Docs and Sheets. The .readonly forms cannot write; Drive cannot substitute, as a whole-file replace loses formulas.
+> tasks: read and add tasks. Google publishes only tasks and tasks.readonly.
+> contacts.readonly, contacts.other.readonly: resolve a name to an address; never enumerated.
+>
+> Full calendar and contacts write are not requested.
+
+### Your restricted scopes → Drive scopes — 994 characters
+
+**What features will you use?** *Drive productivity*, and nothing else. Nothing copies Drive
+content anywhere for retention, so not *Drive backup*; nothing mirrors Drive to a local folder, so
+not *Drive sync client*.
+
+> Lanes Link is an open-source MCP endpoint the user runs on their own machine so their agent can find and read the files they name. File content goes from that machine straight to Google and back: no Lanes server in that path, no copy kept, never sold, advertised against, or used to train AI models. Our shared OAuth client is optional; --own-client uses the user's own and removes us from the credential exchange.
+>
+> drive.readonly covers files.list (search), files.get, files.export (Google-native files have no downloadable bytes), permissions.list (sharing) and about.get (quota).
+>
+> Nothing narrower works. drive.file is requested alongside it and bounds every write, but alone reaches only files this app created or the user picked in the Google Picker - and there is no picker: this is a command-line endpoint with no UI. A file is named by title in conversation, so it must be findable by search - files.list. drive.metadata.readonly returns no content. Unrestricted drive is not requested.
+
+### Your restricted scopes → Gmail scopes — 992 characters
+
+**What features will you use?** *Email client* and *Email productivity*. Reading, searching,
+drafting and sending is client behaviour; archiving, labels and filters is productivity. The scope
+set spans both, and picking one leaves the other half unexplained — client alone makes
+`settings.basic` look stray, productivity alone weakens `compose`. Nothing about backup, migration,
+monitoring, compliance, anti-spam or CRM applies.
+
+> Lanes Link is an open-source MCP endpoint the user runs on their own machine so their agent can read, write and organise their mail. Mail goes from that machine straight to Google and back: no Lanes server in that path, no copy kept, never sold, advertised against, or used to train AI models. Our shared OAuth client is optional; --own-client uses the user's own and removes us from the credential exchange.
+>
+> gmail.readonly: messages/threads.list and .get, labels, drafts, attachments.get, filters.list. gmail.metadata returns no body, so "summarise this thread" fails.
+> gmail.compose: drafting and sending. gmail.send cannot create or revise a draft, and drafting keeps the user in the loop.
+> gmail.modify: read/unread, archive, spam, folders, labels. Gmail has no narrower verb: each is messages.modify, since a folder is a label.
+> gmail.settings.basic: filters.create/delete, to block a sender. No other scope accepts it.
+>
+> mail.google.com is not requested; no permanent deletion, only trash.
+
+Each was cut to fit, and what got cut is the same thing every time: the handling paragraph below
+shrank to one clause, and the per-operation lists shrank to the operations a reviewer would
+recognise. What was kept in all three is the narrower-scope argument, because that is the half a
+submission is rejected on.
+
 ## The shared handling paragraph
 
-Every **intended data usage** field ends with this. The scope-specific sentence says what is read
-or written; this says what becomes of it, and it is the same answer for all twelve.
+This is the full statement of what becomes of the data, and it no longer fits in the console: the
+grouped boxes are 1000 characters and the narrower-scope argument has to win that space. Each of
+the three texts above carries a one-clause form of it instead, and this is what that clause
+compresses. It is kept whole because it is what to send if a reviewer asks, and because the privacy
+policy has to stay consistent with it.
 
 > Lanes Link is software the user runs on their own machine. The request goes from that machine
 > directly to Google and the response returns to it — Lanes operates no server in that path and
@@ -81,6 +156,12 @@ or written; this says what becomes of it, and it is the same answer for all twel
 > <https://lanes.sh/privacy>, section 7.
 
 ## Gmail
+
+Everything from here on is long-form: one section per scope, at the length the argument actually
+takes. None of it is pasted as-is — [What goes in the console
+today](#what-goes-in-the-console-today) is what goes in the boxes. This is where the reasoning
+lives, where a reviewer's follow-up is answered from, and what has to be edited when an operation
+is added to `SELECTION`.
 
 ### `gmail.readonly`
 
@@ -302,9 +383,11 @@ the user asked for are returned to the user's machine. *(Then the shared handlin
 
 ## The demo video
 
-**One** unlisted YouTube video, its URL pasted into every scope's field. Not one per scope — a
-single recording is required to cover all of them, which is the whole reason it is worth recording
-last, after the scope set has stopped moving.
+**One** unlisted YouTube video covering every scope. Not one per scope — a single recording is
+required to cover all of them, which is the whole reason it is worth recording last, after the
+scope set has stopped moving. The URL field is no longer on the Data access page and is not asked
+for per scope; it is collected once at the final submission step, after the boxes above are
+filled.
 
 There is no way to avoid it here. A video is required for *sensitive* scopes as well as restricted
 ones, so dropping all five restricted scopes would still leave seven that need it; the only routes
@@ -361,9 +444,10 @@ exists for this field, and says so in its own source: review tooling will not fo
 parameter into a client-side tab. A `?tab=` form resolves to the same document for a human and is a
 gratuitous chance for a reviewer to land somewhere unintended.
 
-**Fill the three fields on every sensitive and restricted scope** — justification, intended data
-usage, demo video — from the text above. The console refuses the submission until all three are
-present on all twelve; `drive.file` needs none.
+**Fill all three boxes and both feature dropdowns** from [What goes in the console
+today](#what-goes-in-the-console-today). The console refuses the submission until every sensitive
+and restricted scope is covered by the box it sits under; `drive.file` needs nothing, and the video
+URL is asked for later.
 
 **Say what the broker is before anyone asks.** The next section is why.
 
