@@ -89,17 +89,17 @@ accept when it arrives unprompted and with the escape hatch attached. It is the 
 security assessment](#the-security-assessment-and-the-question-that-decides-it) section makes at
 length, compressed to one clause. Do not drop it to buy characters for something else.
 
-### Your sensitive scopes — 998 characters
+### Your sensitive scopes — 995 characters
 
-> Lanes Link is an open-source MCP endpoint the user runs on their own machine so their agent acts on their accounts. Requests go from that machine straight to Google and back: no Lanes server in that path, no copy kept, never sold, advertised against, or used to train AI. Our shared OAuth client is optional; --own-client uses the user's own.
+> Lanes Link is an open-source MCP endpoint the user runs on their own machine, so the AI agent they chose can act on their Google data when they ask. Requests go from that machine straight to Google and back: no Lanes server in that path, no copy kept, never sold, advertised against, or used to train AI. Our shared OAuth client is optional; --own-client uses their own.
 >
-> calendar.readonly: calendarList.list (which calendars exist, and the time zone new events need) and freebusy.query ("when am I free"); calendar.events grants neither.
-> calendar.events: read events and insert/patch/move them. .readonly cannot create; .owned drops shared calendars.
-> documents, spreadsheets: read and edit Docs and Sheets. The .readonly forms cannot write; Drive cannot substitute, as a whole-file replace loses formulas.
-> tasks: read and add tasks. Google publishes only tasks and tasks.readonly.
-> contacts.readonly, contacts.other.readonly: resolve a name to an address; never enumerated.
+> Calendar (calendar.readonly, calendar.events): show their schedule, answer "when am I free", and create or reschedule events they ask for. The read-only forms cannot create an event.
 >
-> Full calendar and contacts write are not requested.
+> Docs and Sheets (documents, spreadsheets): read a doc or sheet to answer a question about it and make the edits they ask for. The .readonly forms cannot write.
+>
+> Tasks (tasks): list their tasks, add one, mark one done. Google publishes no narrower write scope.
+>
+> Contacts (contacts.readonly, contacts.other.readonly): turn a name into an email address when they say "email Bob about the invoice". Read-only, and only a search they asked for.
 
 ### Your restricted scopes → Drive scopes — 994 characters
 
@@ -131,9 +131,17 @@ monitoring, compliance, anti-spam or CRM applies.
 > mail.google.com is not requested; no permanent deletion, only trash.
 
 Each was cut to fit, and what got cut is the same thing every time: the handling paragraph below
-shrank to one clause, and the per-operation lists shrank to the operations a reviewer would
-recognise. What was kept in all three is the narrower-scope argument, because that is the half a
-submission is rejected on.
+shrank to one clause, and the per-operation detail shrank to what a reviewer reads rather than what
+an implementer needs. What was kept in all three is the narrower-scope argument, one clause per
+group, because the prompt asks for it by name and it is the half a submission is rejected on.
+
+The sensitive box is deliberately the plainest of the three. It carries seven scopes across four
+products, and a reviewer meeting it has no reason to know an API method name — so it names the
+product, says what the user gets, and gives the narrower-scope answer in a clause. It also does not
+list the scopes that were *not* requested. That argument is real and it is made at length below, but
+in 1000 characters shared by seven scopes the space goes to what is being asked for. The restricted
+boxes still make it, because `drive.file` versus `drive.readonly` and the absence of
+`mail.google.com` are the questions those reviewers actually arrive with.
 
 ## The shared handling paragraph
 
