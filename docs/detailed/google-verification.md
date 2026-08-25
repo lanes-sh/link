@@ -143,31 +143,29 @@ in 1000 characters shared by seven scopes the space goes to what is being asked 
 boxes still make it, because `drive.file` versus `drive.readonly` and the absence of
 `mail.google.com` are the questions those reviewers actually arrive with.
 
-### Additional info — 988 characters
+### Additional info — 996 characters
 
 A fourth box, at the end of the submission after the scope justifications and the video link, and
 the only one on the form that is optional. Three things go in it and they only just fit.
 
 [The broker](#the-security-assessment-and-the-question-that-decides-it) is the first, because there
-is nowhere in a scope justification it fits and being asked is worse than volunteering. The full
-handling statement is the second — the scope boxes carry a one-clause form, and this is the only
-place the Limited Use commitment can be made in Google's own words, which is worth the characters
-it costs. The third is that Google asks outright, in the box's own prompt, for "the project IDs of
-any other projects that use OAuth": for this application that is the sign-in project
+is nowhere in a scope justification it fits and being asked is worse than volunteering. The handling
+statement is the second — the scope boxes carry a one-clause form, and this is where the Limited Use
+commitment gets made in Google's own words, which is worth the characters it costs. The third is
+that Google asks outright, in the box's own prompt, for "the project IDs of any other projects that
+use OAuth": for this application that is the sign-in project
 [ADR-031](adr/031-sign-in-and-data-access-are-separate-projects.md) keeps separate, and a question
 the form asks by name reads as an omission when it goes unanswered.
 
-What did not fit is the install command — it is one line in the README and the repository is linked
-from the first sentence.
+Two things did not fit and are not missed. The install command is one line in the README and the
+repository is linked in the first sentence. The privacy policy URL has a dedicated field elsewhere
+on the same submission, so the pointer here is a cross-reference rather than the link itself.
 
-`PROJECT_ID` is a placeholder: the sign-in project's id goes there when this is pasted, and does not
-get written back into this file. The measured length leaves room for a longer one.
-
-> Lanes Link is open-source software the user runs on their own machine: github.com/lanes-sh/link. Requests go from that machine directly to Google and back: Lanes operates no server in that path and holds no copy. Google user data is never used for advertising, never sold or transferred, never read by a person at Lanes, and never used to develop, improve or train generalised or non-personalised AI/ML models. Full statement: lanes.sh/privacy, section 7.
+> Lanes Link is open-source software the user runs on their own machine: github.com/lanes-sh/link. Requests go from that machine directly to Google and back: Lanes operates no server in that path and holds no copy. Google user data is never used for advertising, never sold or transferred, never read by a person at Lanes, and never used to develop, improve or train generalised or non-personalised AI/ML models. See section 7 of our privacy policy.
 >
 > The only things reaching a Lanes server are the OAuth authorization code and refresh token, in transit through our token broker and not retained, plus a salted hash of the account identifier, used to enforce the per-account limit on the shared client. An installed app cannot hold a client secret, which is the only reason the broker exists. --own-client registers the user's own client and removes us from that path too.
 >
-> Other OAuth projects: sign-in is separate, in project PROJECT_ID, requesting only openid, email and profile.
+> Other OAuth projects: sign-in (for desktop app) is separate, in project lanes-sh, requesting only openid, email and profile.
 
 ## The shared handling paragraph
 
