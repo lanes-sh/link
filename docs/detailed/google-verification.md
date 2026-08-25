@@ -143,24 +143,31 @@ in 1000 characters shared by seven scopes the space goes to what is being asked 
 boxes still make it, because `drive.file` versus `drive.readonly` and the absence of
 `mail.google.com` are the questions those reviewers actually arrive with.
 
-### Additional info — 974 characters
+### Additional info — 988 characters
 
 A fourth box, at the end of the submission after the scope justifications and the video link, and
-the only one on the form that is optional. It is where [the broker](#the-security-assessment-and-the-question-that-decides-it)
-gets stated, because there is nowhere in a scope justification that it fits and being asked is worse
-than volunteering. Google also asks outright here for "the project IDs of any other projects that
-use OAuth", which for this application is the sign-in project ADR-031 keeps separate — so answer it.
+the only one on the form that is optional. Three things go in it and they only just fit.
+
+[The broker](#the-security-assessment-and-the-question-that-decides-it) is the first, because there
+is nowhere in a scope justification it fits and being asked is worse than volunteering. The full
+handling statement is the second — the scope boxes carry a one-clause form, and this is the only
+place the Limited Use commitment can be made in Google's own words, which is worth the characters
+it costs. The third is that Google asks outright, in the box's own prompt, for "the project IDs of
+any other projects that use OAuth": for this application that is the sign-in project
+[ADR-031](adr/031-sign-in-and-data-access-are-separate-projects.md) keeps separate, and a question
+the form asks by name reads as an omission when it goes unanswered.
+
+What did not fit is the install command — it is one line in the README and the repository is linked
+from the first sentence.
 
 `PROJECT_ID` is a placeholder: the sign-in project's id goes there when this is pasted, and does not
-get written back into this file. The measured length leaves room for it.
+get written back into this file. The measured length leaves room for a longer one.
 
-> Two things, stated before you ask.
+> Lanes Link is open-source software the user runs on their own machine: github.com/lanes-sh/link. Requests go from that machine directly to Google and back: Lanes operates no server in that path and holds no copy. Google user data is never used for advertising, never sold or transferred, never read by a person at Lanes, and never used to develop, improve or train generalised or non-personalised AI/ML models. Full statement: lanes.sh/privacy, section 7.
 >
-> 1. Where user data goes. Lanes Link is an open-source CLI the user installs and runs themselves (github.com/lanes-sh/link). Their Google data moves directly between that machine and Google: we operate no server in that path and keep no copy. What does reach a Lanes server is the OAuth authorization code and the refresh token, in transit through our token broker and not retained, plus a salted one-way hash of the account id, used to rate-limit the shared client. An installed app cannot hold a client secret, which is the only reason the broker exists. --own-client registers the user's own client and removes us from that path too.
+> The only things reaching a Lanes server are the OAuth authorization code and refresh token, in transit through our token broker and not retained, plus a salted hash of the account identifier, used to enforce the per-account limit on the shared client. An installed app cannot hold a client secret, which is the only reason the broker exists. --own-client registers the user's own client and removes us from that path too.
 >
-> 2. Other OAuth projects. Sign-in and data access are deliberately separate. The sign-in client lives in project PROJECT_ID and requests only openid, email and profile: no sensitive or restricted scopes.
->
-> To try it: bun install -g @lanes-sh/link, then lanes link connect gmail. No Lanes account needed.
+> Other OAuth projects: sign-in is separate, in project PROJECT_ID, requesting only openid, email and profile.
 
 ## The shared handling paragraph
 
