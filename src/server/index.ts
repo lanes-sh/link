@@ -1,4 +1,4 @@
-import { challenge, type Authenticator } from '#auth';
+import { challenge, type Authenticator, type AuthOutcome, type ChallengeError } from '#auth';
 import type { Logger } from '#connectivity';
 import { capabilityIdForToolName } from '#server/mcp';
 import { ATTACHMENTS_PATH, stageAttachment } from './attachments.ts';
@@ -50,6 +50,34 @@ export interface ServerOptions {
   /** Hostnames this endpoint answers to. See `./rebinding.ts`. */
   readonly allowedHostnames?: readonly string[] | undefined;
 }
+
+type RefusalReason = Extract<AuthOutcome, { ok: false }>['reason'];
+
+/**
+ * What a caller should do about each refusal.
+ *
+ * `invalid` is the only one a client can act on by itself: it presented a
+ * credential and this endpoint did not accept it, which is what a refresh is
+ * for. RFC 6750 §3.1 has a name for that and clients branch on it; the others
+ * mean there is nothing to refresh, and §3 says to stay quiet rather than send
+ * a client after a token it does not hold. `malformed` says nothing either —
+ * `invalid_request` carries a SHOULD of a 400 status, and changing that path's
+ * status is a larger question than this answers.
+ */
+const CHALLENGE: Partial<Record<RefusalReason, ChallengeError>> = {
+  invalid: {
+    code: 'invalid_token',
+    description: 'The credential is expired, revoked, or not one this endpoint issued.',
+  },
+};
+
+/** The same four, for whoever is reading the body rather than the header. */
+const HINTS: Record<RefusalReason, string> = {
+  missing: 'Present the profile token as: Authorization: Bearer <token>',
+  malformed: 'Present the profile token as: Authorization: Bearer <token>',
+  invalid: 'Refresh the credential. Authorize again only if the refresh is refused too.',
+  not_configured: 'This profile has no token yet. Run: lanes link token rotate',
+};
 
 export const MCP_PATH = '/mcp';
 export const RELOAD_PATH = '/reload';
@@ -174,16 +202,13 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
           JSON.stringify({
             error: 'unauthorized',
             reason: outcome.reason,
-            hint:
-              outcome.reason === 'not_configured'
-                ? 'This profile has no token yet. Run: lanes link token rotate'
-                : 'Present the profile token as: Authorization: Bearer <token>',
+            hint: HINTS[outcome.reason],
           }),
           {
             status: 401,
             headers: {
               'content-type': 'application/json',
-              'www-authenticate': challenge(metadata),
+              'www-authenticate': challenge(metadata, CHALLENGE[outcome.reason]),
             },
           },
         );

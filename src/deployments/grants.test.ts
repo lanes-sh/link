@@ -44,6 +44,7 @@ const cloudrun = {
   service: 'lanes-link',
   access: 'public',
   service_account: 'lanes-link-run@my-project.iam.gserviceaccount.com',
+  min_instances: 0,
 } as const satisfies DeployConfig;
 
 const target: TargetConfig = {

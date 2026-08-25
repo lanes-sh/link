@@ -56,10 +56,15 @@ Reconstructing the cause meant reading object timestamps out of the state bucket
 
 ## Decision
 
-**A replayed refresh token is refused on its own. The family survives.**
+**A replayed refresh token is refused on its own, once it is old enough to be a
+replay. The family survives either way.**
 
 ```ts
 if (record.kind === 'consumed') {
+  const spentAt = record.consumedAt;
+  if (spentAt !== undefined && this.#now() - spentAt <= REFRESH_REUSE_MS) {
+    return this.#issue(record.clientId, record.scope, randomToken('llr'), record.family);
+  }
   this.#options.log?.warn('refresh token replayed', {
     clientId: record.clientId,
     family: record.family,
@@ -68,8 +73,21 @@ if (record.kind === 'consumed') {
 }
 ```
 
-Rotation is unchanged — the spent token still does not work, which is the property rotation exists
-for. The tombstone is unchanged, and now earns its keep the way it always should have: by making
+**Thirty seconds of it is not a replay at all.** A client whose refresh succeeded but whose
+*response* was lost holds a token the server has already spent, and sending it again is the only
+move it has. The reference MCP client rethrows every `OAuthError` but `server_error` rather than
+recovering from it, so answering that retry with `invalid_grant` does not produce a retry — it
+produces a dead connector and an owner sent to a browser, over a network blip. Inside the window
+the request is the one already answered and the client is owed the answer. The band is the one
+Auth0's reuse interval (0–60 s) and Okta's grace period occupy.
+
+A fresh pair rather than the one already issued, because tokens are stored hashed: returning the
+same strings would mean keeping them in plaintext for the window, which is a worse trade than
+issuing again. A tombstone written before this existed carries no `consumedAt` and falls through
+to the refusal, which is the safe direction and needs no migration.
+
+Rotation is unchanged in what it is for — the spent token stops working, now shortly after the
+real client rotates it rather than instantly. The tombstone is unchanged, and now earns its keep the way it always should have: by making
 the replay *visible* rather than by triggering a revocation.
 
 **The authorization server takes a logger.** Structurally typed rather than `#connectivity`'s
@@ -84,8 +102,9 @@ as new policy rather than as the old one returning.
 
 ## Consequences
 
-**A replayed refresh token no longer invalidates a pair a thief may hold.** This is the whole of
-what is given up, and it is worth stating without softening: if a refresh token is copied and the
+**A captured refresh token keeps working for up to thirty seconds after the real client next
+rotates it**, and **a replayed one no longer invalidates a pair a thief may hold**. That is the
+whole of what is given up, and it is worth stating without softening: if a refresh token is copied and the
 thief refreshes first, the thief's pair keeps working and the real client's replay is merely
 refused.
 
@@ -116,9 +135,13 @@ about that is shrink the window: the default access-token lifetime moves from on
 which is the subject of the field's own comment in `src/profile/authorization.ts` rather than of
 this record.
 
-**It does not add a grace window.** The obvious middle path — honour or refuse a replay inside a
-few minutes, revoke outside it — was measured against the incident and would have missed it. A
-window generous enough to catch it is not a window.
+**The window is not what fixes the incident above.** That replay arrived forty-four minutes after
+the token was spent, with a rotation in between; no interval short enough to mean anything would
+have caught it. The two changes answer different failures and neither substitutes for the other —
+dropping the family revocation is what saves a live session from a stale copy, and the window is
+what saves a client whose refresh response never arrived. An earlier draft of this record rejected
+the window on the strength of that measurement alone, which was the right measurement applied to
+the wrong question.
 
 **It does not audit the replay.** The audit log records what a caller *did*, and a refused refresh
 has no principal. It goes to the endpoint's operational log, beside `rejected request`, for the

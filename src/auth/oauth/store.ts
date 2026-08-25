@@ -74,6 +74,15 @@ export interface IssuedToken {
    * the theft and the retry look identical from here.
    */
   readonly family: string;
+  /**
+   * When this token was spent, on a `consumed` tombstone and nowhere else.
+   *
+   * What makes the reuse interval possible: without it a spent token carries no
+   * hint whether it was spent a second ago or a month ago, and those are a retry
+   * and a replay. A tombstone written before this existed has no `consumedAt`
+   * and is read as the older one, which is the safe direction.
+   */
+  readonly consumedAt?: number;
 }
 
 export function hashToken(value: string): string {
@@ -185,7 +194,8 @@ export class OAuthStore {
     const key = hashToken(token);
     const record = await this.#read<IssuedToken>(TOKENS, key);
     if (!record) return;
-    await this.#state.set(TOKENS, key, JSON.stringify({ ...record, kind: 'consumed' }));
+    const spent: IssuedToken = { ...record, kind: 'consumed', consumedAt: this.#now() };
+    await this.#state.set(TOKENS, key, JSON.stringify(spent));
   }
 
   /**

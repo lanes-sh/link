@@ -245,6 +245,9 @@ describe('where a target deploys', () => {
       region: 'europe-west1',
       service: 'lanes-link',
       access: 'iam',
+      // Scaling to zero is the default, and stays the default: a cold start is
+      // under three seconds and the platform queues the request behind it.
+      min_instances: 0,
     });
   });
 
@@ -263,6 +266,7 @@ describe('where a target deploys', () => {
       region: 'europe-west1',
       service: 'lanes-link',
       access: 'iam',
+      min_instances: 0,
     });
   });
 

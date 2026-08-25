@@ -128,6 +128,7 @@ minute it happened:
 | `rejected request {"reason":"invalid"}` | it sent one this endpoint does not know |
 | `warn refresh token replayed` | a second copy of the client presented a spent refresh token. Refused, and the live session is untouched — see [ADR-035](detailed/adr/035-a-replayed-refresh-token-must-not-log-the-owner-out.md) |
 | **nothing at all** | the call never left the client |
+| a browser prompt with no `/token` line | the client's refresh failed at the network level. It is swallowed rather than surfaced, so a re-authorization appears with no error behind it |
 
 The last row is the one worth knowing, because from the outside it looks exactly like the others
 and it is the only one where the endpoint is not involved. No line means no request: no cold

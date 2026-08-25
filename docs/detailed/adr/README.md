@@ -43,6 +43,7 @@ Nothing in the codebase depends on it.
 | [033](033-a-pasted-token-for-an-mcp-server.md) | Where a vendor's MCP server will not register a client, the operator's own token is the credential — so an mcp connector's auth is exactly none, oauth, or bearer |
 | [034](034-updating-is-a-reinstall.md) | Updating is replacing the installed package; Bun is the only installer driven, a checkout is refused, and nothing updates itself |
 | [035](035-a-replayed-refresh-token-must-not-log-the-owner-out.md) | A replayed refresh token is refused on its own and recorded; the family it belongs to survives |
+| [036](036-a-client-is-told-this-endpoint-keeps-it-signed-in.md) | `offline_access` is advertised and granted, a rejected credential is told `invalid_token`, and scope is narrowed rather than echoed |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 
@@ -82,3 +83,8 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
   answer a replayed refresh token by revoking its whole chain; the issuing stands and the answer
   does not. What changed is evidence rather than reasoning: a family is minted once and never
   rotates, so the expensive answer was reaching an approved client roughly daily and a thief never.
+
+- **ADR-036** completes ADR-035 rather than amending it. ADR-035 removed the endpoint's own reason
+  for logging a connector out; this one removes the reason a client had for not refreshing. Both
+  were needed and neither was sufficient, which is the shape worth remembering: the endpoint was
+  correct and the client was correct, and the session still ended at a consent screen.

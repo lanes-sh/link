@@ -86,6 +86,14 @@ export { parseConfig } from '#profile';
 export interface HarnessOptions {
   profile: string;
   log?: Logger;
+  /**
+   * The clock the authorization server and its store share.
+   *
+   * Shared deliberately: a tombstone's `consumedAt` is written by the store and
+   * compared by the server, so two clocks would make the reuse interval
+   * untestable in the one direction that matters. Absent means `Date.now`.
+   */
+  now?: () => number;
   port: number;
   policy: string;
   token?: string;
@@ -220,7 +228,7 @@ export function startHarness(options: HarnessOptions): Harness {
   // demonstrate that the fake works.
   const log = options.log ?? silentLogger();
 
-  const store = options.authorization ? new OAuthStore(state.kv) : null;
+  const store = options.authorization ? new OAuthStore(state.kv, options.now) : null;
   const gate = store
     ? {
         surface: {
@@ -228,6 +236,7 @@ export function startHarness(options: HarnessOptions): Harness {
             store,
             accessTokenTtlMs: 3_600_000,
             log,
+            ...(options.now ? { now: options.now } : {}),
             verifyOwner: (presented) => Promise.resolve(tokensMatch(presented, token)),
           }),
           issuer: (origin: string) => origin,

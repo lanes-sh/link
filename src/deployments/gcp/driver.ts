@@ -113,6 +113,12 @@ export function deployPlan(input: PlanInput): DeployStep[] {
         // harness can mint one — so a target reached by a remote MCP client
         // declares `public` and gates the request in the application instead.
         cloudrun.access === 'iam' ? '--no-allow-unauthenticated' : '--allow-unauthenticated',
+        // Always passed, including the zero. Config is the source of truth here
+        // (ADR-004), and a flag sent only when non-zero would let a value be
+        // raised and never lowered — the revision would keep whatever the last
+        // deploy that bothered to mention it had set.
+        '--min-instances',
+        String(cloudrun.min_instances),
       ],
     },
   ];

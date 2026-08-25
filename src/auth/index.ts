@@ -212,9 +212,11 @@ export {
   challenge,
   protectedResourceMetadata,
   MCP_SCOPE,
+  type ChallengeError,
   type ResourceIdentity,
 } from './oauth/metadata.ts';
-export { OAuthServer, matchesRegistered, pkceChallengeFor, type AuthorizeRequest, type OAuthResult } from './oauth/server.ts';
+export { OAuthServer, pkceChallengeFor, type AuthorizeRequest, type OAuthResult } from './oauth/server.ts';
+export { matchesRegistered } from './oauth/redirects.ts';
 export { OAuthStore, hashToken, randomToken } from './oauth/store.ts';
 export { OidcVerifier, type OidcVerifierOptions, type VerifiedSubject } from './oidc.ts';
 export { IssuedTokenAuthenticator, OidcAuthenticator } from './remote.ts';
