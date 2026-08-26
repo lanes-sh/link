@@ -1,4 +1,5 @@
 import { listProfiles } from '#profile';
+import { unservableProfiles } from '#deployments/servable.ts';
 import { fileURLToPath } from 'node:url';
 import { deployedUrl, endpointHealth, localUrl } from '../../endpoint-url.ts';
 import { announce, heading, print, style, warn } from '../../output.ts';
@@ -36,11 +37,14 @@ export async function outputs(flags: OutputsFlags): Promise<void> {
     const live = await endpointHealth(url, token);
     const mine = live?.profile === runtime.resolution.profile;
 
-    // Live if it is up, otherwise what `start` would serve: the whole
-    // workspace, since `--only` is the exception rather than the default.
+    // Live if it is up, otherwise what `start` would serve — which is every
+    // profile in the workspace *that declares this target*, not every profile
+    // full stop. `start` opens them all against one target and skips the ones
+    // that cannot run on it, so listing those here would promise a reach the
+    // endpoint will not have.
     const profiles = mine
       ? live.profiles
-      : await listProfiles(runtime.resolution.workspaceRoot);
+      : await servable(runtime.resolution.workspaceRoot, runtime.target);
 
     if (flags.json) {
       print(
@@ -132,6 +136,18 @@ export async function outputs(flags: OutputsFlags): Promise<void> {
   } finally {
     await runtime.close();
   }
+}
+
+/** The profiles a `start` on this target would actually open. */
+async function servable(workspaceRoot: string, target: string): Promise<string[]> {
+  const all = await listProfiles(workspaceRoot);
+  const cannot = new Set(
+    (await unservableProfiles({ workspaceRoot, profile: undefined, target })).map(
+      (one) => one.profile,
+    ),
+  );
+
+  return all.filter((name) => !cannot.has(name));
 }
 
 /**

@@ -111,7 +111,7 @@ export async function deploy(flags: DeployFlags): Promise<void> {
     deploy: deployConfig,
     tag,
     target,
-    ...(flags.profile !== undefined ? { profile: flags.profile } : {}),
+    profile: resolution.profile,
     ...(workspace !== undefined ? { workspace } : {}),
     ...(secretEnv ? { secretEnv } : {}),
   });

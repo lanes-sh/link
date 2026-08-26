@@ -103,7 +103,9 @@ export function deployPlan(input: PlanInput): DeployStep[] {
         '--set-env-vars',
         [
           `LANES_LINK_TARGET=${input.target}`,
-          ...(input.profile ? [`LANES_LINK_PROFILE=${input.profile}`] : []),
+          // Unconditional: `deploy` requires --profile (ADR-037), so this is
+          // always known, and a revision without it refuses at boot.
+          `LANES_LINK_PROFILE=${input.profile}`,
           ...(input.workspace ? [`LANES_LINK_HOME=${input.workspace}`] : []),
         ].join(','),
         ...secretMounts(input.secretEnv),

@@ -20,6 +20,27 @@ import { startStdioEndpoint } from '#server/endpoint.ts';
 export async function mcpStdio(
   flags: GlobalFlags & { only?: boolean | undefined },
 ): Promise<void> {
+  // Its own refusal, written for the only person who will read it: someone
+  // looking at a client's MCP log after the server "disconnected". There is no
+  // command line here to add a flag to — the client's config file is the only
+  // place that can carry one — so the message has to be a paste rather than an
+  // instruction, and the generic "pass --profile" would be advice with nowhere
+  // to follow it.
+  if (!flags.profile || !flags.target) {
+    printErr(
+      'lanes link mcp stdio needs --profile and --target in its "args".\n' +
+        '\n' +
+        '  This client spawns the endpoint, so its config file is the only place\n' +
+        '  that can say which profile and target it serves:\n' +
+        '\n' +
+        '    "lanes-link": {\n' +
+        '      "command": "/path/to/lanes",\n' +
+        '      "args": ["link","mcp","stdio","--profile","<name>","--target","<name>"]\n' +
+        '    }\n',
+    );
+    process.exit(1);
+  }
+
   const endpoint = await startStdioEndpoint({
     flags,
     ...(flags.only ? { only: true } : {}),
