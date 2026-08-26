@@ -1,5 +1,6 @@
 import { defineProvider } from '#connectivity';
 import { GOOGLE_APP, GOOGLE_OAUTH, specPath } from '../shared/oauth.ts';
+import { googleServiceAccount } from '../shared/service-account.ts';
 import { googleSetup } from '../shared/setup.ts';
 import { TASKS_REDACT } from './redact.ts';
 
@@ -47,6 +48,7 @@ export const tasks = defineProvider({
     app: GOOGLE_APP,
     scopes: TASKS_SCOPES,
     ...GOOGLE_OAUTH,
+    assertion: googleServiceAccount('Tasks', TASKS_SCOPES, 'required', ['tasks.googleapis.com']),
   },
   setup: googleSetup('Tasks', TASKS_SCOPES, { apis: ['tasks.googleapis.com'] }),
   redact: TASKS_REDACT,

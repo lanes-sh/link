@@ -130,6 +130,32 @@ export function defineProvider(input: unknown): ProviderManifest {
     }
   }
 
+  if (manifest.auth.kind === 'oauth' && manifest.auth.assertion) {
+    // Same seam, same absence as the broker rule above. The SDK owns an mcp
+    // provider's exchange and takes a client, not a signed assertion — so the
+    // choice would be offered, accepted, and then have nowhere to go.
+    if (manifest.connector.kind === 'mcp') {
+      throw new Error(
+        `Provider "${manifest.id}": an mcp connector runs the exchange through the SDK, which cannot present a signed assertion. Remove auth.assertion.`,
+      );
+    }
+    // The assertion carries `aud` from the key file, but the *scopes* it claims
+    // come from the manifest. A provider requesting none would mint a token
+    // permitted to do nothing and only find out at the first call.
+    if (manifest.auth.scopes.length === 0) {
+      throw new Error(
+        `Provider "${manifest.id}": auth.assertion exchanges a signed assertion for a token scoped to auth.scopes, which is empty. There would be nothing to grant.`,
+      );
+    }
+    // The whole point of the alternative is that it asks for something. A block
+    // with no prompt reaches the walkthrough and then has nothing to collect.
+    if (manifest.auth.assertion.setup.prompts.length === 0) {
+      throw new Error(
+        `Provider "${manifest.id}": auth.assertion declares no setup prompts, so there is no way to learn what key to ask for.`,
+      );
+    }
+  }
+
   if (
     (manifest.auth.kind === 'bearer' ||
       manifest.auth.kind === 'api_key' ||

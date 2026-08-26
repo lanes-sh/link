@@ -17,6 +17,15 @@ Everything below is about the **hosted client** — the one Lanes operates, whic
 `lanes link connect <provider> --own-client` registers their own and needs none of this;
 [`setup/google.md`](setup/google.md) is that path.
 
+**Verification is not what makes a connection last.** The two are separate settings and it is worth
+being exact, because the confusion sends people here for a problem this page does not solve: the
+seven-day refresh-token expiry follows an OAuth client's *publishing status*, and publishing an
+unverified client removes it. What verification buys is the removal of the unverified-app screen and
+of the lifetime 100-new-user cap — which is what a client handed to other people needs, and is
+unrelated to how long any one connection survives. An operator who wants neither can authenticate
+with a service account key instead ([ADR-038](adr/038-a-key-is-the-second-way-into-an-account.md)),
+which requires no verification of any kind because nothing consents on a user's behalf.
+
 ## Where each field lives
 
 The console used to ask three questions of each of the twelve scopes on its own form. It now
@@ -423,8 +432,8 @@ filled.
 
 There is no way to avoid it here. A video is required for *sensitive* scopes as well as restricted
 ones, so dropping all five restricted scopes would still leave seven that need it; the only routes
-that skip it are the ones that skip verification altogether — Internal, Testing, personal use, and
-domain-wide install — and Testing is the status [ADR-028](adr/028-a-hosted-oauth-client-is-the-default.md)
+that skip it are the ones that skip verification altogether — Internal, Testing, personal use,
+domain-wide install, and a service account key — and Testing is the status [ADR-028](adr/028-a-hosted-oauth-client-is-the-default.md)
 exists to escape.
 
 Four things are asked for, and the bar is lower than "demo video" suggests — it is a screen

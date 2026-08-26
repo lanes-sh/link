@@ -1,5 +1,6 @@
 import { defineProvider } from '#connectivity';
 import { GOOGLE_APP, GOOGLE_OAUTH, PEOPLE_IDENTITY, specPath } from '../shared/oauth.ts';
+import { googleServiceAccount } from '../shared/service-account.ts';
 import { googleSetup } from '../shared/setup.ts';
 import { CONTACTS_REDACT } from './redact.ts';
 
@@ -43,6 +44,7 @@ export const contacts = defineProvider({
     app: GOOGLE_APP,
     scopes: CONTACTS_SCOPES,
     ...GOOGLE_OAUTH,
+    assertion: googleServiceAccount('Contacts', CONTACTS_SCOPES, 'required', ['people.googleapis.com']),
   },
   identity: PEOPLE_IDENTITY,
   setup: googleSetup('Contacts', CONTACTS_SCOPES, { apis: ['people.googleapis.com'] }),

@@ -95,3 +95,8 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
   did not survive is the conclusion that making the fallback *visible* was enough. A printed line
   is not a guard, and a fallback made an ignored flag survivable — so the mistake surfaced one
   command later, from a different source, detached from its cause.
+
+- **ADR-038** follows from ADR-028 rather than amending it: the hosted client stays the default and
+  the browser stays the ordinary route. What it corrects is a claim ADR-028's implementation made
+  and could not keep — that a hosted client escapes the seven-day refresh-token expiry — and what
+  it adds is the only arrangement that genuinely does, which is a credential nobody consented to.

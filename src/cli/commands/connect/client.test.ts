@@ -102,7 +102,7 @@ const choice = async (over: Partial<Parameters<typeof resolveOAuthClient>[0]> = 
   document: await document(),
   changes: [] as string[],
   firstForProvider: true,
-  ownClient: false,
+  client: undefined,
   target: 'vendor_mail',
   profile: 'personal',
   fetch: brokerAnswering(OPEN),
@@ -168,7 +168,7 @@ describe('which client a connect uses', () => {
       await choice({
         document: doc,
         changes,
-        ownClient: true,
+        client: 'own' as const,
         credentials: memoryStore({ 'vendor/client_id': 'id', 'vendor/client_secret': 'secret' }),
       }),
     );
@@ -181,9 +181,52 @@ describe('which client a connect uses', () => {
   test('--own-client on a provider that describes no client refuses, and says why', async () => {
     await expect(
       resolveOAuthClient(
-        await choice({ manifest: manifest(BROKER, false), ownClient: true }),
+        await choice({ manifest: manifest(BROKER, false), client: 'own' }),
       ),
     ).rejects.toThrow(/no bring-your-own client path/);
+  });
+});
+
+/**
+ * Asking outright, on a profile that already registered a client.
+ *
+ * The `oauth_apps` entry used to be final, and it was final for a good reason:
+ * a refresh token minted by one client is refused by another, so a profile
+ * silently moved off its own client would find every existing connection
+ * unrefreshable. What makes overriding it safe is that the *token* records
+ * which client minted it — so an override moves this connection and no other.
+ */
+describe('overriding the profile', () => {
+  const registered = () =>
+    memoryStore({ 'vendor/client_id': 'id', 'vendor/client_secret': 'secret' });
+
+  test('the hosted client is used when it is the answer given', async () => {
+    const client = await resolveOAuthClient(
+      await choice({ credentials: registered(), client: 'hosted' }),
+    );
+
+    expect(client.kind).toBe('brokered');
+  });
+
+  test('the profile keeps its own client when nothing was asked for', async () => {
+    // The precedence that has always applied, unchanged by the override above:
+    // an unanswered connect on a profile that registered a client stays on it.
+    const client = await resolveOAuthClient(await choice({ credentials: registered() }));
+
+    expect(client.kind).toBe('own');
+  });
+
+  test('overriding does not un-declare the entry the profile holds', async () => {
+    const changes: string[] = [];
+    const doc = await document();
+
+    await resolveOAuthClient(
+      await choice({ credentials: registered(), client: 'hosted', document: doc, changes }),
+    );
+
+    // The other connections still refresh against it. Removing the entry here
+    // would be an edit on their behalf that nobody asked for.
+    expect(changes).toEqual([]);
   });
 });
 

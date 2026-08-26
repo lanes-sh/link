@@ -1,5 +1,5 @@
 import type { SecretStore } from '#secrets';
-import type { ProviderManifest, SetupPrompt } from '#connectivity';
+import type { ProviderManifest, SetupDeclaration, SetupPrompt } from '#connectivity';
 import { credentialRefForConnection } from '#connectivity';
 import { ConfigDocument } from '../../config-edit.ts';
 import { ok, progress, style } from '../../output.ts';
@@ -27,8 +27,18 @@ import { terminalPrompter, type Prompter } from '../../prompt.ts';
  * an unregistered scope is refused at consent, and a disabled API consents
  * cleanly and then 403s on every call.
  */
-export function printSetup(manifest: ProviderManifest, note: string): void {
-  const setup = manifest.setup;
+export function printSetup(
+  manifest: ProviderManifest,
+  note: string,
+  /**
+   * Which walkthrough. Defaults to the provider's own, and is passed explicitly
+   * by a provider that has more than one way in — those steps are a different
+   * console doing a different job, and printing the browser-flow instructions
+   * to someone who chose a key would be worse than printing nothing.
+   */
+  declaration: SetupDeclaration | undefined = manifest.setup,
+): void {
+  const setup = declaration;
   if (!setup) return;
 
   progress();
@@ -55,15 +65,16 @@ export async function askForSetup(
   prompts: readonly SetupPrompt[],
   note: string,
   prompter: Prompter = terminalPrompter,
+  declaration: SetupDeclaration | undefined = manifest.setup,
 ): Promise<Map<string, string>> {
-  const setup = manifest.setup;
+  const setup = declaration;
   if (!setup) {
     throw new Error(
       `Provider "${manifest.id}" needs a credential but declares no setup, so there is no way to learn what to ask you for. Add a setup block to its manifest.`,
     );
   }
 
-  printSetup(manifest, note);
+  printSetup(manifest, note, setup);
 
   const answers = new Map<string, string>();
   for (const prompt of prompts) {

@@ -1,15 +1,16 @@
-import { createMcpConnector } from '#connectivity/transports';
-import { bearerTokenAsStored } from '#connectivity/auth/index.ts';
-import type { DiscoveredCapability } from '#connectivity';
 import { credentialRefForConnection, WRITE_BUNDLE } from '#connectivity';
 import { ConfigDocument, ensureSetupConnection, repaired } from '../../config-edit.ts';
-import { emit, print, progress, style } from '../../output.ts';
+import { emit, print } from '../../output.ts';
 import { nonInteractivePrompter, terminalPrompter, type Prompter } from '../../prompt.ts';
 import { openRuntime, type GlobalFlags } from '../../runtime.ts';
-import { familyMembers, familyNote, matchesRule, moveCredential, siblingAccountId } from './accounts.ts';
+import { matchesRule, moveCredential, siblingAccountId } from './accounts.ts';
+import { discoverCapabilities } from './discover.ts';
+import { connectFamily, familyMembers } from './family.ts';
+import { authoriseWithKey } from './assertion.ts';
 import { authorise } from './authorise.ts';
+import { chooseAuthMethod, currentAuthMethod } from './method.ts';
 import { preflight } from './requirements.ts';
-import { ALREADY, NOTHING, familyOutcome, renderOutcome, where, type ConnectOutcome } from './outcome.ts';
+import { ALREADY, NOTHING, renderOutcome, where, type ConnectOutcome } from './outcome.ts';
 import { nextAfterEdit, publishRuntimeEdit } from '#cli/publish.ts';
 import { ensureStaticCredential } from './setup.ts';
 import { settleIdentity } from './settle.ts';
@@ -49,7 +50,23 @@ export interface ConnectOptions extends GlobalFlags {
    * and then forgotten, which is the right shape for a decision about a client
    * that is shared by every connection of that vendor.
    */
+  /**
+   * `--own-client`, the older spelling of one of the routes `--auth` now names.
+   *
+   * Kept because it is in scripts and in a year of documentation, and because
+   * it still says something true. It resolves to `--auth own_client`.
+   */
   readonly ownClient?: boolean | undefined;
+  /**
+   * `--auth <method>`: which way in, for a provider that offers more than one.
+   *
+   * Unset means ask, where there is somebody to ask and something to ask
+   * about. It is not sticky the way `--own-client` is: `--own-client` writes an
+   * `oauth_apps` entry that every connection of the vendor then reads, whereas
+   * this decides one connection's credential and is recorded by that credential
+   * existing. Two accounts on the same profile may honestly differ.
+   */
+  readonly auth?: string | undefined;
   /** Injected for tests. The broker is the only thing `connect` fetches. */
   readonly fetch?: typeof globalThis.fetch | undefined;
   readonly json?: boolean | undefined;
@@ -63,18 +80,6 @@ export interface ConnectOptions extends GlobalFlags {
  * credential filed under it belongs to a `connect` that did not finish.
  */
 const PROVISIONAL_ID = 'pending';
-
-/**
- * What discovery is actually doing, per kind, so the wait is explained.
- *
- * They differ enough to be worth saying: reading a local OpenAPI file is
- * instant, while signing in to an IMAP server is a TLS handshake and a LOGIN
- * against a host that sometimes takes its time.
- */
-const DISCOVERY_NOTE: Record<string, string> = {
-  mcp: 'Discovering capabilities…',
-  http: 'Reading the API description…',
-};
 
 export async function connect(target: string, options: ConnectOptions): Promise<void> {
   const outcome = await runConnect(target, options);
@@ -109,30 +114,19 @@ async function runConnect(
     const registry = runtime.registry;
     const entry = registry.get(providerId);
 
-    // `lanes link connect icloud` — an account rather than a provider. What that
-    // means, and why it is three providers underneath, is in `familyMembers`.
+    // One name, several providers. `family.ts` says why iCloud is three.
     if (!entry) {
-      const family = familyMembers(providerId, registry);
+      const members = familyMembers(registry, providerId);
 
-      if (family.length > 1) {
+      if (members.length > 1) {
         await runtime.close();
-        progress(style.dim(familyNote(providerId, family)));
-        // In sequence, and the order matters: the first settles the account id
-        // and stores the credential, and the rest find both already there.
-        //
-        // The id travels as a flag because the family members are addressed by
-        // their own names: `connect icloud.will` parses `will` off a target
-        // that is then thrown away, and recursing with `options` alone dropped
-        // it — the command named an account and each member silently invented
-        // its own.
-        //
-        // `announced` because the line naming the target belongs to the account,
-        // not to each service: three copies of it is three times nothing new.
-        const inherited = { ...options, id: options.id ?? namedId };
-        const members: ConnectOutcome[] = [];
-        for (const member of family) members.push(await runConnect(member, inherited, true));
-
-        return familyOutcome(members);
+        return connectFamily({
+          name: providerId,
+          members,
+          options,
+          namedId,
+          connect: runConnect,
+        });
       }
     }
 
@@ -169,7 +163,27 @@ async function runConnect(
 
     const profile = runtime.resolution.profile;
 
-    // 0. With nobody to ask, resolve everything up front or refuse saying why.
+    const prompter: Prompter =
+      options.nonInteractive === true
+        ? nonInteractivePrompter(`lanes link setup plan ${providerId} --profile ${profile}`)
+        : terminalPrompter;
+
+    // 0a. Which way in, before anything is resolved or written.
+    //
+    //     Ahead of the preflight because it changes the answer: one route needs
+    //     a browser and the other needs a key, and refusing a scripted run for
+    //     want of a browser it was never going to open is a refusal about the
+    //     wrong thing. Inert for every provider declaring one method, which is
+    //     all of them but one vendor's.
+    const method = await chooseAuthMethod({
+      manifest,
+      requested: options.auth,
+      ownClient: options.ownClient === true,
+      current: await currentAuthMethod(manifest, provisionalId, runtime.credentials),
+      prompter,
+    });
+
+    // 0b. With nobody to ask, resolve everything up front or refuse saying why.
     //
     //    Before any write, so a refusal leaves the profile exactly as it was.
     //    The whole list comes back at once: discovering a missing value a
@@ -182,17 +196,26 @@ async function runConnect(
         target: runtime.target,
         credentials: runtime.credentials,
         spec: target,
+        method: method.kind,
       });
 
       if (blocked) return { ...NOTHING, ok: false, ...blocked };
     }
 
-    const prompter: Prompter =
-      options.nonInteractive === true
-        ? nonInteractivePrompter(`lanes link setup plan ${providerId} --profile ${profile}`)
-        : terminalPrompter;
-
-    if (manifest.auth.kind === 'oauth') {
+    if (method.kind === 'assertion') {
+      await authoriseWithKey({
+        manifest,
+        assertion: method.assertion,
+        connectionId: provisionalId,
+        credentials: runtime.credentials,
+        changes,
+        // Same reading as the static-credential arm below: naming a connection,
+        // or asking outright, is how someone says "that one again" — which is
+        // what a rotated key calls for.
+        replace: options.nonInteractive !== true && (options.replace === true || named !== undefined),
+        prompter,
+      });
+    } else if (manifest.auth.kind === 'oauth') {
       await authorise({
         manifest,
         connectionId: provisionalId,
@@ -202,7 +225,7 @@ async function runConnect(
         firstForProvider: !runtime.config.connections.some((c) => c.provider === providerId),
         target,
         profile,
-        ownClient: options.ownClient === true,
+        client: method.client,
         prompter,
         acceptBroadScopes: options.acceptBroadScopes === true,
         ...(options.fetch ? { fetch: options.fetch } : {}),
@@ -252,52 +275,18 @@ async function runConnect(
       if (from && to && from !== to) await moveCredential(runtime.credentials, from, to);
     }
 
-    // 3. Ask the upstream what it exposes. A manifest never declares
-    //    capabilities for a proxied server — the server is the source of truth,
-    //    and a declared list would go stale the moment the vendor ships.
-    let discovered: DiscoveredCapability[] = [];
-
-    if (manifest.connector.kind !== 'local') {
-      progress(style.dim(DISCOVERY_NOTE[manifest.connector.kind] ?? 'Discovering capabilities…'));
-
-      // MCP is the one kind that does not use the runtime's connector here: it
-      // wants the token exactly as just written, without the refresh machinery
-      // that `bearerToken` wraps around it. Every other kind carries whatever
-      // credential it needs from the factory.
-      const connector =
-        manifest.connector.kind === 'mcp'
-          ? createMcpConnector({
-              endpoint: manifest.connector.endpoint,
-              ...(manifest.connector.headers ? { headers: manifest.connector.headers } : {}),
-              accessToken: () =>
-                bearerTokenAsStored(manifest, connectionId, runtime.credentials),
-            })
-          : runtime.connectorFor(providerId, connectionId);
-
-      if (connector) {
-        // Discovery takes the manifest and nothing else. What a provider exposes
-        // is a property of the provider, not of an account — which is just as
-        // well, because the connection being created does not exist in config
-        // until step 4 below.
-        discovered = await connector.discover({ manifest });
-
-        await runtime.state.kv.set('discovery', providerId, JSON.stringify(discovered));
-        registry.setDiscovered(providerId, discovered);
-      }
-    } else if (entry.definition) {
-      // Local capabilities carry their bundle from the manifest. Resources are
-      // included alongside tools: they need a policy grant too, and leaving
-      // them out would register a resource nothing is allowed to read.
-      const bundleOf = (name: string): string | undefined =>
-        manifest.bundles?.find((candidate) => candidate.capabilities.includes(name))?.name;
-
-      discovered = entry.definition.capabilities.map((capability) => ({
-        name: capability.name,
-        description: capability.description,
-        inputSchema: {},
-        ...(bundleOf(capability.name) ? { bundle: bundleOf(capability.name)! } : {}),
-      }));
-    }
+    // 3. Ask the upstream what it exposes.
+    const discovered = await discoverCapabilities({
+      entry,
+      manifest,
+      connectionId,
+      credentials: runtime.credentials,
+      connectorFor: runtime.connectorFor.bind(runtime),
+      remember: async (found) => {
+        await runtime.state.kv.set('discovery', providerId, JSON.stringify(found));
+        registry.setDiscovered(providerId, found);
+      },
+    });
 
     // 4. Declare the connection, or update the one this account already has.
     const existingIndex = runtime.config.connections.findIndex(

@@ -32,7 +32,12 @@ export async function missingRequirements(
   return missing;
 }
 
-export type BlockedReason = 'needs_id' | 'needs_browser' | 'missing_credentials';
+export type BlockedReason =
+  | 'needs_id'
+  | 'needs_browser'
+  /** A question only a person can answer, on a run with nobody to ask. */
+  | 'needs_terminal'
+  | 'missing_credentials';
 
 export interface Blocked {
   readonly reason: BlockedReason;
@@ -73,11 +78,37 @@ export async function preflight(input: {
    * somewhere nobody looks.
    */
   readonly spec: string;
+  /**
+   * Which way in the operator chose, for a provider offering two.
+   *
+   * The whole reason this parameter exists is that the OAuth refusal below is
+   * about a *browser*, and the key route opens none. Without it a scripted
+   * `connect --auth <key method>` would be turned away by a message describing
+   * a step it does not perform.
+   */
+  readonly method?: 'oauth' | 'assertion';
 }): Promise<Blocked | null> {
   const { manifest, connectionId, profile, target, spec } = input;
+  const method = input.method ?? 'oauth';
   const rerun = `lanes link connect ${spec} --profile ${profile} --target ${target}`;
+  const assertion = manifest.auth.kind === 'oauth' ? manifest.auth.assertion : undefined;
 
-  if (manifest.auth.kind === 'oauth') {
+  if (method === 'assertion' && assertion) {
+    // The key can be placed ahead of time; who it acts as cannot. That value
+    // lives inside the pointer `connect` writes, so where it is mandatory this
+    // run has a question and nobody to ask — and refusing here is better than
+    // storing a credential that reads every mailbox as empty.
+    if (assertion.delegation === 'required') {
+      return {
+        reason: 'needs_terminal',
+        message:
+          `${manifest.name} can only reach an account by acting as someone, and who that is has ` +
+          `to be typed.\n  Nothing was written. Run this in a terminal:`,
+        needs: [],
+        then: `${rerun} --auth ${assertion.method}`,
+      };
+    }
+  } else if (manifest.auth.kind === 'oauth') {
     return {
       reason: 'needs_browser',
       message:
@@ -88,7 +119,12 @@ export async function preflight(input: {
     };
   }
 
-  const { requirements, needsId } = setupRequirements(manifest, connectionId, { profile, target });
+  const { requirements, needsId } = setupRequirements(
+    manifest,
+    connectionId,
+    { profile, target },
+    { method },
+  );
 
   if (needsId) {
     return {
@@ -108,6 +144,8 @@ export async function preflight(input: {
     reason: 'missing_credentials',
     message: `${manifest.name} needs ${missing.length} value(s) in the credential store first.`,
     needs: missing,
-    then: `${rerun}${connectionId ? ` --id ${connectionId}` : ''} --non-interactive`,
+    then:
+      `${rerun}${connectionId ? ` --id ${connectionId}` : ''}` +
+      `${method === 'assertion' && assertion ? ` --auth ${assertion.method}` : ''} --non-interactive`,
   };
 }

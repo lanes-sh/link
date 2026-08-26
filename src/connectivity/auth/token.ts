@@ -2,6 +2,7 @@ import { type ProviderManifest } from '#connectivity';
 import type { ProviderRegistry } from '#registry';
 import type { SecretStore } from '#secrets';
 import { credentialResolver } from './resolve.ts';
+import { resolveAssertionToken, storedAssertionFor } from './oauth-jwt/index.ts';
 import { CredentialOAuthProvider } from './oauth-authcode/provider.ts';
 
 /**
@@ -80,6 +81,16 @@ export async function bearerTokenAsStored(
   secrets: SecretStore,
 ): Promise<string | null> {
   if (manifest.auth.kind !== 'oauth') return bearerToken(manifest, connectionId, secrets);
+
+  // An assertion credential has no token stored to prefer — the token is minted
+  // from the key, which is what "as stored" means here. Without this branch the
+  // identity call `connect` makes immediately after writing the pointer reads
+  // `access_token` off a blob that has none, sends no Authorization header, and
+  // reports the credential rejected.
+  const assertion = await storedAssertionFor(manifest, connectionId, secrets);
+  if (assertion) {
+    return resolveAssertionToken({ manifest, connectionId, stored: assertion, credentials: secrets });
+  }
 
   const provider = new CredentialOAuthProvider({
     manifest,

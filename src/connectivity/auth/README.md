@@ -14,6 +14,7 @@ transport asks when it has a token to send and no request to attach it to.
 | `api-key/` | `api_key` | a key, in a header or the query string |
 | `basic/` | `basic` | `username:password`, RFC 7617's own encoding |
 | `oauth-authcode/` | `oauth` | a refresh token, exchanged on every use |
+| `oauth-jwt/` | `oauth` + `assertion` | a private key, signed into an assertion per exchange |
 | `strategy/` | `strategy` | the escape hatch — per-vendor code, none registered |
 
 ## Adding one
@@ -22,13 +23,18 @@ A folder, a member of `authSchema` in `../manifest/auth.ts`, and a case in
 `resolve.ts` (plus `authorize.ts` if it touches the request). Nothing else in
 the codebase learns about it — that is the point of the split.
 
+`oauth-jwt/` is the exception that proves the shape rather than breaking it. It
+is not a `kind`, because it is a second way into a provider that already has
+one, so it hangs off the OAuth block as `auth.assertion` and is selected by the
+shape of the stored credential. Everything else about it is an ordinary folder
+here.
+
 These are named in the credential-type list this design is measured against and
 are **not built**:
 
 - `sigv4/` — AWS SigV4 request signing
 - `gcp-token/` — service account → GCP access token
 - `gcp-iap/` — service account → an IAP-signed JWT
-- `oauth-jwt/` — OAuth 2.0 JWT bearer (RFC 7523)
 - `oauth-client-creds/` — OAuth 2.0 client credentials
 - `body-param/` — the credential as a request body parameter
 

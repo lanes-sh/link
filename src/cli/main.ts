@@ -95,6 +95,7 @@ export async function run(argv: readonly string[]): Promise<void> {
         nonInteractive: flags['non-interactive'] === true,
         acceptBroadScopes: flags['accept-broad-scopes'] === true,
         ownClient: flags['own-client'] === true,
+        auth: text(flags, 'auth'),
         json,
       });
 

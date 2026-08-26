@@ -97,19 +97,50 @@ limitation. `RESERVED` names a compatibility slot with no implementation.
 | `audit.every-invocation` | ENFORCED **with two documented exceptions** | see below |
 | `credentials.client-secret-never-local` | ENFORCED (hosted client) | there is no client secret on the machine to hold. `resolveSecretRefs` grants no client reference at all for a connection authorised this way, asserted in `src/dispatch/context.test.ts` |
 | `credentials.exchange-is-local` | **NOT-GUARANTEED for a connection authorised against the hosted client** | see below |
+| `credentials.no-standing-grant` | **NOT-GUARANTEED for a connection authenticated with a key** | see below |
 | `credentials.plaintext-in-use` | NOT-GUARANTEED | inherent |
 | `provider.sandboxed` | NOT-GUARANTEED | provider code is trusted |
 | `egress.controlled` | NOT-GUARANTEED | follows from the above |
 | `policy.approval_required` | RESERVED | the model carries the state; no engine, and it fails closed |
 | `delegation.external-clients` | RESERVED | the principal parameter; nothing more |
 
+### What `credentials.no-standing-grant` gives up
+
+[ADR-038](adr/038-a-key-is-the-second-way-into-an-account.md) added a second way to authenticate a
+Google connection: a service account key, signed into a short-lived assertion and exchanged for an
+access token (RFC 7523). It is the only route here where nothing expires — and that is the same
+sentence read two ways.
+
+Every other credential this system holds decays or can be withdrawn from the other end. An OAuth
+refresh token can be revoked from a Google account page, is subject to the issuer's own expiry
+policy, and dies with the consent that produced it. An app-specific password dies when the account
+password changes. A key does none of that: **nobody consented, so there is no consent to withdraw,
+and a leaked key stays valid until somebody deletes it in a console.**
+
+What bounds it instead is reach, and the bound is real:
+
+- Without domain-wide delegation the key is an identity of its own, and reaches **only what has been
+  shared with its address**. Nothing in the account moves until somebody shares it — a narrower
+  standing grant than any OAuth token here, not a wider one.
+- With domain-wide delegation the key may act as any user in the domain, for the scopes an
+  administrator listed. That is the wide case, and it is granted by an administrator in their own
+  console rather than by anything in this repository.
+
+The key is stored in whichever credential store the config names, encrypted at rest under the file
+adapter like every other secret, and is never sent anywhere except to the token endpoint named
+inside the key file itself. The minted access token is held in memory for the life of the process
+and never written back — see ADR-038 for why persisting it would have widened what a deployed
+revision is granted.
+
+Prefer sharing over delegation wherever sharing will do. One shared folder is a much smaller grant
+than the right to act as a person, and the two are one prompt apart.
+
 ### What `credentials.exchange-is-local` gives up
 
 Since [ADR-028](adr/028-a-hosted-oauth-client-is-the-default.md) a Google connection authorises,
 by default, against an OAuth client Lanes operates rather than one the operator registers. That
-removes a nine-step console walkthrough and the seven-day refresh-token expiry that comes with an
-unpublished project. It also moves one step off this machine, and the honest statement of that is
-worth more than the convenience:
+removes a nine-step console walkthrough. It also moves one step off this machine, and the honest
+statement of that is worth more than the convenience:
 
 - The **authorization code** is sent to the Lanes API, because redeeming it needs the client
   secret and that secret is deliberately not here.
@@ -125,9 +156,11 @@ still live in whichever credential store the config names.
 
 **Nothing in this repository can verify what the Lanes API does with what it sees.** That is the
 whole of the trade, and it is why this is a row in the table rather than a paragraph in a guide.
-An operator who does not want to make it runs `lanes link connect <provider> --own-client` once
-per profile, which registers a client of their own and keeps the exchange between this machine and
-Google. Declaring `oauth_apps` in a profile is the same choice expressed in config, and a profile
+An operator who does not want to make it picks "an OAuth client you register" at the connect prompt
+— or `--auth own_client`, or the older `--own-client` — once per profile, which registers a client
+of their own and keeps the exchange between this machine and Google. A service account key keeps it
+local too, and for a different reason: there is no exchange to move, because there is no
+authorization code. Declaring `oauth_apps` in a profile is the same choice expressed in config, and a profile
 that declares it is never moved off it.
 
 ### Failed authentication is logged, not audited

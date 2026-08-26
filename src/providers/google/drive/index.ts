@@ -1,5 +1,6 @@
 import { defineProvider } from '#connectivity';
 import { DRIVE_IDENTITY, GOOGLE_APP, GOOGLE_OAUTH, specPath } from '../shared/oauth.ts';
+import { googleServiceAccount } from '../shared/service-account.ts';
 import { googleSetup } from '../shared/setup.ts';
 import { DRIVE_HINTS } from './hints.ts';
 import { DRIVE_REDACT } from './redact.ts';
@@ -26,6 +27,7 @@ export const drive = defineProvider({
     app: GOOGLE_APP,
     scopes: DRIVE_SCOPES,
     ...GOOGLE_OAUTH,
+    assertion: googleServiceAccount('Drive', DRIVE_SCOPES, 'optional', ['drive.googleapis.com']),
   },
   identity: DRIVE_IDENTITY,
   setup: googleSetup('Drive', DRIVE_SCOPES),
