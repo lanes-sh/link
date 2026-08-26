@@ -40,6 +40,7 @@ import {
 } from './commands/owner.ts';
 import { update } from './commands/update.ts';
 import { globalFlags, ownerFlags, parseArgv, text } from './argv.ts';
+import { assertKnownFlags, requireSelection } from './selection.ts';
 import { PROGRAM, USAGE } from './usage.ts';
 import { version } from './version.ts';
 import { print } from './output.ts';
@@ -73,6 +74,14 @@ export async function run(argv: readonly string[]): Promise<void> {
     print(USAGE);
     return;
   }
+
+  // Before the switch, so no command can be reached having been handed a flag it
+  // does not read or missing one it needs. One call site rather than a check per
+  // case: the reported bug was a single command building its own options literal
+  // and dropping `--target` into it, which is exactly what a per-case check
+  // leaves room for.
+  assertKnownFlags(first, second, flags);
+  await requireSelection(first, second, flags);
 
   switch (first) {
     case 'connect':
