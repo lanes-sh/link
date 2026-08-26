@@ -150,6 +150,7 @@ than being rebuilt.
 - **[Connect your accounts](docs/connect.md)** — every provider, and what each one needs
 - **[Add it to your agent](docs/clients.md)** — Claude Code, Codex, Claude Desktop, claude.ai, ChatGPT
 - **[Deploy to your own cloud](docs/deploy.md)** — five commands to a URL
+- **[Every command](docs/detailed/commands.md)** — arguments and flags, one entry each
 - **[Full reference](docs/detailed/)** — architecture, configuration, the CLI, the security model,
   writing a provider, and the decision records
 
