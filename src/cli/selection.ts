@@ -230,7 +230,17 @@ const UNIVERSAL = ['help', 'json', 'quiet'];
  * universal set plus whatever `SELECTION` says it must be told.
  */
 const ACCEPTS: Record<string, readonly string[]> = {
-  connect: ['id', 'display-name', 'replace', 'non-interactive', 'accept-broad-scopes', 'own-client'],
+  // `own-client` is the older spelling of one of the routes `auth` names, kept
+  // because it is in scripts and a year of documentation (ADR-038).
+  connect: [
+    'id',
+    'display-name',
+    'replace',
+    'non-interactive',
+    'accept-broad-scopes',
+    'own-client',
+    'auth',
+  ],
   setup: ['id'],
   'profile add': ['target', 'non-interactive'],
   'profile remove': ['dry-run', 'yes'],
@@ -246,6 +256,7 @@ const ACCEPTS: Record<string, readonly string[]> = {
   'mcp stdio': ['only'],
   'mcp add': ['name', 'scope', 'token-env', 'dry-run', 'force', 'no-skill'],
   'mcp skill': ['print', 'force'],
+  dashboard: ['print'],
   skill: ['print', 'force'],
   deploy: ['dry-run', 'iam', 'access', 'service-account', 'tag', 'yes', 'non-interactive'],
   'secrets push': ['from', 'to', 'overwrite', 'dry-run'],

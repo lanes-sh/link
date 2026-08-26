@@ -45,7 +45,8 @@ export async function dashboard(flags: DashboardFlags): Promise<void> {
       `Target "${target}" is deployed to ${deployed.platform}, and the dashboard is served only ` +
         'by a local endpoint — a browser carries no bearer token, and Cloud Run\'s own gate ' +
         'admits only a Google-signed identity token it cannot mint either (ADR-018).\n' +
-        `What a deployed target can answer: lanes link status --target ${target}`,
+        `What a deployed target can answer: ` +
+        `lanes link status --profile ${resolution.profile} --target ${target}`,
     );
   }
 
@@ -65,8 +66,15 @@ export async function dashboard(flags: DashboardFlags): Promise<void> {
     // beats opening a browser at a connection error.
     const live = await endpointHealth(localUrl(runtime.config), token);
     if (!live) {
-      print(warn('nothing is serving this port — run: lanes link start'));
-      print(style.dim(`  then: lanes link dashboard --profile ${runtime.resolution.profile}`));
+      // Both flags on both lines. They read as correct without them only
+      // because they were written while a missing one still resolved to the
+      // workspace default; with nothing to fall back on (ADR-037) each is a
+      // paste that refuses, and this one is printed at the moment somebody is
+      // least able to guess what it wanted.
+      const where = `--profile ${runtime.resolution.profile} --target ${target}`;
+
+      print(warn(`nothing is serving this port — run: lanes link start ${where}`));
+      print(style.dim(`  then: lanes link dashboard ${where}`));
       return;
     }
 

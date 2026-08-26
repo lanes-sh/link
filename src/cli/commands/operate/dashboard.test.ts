@@ -83,8 +83,12 @@ describe('a deployed target', () => {
     expect(failure!.message).toContain('served only by a local endpoint');
     expect(failure!.message).toContain('ADR-018');
     // What it offers instead, since the question behind the command is still a
-    // real one for a deployed target.
-    expect(failure!.message).toContain('lanes link status --target cloud');
+    // real one for a deployed target — and it is a paste, so it names both
+    // flags rather than leaving one to a fallback that no longer exists
+    // (ADR-037).
+    expect(failure!.message).toContain(
+      'lanes link status --profile personal --target cloud',
+    );
   });
 
   test('names the platform, so the sentence is about this deployment', async () => {
