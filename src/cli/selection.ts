@@ -2,11 +2,15 @@ import {
   ConfigError,
   listProfiles,
   loadProfileConfig,
+  loadWorkspaceProfiles,
   noProfileNamed,
+  noTargetInWorkspace,
   noTargetNamed,
   resolveWorkspaceRoot,
+  targetsByName,
 } from '#profile';
 import type { Flags } from './argv.ts';
+import { nearest } from './nearest.ts';
 
 /**
  * Which commands must name a profile and a target, and which flags each accepts.
@@ -30,8 +34,15 @@ import type { Flags } from './argv.ts';
  * default to requiring nothing.
  */
 
-/** What a command must be told before it can act. */
-export type Requires = 'none' | 'profile' | 'profile+target';
+/**
+ * What a command must be told before it can act.
+ *
+ * `target` is not a weaker `profile+target`. It says the command's subject *is*
+ * the target, and that the profiles behind it are every profile declaring it
+ * rather than one the operator picks (ADR-043). `--profile` stays accepted
+ * there, as a filter.
+ */
+export type Requires = 'none' | 'profile' | 'target' | 'profile+target';
 
 /**
  * The rule, per command path.
@@ -54,8 +65,17 @@ export type Requires = 'none' | 'profile' | 'profile+target';
  * answer as input is circular, and it has to keep working in the state every
  * other command fails in.
  *
- * `profile add` **rejects** both. The name is positional, and there is no
- * profile to select before it exists.
+ * `status`, `deploy` and `sync targets` take `target` rather than
+ * `profile+target`. One deployed endpoint serves every profile in the workspace
+ * (ADR-009), so the profile set behind a target is enumerable from the config
+ * and naming one of them describes a slice, not the subject. That is not the
+ * inference ADR-037 removed: there is nothing to guess at, and nothing is
+ * silently chosen.
+ *
+ * `profile add` and `profile remove` **reject** `--profile`. Both name their
+ * profile positionally, so a flag naming a second one could only disagree with
+ * it. `add` has no profile to select before it exists; `remove` takes an
+ * optional `--target` to decommission one target's stores and keep the file.
  */
 export const SELECTION: Record<string, Requires> = {
   help: 'none',
@@ -83,7 +103,7 @@ export const SELECTION: Record<string, Requires> = {
   'target list': 'profile',
   'target show': 'profile',
   'secrets push': 'profile',
-  'profile remove': 'profile',
+  'profile remove': 'none',
   // Target-independent for the same reason `policy list` is: the block is
   // declared once in the YAML and applies to every target the profile has.
   identity: 'profile',
@@ -96,7 +116,8 @@ export const SELECTION: Record<string, Requires> = {
   secrets: 'profile+target',
   plan: 'profile+target',
   doctor: 'profile+target',
-  status: 'profile+target',
+  // Target-scoped: see the note above. `--profile` narrows each to one profile.
+  status: 'target',
   outputs: 'profile+target',
   tools: 'profile+target',
   // It reads which target it is rendering for before it decides anything: a
@@ -104,7 +125,11 @@ export const SELECTION: Record<string, Requires> = {
   dashboard: 'profile+target',
   attach: 'profile+target',
   start: 'profile+target',
-  deploy: 'profile+target',
+  deploy: 'target',
+  // Both spellings: `sync` alone is `sync targets`, which is the only thing
+  // there is to sync, and naming it leaves room for the next one.
+  sync: 'target',
+  'sync targets': 'target',
   'policy allow': 'profile+target',
   'policy deny': 'profile+target',
   // Both, unlike `identity list`, and for the same reason the policy edits are:
@@ -154,6 +179,7 @@ const SUBCOMMANDS: Record<string, readonly string[]> = {
   mcp: ['skill', 'add', 'stdio', 'list'],
   secrets: ['push', 'set', 'list'],
   knowledge: ['show', 'use'],
+  sync: ['targets'],
 };
 
 /**
@@ -208,6 +234,15 @@ export async function requireSelection(
   const needs = requirementFor(first, second);
   if (needs === 'none') return;
 
+  // Asked before the profile requirement, because for these there is none. The
+  // refusal has to describe the workspace rather than one profile's targets,
+  // since the command was never going to act on only one.
+  if (needs === 'target') {
+    if (typeof flags['target'] === 'string') return;
+    const root = resolveWorkspaceRoot(env ? { env } : {});
+    throw noTargetInWorkspace(targetsByName(await loadWorkspaceProfiles(root)), root, env);
+  }
+
   const profile = flags['profile'];
   if (typeof profile !== 'string') {
     const root = resolveWorkspaceRoot(env ? { env } : {});
@@ -258,7 +293,11 @@ const ACCEPTS: Record<string, readonly string[]> = {
   ],
   setup: ['id'],
   'profile add': ['target', 'non-interactive'],
-  'profile remove': ['dry-run', 'yes'],
+  // `--target` decommissions one target's stores and leaves the profile file in
+  // place (`removal.ts`). It is documented in `usage.ts` and read by
+  // `removalPlan`, and was refused here — the flag existed everywhere except in
+  // the list that decides whether it may be typed.
+  'profile remove': ['dry-run', 'yes', 'target'],
   'target list': ['urls', 'target'],
   'target show': ['target'],
   'token show': ['show', 'raw'],
@@ -271,13 +310,16 @@ const ACCEPTS: Record<string, readonly string[]> = {
   'mcp stdio': ['only'],
   'mcp add': ['name', 'scope', 'token-env', 'dry-run', 'force', 'no-skill'],
   'mcp skill': ['print', 'force'],
+  'mcp list': ['name', 'scope'],
   dashboard: ['print'],
   skill: ['print', 'force'],
   deploy: ['dry-run', 'iam', 'access', 'service-account', 'tag', 'yes', 'non-interactive'],
   'secrets push': ['from', 'to', 'overwrite', 'dry-run'],
+  sync: ['dry-run', 'from', 'discover', 'prefer'],
+  'sync targets': ['dry-run', 'from', 'discover', 'prefer'],
   update: ['check'],
   'identity add': ['note'],
-  memory: ['connection', 'title', 'description', 'file'],
+  memory: ['connection', 'title', 'description', 'file', 'tag'],
   skills: ['connection', 'title', 'description', 'file'],
   vault: ['connection'],
   // `no-migrate` is listed beside `migrate` because they are three states
@@ -303,8 +345,10 @@ export function assertKnownFlags(first: string, second: string | undefined, flag
   const allowed = new Set<string>([
     ...UNIVERSAL,
     ...(ACCEPTS[key] ?? []),
-    ...(needs === 'profile' || needs === 'profile+target' ? ['profile'] : []),
-    ...(needs === 'profile+target' ? ['target'] : []),
+    // `target` accepts both: the target is what it acts on, and `--profile`
+    // narrows it to one of the profiles behind it.
+    ...(needs !== 'none' ? ['profile'] : []),
+    ...(needs === 'target' || needs === 'profile+target' ? ['target'] : []),
   ]);
 
   const named = [first, second].filter(Boolean).join(' ');
@@ -318,40 +362,4 @@ export function assertKnownFlags(first: string, second: string | undefined, flag
         `\n  Accepts: ${[...allowed].sort().map((name) => `--${name}`).join(' ')}`,
     );
   }
-}
-
-/**
- * The closest accepted flag, when there is an obviously close one.
- *
- * One edit away, or one transposition — enough for `--porfile` and `--taget`,
- * and short of guessing at something the operator did not mean. A wrong guess
- * here costs more than no guess: it sends them to a flag that is not the answer.
- */
-function nearest(given: string, allowed: ReadonlySet<string>): string | undefined {
-  for (const candidate of allowed) {
-    if (Math.abs(candidate.length - given.length) > 1) continue;
-    if (distance(given, candidate) <= 1) return candidate;
-    if (sorted(given) === sorted(candidate)) return candidate;
-  }
-  return undefined;
-}
-
-const sorted = (text: string): string => [...text].sort().join('');
-
-function distance(a: string, b: string): number {
-  let row = Array.from({ length: b.length + 1 }, (_, index) => index);
-
-  for (let i = 1; i <= a.length; i++) {
-    const next = [i];
-    for (let j = 1; j <= b.length; j++) {
-      next[j] = Math.min(
-        row[j]! + 1,
-        next[j - 1]! + 1,
-        row[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1),
-      );
-    }
-    row = next;
-  }
-
-  return row[b.length]!;
 }

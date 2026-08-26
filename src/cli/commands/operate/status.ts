@@ -1,4 +1,4 @@
-import { listProfiles } from '#profile';
+import { listProfiles, loadWorkspaceProfiles, resolveWorkspaceRoot } from '#profile';
 import { oneProfile, visibleCapabilities } from '#server/mcp';
 import { toPolicyDocument } from '#registry';
 import { announce, emit, heading, print, style, table } from '../../output.ts';
@@ -32,6 +32,8 @@ export interface StatusFlags extends GlobalFlags {
  * config-only command can say that much honestly.
  */
 export async function status(flags: StatusFlags): Promise<void> {
+  if (flags.profile === undefined) return workspaceStatus(flags);
+
   const runtime = await openRuntime(flags);
   try {
     const records = await runtime.state.connections.list();
@@ -130,4 +132,109 @@ export async function status(flags: StatusFlags): Promise<void> {
   } finally {
     await runtime.close();
   }
+}
+
+/**
+ * `lanes link status --target <t>` — the whole workspace at one target.
+ *
+ * The default, because the subject of this command is the endpoint and one
+ * endpoint serves every profile in the workspace (ADR-009, ADR-043). Naming a
+ * profile narrows it to the detailed view above; naming none is not a missing
+ * answer, it is the wider one.
+ *
+ * **Opens no store and makes no network call.** The view above already declines
+ * to probe, for the reasons in this file's header; this one additionally
+ * declines to open a target's adapters, so it stays instant and — more to the
+ * point — still answers for a target whose stores are unreachable, misdeclared,
+ * or gone. A summary that needs the deployment to be healthy cannot report that
+ * it is not.
+ *
+ * That is what makes the row it exists for legible: a target declared by one
+ * profile and not its sibling. From inside either profile that state is
+ * invisible, and it is what a vanished deployment looks like from the outside.
+ */
+async function workspaceStatus(flags: StatusFlags): Promise<void> {
+  const target = flags.target!;
+  const root = resolveWorkspaceRoot();
+  const workspace = await loadWorkspaceProfiles(root);
+
+  const profiles = workspace.loaded.map((entry) => ({
+    name: entry.profile,
+    declares: target in entry.config.targets,
+    connections: entry.config.connections.length,
+    deployment: deploymentIdentity(entry.config.targets[target]?.deploy),
+  }));
+
+  const declaring = profiles.filter((entry) => entry.declares);
+
+  // Distinct deployments, not the first one found. Two profiles declaring the
+  // same target name against different services is drift worth printing rather
+  // than a tie to break silently — and picking one would make the wrong half of
+  // the workspace look correctly configured.
+  const deployments = [
+    ...new Map(
+      declaring
+        .filter((entry) => entry.deployment !== null)
+        .map((entry) => [JSON.stringify(entry.deployment), entry.deployment!] as const),
+    ).values(),
+  ];
+
+  return emit(
+    flags.json,
+    { workspace: root, target, profiles, deployments, unreadable: workspace.unreadable },
+    () => {
+      print(style.dim(`workspace ${style.bold(root)}  target ${style.bold(target)}`));
+
+      heading('Profiles');
+      table(
+        profiles.map((entry) => [
+          `  ${style.bold(entry.name)}`,
+          entry.declares ? style.green(`${target} declared`) : style.yellow('not declared'),
+          style.dim(entry.declares ? `${entry.connections} connection(s)` : '—'),
+        ]),
+      );
+      for (const bad of workspace.unreadable) {
+        print(`  ${style.bold(bad.profile)}  ${style.yellow(bad.reason)}`);
+      }
+
+      heading('Endpoint');
+      if (declaring.length === 0) {
+        print(style.yellow(`  No profile declares "${target}".`));
+        print(
+          style.dim(
+            '  If it was deployed once, the deployment still exists and only the\n' +
+              `  declaration is gone — recover it with: lanes link sync targets --target ${target}`,
+          ),
+        );
+        return;
+      }
+
+      if (deployments.length === 0) {
+        print(style.dim('  No deployment — this target runs wherever the CLI does.'));
+        return;
+      }
+
+      for (const deployment of deployments) {
+        const { platform, service, region } = deployment;
+        print(`  ${platform} service ${style.bold(service)} in ${region}`);
+      }
+
+      if (deployments.length > 1) {
+        print(
+          style.yellow(
+            `  ${deployments.length} profiles declare "${target}" against different services.`,
+          ),
+        );
+        print(style.dim('  They are separate endpoints sharing a name. Check each profile.'));
+        return;
+      }
+
+      print(
+        style.dim(
+          "  the address is the platform's to assign — run: " +
+            `lanes link outputs --target ${target} --profile ${declaring[0]!.name}`,
+        ),
+      );
+    },
+  );
 }

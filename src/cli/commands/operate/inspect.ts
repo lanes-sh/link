@@ -1,7 +1,7 @@
 import { credentialRefFor, formatPlan, planIsNoop, planReconcile } from '#registry';
-import { announce, emit, fail, ok, print, warn } from '../../output.ts';
+import { announce, announceProfile, emit, fail, ok, print, warn } from '../../output.ts';
 import { staleNudge } from '../../release.ts';
-import { openRuntime, resolveProfile, type GlobalFlags } from '../../runtime.ts';
+import { openRuntime, resolveProfileOnly, type GlobalFlags } from '../../runtime.ts';
 import type { FetchLike } from '#deployments/knowledge.ts';
 import { credentialAge, reportCapabilityDrift } from './findings.ts';
 
@@ -13,12 +13,13 @@ import { credentialAge, reportCapabilityDrift } from './findings.ts';
 
 /** Static validation only. No external calls, no database, no credentials. */
 export async function check(flags: GlobalFlags): Promise<void> {
-  const { resolution, config } = await resolveProfile(flags);
-  announce(resolution);
+  const { selection, config } = await resolveProfileOnly(flags);
+  announceProfile(selection);
 
   // Reaching here means the loader accepted it: contract major, no credential
-  // values, referential integrity, and target resolution all passed.
-  print(ok(`${resolution.profilePath} is valid`));
+  // values, and referential integrity all passed. Not target resolution — this
+  // validates a file, and the file is the same whichever target reads it.
+  print(ok(`${selection.profilePath} is valid`));
   print(
     `      ${config.connections.length} connection(s), ` +
       `${config.policy.allow.length} allow rule(s), ${config.policy.deny.length} deny rule(s)`,

@@ -49,6 +49,9 @@ Nothing in the codebase depends on it.
 | [039](039-cross-origin-access-is-a-deployment-only-grant.md) | Cross-origin access is granted only by a deployment, and a preflight is answered ahead of the credential check |
 | [040](040-an-mcp-connector-may-use-a-pre-registered-client.md) | An `mcp` connector that names its own endpoints may be brokered, and a vendor that refuses a loopback redirect gets one bounced through the broker — so Slack costs a browser round trip rather than a console visit |
 | [041](041-memory-and-skills-in-a-repository.md) | Memory and skills may be kept in a GitHub repository; the vault, the credential store, state and the log may not |
+| [042](042-a-profile-declares-who-its-owner-is.md) | A profile declares who its owner is, so an agent writing on their behalf stops guessing |
+| [043](043-a-target-scoped-command-acts-on-the-target.md) | A command whose subject is the endpoint acts on the target, and every profile declaring it |
+| [044](044-a-deployment-records-where-it-lives.md) | A deployment records where it lives outside any profile, and the two copies of a workspace can be merged |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 

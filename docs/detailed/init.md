@@ -566,6 +566,11 @@ Workspace root resolves from `LANES_LINK_HOME`, else the nearest ancestor direct
 > environment variables and the two config keys are parsed and no longer read. The paragraph below
 > on *not* implementing a sticky `lanes link use` still stands — this goes further than it did,
 > for the reason it gives.
+>
+> **Amended again by [ADR-043](adr/043-a-target-scoped-command-acts-on-the-target.md).** `status`,
+> `deploy` and `sync targets` name a `--target` and act on every profile declaring it; `--profile`
+> narrows that set rather than selecting it. This is not a resolution chain returning: the set is
+> derived from the config, complete, and printed.
 
 Profile resolves from `--profile <name>`, then `LANES_LINK_PROFILE`, then `default_profile` in the workspace file, then an error listing available profiles. A profile name maps to `profiles/<name>.yaml`.
 

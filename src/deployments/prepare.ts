@@ -61,11 +61,15 @@ export interface PrepareResult {
  * Called before `provision`, which is before any store is opened — so it reads
  * config and manifests only, and touches no credential.
  */
-export async function rotatableRefs(root: string, profile: string | undefined): Promise<string[]> {
+export async function rotatableRefs(
+  root: string,
+  profiles: readonly string[] | undefined,
+): Promise<string[]> {
   const refs = new Set<string>();
+  const wanted = profiles === undefined ? undefined : new Set(profiles);
 
   for (const name of await listProfiles(root)) {
-    if (profile !== undefined && name !== profile) continue;
+    if (wanted !== undefined && !wanted.has(name)) continue;
 
     let config: Config;
     try {
@@ -121,7 +125,7 @@ export async function rotatableRefs(root: string, profile: string | undefined): 
  */
 export async function readableRefs(
   root: string,
-  profile: string | undefined,
+  profiles: readonly string[] | undefined,
   declared: TargetConfig | undefined,
 ): Promise<string[]> {
   const refs = new Set<string>();
@@ -134,8 +138,10 @@ export async function readableRefs(
     refs.add(VAULT_KEY_REF);
   }
 
+  const wanted = profiles === undefined ? undefined : new Set(profiles);
+
   for (const name of await listProfiles(root)) {
-    if (profile !== undefined && name !== profile) continue;
+    if (wanted !== undefined && !wanted.has(name)) continue;
 
     let config: Config;
     try {

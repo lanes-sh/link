@@ -110,7 +110,7 @@ To see what a client would be handed right now:
 
 ```console
 $ lanes link tools --profile personal --target local                # names by provider, payload size
-$ lanes link tools --profile personal --target local --target cloud # ask the deployed endpoint instead
+$ lanes link tools --profile personal --target cloud # ask the deployed endpoint instead
 ```
 
 If that count matches your client, its tools are current. If it does not, the client is holding an

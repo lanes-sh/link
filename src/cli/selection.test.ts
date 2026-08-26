@@ -14,11 +14,19 @@ import { assertKnownFlags, requireSelection, requirementFor, SELECTION } from '.
  * test reads `main.ts` rather than trusting anyone to keep two files in step.
  */
 
-const MAIN = join(import.meta.dir, 'main.ts');
+/**
+ * Every file holding part of the grammar.
+ *
+ * `main.ts` alone until the owner commands moved out. Reading both matters more
+ * than it looks: this test is the reason a new command cannot default quietly,
+ * and a dispatch that had grown a second file would have gone unread — the
+ * check would keep passing while covering less.
+ */
+const DISPATCH = ['main.ts', 'dispatch-owner.ts'].map((name) => join(import.meta.dir, name));
 
 /** Every `case 'x':` in the dispatch, in order, so nesting can be reconstructed. */
 async function dispatchedCommands(): Promise<Set<string>> {
-  const source = await readFile(MAIN, 'utf8');
+  const source = (await Promise.all(DISPATCH.map((path) => readFile(path, 'utf8')))).join('\n');
   const found = new Set<string>();
 
   // The outer switch is on `first` and each nested one on `second`; indentation
@@ -61,16 +69,38 @@ describe('every dispatched command declares what it needs', () => {
   });
 });
 
+// A workspace that does not exist: these assert *which* refusal is reached, and
+// the listings inside it are `#profile`'s to get right — `workspace.test` and
+// `targets.test` cover the wording.
+const nowhere = { LANES_LINK_HOME: '/nonexistent-workspace-for-a-test' };
+
 describe('requiring a selection', () => {
-  // A workspace that does not exist: these assert *which* refusal is reached,
-  // and the listings inside it are `#profile`'s to get right — `workspace.test`
-  // and `targets.test` cover the wording.
-  const nowhere = { LANES_LINK_HOME: '/nonexistent-workspace-for-a-test' };
 
   test('refuses a command that names no profile', async () => {
-    await expect(requireSelection('status', undefined, {}, nowhere)).rejects.toThrow(
+    // `connect` acts on one account, so the profile is the subject and there is
+    // nothing to fall back to. `status` used to stand here and no longer can:
+    // its subject is the target (ADR-043).
+    await expect(requireSelection('connect', undefined, {}, nowhere)).rejects.toThrow(
       '--profile is required',
     );
+  });
+
+  test('asks a target-scoped command for a target, and not for a profile', async () => {
+    await expect(requireSelection('status', undefined, {}, nowhere)).rejects.toThrow(
+      '--target is required',
+    );
+    await expect(
+      requireSelection('status', undefined, { target: 'cloud' }, nowhere),
+    ).resolves.toBeUndefined();
+  });
+
+  test('and still accepts --profile there, as a filter', async () => {
+    await expect(
+      requireSelection('status', undefined, { target: 'cloud', profile: 'work' }, nowhere),
+    ).resolves.toBeUndefined();
+    expect(() =>
+      assertKnownFlags('status', undefined, { target: 'cloud', profile: 'work' }),
+    ).not.toThrow();
   });
 
   test('asks target-independent commands for a profile only', async () => {
@@ -163,5 +193,81 @@ describe('refusing a flag the command does not read', () => {
 
   test('but not another command’s', () => {
     expect(() => assertKnownFlags('status', undefined, { 'dry-run': true })).toThrow('Unknown flag');
+  });
+});
+
+/**
+ * That a command the table calls target-independent can actually be run.
+ *
+ * The table said `profile` for five commands and their handlers called
+ * `resolveProfile`, which requires a target — while `assertKnownFlags` refused
+ * `--target` because the table said they did not take one. Every one of them was
+ * unrunnable in both spellings at once:
+ *
+ *     $ lanes link check --profile personal
+ *     error  --target is required.
+ *     $ lanes link check --profile personal --target local
+ *     error  Unknown flag "--target" for "lanes link check".
+ *
+ * A requirement and an allowlist that disagree cannot be caught by testing
+ * either one, which is why this asserts the pair.
+ */
+describe('a target-independent command is runnable in the spelling it demands', () => {
+  const targetIndependent = [
+    ['check', undefined],
+    ['config', 'show'],
+    ['policy', 'list'],
+    ['secrets', 'push'],
+    ['identity', 'list'],
+  ] as const;
+
+  test('the requirement is satisfied by --profile alone', async () => {
+    for (const [first, second] of targetIndependent) {
+      await expect(
+        requireSelection(first, second, { profile: 'work' }, nowhere),
+      ).resolves.toBeUndefined();
+    }
+  });
+
+  test('and --target is refused, rather than being both required and unknown', () => {
+    for (const [first, second] of targetIndependent) {
+      expect(() => assertKnownFlags(first, second, { profile: 'work', target: 'local' })).toThrow(
+        'Unknown flag',
+      );
+    }
+  });
+
+  test('profile remove names its profile positionally, like profile add', async () => {
+    // Both take the name as an argument, so a `--profile` flag could only name a
+    // second one and disagree with it.
+    await expect(requireSelection('profile', 'remove', {}, nowhere)).resolves.toBeUndefined();
+    expect(() => assertKnownFlags('profile', 'remove', { profile: 'work' })).toThrow('Unknown flag');
+  });
+
+  test('profile remove keeps the --target that decommissions one target’s stores', () => {
+    // Documented in `usage.ts` and read by `removalPlan`; it was refused here,
+    // so the flag existed everywhere except where it could be typed.
+    expect(() =>
+      assertKnownFlags('profile', 'remove', { target: 'cloud', 'dry-run': true }),
+    ).not.toThrow();
+  });
+
+  test('the flags a command reads are flags it accepts', () => {
+    // Both were read by the parser and absent from the allowlist, so passing
+    // either was refused on a command documented as taking it.
+    expect(() => assertKnownFlags('memory', 'list', { tag: 'x' })).not.toThrow();
+    expect(() => assertKnownFlags('mcp', 'list', { name: 'x', scope: 'user' })).not.toThrow();
+  });
+});
+
+describe('the grammar is read wherever it lives', () => {
+  test('a command dispatched outside main.ts is still covered', async () => {
+    // `memory get` and `vault key` moved to `dispatch-owner.ts`. If this test
+    // only read `main.ts` it would pass by not looking.
+    const dispatched = await dispatchedCommands();
+
+    for (const command of ['memory get', 'skills add', 'vault key']) {
+      expect(dispatched.has(command)).toBe(true);
+    }
   });
 });

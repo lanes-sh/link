@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { installRoot } from './workspace.ts';
 import { parseConfig } from './load.ts';
@@ -78,5 +78,65 @@ describe('documented provider manifests parse', () => {
     for (const example of examples) {
       expect(() => parseManifest(example, 'docs/detailed/creating-a-provider.md')).not.toThrow();
     }
+  });
+});
+
+/**
+ * That an ADR's number means one decision.
+ *
+ * Three files claimed ADR-040 at once, two of them named `039-`, and one of
+ * those was in no index at all. Nothing caught it because nothing looked: the
+ * number lives in three places — the filename, the heading, and the row in
+ * `README.md` — and parallel branches each picked the next free one.
+ *
+ * A reference like "(ADR-040)" in a comment is then not merely stale, it is
+ * ambiguous, and the reader has no way to tell which of the three was meant.
+ */
+describe('ADR numbering', () => {
+  const ADR = join(import.meta.dir, '..', '..', 'docs', 'detailed', 'adr');
+
+  async function decisions(): Promise<{ file: string; number: string; heading: string }[]> {
+    const names = (await readdir(ADR)).filter((name) => /^\d{3}-.*\.md$/.test(name)).sort();
+
+    return Promise.all(
+      names.map(async (file) => {
+        const first = (await readFile(join(ADR, file), 'utf8')).split('\n')[0] ?? '';
+        return {
+          file,
+          number: file.slice(0, 3),
+          heading: /^#\s*ADR-(\d{3}):/.exec(first)?.[1] ?? '',
+        };
+      }),
+    );
+  }
+
+  test('no two decisions share a number', async () => {
+    const seen = new Map<string, string>();
+    const clashes: string[] = [];
+
+    for (const { file, number } of await decisions()) {
+      const first = seen.get(number);
+      if (first) clashes.push(`${number}: ${first} and ${file}`);
+      else seen.set(number, file);
+    }
+
+    expect(clashes).toEqual([]);
+  });
+
+  test('the heading agrees with the filename', async () => {
+    const disagree = (await decisions())
+      .filter((one) => one.heading !== one.number)
+      .map((one) => `${one.file} is headed ADR-${one.heading || '???'}`);
+
+    expect(disagree).toEqual([]);
+  });
+
+  test('every decision is in the index, and every index row resolves', async () => {
+    const readme = await readFile(join(ADR, 'README.md'), 'utf8');
+    const linked = new Set([...readme.matchAll(/\]\((\d{3}-[a-z0-9-]+\.md)\)/g)].map((m) => m[1]!));
+    const files = (await decisions()).map((one) => one.file);
+
+    expect(files.filter((file) => !linked.has(file))).toEqual([]);
+    expect([...linked].filter((file) => !files.includes(file))).toEqual([]);
   });
 });

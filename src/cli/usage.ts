@@ -49,6 +49,11 @@ ${style.bold('Profiles')}
 ${style.bold('Targets')}
   ${PROGRAM} target list [--urls]      where this profile can run
   ${PROGRAM} target show <name>        one target's adapters, and the address it answers on
+  ${PROGRAM} sync targets --target t [--from gs://bucket] [--discover]
+                                 [--prefer local|remote] [--dry-run]
+                                 reconcile this workspace with the copy the
+                                 deployment reads; recovers a target a profile
+                                 has lost
 
 ${style.bold('Who you are')}
   ${PROGRAM} identity add <kind> <value> [--note text] [--json]
@@ -89,10 +94,13 @@ ${style.bold('Your own context')}
   ${PROGRAM} vault key generate         a fresh LANES_LINK_VAULT_KEY, printed once
 
 ${style.bold('Deploying')}
-  ${PROGRAM} deploy [--dry-run]         set up, build, and roll a revision
+  ${PROGRAM} deploy --target t [--dry-run]
+                                 set up, build, and roll one revision serving
+                                 every profile that declares the target
+  ${PROGRAM} deploy --target t --profile a --profile b
+                                 only these; the first owns the endpoint token
   ${PROGRAM} deploy --non-interactive   take the stored answers, never prompt
   ${PROGRAM} deploy --access iam|public who gets past the platform's own door
-  ${PROGRAM} deploy --target <name>     deploy a second one, under its own name
   ${PROGRAM} secrets list               credential references in this target
   ${PROGRAM} secrets set <ref>          store one value, read from stdin
   ${PROGRAM} secrets push --from local --to cloud

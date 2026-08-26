@@ -159,11 +159,17 @@ $ lanes link mcp skill --print
 
 ### `lanes link status`
 
-Connections, the capabilities reachable through them, and where the endpoint is. No network call; a
-deployed target prints its identity rather than an address.
+Names a `--target`. With no `--profile` it reports the whole workspace at that target: every
+profile, whether it declares it, and how many connections each has — which is how a target declared
+by one profile and not its sibling becomes visible. With `--profile` it is the detailed view:
+connections, the capabilities reachable through them, and where the endpoint is.
+
+No network call and no store opened either way, so it still answers for a target whose stores are
+unreachable — which is the case you most want an answer in.
 
 ```console
-$ lanes link status --profile personal --target local
+$ lanes link status --target cloud                      # every profile
+$ lanes link status --profile personal --target local   # one, in detail
 ```
 
 ---
@@ -201,13 +207,14 @@ the rest, and anything that survived exits non-zero. The confirmation asks you t
 |---|---|
 | `--dry-run` | print the plan, write to nothing |
 | `--yes` | skip the confirmation |
-| ~~`--target <name>`~~ | **broken** — refused, though the help text lists it, `removalPlan` branches on it, and the command prints it as remediation |
+| `--target <name>` | decommission one target's stores, leaving the profile file in place |
 
 ```console
-$ lanes link profile remove work --profile personal --dry-run
+$ lanes link profile remove work --dry-run
 ```
 
-The positional name is what gets removed; `--profile` is required as well and may differ.
+The positional name is what gets removed. `--profile` is refused, as it is on `profile add`: both
+name their profile positionally, so a flag naming a second one could only disagree with it.
 
 ### `lanes link profile default <name>`
 
@@ -305,9 +312,6 @@ exact name is a trailing `.*`.
 
 The rules in force. Takes `--profile` only.
 
-> **Broken** — cannot be run. Without `--target` it refuses `--target is required`; with it,
-> `Unknown flag "--target"`.
-
 ```console
 $ lanes link policy list --profile personal
 ```
@@ -373,7 +377,7 @@ Ids, titles, tags, and the date each was last written.
 | | |
 |---|---|
 | `--connection <id>` | which memory connection |
-| ~~`--tag <tag>`~~ | **broken** — refused, though the help text lists it |
+| `--tag <tag>` | only memories carrying this tag |
 | ~~`--raw`~~ | **broken** — refused |
 
 ```console
@@ -558,11 +562,13 @@ $ lanes link vault key generate
 
 ### `lanes link deploy`
 
-Set up what is missing, build the image, roll a revision, print the URL. See
+Set up what is missing, build the image, roll one revision, print the URL. Names a `--target` and
+sends **every profile that declares it**, because that is the set the endpoint will open. See
 [`deployment-cloudrun.md`](deployment-cloudrun.md).
 
 | | |
 |---|---|
+| `--profile <name>` | only these, repeatable; the first owns the endpoint's token |
 | `--dry-run` | print every platform command, run none |
 | `--access iam\|public` | who gets past the platform's own door |
 | `--iam` | older spelling of `--access iam` |
@@ -572,8 +578,46 @@ Set up what is missing, build the image, roll a revision, print the URL. See
 | `--non-interactive` | take the stored answers, never prompt |
 
 ```console
-$ lanes link deploy --profile personal --target cloud --dry-run
+$ lanes link deploy --target cloud --dry-run                     # every profile declaring it
+$ lanes link deploy --target cloud --profile personal --dry-run  # only this one
 ```
+
+A first deploy is the exception: a target no profile declares yet has no set to derive, so name the
+profile it belongs to and `deploy` creates the target in it.
+
+It refuses two things rather than deciding them. Which profile owns the endpoint's token, when more
+than one declares the target and no previous deploy recorded an answer — one token reaches every
+profile behind it. And a deploy where two profiles would write the same flat credential reference
+into the one store the target has, which would leave one of them reading the other's account.
+
+### `lanes link sync targets`
+
+Reconcile the workspace with the copy a deployment reads. Names a `--target`; `--profile` narrows it
+to one.
+
+Anything one side is missing is copied to it; anything both sides hold differently stops the run and
+prints the difference. Credentials, state and the audit log are never copied — only config, skills
+and provider manifests, which is exactly what a deploy uploads.
+
+| | |
+|---|---|
+| `--from gs://<bucket>` | where the deployment's copy lives, when nothing here says |
+| `--discover` | ask the platform to find it — the only route that works from nothing |
+| `--prefer local\|remote` | which side wins where both disagree |
+| `--dry-run` | print the differences, write to neither side |
+
+```console
+$ lanes link sync targets --target cloud --dry-run
+$ lanes link sync targets --target cloud
+personal
+  ← targets.cloud             missing locally
+  ← connections.gmail.work    missing locally
+```
+
+This is how a target lost from a profile comes back: the deployment is still running and its bucket
+still holds the profile as the last deploy left it. Where to look is tried cheapest first — a target
+you still declare, then the `deployments:` index `deploy` writes into `lanes-link.yaml`, then
+`--from`, then `--discover`.
 
 `connect` comes after the first deploy — a store that does not exist yet is not somewhere to write a
 credential — and a second deploy is what gets a revision to see those accounts.
@@ -625,9 +669,6 @@ Cheapest first: `check` (static), `doctor` (read-only external), `plan` (what wo
 
 Static validation: contract major, no credential values in config, referential integrity, targets
 resolvable. No external call. Takes `--profile` only.
-
-> **Broken** — cannot be run. Without `--target` it refuses `--target is required`; with it,
-> `Unknown flag "--target"`.
 
 ```console
 $ lanes link check --profile personal
@@ -693,9 +734,6 @@ $ lanes link audit verify --profile personal --target local
 ### `lanes link config show`
 
 The resolved config as JSON. Takes `--profile` only.
-
-> **Broken** — cannot be run. Without `--target` it refuses `--target is required`; with it,
-> `Unknown flag "--target"`.
 
 ```console
 $ lanes link config show --profile personal

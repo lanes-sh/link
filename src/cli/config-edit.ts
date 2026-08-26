@@ -296,6 +296,11 @@ export function newWorkspaceTemplate(): string {
 # A workspace holds one or more profiles, and one endpoint serves all of them:
 # every call names the profile it means, with --profile. Profiles never share a
 # database or a credential store, so what one holds is invisible to another.
+#
+# "deploy" adds a "deployments:" list here. It is an index, not configuration —
+# nothing resolves from it. It records where a deployment lives so that losing
+# the target block out of a profile does not lose the service, the bucket, and
+# the credential store along with it. "lanes link sync targets" reads it.
 contract: 1
 `;
 }

@@ -92,14 +92,14 @@ describe('what a deploy sends up', () => {
   test('naming a profile sends only that one', () => {
     // A workspace holding personal and work should not push both into a bucket
     // that only one of them is for.
-    expect(isWorkspaceConfig('profiles/personal.yaml', 'personal')).toBe(true);
-    expect(isWorkspaceConfig('profiles/work.yaml', 'personal')).toBe(false);
+    expect(isWorkspaceConfig('profiles/personal.yaml', ['personal'])).toBe(true);
+    expect(isWorkspaceConfig('profiles/work.yaml', ['personal'])).toBe(false);
 
     // Same question for the authored areas, which are now the larger half of
     // what goes up.
-    expect(isWorkspaceConfig('data/personal/skills.d/a.md', 'personal')).toBe(true);
-    expect(isWorkspaceConfig('data/work/skills.d/a.md', 'personal')).toBe(false);
-    expect(isWorkspaceConfig('data/work/providers.d/acme.yaml', 'personal')).toBe(false);
+    expect(isWorkspaceConfig('data/personal/skills.d/a.md', ['personal'])).toBe(true);
+    expect(isWorkspaceConfig('data/work/skills.d/a.md', ['personal'])).toBe(false);
+    expect(isWorkspaceConfig('data/work/providers.d/acme.yaml', ['personal'])).toBe(false);
   });
 });
 
@@ -159,7 +159,7 @@ policy:
   test('only the named one, matching what the upload sends', async () => {
     const root = await workspace('personal', 'work');
 
-    await repairSetupSurface(root, 'personal');
+    await repairSetupSurface(root, ['personal']);
 
     expect(await has(root, 'personal')).toBe(true);
     // Not touched: it is not going up, so editing it would be this command
@@ -313,7 +313,7 @@ policy:
 
     // Not going up, so not served, so granting for it would widen the boundary
     // over a profile this run was told to leave alone.
-    expect(await rotatableRefs(root, 'personal')).toEqual(['gmail/mine']);
+    expect(await rotatableRefs(root, ['personal'])).toEqual(['gmail/mine']);
   });
 
   test('a profile that cannot be read is skipped, not fatal', async () => {
@@ -454,7 +454,7 @@ describe('the allowlist against a real workspace listing', () => {
   test('naming a profile sends that profile and the workspace file', async () => {
     const { source, destination } = await populated();
 
-    await uploadWorkspace(source, destination, 'personal');
+    await uploadWorkspace(source, destination, ['personal']);
 
     expect(await landed(destination)).toEqual([
       'data/personal/providers.d/acme.yaml',
@@ -522,13 +522,13 @@ policy:
       work: `${LOCAL}\n${CLOUD}`,
     });
 
-    expect(await unservableProfiles({ workspaceRoot: root, profile: undefined, target: 'cloud' })).toEqual([]);
+    expect(await unservableProfiles({ workspaceRoot: root, profiles: undefined, target: 'cloud' })).toEqual([]);
   });
 
   test('names the profile that would take the revision down', async () => {
     const root = await workspaceOf({ personal: `${LOCAL}\n${CLOUD}`, work: LOCAL });
 
-    const found = await unservableProfiles({ workspaceRoot: root, profile: undefined, target: 'cloud' });
+    const found = await unservableProfiles({ workspaceRoot: root, profiles: undefined, target: 'cloud' });
 
     expect(found).toEqual([{ profile: 'work', declares: ['local'] }]);
   });
@@ -538,9 +538,9 @@ policy:
     // one would refuse a deploy that was never going to send the bad profile.
     const root = await workspaceOf({ personal: `${LOCAL}\n${CLOUD}`, work: LOCAL });
 
-    expect(await unservableProfiles({ workspaceRoot: root, profile: 'personal', target: 'cloud' })).toEqual([]);
+    expect(await unservableProfiles({ workspaceRoot: root, profiles: ['personal'], target: 'cloud' })).toEqual([]);
     expect(
-      (await unservableProfiles({ workspaceRoot: root, profile: 'work', target: 'cloud' })).map((one) => one.profile),
+      (await unservableProfiles({ workspaceRoot: root, profiles: ['work'], target: 'cloud' })).map((one) => one.profile),
     ).toEqual(['work']);
   });
 
@@ -550,7 +550,7 @@ policy:
     const root = await workspaceOf({ personal: `${LOCAL}\n${CLOUD}` });
     await writeFile(join(root, 'profiles', 'broken.yaml'), 'targets: [unclosed\n');
 
-    expect(await unservableProfiles({ workspaceRoot: root, profile: undefined, target: 'cloud' })).toEqual([]);
+    expect(await unservableProfiles({ workspaceRoot: root, profiles: undefined, target: 'cloud' })).toEqual([]);
   });
 
   test('the refusal names the target, what was declared, and both ways out', () => {

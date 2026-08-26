@@ -394,9 +394,9 @@ differ. [`docs/detailed/deployment-cloudrun.md`](deployment-cloudrun.md) is the 
 ```console
 $ lanes link deploy --profile personal --target local --dry-run              # every gcloud command, none of them run
 $ lanes link deploy --profile personal --target local                        # set up, build, push, roll a revision
-$ lanes link connect gmail --profile personal --target local --target cloud  # a browser consent per account
+$ lanes link connect gmail --profile personal --target cloud  # a browser consent per account
 $ lanes link deploy --profile personal --target local                        # again, so the revision sees them
-$ lanes link outputs --profile personal --target local --target cloud        # the deployed URL an agent needs
+$ lanes link outputs --profile personal --target cloud        # the deployed URL an agent needs
 ```
 
 `deploy` needs no `--target` when there is one deployment to mean: it deploys the target that has
@@ -417,10 +417,10 @@ instead of the `connect` step.
 as many deployable targets as you like. The second one is named on the deploy that creates it:
 
 ```console
-$ lanes link deploy --profile personal --target local --target staging      # surveys and writes targets.staging, then rolls it
+$ lanes link deploy --profile personal --target staging      # surveys and writes targets.staging, then rolls it
 $ lanes link target list --profile personal                  # what this profile declares, and which is in play
-$ lanes link connect gmail --profile personal --target local --target staging
-$ lanes link outputs --profile personal --target local --target staging
+$ lanes link connect gmail --profile personal --target staging
+$ lanes link outputs --profile personal --target staging
 ```
 
 Once two targets declare a deployment, a bare `lanes link deploy` refuses and asks which you meant —
