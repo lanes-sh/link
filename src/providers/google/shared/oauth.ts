@@ -70,8 +70,12 @@ export const GOOGLE_OAUTH = {
   authorize_params: { access_type: 'offline', prompt: 'select_account consent' },
   // Every REST provider here spreads this block, so one line turns brokering on
   // for all seven. `gmail_mcp` and `drive_mcp` write their auth longhand and do
-  // not spread it, which is what keeps them bring-your-own — the SDK owns their
-  // exchange and `defineProvider` refuses a broker on an mcp connector.
+  // not spread it, which is what keeps them bring-your-own.
+  //
+  // That is now a choice rather than a constraint. ADR-040 made a broker legal
+  // on an mcp connector that names its own endpoints, so these two could follow
+  // Slack — what stops them is that nobody has established which client Google
+  // would have us use for its MCP servers, not that the machinery refuses.
   broker: GOOGLE_BROKER,
 } as const;
 

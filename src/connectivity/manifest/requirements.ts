@@ -55,6 +55,15 @@ export interface SetupNeeds {
    * `connect` will never ask for.
    */
   readonly brokered: boolean;
+  /**
+   * What `--auth pasted_token` would ask for, where the provider offers it.
+   *
+   * Separate from `requirements` because it is an alternative rather than a
+   * prerequisite: nothing needs it unless the browser route is closed to you.
+   * Reported only when it is *not* the chosen route, since when it is chosen it
+   * is a requirement above and naming it twice would read as two values.
+   */
+  readonly pastedCredential: string | undefined;
 }
 
 /**
@@ -123,7 +132,24 @@ function assertionRequirements(
     })),
     needsId: false,
     brokered: false,
+    pastedCredential: undefined,
   };
+}
+
+/**
+ * Whether the manifest describes an OAuth client of the operator's own.
+ *
+ * `defineProvider` permits a broker, or a shipped client id, with no client
+ * prompts — a provider with no bring-your-own path is a legal thing to be. Every
+ * surface that offers that path has to ask this first, or it offers a route with
+ * nothing behind it: the chooser, the client resolver, and the setup plan.
+ *
+ * Here rather than in any of the three because it was already written twice in
+ * two different components under two different names, and this change would
+ * have made it three.
+ */
+export function hasOwnClientPath(manifest: ProviderManifest): boolean {
+  return (manifest.setup?.prompts ?? []).some((prompt) => prompt.scope === 'shared');
 }
 
 export function setupRequirements(
@@ -142,7 +168,7 @@ export function setupRequirements(
      * because the two methods need different things and reporting the union
      * would tell someone to store a client they are not going to use.
      */
-    readonly method?: 'oauth' | 'assertion';
+    readonly method?: 'oauth' | 'assertion' | 'pasted';
   } = {},
 ): SetupNeeds {
   const assertion = manifest.auth.kind === 'oauth' ? manifest.auth.assertion : undefined;
@@ -163,7 +189,20 @@ export function setupRequirements(
     !(manifest.auth.app !== undefined && (options.ownClients ?? []).includes(manifest.auth.app));
 
   const shared = brokered ? [] : prompts.filter((prompt) => prompt.scope === 'shared');
-  const perConnection = prompts.filter((prompt) => prompt.scope === 'connection');
+
+  // An OAuth provider's per-connection prompt belongs to one route, not to the
+  // provider — it is what `--auth pasted_token` asks for, and nothing the
+  // browser route ever needs. Reporting it either way would put a
+  // mandatory-looking field in front of somebody whose whole path is a browser
+  // round trip, which is the same mistake `brokered` avoids one line above.
+  //
+  // No OAuth manifest had one of these until Slack kept its pasted token as the
+  // way past a workspace that has not approved the Lanes app.
+  const connectionPrompts = prompts.filter((prompt) => prompt.scope === 'connection');
+  const routed = manifest.auth.kind !== 'oauth' || options.method === 'pasted';
+
+  const pasted = routed ? [] : connectionPrompts;
+  const perConnection = routed ? connectionPrompts : [];
 
   const requirements: SetupRequirement[] = [];
 
@@ -204,5 +243,7 @@ export function setupRequirements(
     requirements,
     needsId: perConnection.length > 0 && connectionId === undefined,
     brokered,
+    pastedCredential:
+      pasted.length > 0 ? pasted.map((prompt) => prompt.label).join(', then ') : undefined,
   };
 }

@@ -162,17 +162,27 @@ describe('a broker as the other answer to "where does the client come from"', ()
     expect(() => provider(oauth({ broker, authorize_url: undefined }))).toThrow(/authorize_url/);
   });
 
-  test('an mcp connector is refused, because the SDK owns its exchange', () => {
-    // Discovered at definition rather than after the operator has already
-    // approved a consent screen.
-    expect(() =>
-      defineProvider({
-        id: 'vendor_mcp',
-        name: 'Vendor',
-        connector: { kind: 'mcp', endpoint: 'https://mcp.example.com/sse' },
-        auth: oauth({ broker }),
-      }),
-    ).toThrow(/cannot route it through a broker/);
+  const mcp = (auth: Record<string, unknown>) =>
+    defineProvider({
+      id: 'vendor_mcp',
+      name: 'Vendor',
+      connector: { kind: 'mcp', endpoint: 'https://mcp.example.com/mcp' },
+      auth,
+    });
+
+  test('an mcp connector may be brokered once it names its own endpoints', () => {
+    // This used to be refused outright, on the grounds that the SDK owns an MCP
+    // provider's exchange and there is no seam to route it. The seam is naming
+    // the endpoints: that takes the provider off the SDK's flow and onto the
+    // one this repository drives, where the exchange is ours. See ADR-040.
+    expect(() => mcp(oauth({ broker }))).not.toThrow();
+  });
+
+  test('an mcp connector without a token url is refused, because the SDK would own it', () => {
+    // Half-declared is the dangerous state: the SDK would run the flow and then
+    // post to the token endpoint with a client the broker holds and it does
+    // not. Refused at definition rather than after a consent screen.
+    expect(() => mcp(oauth({ broker, token_url: undefined }))).toThrow(/auth\.token_url/);
   });
 
   test('tokens still land per provider, not under the app the broker names', () => {

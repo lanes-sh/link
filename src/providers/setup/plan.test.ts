@@ -202,3 +202,89 @@ describe('the target in a command', () => {
     }
   });
 });
+
+/**
+ * A pasted credential is an alternative, not a prerequisite.
+ *
+ * Slack is the first OAuth provider with a per-connection prompt, and before
+ * this the plan rendered it beside the requirements — a mandatory-looking field
+ * in a setup whose whole point is that it has none, under a second "Values it
+ * needs" heading immediately after one saying there are none.
+ */
+describe('a provider that offers a pasted token as well as a browser', () => {
+  const withToken = defineProvider({
+    id: 'vendor_chat',
+    name: 'Vendor Chat',
+    connector: { kind: 'mcp', endpoint: 'https://mcp.example.com/mcp' },
+    auth: {
+      kind: 'oauth',
+      registration: 'manual',
+      app: 'vendor',
+      scopes: ['chat.read'],
+      authorize_url: 'https://accounts.example.com/authorize',
+      token_url: 'https://accounts.example.com/token',
+      broker: { url: 'https://api.example.com/v1/auth/link/vendor', operator: 'Someone' },
+    },
+    setup: {
+      prompts: [{ key: 'token', label: 'User token', secret: true, scope: 'connection' as const }],
+    },
+  });
+
+  const plan = planFor(withToken, { profile: 'personal', target: 'local', connections: [] });
+
+  test('does not list the token among the values it needs', () => {
+    expect(plan.requires).toEqual([]);
+    expect(plan.brokered).toBe(true);
+  });
+
+  test('does not demand an --id for a name the browser flow settles itself', () => {
+    expect(plan.needsId).toBe(false);
+    expect(plan.command).not.toContain('--id');
+  });
+
+  test('offers the token as a route --auth selects, naming what it asks for', () => {
+    expect(plan.tokenCommand).toBe(
+      'lanes link connect vendor_chat --profile personal --target local --auth pasted_token',
+    );
+    expect(plan.pastedCredential).toBe('User token');
+  });
+
+  test('does not offer --own-client, because this manifest describes no client', () => {
+    // `resolveOAuthClient` refuses the flag on exactly that ground, so printing
+    // it would be handing somebody a command that answers back with "there is
+    // no such path".
+    expect(plan.ownClientCommand).toBeUndefined();
+  });
+
+  test('a provider that does describe one still offers it', () => {
+    const withClientPrompts = defineProvider({
+      id: 'vendor_files',
+      name: 'Vendor Files',
+      connector: { kind: 'http', base_url: 'https://api.test', openapi: './t.json' },
+      auth: {
+        kind: 'oauth',
+        registration: 'manual',
+        app: 'vendor',
+        scopes: ['a'],
+        authorize_url: 'https://accounts.example.com/authorize',
+        token_url: 'https://accounts.example.com/token',
+        broker: { url: 'https://api.example.com/v1/auth/link/vendor', operator: 'Someone' },
+      },
+      setup: {
+        prompts: [
+          { key: 'client_id', label: 'Client id', credential_ref: 'vendor/client_id' },
+          {
+            key: 'client_secret',
+            label: 'Client secret',
+            secret: true,
+            credential_ref: 'vendor/client_secret',
+          },
+        ],
+      },
+    });
+
+    const plan = planFor(withClientPrompts, { profile: 'personal', target: 'local', connections: [] });
+    expect(plan.ownClientCommand).toContain('--own-client');
+    expect(plan.tokenCommand).toBeUndefined();
+  });
+});

@@ -1,4 +1,4 @@
-import type { AuthAssertion, ProviderManifest } from '#connectivity';
+import { hasOwnClientPath, type AuthAssertion, type ProviderManifest } from '#connectivity';
 import { progress, style } from '../../output.ts';
 import { terminalPrompter, type Prompter } from '../../prompt.ts';
 
@@ -35,7 +35,17 @@ export type ChosenMethod =
    * `--own-client`, and a provider with one route — because there was no choice
    * to report. A provider that never offered two reads as it always did.
    */
-  | { readonly kind: 'oauth'; readonly id?: string; readonly client: 'own' | 'hosted' | undefined };
+  | { readonly kind: 'oauth'; readonly id?: string; readonly client: 'own' | 'hosted' | undefined }
+  /**
+   * A credential the operator already holds, for a provider that does OAuth.
+   *
+   * Offered where an OAuth manifest still declares a per-connection prompt,
+   * which is a thing to be only where the browser route can be closed by
+   * somebody who is not in the room: a Slack workspace on Enterprise Grid needs
+   * an admin to approve an app before it can authenticate anyone, and the
+   * person running `connect` may not be that admin.
+   */
+  | { readonly kind: 'pasted'; readonly id?: string };
 
 interface Option {
   /** What `--auth` accepts, and how a chosen route is named back. */
@@ -45,16 +55,6 @@ interface Option {
   readonly chosen: ChosenMethod;
 }
 
-/**
- * A provider that can be reached with a client of the operator's own.
- *
- * `defineProvider` permits a broker with no client prompts — a provider with no
- * bring-your-own path is a legal thing to be — so offering that route without
- * checking would offer a choice with nothing behind it.
- */
-function hasClientPrompts(manifest: ProviderManifest): boolean {
-  return (manifest.setup?.prompts ?? []).some((prompt) => prompt.scope === 'shared');
-}
 
 /**
  * Every route this provider actually has, in the order they are offered.
@@ -91,7 +91,7 @@ export function options(manifest: ProviderManifest): readonly Option[] {
     });
   }
 
-  if (!broker || hasClientPrompts(manifest)) {
+  if (!broker || hasOwnClientPath(manifest)) {
     found.push({
       id: 'own_client',
       label: 'Sign in through a browser, using an OAuth client you register',
@@ -103,6 +103,23 @@ export function options(manifest: ProviderManifest): readonly Option[] {
       // there is nothing to override, and forcing it would write an `oauth_apps`
       // entry for a provider whose manifest already says it is the only way.
       chosen: { kind: 'oauth', id: 'own_client', client: broker ? 'own' : undefined },
+    });
+  }
+
+  // Last, always. It is the way in when the others are refused, not one anyone
+  // should be reaching for first: what it stores is the credential itself
+  // rather than a means of obtaining one, so rotating it is manual, and nothing
+  // can show what it is allowed to do.
+  const pasted = (manifest.setup?.prompts ?? []).filter((prompt) => prompt.scope === 'connection');
+  if (pasted.length > 0) {
+    found.push({
+      id: 'pasted_token',
+      label: `Paste a ${pasted.map((prompt) => prompt.label).join(', then ')} you already hold`,
+      detail:
+        'no browser, for a workspace that has not approved this app — which an admin decides, ' +
+        'not you. The credential is stored as given, so rotating it is manual and nothing can ' +
+        'say what it is allowed to do.',
+      chosen: { kind: 'pasted', id: 'pasted_token' },
     });
   }
 

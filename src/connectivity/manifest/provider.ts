@@ -114,18 +114,21 @@ export function defineProvider(input: unknown): ProviderManifest {
         `Provider "${manifest.id}": a broker supplies a pre-registered client, so auth must declare registration "manual" and an "app" naming the oauth_apps entry that overrides it.`,
       );
     }
-    // An MCP provider hands the exchange to the SDK, which posts to the token
-    // endpoint with whatever `clientInformation()` returned. There is no seam
-    // to route that through a broker without reimplementing its auth path, so
-    // this is refused at definition rather than discovered after consent.
-    if (manifest.connector.kind === 'mcp') {
-      throw new Error(
-        `Provider "${manifest.id}": an mcp connector runs the exchange through the SDK, which cannot route it through a broker. Register a client (registration "manual") or use dynamic registration.`,
-      );
-    }
     if (!manifest.auth.authorize_url) {
       throw new Error(
         `Provider "${manifest.id}": a broker performs the exchange, but the browser still goes to the vendor, so auth.authorize_url is required.`,
+      );
+    }
+    // An MCP provider hands the whole flow to the SDK, which posts to the token
+    // endpoint with whatever `clientInformation()` returned and has nowhere to
+    // route an exchange somebody else performs. Declaring both endpoints is
+    // what opts it off that path and onto the direct one, where the exchange is
+    // ours — so on an mcp connector the two arrive together or the manifest is
+    // describing a flow that cannot run. Refused here rather than discovered
+    // after the operator has already approved a consent screen. See ADR-040.
+    if (manifest.connector.kind === 'mcp' && !manifest.auth.token_url) {
+      throw new Error(
+        `Provider "${manifest.id}": an mcp connector runs the exchange through the SDK, which cannot route it through a broker, unless the manifest declares its own endpoints. Add auth.token_url beside auth.authorize_url, or drop the broker and register dynamically.`,
       );
     }
   }

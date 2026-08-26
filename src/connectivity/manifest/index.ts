@@ -45,4 +45,4 @@ export {
 } from './provider.ts';
 
 export type { SetupRequirement, SetupNeeds } from './requirements.ts';
-export { setupRequirements, UNNAMED_ID } from './requirements.ts';
+export { hasOwnClientPath, setupRequirements, UNNAMED_ID } from './requirements.ts';

@@ -1,4 +1,4 @@
-# ADR-039: A profile declares who its owner is
+# ADR-040: A profile declares who its owner is
 
 **Status:** accepted · **Follows from** [ADR-019](019-describing-setup-is-not-performing-it.md) · **Extends** [ADR-007](007-control-plane-exclusions.md) · **Obeys** [ADR-037](037-a-command-names-what-it-acts-on.md)
 

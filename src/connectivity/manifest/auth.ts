@@ -111,8 +111,10 @@ export const authOAuthSchema = z.object({
    * `dynamic` — the authorization server offers Dynamic Client Registration, so
    * we register ourselves and the operator does nothing at all (Notion, Linear).
    *
-   * `manual` — the vendor requires a pre-registered client, so the operator
-   * supplies an id and secret (Google, including for Google's own MCP servers).
+   * `manual` — the vendor requires a pre-registered client. Who supplies it is
+   * the profile's to decide and not this field's: an id and secret the operator
+   * registered (Google, if they choose to), or the client behind `broker`.
+   * `manual` says only that self-registration is not on offer.
    */
   registration: z.enum(['dynamic', 'manual']).default('dynamic'),
   /** Which `oauth_apps` entry holds the client, for `manual`. Shared across providers of a vendor. */
@@ -136,6 +138,22 @@ export const authOAuthSchema = z.object({
    * nothing about a connection that authorised in a browser.
    */
   assertion: authAssertionSchema.optional(),
+  /**
+   * Whether a token response carrying no refresh token is a failure.
+   *
+   * `required` — it is, and stopping is kinder than succeeding: the connection
+   * would work until the access token expires and then quietly stop. Google
+   * omits one when the account was already authorised for the app, which is a
+   * real and recoverable mistake.
+   *
+   * `optional` — the vendor issues a long-lived token and no refresh token is
+   * the normal, successful answer. Slack does this unless token rotation is
+   * enabled on the app, so demanding one would refuse every connection that
+   * worked.
+   */
+  refresh_token: z.enum(['required', 'optional']).default('required'),
+  /** Where the operator withdraws a grant, named in the refusal above. */
+  revoke_url: z.url().optional(),
   scopes: z.array(z.string()).default([]),
   /**
    * Usually discovered from the resource's metadata; set only to override.

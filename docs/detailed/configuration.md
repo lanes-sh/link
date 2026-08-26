@@ -60,7 +60,7 @@ auth:
   token_ref: profile/token
   # Browser origins allowed to call /mcp. Absent means "*", so this is only
   # worth setting to narrow it. Deployment only — a loopback endpoint refuses
-  # every cross-origin request, and this cannot widen that. ADR-039.
+  # every cross-origin request, and this cannot widen that. ADR-040.
   allowed_origins: ['*']
 
 limits:
@@ -154,7 +154,7 @@ it. `identity list` says `declared, but no agent can read it` when that is the s
 What reads it is one read-only tool, `identity_list`. Nothing on the MCP surface can write here:
 an agent able to edit this could edit the one fact that stops it signing as the wrong person, so
 editing is CLI-only under ADR-007. The endpoint's own instructions carry a pointer to the tool and
-none of the values — see [ADR-039](adr/039-a-profile-declares-who-its-owner-is.md).
+none of the values — see [ADR-040](adr/039-a-profile-declares-who-its-owner-is.md).
 
 Removing the last entry leaves the row and the rule in place, and the tool then reports that
 nothing is declared.

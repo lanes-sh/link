@@ -40,6 +40,7 @@ export { assertionKeySchema, parseAssertionKey, signAssertion, type AssertionKey
 export {
   BROKER_ORIGIN_ENV,
   BROKERED,
+  PASTED,
   BrokerError,
   brokerConfig,
   brokerExchange,

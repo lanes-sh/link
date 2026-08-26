@@ -317,6 +317,21 @@ function renderProvider(plan: ProviderPlan): string {
     );
   }
 
+  // An alternative, said as one. It is not a value the command above needs, and
+  // rendering it beside the requirements — which is what it did before there
+  // was anywhere else to put it — reads as a second mandatory step in a setup
+  // whose whole selling point is that it has none.
+  if (plan.tokenCommand && plan.pastedCredential) {
+    lines.push(
+      '',
+      'If the browser path is refused — a workspace that has not approved this app, which an ' +
+        `admin decides — the same command takes --auth pasted_token and asks for the ` +
+        `${plan.pastedCredential}:`,
+      `  ${plan.tokenCommand}`,
+      '  The console steps for obtaining one are in the setup documentation above.',
+    );
+  }
+
   if (plan.browser) {
     lines.push(
       '',

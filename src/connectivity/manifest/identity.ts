@@ -30,6 +30,18 @@ export const identitySchema = z.discriminatedUnion('kind', [
     url: z.url(),
     /** Dotted path into the JSON body, e.g. `emailAddress` or `user.emailAddress`. */
     field: z.string().min(1),
+    /**
+     * A second path, shown in brackets, where `field` alone is not unique.
+     *
+     * Almost no provider needs one: an address identifies a Google or iCloud
+     * account globally, and a GitHub login is unique across GitHub. Slack is
+     * the exception, because the thing it calls a user is scoped to a
+     * workspace — the same person in two workspaces answers `auth.test` with
+     * the same `user`, and one account string is how `settleIdentity` decides a
+     * connect is a *reconnect*. Without this, connecting a second workspace
+     * matches the first and overwrites its credential.
+     */
+    qualifier: z.string().min(1).optional(),
   }),
   z.object({
     kind: z.literal('tool'),

@@ -1,5 +1,6 @@
 import { GOOGLE_SCOPE_MEANINGS } from './google/shared/scopes.ts';
 import { LINEAR_SCOPE_MEANINGS } from './linear/scopes.ts';
+import { SLACK_SCOPE_MEANINGS } from './slack/scopes.ts';
 
 /**
  * What a scope actually permits, contributed by the provider that requests it.
@@ -23,4 +24,5 @@ export interface ScopeMeaning {
 export const SCOPE_MEANINGS: Record<string, ScopeMeaning> = {
   ...GOOGLE_SCOPE_MEANINGS,
   ...LINEAR_SCOPE_MEANINGS,
+  ...SLACK_SCOPE_MEANINGS,
 };

@@ -37,8 +37,30 @@ const options = (overrides: Record<string, unknown> = {}) => ({
   clientSecret: 'client-secret',
   scopes: ['scope.read'],
   timeoutMs: 5_000,
+  refreshToken: { required: true, vendor: 'Vendor', revokeUrl: 'https://example.com/permissions' },
   ...overrides,
 });
+
+/**
+ * Act as the browser coming back *through the relay*.
+ *
+ * The relay has only `state` to work from, so this reads the port out of it the
+ * same way the broker's callback route does — which is what makes this a test
+ * of the contract rather than of a value threaded through in the clear.
+ */
+function relayed(mutate?: (params: URLSearchParams) => void) {
+  return (url: string) => {
+    const authorize = new URL(url);
+    const state = authorize.searchParams.get('state')!;
+    const port = state.split('.').pop();
+
+    const back = new URL(`http://127.0.0.1:${port}/callback`);
+    back.searchParams.set('code', 'auth-code-1');
+    back.searchParams.set('state', state);
+    mutate?.(back.searchParams);
+    void fetch(back.href);
+  };
+}
 
 /** Act as the browser: follow the authorize URL back to the loopback callback. */
 function browserThatApproves(mutate?: (params: URLSearchParams) => void) {
@@ -300,80 +322,130 @@ describe('rejections', () => {
 
     expect(error).toBeInstanceOf(OAuthError);
     expect(error.message).toMatch(/no refresh token/);
-    expect(error.message).toMatch(/myaccount\.google\.com\/permissions/);
+    // The vendor and the revoke page come from the manifest now. This assertion
+    // used to name Google, which was true only while Google was the only
+    // provider that redeemed a code here.
+    expect(error.message).toMatch(/Vendor returned no refresh token/);
+    expect(error.message).toMatch(/https:\/\/example\.com\/permissions/);
+  });
+
+  test('a vendor the manifest says issues none succeeds, and stores no expiry', async () => {
+    // Slack's shape: a long-lived user token, no refresh token, no stated
+    // lifetime. Demanding one here refused every connection that worked.
+    const mock = mockTokenEndpoint({ access_token: 'xoxp-access', scope: 'chat:write' });
+
+    const tokens = await runOAuthFlow(
+      options({
+        fetch: mock.fetch,
+        openBrowser: browserThatApproves(),
+        refreshToken: { required: false, vendor: 'Vendor' },
+      }) as never,
+    );
+
+    expect(tokens.accessToken).toBe('xoxp-access');
+    expect(tokens.refreshToken).toBeUndefined();
+    expect(tokens.expiresIn).toBeUndefined();
   });
 });
 
 /**
- * The listener the SDK drives, rather than the flow we drive ourselves.
+ * A vendor that will not accept a loopback redirect at all.
  *
- * The SDK builds the authorization URL and only puts a `state` on it if its
- * provider hands one over, and it does not check the value when the callback
- * comes back. Both halves therefore live here: the listener mints the state and
- * the listener compares it. These tests are what keeps the pair together.
+ * Slack refuses to register a non-HTTPS Redirect URL, and a CLI on loopback
+ * cannot be HTTPS. So the broker's own origin is named instead, the browser
+ * lands there, and it bounces straight back down to the listener opened here.
+ * The listener does not change; only the address the vendor is told.
  */
-describe('the SDK-driven callback listener', () => {
-  test('publishes a state for the provider to send', () => {
-    const first = captureOAuthCallback();
-    const second = captureOAuthCallback();
+describe('a relayed redirect', () => {
+  const RELAY = 'https://api.example.com/v1/auth/link/vendor/callback';
 
-    try {
-      expect(first.state).toMatch(/^[A-Za-z0-9_-]{32,}$/);
-      // Per listener, not per process: two concurrent connects must not accept
-      // each other's callbacks.
-      expect(first.state).not.toBe(second.state);
-    } finally {
-      void first.close();
-      void second.close();
-    }
+  test('names the relay to the vendor, not the loopback port', async () => {
+    const mock = mockTokenEndpoint(SUCCESS);
+    let authorizeUrl = '';
+
+    await runOAuthFlow(
+      options({
+        fetch: mock.fetch,
+        relayRedirect: RELAY,
+        openBrowser: (url: string) => {
+          authorizeUrl = url;
+          relayed()(url);
+        },
+      }) as never,
+    );
+
+    expect(new URL(authorizeUrl).searchParams.get('redirect_uri')).toBe(RELAY);
   });
 
-  test('refuses a callback that carries no state', async () => {
-    const capture = captureOAuthCallback();
+  test('carries the listening port in state, because the relay has no other way home', async () => {
+    const mock = mockTokenEndpoint(SUCCESS);
+    let authorizeUrl = '';
 
-    try {
-      // The handler goes on before the request, or the rejection lands with
-      // nothing attached and Bun reports it as unhandled.
-      const refused = capture.wait(5_000).then(() => null, (error: Error) => error);
-      await fetch(`${capture.redirectUri}?code=unsolicited`).catch(() => {});
+    await runOAuthFlow(
+      options({
+        fetch: mock.fetch,
+        relayRedirect: RELAY,
+        openBrowser: (url: string) => {
+          authorizeUrl = url;
+          relayed()(url);
+        },
+      }) as never,
+    );
 
-      expect((await refused)?.message).toMatch(/State mismatch/);
-    } finally {
-      await capture.close();
-    }
+    const state = new URL(authorizeUrl).searchParams.get('state')!;
+    const port = Number(state.split('.').pop());
+    expect(state).toMatch(/^[\w-]+\.\d+$/);
+    expect(port).toBeGreaterThan(1024);
   });
 
-  test('refuses a code injected by anyone sweeping the loopback port', async () => {
-    const capture = captureOAuthCallback();
+  test('redeems against the relay, because the vendor requires the two to match', async () => {
+    const mock = mockTokenEndpoint(SUCCESS);
 
-    try {
-      const refused = capture.wait(5_000).then(() => null, (error: Error) => error);
-      // What an <img src="http://127.0.0.1:N/callback?code=..."> on any open
-      // page amounts to. PKCE would usually fail the exchange afterwards, but
-      // the code must not be redeemed at all.
-      await fetch(`${capture.redirectUri}?code=attacker&state=guessed`).catch(() => {});
+    await runOAuthFlow(
+      options({ fetch: mock.fetch, relayRedirect: RELAY, openBrowser: relayed() }) as never,
+    );
 
-      expect((await refused)?.message).toMatch(/State mismatch/);
-    } finally {
-      await capture.close();
-    }
+    expect(mock.calls[0]!.body['redirect_uri']).toBe(RELAY);
   });
 
-  test('accepts the callback it actually started', async () => {
-    const capture = captureOAuthCallback();
+  test('still refuses a callback whose state does not match', async () => {
+    // The port rides along, but the random half is unchanged and is still what
+    // binds this callback to this flow.
+    const mock = mockTokenEndpoint(SUCCESS);
 
-    try {
-      const pending = capture.wait(5_000);
-      const url = new URL(capture.redirectUri);
-      url.searchParams.set('code', 'the-real-code');
-      url.searchParams.set('state', capture.state);
-      url.searchParams.set('iss', 'https://accounts.example.test');
-      await fetch(url).catch(() => {});
+    const error = await runOAuthFlow(
+      options({
+        fetch: mock.fetch,
+        relayRedirect: RELAY,
+        timeoutMs: 1_500,
+        openBrowser: relayed((params) => params.set('state', 'someone-elses.54321')),
+      }) as never,
+    ).then(
+      () => undefined,
+      (caught: unknown) => caught as Error,
+    );
 
-      expect(await pending).toEqual({ code: 'the-real-code', iss: 'https://accounts.example.test' });
-    } finally {
-      await capture.close();
-    }
+    expect(error).toBeInstanceOf(OAuthError);
+  });
+
+  test('without one, the listener names itself as before', async () => {
+    const mock = mockTokenEndpoint(SUCCESS);
+    let authorizeUrl = '';
+
+    await runOAuthFlow(
+      options({
+        fetch: mock.fetch,
+        openBrowser: (url: string) => {
+          authorizeUrl = url;
+          browserThatApproves()(url);
+        },
+      }) as never,
+    );
+
+    const sent = new URL(authorizeUrl).searchParams;
+    expect(sent.get('redirect_uri')).toMatch(/^http:\/\/127\.0\.0\.1:\d+\/callback$/);
+    // No port appended: there is nobody to tell.
+    expect(sent.get('state')).not.toContain('.');
   });
 });
 
@@ -389,6 +461,7 @@ describe('the exchange is a seam', () => {
       authorizeUrl: 'https://accounts.example.com/authorize',
       clientId: 'cid',
       scopes: ['scope.a'],
+      refreshToken: { required: true, vendor: 'Vendor' },
       openBrowser: browserThatApproves(),
       fetch: tokenEndpoint.fetch,
       exchange: async (input) => {
@@ -410,11 +483,15 @@ describe('the exchange is a seam', () => {
     expect(redeemed?.codeVerifier).toMatch(/^[\w-]{43}$/);
   });
 
-  test('a flow with neither an exchange nor a client to redeem with refuses', async () => {
+  test('a flow with neither an exchange nor a token url to redeem at refuses', async () => {
+    // The secret is deliberately not part of this any more: a public client has
+    // none, and requiring one refused the shipped-client path before it sent
+    // anything.
     const error = await runOAuthFlow({
       authorizeUrl: 'https://accounts.example.com/authorize',
       clientId: 'cid',
       scopes: ['scope.a'],
+      refreshToken: { required: true, vendor: 'Vendor' },
       openBrowser: browserThatApproves(),
     }).then(
       () => undefined,
@@ -422,6 +499,25 @@ describe('the exchange is a seam', () => {
     );
 
     expect(error).toBeInstanceOf(OAuthError);
-    expect(error?.message).toMatch(/tokenUrl and clientSecret/);
+    expect(error?.message).toMatch(/needs a tokenUrl/);
+  });
+
+  test('a public client redeems with no secret, sending none rather than an empty one', async () => {
+    const mock = mockTokenEndpoint(SUCCESS);
+
+    await runOAuthFlow({
+      authorizeUrl: 'https://accounts.example.com/authorize',
+      tokenUrl: 'https://oauth2.example.com/token',
+      clientId: 'shipped-id',
+      scopes: ['scope.a'],
+      refreshToken: { required: true, vendor: 'Vendor' },
+      openBrowser: browserThatApproves(),
+      fetch: mock.fetch,
+    });
+
+    const sent = mock.calls[0]!.body;
+    expect(sent['client_id']).toBe('shipped-id');
+    expect('client_secret' in sent).toBe(false);
+    expect(sent['code_verifier']).toMatch(/^[\w-]{43}$/);
   });
 });

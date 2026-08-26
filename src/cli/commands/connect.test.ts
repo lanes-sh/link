@@ -127,6 +127,54 @@ describe('resolveAccount', () => {
     expect(account).toBe('me@example.com');
   });
 
+  /**
+   * Where the vendor's idea of a user is scoped to something smaller than the
+   * vendor. Slack's is: `auth.test` answers with a workspace-local handle, so
+   * the same person in two workspaces returns the same `user`, and one account
+   * string is exactly how `settleIdentity` decides a connect is a *reconnect*.
+   * Without the qualifier, connecting a second workspace matched the first and
+   * overwrote its token.
+   */
+  const slackish = (body: Record<string, string>, identity: Record<string, string>) =>
+    resolveAccount(manifest({ kind: 'http', url: 'https://slack.invalid/auth.test', ...identity }), {
+      accessToken: async () => 'tok',
+      fetch: (async () => new Response(JSON.stringify(body))) as unknown as typeof fetch,
+    });
+
+  test('a qualifier distinguishes one person in two workspaces', async () => {
+    const identity = { field: 'user', qualifier: 'team' };
+
+    const acme = await slackish({ user: 'alice', team: 'Acme' }, identity);
+    const beta = await slackish({ user: 'alice', team: 'Beta' }, identity);
+
+    expect(acme).toBe('alice (Acme)');
+    expect(beta).toBe('alice (Beta)');
+    // The property that matters: `settleIdentity` compares these strings, so
+    // two workspaces must not produce one.
+    expect(acme).not.toBe(beta);
+  });
+
+  test('and still tells two people in one workspace apart', async () => {
+    const identity = { field: 'user', qualifier: 'team' };
+
+    expect(await slackish({ user: 'alice', team: 'Acme' }, identity)).not.toBe(
+      await slackish({ user: 'bob', team: 'Acme' }, identity),
+    );
+  });
+
+  test('the qualified label slugifies whole, so the id names the workspace too', async () => {
+    // No `@` in it, so `idFromAccount` keeps both halves — `alice_acme` rather
+    // than two connections called `alice` and `alice2`.
+    expect(idFromAccount('alice (Acme)')).toBe('alice_acme');
+    expect(idFromAccount('alice (Beta)', ['alice_acme'])).toBe('alice_beta');
+  });
+
+  test('a missing qualifier degrades to the bare field rather than failing', async () => {
+    // Best-effort, like everything else here: a label is worth having and never
+    // worth failing a connect over.
+    expect(await slackish({ user: 'alice' }, { field: 'user', qualifier: 'team' })).toBe('alice');
+  });
+
   test('reads a tool identity through a JSON text block', async () => {
     const account = await resolveAccount(
       manifest({ kind: 'tool', tool: 'get_workspace', field: 'name', arguments: {} }),

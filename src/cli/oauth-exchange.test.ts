@@ -22,6 +22,20 @@ function answering(status: number, body: unknown, headers: Record<string, string
   return { fetch, calls };
 }
 
+/**
+ * The two readings of a response with no refresh token, as a manifest states them.
+ *
+ * `REQUIRED` is Google's: it means the account was already authorised and the
+ * connection would die in an hour. `OPTIONAL` is Slack's: a user token is
+ * long-lived and there is nothing to renew, so the absence is the success.
+ */
+const REQUIRED = {
+  required: true,
+  vendor: 'Vendor',
+  revokeUrl: 'https://example.com/permissions',
+} as const;
+const OPTIONAL = { required: false, vendor: 'Vendor' } as const;
+
 describe('directExchange', () => {
   test('posts the client and the verifier to the vendor', async () => {
     const { fetch, calls } = answering(200, {
@@ -35,6 +49,7 @@ describe('directExchange', () => {
       tokenUrl: 'https://oauth2.example.com/token',
       clientId: 'cid',
       clientSecret: 'secret',
+      refreshToken: REQUIRED,
       fetch,
     })(INPUT);
 
@@ -58,11 +73,69 @@ describe('directExchange', () => {
       tokenUrl: 'https://oauth2.example.com/token',
       clientId: 'cid',
       clientSecret: 'secret',
+      refreshToken: REQUIRED,
       fetch,
     })(INPUT);
 
     expect(tokens.scope).toBe('scope.a scope.b');
-    expect(tokens.expiresIn).toBe(3600);
+    // Not an invented hour. A vendor that states no lifetime gets none written,
+    // because an expiry nothing can act on has `doctor` calling a healthy
+    // connection stale and naming a command that would not change it.
+    expect(tokens.expiresIn).toBeUndefined();
+  });
+
+  test('sends no client_secret at all for a public client, rather than an empty one', async () => {
+    // `client_secret=` is not the same as no field: some authorization servers
+    // read it as a malformed confidential client and refuse for a reason that
+    // names neither the client nor the secret.
+    const { fetch, calls } = answering(200, { access_token: 'at', refresh_token: 'rt' });
+
+    await directExchange({
+      tokenUrl: 'https://oauth2.example.com/token',
+      clientId: 'cid',
+      refreshToken: REQUIRED,
+      fetch,
+    })(INPUT);
+
+    const sent = new URLSearchParams(String(calls[0]!.init!.body));
+    expect(sent.has('client_secret')).toBe(false);
+    expect(sent.get('client_id')).toBe('cid');
+    expect(sent.get('code_verifier')).toBe('the-verifier');
+  });
+
+  test('a vendor that issues no refresh token succeeds where the manifest says it will', async () => {
+    const { fetch } = answering(200, { access_token: 'xoxp-at', scope: 'chat:write' });
+
+    const tokens = await directExchange({
+      tokenUrl: 'https://vendor.example.com/token',
+      clientId: 'cid',
+      refreshToken: OPTIONAL,
+      fetch,
+    })(INPUT);
+
+    // Both absent rather than defaulted: there is nothing to renew with and no
+    // stated lifetime, and saying otherwise would be inventing both.
+    expect(tokens.accessToken).toBe('xoxp-at');
+    expect(tokens.refreshToken).toBeUndefined();
+    expect(tokens.expiresIn).toBeUndefined();
+  });
+
+  test('the refusal names the vendor that returned nothing, and where to revoke', async () => {
+    // It used to say "Google" unconditionally, on the correct-at-the-time
+    // grounds that Google was the only provider redeeming a code here.
+    const { fetch } = answering(200, { access_token: 'at' });
+
+    const error = (await directExchange({
+      tokenUrl: 'https://oauth2.example.com/token',
+      clientId: 'cid',
+      clientSecret: 'secret',
+      refreshToken: { required: true, vendor: 'Vendor Mail', revokeUrl: 'https://example.com/perms' },
+      fetch,
+    })(INPUT).catch((e) => e)) as Error;
+
+    expect(error).toBeInstanceOf(OAuthError);
+    expect(error.message).toContain('Vendor Mail returned no refresh token');
+    expect(error.message).toContain('https://example.com/perms');
   });
 
   test('surfaces an id_token when one comes back, and omits the field when not', async () => {
@@ -73,6 +146,7 @@ describe('directExchange', () => {
         tokenUrl: 'https://oauth2.example.com/token',
         clientId: 'cid',
         clientSecret: 'secret',
+        refreshToken: REQUIRED,
         fetch,
       })(INPUT);
 
@@ -88,7 +162,7 @@ describe('brokerExchangeVia', () => {
       data: { access_token: 'at', refresh_token: 'rt', id_token: 'idt', expires_in: 900 },
     });
 
-    const tokens = await brokerExchangeVia({ url: 'https://api.example.com/b', fetch })(INPUT);
+    const tokens = await brokerExchangeVia({ url: 'https://api.example.com/b', refreshToken: REQUIRED, fetch })(INPUT);
 
     expect(calls[0]!.url).toBe('https://api.example.com/b/exchange');
     expect(tokens.idToken).toBe('idt');
@@ -105,7 +179,7 @@ describe('brokerExchangeVia', () => {
       notice: 'At capacity.',
     });
 
-    const error = (await brokerExchangeVia({ url: 'https://api.example.com/b', fetch })(
+    const error = (await brokerExchangeVia({ url: 'https://api.example.com/b', refreshToken: REQUIRED, fetch })(
       INPUT,
     ).catch((e) => e)) as BrokerError;
 
@@ -118,7 +192,20 @@ describe('brokerExchangeVia', () => {
     const { fetch } = answering(200, { success: true, data: { access_token: 'at' } });
 
     await expect(
-      brokerExchangeVia({ url: 'https://api.example.com/b', fetch })(INPUT),
+      brokerExchangeVia({ url: 'https://api.example.com/b', refreshToken: REQUIRED, fetch })(INPUT),
     ).rejects.toBeInstanceOf(OAuthError);
+  });
+
+  test('unless the manifest says this vendor issues none', async () => {
+    const { fetch } = answering(200, { success: true, data: { access_token: 'at' } });
+
+    const tokens = await brokerExchangeVia({
+      url: 'https://api.example.com/b',
+      refreshToken: OPTIONAL,
+      fetch,
+    })(INPUT);
+
+    expect(tokens.accessToken).toBe('at');
+    expect(tokens.refreshToken).toBeUndefined();
   });
 });

@@ -1,4 +1,4 @@
-# ADR-039: Cross-origin access is a deployment-only grant, and a preflight is never refused for want of a credential
+# ADR-040: Cross-origin access is a deployment-only grant, and a preflight is never refused for want of a credential
 
 **Status:** accepted · **Follows from** [ADR-018](018-the-gate-is-in-the-application.md) ·
 **Constrained by** the loopback guard in `src/server/rebinding.ts`

@@ -139,8 +139,10 @@ than the right to act as a person, and the two are one prompt apart.
 
 Since [ADR-028](adr/028-a-hosted-oauth-client-is-the-default.md) a Google connection authorises,
 by default, against an OAuth client Lanes operates rather than one the operator registers. That
-removes a nine-step console walkthrough. It also moves one step off this machine, and the honest
-statement of that is worth more than the convenience:
+removes a nine-step console walkthrough. Since
+[ADR-040](adr/040-an-mcp-connector-may-use-a-pre-registered-client.md) a Slack connection does the
+same, removing a six-step one. It also moves one step off this machine, and the honest statement of
+that is worth more than the convenience:
 
 - The **authorization code** is sent to the Lanes API, because redeeming it needs the client
   secret and that secret is deliberately not here.
@@ -150,9 +152,15 @@ statement of that is worth more than the convenience:
   the flow adds for this purpose) is sent with each refresh, so the API can attribute and
   rate-limit per account. It is stored beside the tokens and never decoded here.
 
-Everything else is unchanged: the browser still talks to Google directly, the redirect still lands
-on a loopback listener this process opened, the endpoint still never participates, and the tokens
-still live in whichever credential store the config names.
+Everything else is unchanged: the browser still talks to the vendor directly, the redirect still
+lands on a loopback listener this process opened, the endpoint still never participates, and the
+tokens still live in whichever credential store the config names.
+
+Slack differs from Google in one way worth stating, and it is in Slack's favour. It issues no
+refresh token unless token rotation is enabled on the app, so only the first exchange goes through
+the Lanes API and nothing does afterwards — where a Google connection passes a refresh token
+through it for as long as the connection lives. Slack's `/config` also asks for no identity scopes,
+because there is no `openid` here to attribute a refresh with and nothing to attribute.
 
 **Nothing in this repository can verify what the Lanes API does with what it sees.** That is the
 whole of the trade, and it is why this is a row in the table rather than a paragraph in a guide.

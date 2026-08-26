@@ -70,6 +70,7 @@ export {
   bundleSchema,
   credentialRefForConnection,
   rotatableCredentialRefs,
+  hasOwnClientPath,
   setupRequirements,
   UNNAMED_ID,
   RESERVED_PROVIDER_IDS,

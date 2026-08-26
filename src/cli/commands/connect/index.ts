@@ -9,6 +9,7 @@ import { discoverCapabilities } from './discover.ts';
 import { connectFamily, familyMembers } from './family.ts';
 import { authoriseWithKey } from './assertion.ts';
 import { authorise } from './authorise.ts';
+import { authorisePastedToken } from './pasted-token.ts';
 import { chooseAuthMethod } from './method.ts';
 import { preflight } from './requirements.ts';
 import { ALREADY, NOTHING, renderOutcome, where, type ConnectOutcome } from './outcome.ts';
@@ -213,6 +214,13 @@ async function runConnect(
         // or asking outright, is how someone says "that one again" — which is
         // what a rotated key calls for.
         replace: options.nonInteractive !== true && (options.replace === true || named !== undefined),
+        prompter,
+      });
+    } else if (method.kind === 'pasted') {
+      await authorisePastedToken({
+        manifest,
+        connectionId: provisionalId,
+        credentials: runtime.credentials,
         prompter,
       });
     } else if (manifest.auth.kind === 'oauth') {

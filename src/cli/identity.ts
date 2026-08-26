@@ -58,7 +58,18 @@ export async function resolveAccount(
         headers: token ? { authorization: `Bearer ${token}` } : {},
       });
       if (!response.ok) return null;
-      return pluck(await response.json(), identity.field);
+
+      const body = await response.json();
+      const primary = pluck(body, identity.field);
+      if (!primary || !identity.qualifier) return primary;
+
+      // `alice (Acme)` rather than `alice`. The bracketed half is what makes
+      // two workspaces two accounts instead of one overwritten twice, and it
+      // survives into the connection id because `idFromAccount` slugifies the
+      // whole string when there is no `@` in it — `alice_acme`, which is a row
+      // somebody can read in `status`.
+      const qualifier = pluck(body, identity.qualifier);
+      return qualifier ? `${primary} (${qualifier})` : primary;
     }
 
     if (!probe.callTool) return null;
