@@ -3,6 +3,12 @@ import type { Logger } from '#connectivity';
 import { capabilityIdForToolName } from '#server/mcp';
 import { ATTACHMENTS_PATH, stageAttachment } from './attachments.ts';
 import { allowedHostnamesFor, rebindingRefusal } from './rebinding.ts';
+import {
+  DASHBOARD_PATH,
+  dashboardSessions,
+  handleDashboard,
+  servesDashboard,
+} from './dashboard.ts';
 import type { Generation } from './generation.ts';
 import type { Generations } from './generations.ts';
 import { callerKey, failedAuthLimiter, FAILED_AUTH_PER_MINUTE, tooManyAttempts } from './edge.ts';
@@ -49,6 +55,15 @@ export interface ServerOptions {
   readonly authorization?: AuthorizationSurface | undefined;
   /** Hostnames this endpoint answers to. See `./rebinding.ts`. */
   readonly allowedHostnames?: readonly string[] | undefined;
+  /**
+   * Serve the dashboard.
+   *
+   * Off unless asked for, and `serve()` withholds it anyway when the bind
+   * address is not loopback. `lanes link start` asks; `container.ts` does not.
+   * See `./dashboard.ts` for why a deployed instance has no browser-shaped door
+   * to put it behind.
+   */
+  readonly dashboard?: boolean | undefined;
 }
 
 type RefusalReason = Extract<AuthOutcome, { ok: false }>['reason'];
@@ -110,6 +125,7 @@ export interface RequestHandler {
 export function createRequestHandler(options: ServerOptions): RequestHandler {
   let probedAt = 0;
   const failedAuth = failedAuthLimiter();
+  const sessions = dashboardSessions();
 
   /**
    * Re-read the config because a call named a tool we do not serve.
@@ -166,6 +182,19 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
           ...(named.ok
             ? { profile: options.primary, profiles: options.generations.current.names() }
             : {}),
+        });
+      }
+
+      // Above the 404 gate and outside the bearer path below, because a
+      // top-level browser navigation carries no `Authorization` header — so it
+      // authenticates itself, against the same authenticator. Unset, this is
+      // never reached and `/dashboard` is a 404 like any other unknown path.
+      if (options.dashboard && url.pathname === DASHBOARD_PATH) {
+        return await handleDashboard(request, {
+          generations: options.generations,
+          authenticator: options.authenticator,
+          primary: options.primary,
+          sessions,
         });
       }
 
@@ -335,9 +364,11 @@ export function serve(options: ServeOptions): RunningServer {
   const host = options.host ?? primary.config.instance.host;
   const port = options.port ?? primary.config.instance.port;
 
-  const allowedHostnames = options.allowedHostnames ?? allowedHostnamesFor(host, isLoopback(host));
+  const loopback = isLoopback(host);
+  const allowedHostnames = options.allowedHostnames ?? allowedHostnamesFor(host, loopback);
   const handler = createRequestHandler({
     ...options,
+    dashboard: servesDashboard(options.dashboard, loopback),
     ...(allowedHostnames ? { allowedHostnames } : {}),
   });
 

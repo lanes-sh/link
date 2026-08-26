@@ -155,3 +155,55 @@ describe('a provider whose client somebody else operates', () => {
     expect(planFor(brokered, { profile: 'personal', connections: [] }).steps).toHaveLength(2);
   });
 });
+
+/**
+ * The target, for a caller that knows which one it is rendering for.
+ *
+ * Credentials are per-target, so `connect` writes into whichever target the
+ * pasted command resolves to — and the shell it lands in resolves its own,
+ * from `LANES_LINK_TARGET` or `instance.default_target`. That is the same
+ * guess `--profile` exists to close, one axis over.
+ *
+ * Optional rather than required because the two callers that predate it have
+ * no target to give: `setup plan` and the `setup.provider` capability both
+ * render from manifests alone. Their output is unchanged, which is what the
+ * first test here pins.
+ */
+describe('the target in a command', () => {
+  test('a context with no target emits exactly what it always did', () => {
+    expect(planFor(KEYED, context, 'work').command).toBe(
+      'lanes link connect thing --profile personal --id work',
+    );
+  });
+
+  test('names the target beside the profile when the caller knows it', () => {
+    const targeted = { ...context, target: 'local' };
+
+    expect(planFor(KEYED, targeted, 'work').command).toBe(
+      'lanes link connect thing --profile personal --target local --id work',
+    );
+  });
+
+  test('an id placeholder still comes last, so the part to edit is at the end', () => {
+    const targeted = { ...context, target: 'local' };
+
+    expect(planFor(KEYED, targeted).command).toBe(
+      'lanes link connect thing --profile personal --target local --id <name>',
+    );
+  });
+
+  test('the own-client escape hatch carries it too', () => {
+    // It is the same command plus a flag, so a target on one and not the other
+    // would send the reader to a different store than the line above it.
+    const plan = planFor(BROWSER, { ...context, target: 'cloud' });
+
+    expect(plan.command).toContain('--target cloud');
+  });
+
+  test('every shipped provider carries it', () => {
+    for (const plan of planAll(PROVIDER_MANIFESTS, { ...context, target: 'cloud' })) {
+      expect(plan.command).toContain('--target cloud');
+      if (plan.ownClientCommand) expect(plan.ownClientCommand).toContain('--target cloud');
+    }
+  });
+});

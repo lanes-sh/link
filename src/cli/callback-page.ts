@@ -47,8 +47,11 @@ export interface CallbackPage {
  *
  * This is load-bearing: `heading` carries a provider's `manifest.name`, and a
  * custom provider supplies that from a YAML file of its own.
+ *
+ * Exported because `dashboard-page.ts` renders the same values into the same
+ * kind of page. A second copy of an escaper is a second thing to get wrong.
  */
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -88,7 +91,7 @@ h1 { font-family: "Lora", Georgia, "Times New Roman", serif; font-size: 28px; fo
 `.trim();
 
 /** The one-row footer below the card, identical to the one the API pages carry. */
-const FOOTER =
+export const FOOTER =
   '<div class="footer"><p>Your unfair advantage in parallel AI coding. ' +
   '<a href="https://lanes.sh/">lanes.sh</a></p></div>';
 

@@ -81,6 +81,19 @@ export interface PlanContext {
    * is described as needing it rather than as needing nothing.
    */
   readonly ownClients?: readonly string[];
+  /**
+   * Which target the rendered command should name.
+   *
+   * Credentials are per-target, so `connect` writes into whichever target the
+   * pasted line resolves to — and the shell it is pasted into resolves its own,
+   * from `LANES_LINK_TARGET` or `instance.default_target`. That is the same
+   * guess `--profile` is spelled out to close, one axis over.
+   *
+   * Optional because the two callers that predate it have none to give: both
+   * `setup plan` and the `setup.provider` capability render from manifests
+   * alone. Absent, the command is byte-for-byte what it always was.
+   */
+  readonly target?: string;
 }
 
 export function planFor(
@@ -103,6 +116,7 @@ export function planFor(
   // exists to prevent.
   const command =
     `lanes link connect ${manifest.id} --profile ${context.profile}` +
+    (context.target ? ` --target ${context.target}` : '') +
     (needsId ? ' --id <name>' : connectionId ? ` --id ${connectionId}` : '');
 
   return {
