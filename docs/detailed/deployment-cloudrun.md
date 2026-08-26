@@ -6,8 +6,8 @@ directory becomes a bucket. Everything above them — connections, providers, po
 declared once and applies to both.
 
 ```console
-$ lanes link start   # local:    a directory, an encrypted file
-$ lanes link deploy  # deployed: one bucket, Secret Manager, Cloud Run
+$ lanes link start --profile personal --target cloud   # local:    a directory, an encrypted file
+$ lanes link deploy --profile personal --target cloud  # deployed: one bucket, Secret Manager, Cloud Run
 ```
 
 **Two standing dependencies, and that is the whole list.** No database: state is one object per
@@ -121,9 +121,9 @@ policy:
 ## The deploy loop
 
 ```console
-$ lanes link deploy                        # everything, from nothing
-$ lanes link connect gmail --target cloud  # a browser consent per account
-$ lanes link outputs --target cloud        # the URL an agent needs
+$ lanes link deploy --profile personal --target cloud                        # everything, from nothing
+$ lanes link connect gmail --profile personal --target cloud --target cloud  # a browser consent per account
+$ lanes link outputs --profile personal --target cloud --target cloud        # the URL an agent needs
 ```
 
 `connect` publishes the config to the bucket the revision reads and asks the revision to re-read
@@ -135,10 +135,10 @@ it, so it takes effect without a second deploy. Deploy again when the *code* cha
 creates it, and everything downstream takes the same flag:
 
 ```console
-$ lanes link deploy --target staging       # surveys, writes targets.staging, rolls a revision
-$ lanes link target list                   # what this profile declares, and which is in play
-$ lanes link secrets push --from cloud --to staging
-$ lanes link outputs --target staging
+$ lanes link deploy --profile personal --target cloud --target staging       # surveys, writes targets.staging, rolls a revision
+$ lanes link target list --profile personal                   # what this profile declares, and which is in play
+$ lanes link secrets push --profile personal --from cloud --to staging
+$ lanes link outputs --profile personal --target cloud --target staging
 ```
 
 The revision carries its own name — the rollout sets `LANES_LINK_TARGET=<target>` on the service, so
@@ -242,8 +242,8 @@ in the store is left alone.
 If you would rather do it up front, or copy a setup you already built locally:
 
 ```console
-$ lanes link token rotate --target cloud            # mints the profile bearer token
-$ lanes link secrets push --from local --to cloud   # or copy a setup you built locally
+$ lanes link token rotate --profile personal --target cloud --target cloud            # mints the profile bearer token
+$ lanes link secrets push --profile personal --from local --to cloud   # or copy a setup you built locally
 ```
 
 `secrets push` copies; it never deletes from the source, and it skips a reference the destination
@@ -437,6 +437,36 @@ $ curl -i -X POST https://…run.app/mcp | head -3          # 401, with resource
 $ curl -s https://…run.app/.well-known/oauth-protected-resource | jq
 $ curl -s https://…run.app/.well-known/oauth-authorization-server | jq
 ```
+
+### Calling it from a browser
+
+Nothing to configure. A deployment answers a cross-origin request from any page, because there is
+nothing for an allowlist to defend: the endpoint is already reachable by anyone, the credential is an
+`Authorization` header a page must already hold rather than a cookie a browser attaches on its own,
+and `Access-Control-Allow-Credentials` is never sent.
+
+To narrow it anyway — an enterprise deployment might — name the origins:
+
+```yaml
+auth:
+  mode: bearer
+  token_ref: profile/token
+  allowed_origins:
+    - https://app.example
+```
+
+An origin exactly: scheme, host, and port, with no trailing slash and no path. A browser sends
+`Origin: https://app.example`, and a configured `https://app.example/` compares unequal and would
+refuse the origin you believed you had allowed — so the config refuses it up front rather than at
+request time. The discovery documents are never narrowed by this; a client that cannot read them
+cannot find out that it needs a token.
+
+Two things it does not do. It grants no capability: what a caller may do once it holds a credential is
+decided by `policy`, per call, exactly as for every other client. And it does nothing at all for
+`lanes link start` — a loopback endpoint refuses every cross-origin request and must keep doing so,
+because a page you happen to be visiting can otherwise reach `127.0.0.1`, including the consent form
+that asks you for your token. The field is read and discarded there. See
+[ADR-040](adr/039-cross-origin-access-is-a-deployment-only-grant.md).
 
 ### Using an identity provider you already run
 

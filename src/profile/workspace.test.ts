@@ -3,7 +3,6 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  describeSelection,
   listProfiles,
   resolveSelection,
   resolveWorkspaceRoot,
@@ -50,31 +49,40 @@ describe('workspace root resolution', () => {
   });
 });
 
-describe('profile resolution order', () => {
-  test('--profile beats the environment, which beats the workspace default', async () => {
+describe('naming a profile', () => {
+  test('the flag is the only thing that selects one', async () => {
     const root = await workspace(['personal', 'work'], 'personal');
-    const env = { LANES_LINK_HOME: root, LANES_LINK_PROFILE: 'work' };
 
-    expect((await resolveSelection({ env, profileFlag: 'personal' })).profile).toBe('personal');
-    expect((await resolveSelection({ env })).profile).toBe('work');
-    expect((await resolveSelection({ env: { LANES_LINK_HOME: root } })).profile).toBe('personal');
-  });
-
-  test('records where the selection came from, so commands can print it', async () => {
-    const root = await workspace(['personal', 'work'], 'personal');
-    const env = { LANES_LINK_HOME: root, LANES_LINK_PROFILE: 'work' };
-
-    expect((await resolveSelection({ env, profileFlag: 'work' })).profileSource).toBe('flag');
-    expect((await resolveSelection({ env })).profileSource).toBe('environment');
-    expect((await resolveSelection({ env: { LANES_LINK_HOME: root } })).profileSource).toBe(
-      'workspace-default',
+    expect((await resolveSelection({ env: { LANES_LINK_HOME: root }, profileFlag: 'work' })).profile).toBe(
+      'work',
     );
   });
 
-  test('with nothing selected it errors and lists what is available', async () => {
-    const root = await workspace(['personal', 'work']); // no default_profile
+  test('an exported LANES_LINK_PROFILE does not, and the refusal says so', async () => {
+    // The precedence chain this replaces made an ignored flag survivable: the
+    // command still worked, from a different source, so a mistake surfaced one
+    // command later with nothing connecting it to its cause.
+    const root = await workspace(['personal', 'work'], 'personal');
+    const env = { LANES_LINK_HOME: root, LANES_LINK_PROFILE: 'work' };
+
+    await expect(resolveSelection({ env })).rejects.toThrow('--profile is required');
+    await expect(resolveSelection({ env })).rejects.toThrow('LANES_LINK_PROFILE=work');
+    await expect(resolveSelection({ env })).rejects.toThrow('no longer read');
+  });
+
+  test('nor does default_profile in the workspace file', async () => {
+    const root = await workspace(['personal', 'work'], 'personal');
+
     await expect(resolveSelection({ env: { LANES_LINK_HOME: root } })).rejects.toThrow(
-      /No profile selected.*personal, work/s,
+      '--profile is required',
+    );
+  });
+
+  test('the refusal lists what there is to choose from', async () => {
+    const root = await workspace(['personal', 'work'], 'personal');
+
+    await expect(resolveSelection({ env: { LANES_LINK_HOME: root } })).rejects.toThrow(
+      /personal[\s\S]*work/,
     );
   });
 
@@ -82,13 +90,13 @@ describe('profile resolution order', () => {
     const root = await workspace(['personal'], 'personal');
     await expect(
       resolveSelection({ env: { LANES_LINK_HOME: root }, profileFlag: 'nope' }),
-    ).rejects.toThrow(/Profile "nope" does not exist.*Available: personal/s);
+    ).rejects.toThrow(/Profile "nope" does not exist[\s\S]*Available: personal/);
   });
 
-  test('an empty workspace suggests creating a profile', async () => {
+  test('an empty workspace suggests creating a profile, with a target', async () => {
     const root = await workspace([]);
     await expect(resolveSelection({ env: { LANES_LINK_HOME: root } })).rejects.toThrow(
-      /lanes link profile add/,
+      /lanes link profile add <name> --target local/,
     );
   });
 });
@@ -99,21 +107,5 @@ describe('profile listing', () => {
     await writeFile(join(root, 'profiles', 'personal.example.yaml'), 'contract: 1\n');
 
     expect(await listProfiles(root)).toEqual(['personal', 'work']);
-  });
-});
-
-
-describe('the selection line every command prints', () => {
-  test('names both the value and where it came from', () => {
-    expect(
-      describeSelection({
-        workspaceRoot: '/ws',
-        profile: 'work',
-        profilePath: '/ws/profiles/work.yaml',
-        target: 'cloud',
-        profileSource: 'environment',
-        targetSource: 'flag',
-      }),
-    ).toBe('profile: work (environment)   target: cloud (flag)');
   });
 });

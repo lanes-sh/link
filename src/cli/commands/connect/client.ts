@@ -5,7 +5,7 @@ import {
   brokerOriginOverride,
   type BrokerConfig,
 } from '#connectivity/auth/index.ts';
-import type { ProviderManifest } from '#connectivity';
+import { hasOwnClientPath, type ProviderManifest } from '#connectivity';
 import type { SecretStore } from '#secrets';
 import { ConfigDocument } from '../../config-edit.ts';
 import { progress, style, warn } from '../../output.ts';
@@ -38,8 +38,15 @@ export interface ClientChoice {
   readonly changes: string[];
   /** No connection of this provider exists yet, so its console setup is undone. */
   readonly firstForProvider: boolean;
-  /** `--own-client`: register one rather than using the client the broker runs. */
-  readonly ownClient: boolean;
+  /**
+   * Which client, when the operator said which.
+   *
+   * `undefined` is the precedence this file has always applied and is what a
+   * provider with one browser route resolves to: a declared `oauth_apps` entry
+   * wins, otherwise the broker. The two explicit values come from the choice
+   * `connect` now prints, and they override that precedence in both directions.
+   */
+  readonly client: 'own' | 'hosted' | undefined;
   /** How the operator spelled the target, so a refusal names a command they typed. */
   readonly target: string;
   readonly profile: string;
@@ -54,9 +61,31 @@ export async function resolveOAuthClient(input: ClientChoice): Promise<OAuthClie
   }
 
   const { app, broker } = manifest.auth;
+  const ownClient = input.client === 'own';
+  // Hoisted: four of the branches below need the answer, and it reads the store.
+  const hasOwnClient = await profileHasOwnClient(app, document, credentials);
 
-  if (!broker || (await profileHasOwnClient(app, document, credentials)) || input.ownClient) {
-    if (input.ownClient && broker && !hasClientPrompts(manifest)) {
+  // Asked for outright, on a profile that registered a client of its own.
+  //
+  // Honoured rather than overruled, which is a change: the entry used to be
+  // final. It can be honoured safely because which client minted a token is
+  // stamped on the token — so this connection refreshes against the broker
+  // while every existing one keeps refreshing where it was issued. What it must
+  // not be is silent, because the profile's other connections do not move.
+  const insteadOfOwn = input.client === 'hosted' && broker !== undefined && hasOwnClient;
+
+  if (insteadOfOwn) {
+    progress(
+      style.dim(
+        `This profile has an OAuth client of its own, and this connection is being authorised ` +
+          `against ${broker.operator}'s instead. Existing connections are unaffected — they keep ` +
+          `refreshing against the client that issued them.`,
+      ),
+    );
+  }
+
+  if (!broker || (!insteadOfOwn && (hasOwnClient || ownClient))) {
+    if (ownClient && broker && !hasOwnClientPath(manifest)) {
       // `defineProvider` permits a broker with no prompts — a provider with no
       // bring-your-own path is a legal thing to be. This is where that absence
       // becomes a sentence rather than a prompt for a value nothing collects.
@@ -73,7 +102,7 @@ export async function resolveOAuthClient(input: ClientChoice): Promise<OAuthClie
       firstForProvider: input.firstForProvider,
       ...(input.prompter ? { prompter: input.prompter } : {}),
     });
-    if (input.ownClient) declareOwnClient(document, manifest, input.changes);
+    if (ownClient) declareOwnClient(document, manifest, input.changes);
 
     const [clientId, clientSecret] = app
       ? await Promise.all([
@@ -116,6 +145,7 @@ export async function resolveOAuthClient(input: ClientChoice): Promise<OAuthClie
       cause: cause instanceof Error ? cause.message : String(cause),
       ...(cause instanceof BrokerError && cause.notice ? { notice: cause.notice } : {}),
       docsUrl: broker.docs_url,
+      ownClient: hasOwnClientPath(manifest),
     });
   }
 
@@ -128,6 +158,7 @@ export async function resolveOAuthClient(input: ClientChoice): Promise<OAuthClie
       cause: 'it is not accepting new connections.',
       ...(config.notice ? { notice: config.notice } : {}),
       docsUrl: config.docsUrl ?? broker.docs_url,
+      ownClient: hasOwnClientPath(manifest),
     });
   }
 
@@ -193,9 +224,6 @@ async function profileHasOwnClient(
   return Boolean(id && secret);
 }
 
-function hasClientPrompts(manifest: ProviderManifest): boolean {
-  return (manifest.setup?.prompts ?? []).some((prompt) => prompt.scope === 'shared');
-}
 
 /**
  * What is actually asked for, and what the broker cannot grant.

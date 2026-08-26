@@ -4,8 +4,8 @@ Each account is one connection, with its own credential, its own permissions, an
 `lanes link connect <provider>` once per account you want reachable.
 
 ```console
-$ lanes link connect gmail        # straight to the browser, nothing to register
-$ lanes link connect gmail        # again, for a second mailbox
+$ lanes link connect gmail --profile personal --target local        # straight to the browser, nothing to register
+$ lanes link connect gmail --profile personal --target local        # again, for a second mailbox
 ```
 
 `lanes link status` shows what is connected and what that makes reachable.
@@ -29,6 +29,7 @@ $ lanes link connect gmail        # again, for a second mailbox
 | Linear | `lanes link connect linear` | Linear's own MCP server |
 | GitHub | `lanes link connect github` | Repositories, issues, pull requests, and workflow runs |
 | Slack | `lanes link connect slack` | Search, read, and send messages, threads, files, and canvases |
+| Gmail (IMAP) | `lanes link connect gmail_imap` | The same mailbox over IMAP and SMTP, with an app password that does not expire |
 | Gmail (Google MCP) | `lanes link connect gmail_mcp` | Google's own MCP server — Developer Preview only |
 | Drive (Google MCP) | `lanes link connect drive_mcp` | Likewise; use `drive` unless you are enrolled |
 
@@ -45,22 +46,31 @@ app-specific password covers all three. iCloud Drive is separate — it holds no
 reading your sync folder through the filesystem. Full walkthrough:
 [`detailed/setup/icloud.md`](detailed/setup/icloud.md).
 
-**Only Slack asks you to register anything.** Google authorises against the client Lanes operates,
-Notion and Linear register themselves, iCloud takes an app-specific password you generate at
-appleid.apple.com, and GitHub takes a personal access token —
+**Only GitHub asks you to register anything.** Google and Slack authorise against the client Lanes
+operates, Notion and Linear register themselves, and iCloud takes an app-specific password you
+generate at appleid.apple.com. GitHub takes a personal access token you create once —
 [`detailed/setup/github.md`](detailed/setup/github.md).
 
-Slack is the exception, and not for want of trying. Slack's MCP server does not register clients
-automatically, and a client of your own needs an HTTPS callback, which a CLI listening on localhost
-cannot be. So Slack means creating a Slack app once, installing it to your workspace, and pasting
-the user token it mints: [`detailed/setup/slack.md`](detailed/setup/slack.md).
+Slack used to be on that list and no longer is. Slack does not register clients automatically and
+is not going to — it would let a client authenticate someone without an app existing, and on
+Enterprise Grid an admin approves each app first. What changed is whose app it is: Lanes registered
+one, so `lanes link connect slack` is a browser round trip like the rest.
+
+If your workspace has not approved that app — which an admin decides, not you — paste a token from
+one it already trusts instead:
+
+```console
+$ lanes link connect slack --profile personal --target local --auth pasted_token
+```
+
+[`detailed/setup/slack.md`](detailed/setup/slack.md) covers both.
 
 For Google you can still register your own, and some people have to — an organisation that forbids
 third-party clients, a Workspace app that must be "Internal", or a hosted client that has reached
 its account limit:
 
 ```console
-$ lanes link connect gmail --own-client
+$ lanes link connect gmail --profile personal --target local --own-client
 ```
 
 That walks through the Google Cloud console once, stores the client id and secret, and records the
@@ -99,8 +109,8 @@ one, whatever your agent's equivalent is.
 To see what a client would be handed right now:
 
 ```console
-$ lanes link tools                # names by provider, payload size
-$ lanes link tools --target cloud # ask the deployed endpoint instead
+$ lanes link tools --profile personal --target local                # names by provider, payload size
+$ lanes link tools --profile personal --target local --target cloud # ask the deployed endpoint instead
 ```
 
 If that count matches your client, its tools are current. If it does not, the client is holding an
@@ -114,8 +124,8 @@ reasoning and without waiting for a number to change.
 ## See what one takes before you start
 
 ```console
-$ lanes link setup plan               # every provider, connected or not
-$ lanes link setup plan icloud_mail   # the steps, the values it will ask for, the command
+$ lanes link setup plan --profile personal --target local               # every provider, connected or not
+$ lanes link setup plan icloud_mail --profile personal --target local   # the steps, the values it will ask for, the command
 ```
 
 An agent connected to your endpoint can see the same thing, so it can hand you the exact command
@@ -127,8 +137,8 @@ in this CLI.
 Connecting grants a read bundle. Tightening is instant and local:
 
 ```console
-$ lanes link policy list
-$ lanes link policy deny gmail.send gmail.main
+$ lanes link policy list --profile personal
+$ lanes link policy deny gmail.send gmail.main --profile personal --target local
 ```
 
 A deny beats an allow whatever the order in the file. Widening a vendor scope is different — it

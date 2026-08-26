@@ -3,7 +3,7 @@
 One profile = one config file = one blob store = one credential store. One endpoint serves them all.
 
 ```
-lanes-link.yaml          workspace settings: contract, default_profile
+lanes-link.yaml          workspace settings: contract
 profiles/
   personal.yaml
   work.yaml
@@ -58,6 +58,10 @@ targets:
 auth:
   mode: bearer
   token_ref: profile/token
+  # Browser origins allowed to call /mcp. Absent means "*", so this is only
+  # worth setting to narrow it. Deployment only — a loopback endpoint refuses
+  # every cross-origin request, and this cannot widen that. ADR-040.
+  allowed_origins: ['*']
 
 limits:
   requests_per_minute: 120        # per profile
@@ -97,6 +101,16 @@ connections:
 policy:
   allow: ['*']
   deny:  [gmail.users.drafts.send]
+
+# Optional. Who the owner is, for anything written as them — a name to sign
+# with, an address to send from, a handle to attribute to. Order is the
+# ranking: the first of a kind is the default, and the note says when to
+# prefer another.
+identity:
+  - { kind: name,   value: Ada,         note: use for open-source work }
+  - { kind: name,   value: A. Lovelace, note: use on anything published }
+  - { kind: email,  value: ada.lovelace@example.com }
+  - { kind: github, value: octocat }
 ```
 
 There is no `providers` block: declaring a connection is what enables a provider, and a second
@@ -116,6 +130,34 @@ This value looked like a credential:
 ```
 
 There is deliberately no suppression flag.
+
+## Identity
+
+`kind` is any lowercase identifier, so `name`, `email` and `github` are conventions rather than a
+list this project ships — `linkedin`, `phone`, `pronouns` and `signature` need no code change.
+`value` is the name or address. `note` is prose, read by whatever is writing as you.
+
+Declare one through the CLI rather than by hand, because the block on its own is inert:
+
+```console
+$ lanes link identity add name "A. Lovelace" --note "use on anything published" --profile personal --target local
+$ lanes link identity add email ada.lovelace@example.com --profile personal --target local
+$ lanes link identity list --profile personal
+```
+
+The first of those writes three things: the entry, a `connections` row for the `identity`
+provider, and an `identity.*` allow rule. All three are needed before anything can read it — a
+provider with no connection row is filtered out before policy is consulted, so an `identity`
+block by itself is a file that says exactly what you meant and an agent that cannot see a word of
+it. `identity list` says `declared, but no agent can read it` when that is the state.
+
+What reads it is one read-only tool, `identity_list`. Nothing on the MCP surface can write here:
+an agent able to edit this could edit the one fact that stops it signing as the wrong person, so
+editing is CLI-only under ADR-007. The endpoint's own instructions carry a pointer to the tool and
+none of the values — see [ADR-040](adr/039-a-profile-declares-who-its-owner-is.md).
+
+Removing the last entry leaves the row and the rule in place, and the tool then reports that
+nothing is declared.
 
 ## A profile that uses the hosted OAuth client
 
@@ -152,7 +194,7 @@ refused by another. Run `connect` again for any connection you want moved. See
 ## Removing a profile
 
 ```console
-$ lanes link profile remove work
+$ lanes link profile remove work --profile personal
 ```
 
 It prints what it would delete, then asks you to type the profile name. `--dry-run` stops after the
@@ -169,7 +211,7 @@ this command left them alone. Nothing another profile can see is deleted.
 
 What stays, and each for a reason:
 
-- **`lanes-link.yaml`.** If it named this profile as `default_profile`, that key is cleared rather
+- **`lanes-link.yaml`.** If it still names this profile as the inert `default_profile`, that key is cleared rather
   than repointed at whatever remains — choosing a new default would silently change what every
   other command in the workspace acts on.
 - **Infrastructure.** No Cloud Run service, bucket, or service account is touched. `deploy` created
@@ -205,7 +247,7 @@ only accepted by the client that minted it.
 5. **An `allow` rule naming a provider with no connection fails**, because a rule that silently
    grants nothing looks identical to a working one. A `deny` may name one: withholding something
    ahead of connecting it is reasonable, and refusing that would punish the cautious ordering.
-7. **`default_target` and any `--target` must name a declared target.**
+7. **`--target` must name a declared target.** `instance.default_target` is no longer read or validated (ADR-037).
 8. **A CLI write validates before writing**, and never leaves the file invalid on failure.
 
 ## Policy grammar
@@ -296,7 +338,7 @@ targets:
 ```
 
 `lanes link target list` prints what a profile declares and which target is in play;
-`lanes link target use <name>` rewrites `instance.default_target`. Once two targets declare a
+`lanes link target use` has been removed (ADR-037) — name the target on each command. Once two targets declare a
 `deploy` block, a bare `lanes link deploy` asks which you meant rather than picking.
 
 Each target's credential store is its own, so a connection authorised against `cloud` is absent from
@@ -328,13 +370,64 @@ because it writes one to a sibling `<path>.key` at mode 0600 that outlives the p
 has no equivalent, and a key generated per revision would make every stored item permanently
 unreadable while appearing to work. Mint one with `lanes link vault key generate`.
 
+### The knowledge block
+
+Optional, and absent by default. It moves **memory entries and skills** into a GitHub repository,
+reached over the API, and it can move nothing else — runtime state, the audit log, the credential
+store and the vault stay wherever `storage:` and `credentials:` put them.
+
+```yaml
+targets:
+  local:
+    knowledge:
+      adapter: github
+      repo: my-org/my-notes       # owner/name, not a URL
+      branch: main                # optional; the repository's default branch otherwise
+      path: context               # optional prefix, for a repository holding other things
+      token_ref: knowledge/token  # a reference, never the token
+```
+
+The repository then holds two directories — `memory/<connection>/<id>.md` and
+`skills/<name>/SKILL.md`, under `path` if one is given.
+
+You do not write this by hand:
+
+```console
+$ lanes link knowledge use github --repo my-org/my-notes --migrate
+$ lanes link knowledge show
+$ lanes link knowledge use local --migrate     # the same thing backwards
+```
+
+That command asks for the token, refuses a repository the token cannot write, **refuses a public
+one** unless `--allow-public` says otherwise, moves what is already stored in a single commit,
+reads it back before deleting anything, and writes the block into every target the profile
+declares. Each target reads the token from its own credential store, so a second one needs
+`lanes link secrets push --from local --to cloud`.
+
+The token is its own credential and deliberately not the one `lanes link connect github` holds:
+that one needs Contents **read**, this one needs Contents **write**, and revoking either should
+not affect the other.
+
+**What it costs**, in one place, because none of it is a fault:
+
+| | |
+|---|---|
+| Offline | Nothing works. There is no local cache, because a second copy can disagree with the repository. |
+| `memory.search` | Reads every entry by design. The first search after a change fetches what changed; after that they come from a cache keyed by content sha. |
+| Rate limit | GitHub's 5,000/hour becomes one of this endpoint's own failure modes. The branch is polled conditionally and a `304` costs no quota, so an idle endpoint costs nothing. |
+| History | Every write is a commit. That is the feature, and it means deleting an entry does not remove it from the history. |
+| `profile remove` | Does not touch the repository. It plans against the target's declared storage, so memory and skills survive removing the profile — the plan says so before you confirm. |
+
+[ADR-041](adr/041-memory-and-skills-in-a-repository.md) has the reasoning, including why this is
+the API rather than a clone.
+
 ## Environment variables
 
 | | |
 |---|---|
 | `LANES_LINK_HOME` | Workspace root. Otherwise the nearest ancestor holding `lanes-link.yaml`, else `~/.lanes-link`. |
-| `LANES_LINK_PROFILE` | Profile, below `--profile` and above the workspace default. |
-| `LANES_LINK_TARGET` | Target, below `--target` and above `instance.default_target`. Not read by `deploy`. Also how the container entrypoint selects its adapter set. |
+| `LANES_LINK_PROFILE` | **No longer read** (ADR-037). Pass `--profile`. Named in the refusal when it is set, so a shell configured for the old behaviour says so. |
+| `LANES_LINK_TARGET` | **No longer read** by the CLI (ADR-037). Pass `--target`. Still how the container entrypoint selects its adapter set — a deployed revision has no argv. |
 | `LANES_LINK_HOST` / `PORT` | Bind address and port in a container. |
 | `LANES_LINK_CREDENTIAL_KEY` | base64 32-byte key for the encrypted credential store. |
 | `LANES_LINK_VAULT_KEY` | base64 32-byte key for the vault. **A different key, deliberately** — one master secret reused across purposes turns any single compromise into a total one. |

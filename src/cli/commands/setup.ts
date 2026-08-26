@@ -1,5 +1,5 @@
 import { planAll, planFor, type ProviderPlan } from '#providers/setup/plan.ts';
-import { emit, heading, print, style, table } from '../output.ts';
+import { announce, emit, heading, print, style, table } from '../output.ts';
 import { missingRequirements } from './connect/requirements.ts';
 import { openRuntime, type GlobalFlags } from '../runtime.ts';
 
@@ -24,6 +24,7 @@ export async function setupPlan(provider: string | undefined, flags: SetupFlags)
   try {
     const context = {
       profile: runtime.resolution.profile,
+      target: runtime.resolution.target,
       connections: runtime.config.connections.map((c) => `${c.provider}.${c.id}`),
       // Declaring an `oauth_apps` entry is how a profile says "use my own
       // client". Without this the plan would tell someone who has already
@@ -55,16 +56,19 @@ export async function setupPlan(provider: string | undefined, flags: SetupFlags)
             ),
           );
 
-      return emit(
-        flags.json,
-        { ...plan, missing: [...missing] },
-        () => renderOne(plan, missing),
-      );
+      // Inside the render callback, not before it: `emit` returns the JSON
+      // early, so this is where a line of prose is safe. `connect` needs its
+      // own guard because its announce has to precede a browser.
+      return emit(flags.json, { ...plan, missing: [...missing] }, () => {
+        announce(runtime.resolution);
+        renderOne(plan, missing);
+      });
     }
 
     const plans = planAll(manifests, context);
 
     return emit(flags.json, { profile: context.profile, providers: plans }, () => {
+      announce(runtime.resolution);
       heading(`Connected in ${style.bold(context.profile)}`);
       const done = plans.filter((plan) => plan.connected.length > 0);
       if (done.length === 0) print(style.dim('  nothing yet'));
@@ -135,6 +139,18 @@ function renderOne(plan: ProviderPlan, missing: ReadonlySet<string>): void {
     heading('Or register a client of your own');
     print(`  ${plan.ownClientCommand}`);
     if (plan.steps.length > 0) {
+      print();
+      plan.steps.forEach((step, index) => print(`  ${index + 1}. ${step}`));
+    }
+  }
+
+  // The other alternative, and for the same reason it is down here: it is what
+  // to do when the line above is refused by somebody who is not the reader.
+  if (plan.tokenCommand && plan.pastedCredential) {
+    heading('Or paste a token you already hold');
+    print(`  ${plan.tokenCommand}`);
+    print(`  ${style.dim(`Asks for the ${plan.pastedCredential}.`)}`);
+    if (plan.steps.length > 0 && !plan.ownClientCommand) {
       print();
       plan.steps.forEach((step, index) => print(`  ${index + 1}. ${step}`));
     }

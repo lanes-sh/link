@@ -1,9 +1,11 @@
+import { localBlock } from './commands/profile/declare.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ConfigDocument, ensureSetupConnection, newProfileTemplate, repairLines } from './config-edit.ts';
+import { ConfigDocument, newProfileTemplate } from './config-edit.ts';
+import { ensureSetupConnection, repairLines } from './config-repair.ts';
 
 /**
  * The config file is the source of truth, and an operator is meant to be able
@@ -27,7 +29,7 @@ async function profileFile(contents?: string): Promise<{ root: string; path: str
   roots.push(root);
   await mkdir(join(root, 'profiles'), { recursive: true });
   const path = join(root, 'profiles', 'personal.yaml');
-  await writeFile(path, contents ?? newProfileTemplate('personal', 7337));
+  await writeFile(path, contents ?? newProfileTemplate('personal', 7337, localBlock('personal')));
   return { root, path };
 }
 

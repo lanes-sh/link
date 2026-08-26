@@ -82,6 +82,7 @@ limitation. `RESERVED` names a compatibility slot with no implementation.
 | `state.provider-scoped` | ENFORCED | `ScopedStore` isolation tests |
 | `storage.namespace-contained` | ENFORCED | traversal rejection tests |
 | `deployed.config-not-self-writable` | ENFORCED (deployed target) | the revision's `objectAdmin` grant is conditioned on the prefixes it owns, so `profiles/`, `lanes-link.yaml` and each profile's `providers.d/` are readable and not writable. The last of those sits *inside* the granted `data/` prefix since [ADR-030](adr/030-a-profile-owns-its-skills-and-manifests.md), so the condition carries an explicit exclusion rather than simply not naming it. Enforced by the platform; `src/deployments/grants.test.ts` evaluates the shipped expression — not a scan for prefixes, which would read straight past a negation — and asserts the keys the endpoint writes fall inside it and the config paths fall outside. This replaces the read-only image that carried the guarantee before [ADR-023](adr/023-the-workspace-is-not-in-the-image.md) |
+| `knowledge.excludes-secrets` | ENFORCED | a target may keep memory and skills in a GitHub repository ([ADR-041](adr/041-memory-and-skills-in-a-repository.md)); the credential store, the vault, runtime state and the audit log are excluded **structurally** — `knowledgeTargetSchema` has no field that could name any of them, so no flag, no override, and no copied example can move one. `src/profile/load.test.ts` asserts that `credentials:` and `vault:` written into the block are stripped rather than honoured, and `src/cli/runtime/knowledge.test.ts` asserts that everything which is not memory stays on the target's own storage |
 | `audit.append-only` | ENFORCED | the store interface has no update or delete |
 | `audit.tamper-evident` | ENFORCED **for edits and mid-run removals** | records are hash-chained per run; `lanes link audit verify`. Truncating a run killed mid-write, or deleting a run whole, is not detectable — see [ADR-020](adr/020-the-log-is-objects.md) |
 | `audit.redaction` | ENFORCED | provider redaction tests, including on denials |
@@ -97,19 +98,52 @@ limitation. `RESERVED` names a compatibility slot with no implementation.
 | `audit.every-invocation` | ENFORCED **with two documented exceptions** | see below |
 | `credentials.client-secret-never-local` | ENFORCED (hosted client) | there is no client secret on the machine to hold. `resolveSecretRefs` grants no client reference at all for a connection authorised this way, asserted in `src/dispatch/context.test.ts` |
 | `credentials.exchange-is-local` | **NOT-GUARANTEED for a connection authorised against the hosted client** | see below |
+| `credentials.no-standing-grant` | **NOT-GUARANTEED for a connection authenticated with a key** | see below |
 | `credentials.plaintext-in-use` | NOT-GUARANTEED | inherent |
 | `provider.sandboxed` | NOT-GUARANTEED | provider code is trusted |
 | `egress.controlled` | NOT-GUARANTEED | follows from the above |
 | `policy.approval_required` | RESERVED | the model carries the state; no engine, and it fails closed |
 | `delegation.external-clients` | RESERVED | the principal parameter; nothing more |
 
+### What `credentials.no-standing-grant` gives up
+
+[ADR-038](adr/038-a-key-is-the-second-way-into-an-account.md) added a second way to authenticate a
+Google connection: a service account key, signed into a short-lived assertion and exchanged for an
+access token (RFC 7523). It is the only route here where nothing expires — and that is the same
+sentence read two ways.
+
+Every other credential this system holds decays or can be withdrawn from the other end. An OAuth
+refresh token can be revoked from a Google account page, is subject to the issuer's own expiry
+policy, and dies with the consent that produced it. An app-specific password dies when the account
+password changes. A key does none of that: **nobody consented, so there is no consent to withdraw,
+and a leaked key stays valid until somebody deletes it in a console.**
+
+What bounds it instead is reach, and the bound is real:
+
+- Without domain-wide delegation the key is an identity of its own, and reaches **only what has been
+  shared with its address**. Nothing in the account moves until somebody shares it — a narrower
+  standing grant than any OAuth token here, not a wider one.
+- With domain-wide delegation the key may act as any user in the domain, for the scopes an
+  administrator listed. That is the wide case, and it is granted by an administrator in their own
+  console rather than by anything in this repository.
+
+The key is stored in whichever credential store the config names, encrypted at rest under the file
+adapter like every other secret, and is never sent anywhere except to the token endpoint named
+inside the key file itself. The minted access token is held in memory for the life of the process
+and never written back — see ADR-038 for why persisting it would have widened what a deployed
+revision is granted.
+
+Prefer sharing over delegation wherever sharing will do. One shared folder is a much smaller grant
+than the right to act as a person, and the two are one prompt apart.
+
 ### What `credentials.exchange-is-local` gives up
 
 Since [ADR-028](adr/028-a-hosted-oauth-client-is-the-default.md) a Google connection authorises,
 by default, against an OAuth client Lanes operates rather than one the operator registers. That
-removes a nine-step console walkthrough and the seven-day refresh-token expiry that comes with an
-unpublished project. It also moves one step off this machine, and the honest statement of that is
-worth more than the convenience:
+removes a nine-step console walkthrough. Since
+[ADR-040](adr/040-an-mcp-connector-may-use-a-pre-registered-client.md) a Slack connection does the
+same, removing a six-step one. It also moves one step off this machine, and the honest statement of
+that is worth more than the convenience:
 
 - The **authorization code** is sent to the Lanes API, because redeeming it needs the client
   secret and that secret is deliberately not here.
@@ -119,15 +153,23 @@ worth more than the convenience:
   the flow adds for this purpose) is sent with each refresh, so the API can attribute and
   rate-limit per account. It is stored beside the tokens and never decoded here.
 
-Everything else is unchanged: the browser still talks to Google directly, the redirect still lands
-on a loopback listener this process opened, the endpoint still never participates, and the tokens
-still live in whichever credential store the config names.
+Everything else is unchanged: the browser still talks to the vendor directly, the redirect still
+lands on a loopback listener this process opened, the endpoint still never participates, and the
+tokens still live in whichever credential store the config names.
+
+Slack differs from Google in one way worth stating, and it is in Slack's favour. It issues no
+refresh token unless token rotation is enabled on the app, so only the first exchange goes through
+the Lanes API and nothing does afterwards — where a Google connection passes a refresh token
+through it for as long as the connection lives. Slack's `/config` also asks for no identity scopes,
+because there is no `openid` here to attribute a refresh with and nothing to attribute.
 
 **Nothing in this repository can verify what the Lanes API does with what it sees.** That is the
 whole of the trade, and it is why this is a row in the table rather than a paragraph in a guide.
-An operator who does not want to make it runs `lanes link connect <provider> --own-client` once
-per profile, which registers a client of their own and keeps the exchange between this machine and
-Google. Declaring `oauth_apps` in a profile is the same choice expressed in config, and a profile
+An operator who does not want to make it picks "an OAuth client you register" at the connect prompt
+— or `--auth own_client`, or the older `--own-client` — once per profile, which registers a client
+of their own and keeps the exchange between this machine and Google. A service account key keeps it
+local too, and for a different reason: there is no exchange to move, because there is no
+authorization code. Declaring `oauth_apps` in a profile is the same choice expressed in config, and a profile
 that declares it is never moved off it.
 
 ### Failed authentication is logged, not audited

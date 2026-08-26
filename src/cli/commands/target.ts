@@ -1,12 +1,12 @@
+import { describeKnowledge } from '#deployments/knowledge.ts';
 import {
-  TARGET_ENV,
-  askedTarget,
   loadProfileConfig,
   resolveSelection,
   undeclaredTarget,
   type Config,
-  type Resolution,
+  type ProfileSelection,
 } from '#profile';
+import { ConfigError } from '#profile';
 import { deployedUrl, deploymentIdentity, type DeploymentIdentity } from '../endpoint-url.ts';
 import { ConfigDocument } from '../config-edit.ts';
 import { announce, emit, heading, ok, print, style, table, waiting, warn } from '../output.ts';
@@ -33,13 +33,20 @@ import type { GlobalFlags } from '../runtime.ts';
 
 export interface TargetSummary {
   readonly name: string;
-  /** `instance.default_target` — what the file says. */
-  readonly isDefault: boolean;
-  /** What this shell resolves to right now, which may not be the above. */
+  /** Whether this is the one `--target` named, when it named any. */
   readonly isSelected: boolean;
   readonly credentials: string;
   readonly storage: string;
   readonly vault: string;
+  /**
+   * Where memory and skills are kept, when that is not `storage` above.
+   *
+   * Null is the ordinary answer. It is here because a `knowledge:` block moves
+   * two of the four things this target holds, and the config file would
+   * otherwise be the only witness — a `storage: filesystem` row that is true of
+   * the log and the state and false of the owner's own notes.
+   */
+  readonly knowledge: string | null;
   /** Whether a deployment is declared. Free, and always present. */
   readonly deployed: boolean;
   readonly deployment: DeploymentIdentity | null;
@@ -51,9 +58,8 @@ export interface TargetListing {
   readonly root: string;
   readonly profile: string;
   readonly path: string;
-  readonly default: string;
-  readonly selected: string;
-  readonly selectedSource: 'flag' | 'environment' | 'config-default';
+  /** What `--target` named, when it named anything. */
+  readonly selected: string | null;
   /**
    * Whether `selected` names a target that exists.
    *
@@ -84,46 +90,40 @@ export interface TargetFlags extends GlobalFlags {
 async function survey(
   flags: TargetFlags,
   options: { urls?: boolean; env?: Record<string, string | undefined> } = {},
-): Promise<{ resolution: Resolution; config: Config; listing: TargetListing }> {
-  const env = options.env ?? (process.env as Record<string, string | undefined>);
-
+): Promise<{ selection: ProfileSelection; config: Config; listing: TargetListing }> {
   const selection = await resolveSelection({
     ...(flags.profile !== undefined ? { profileFlag: flags.profile } : {}),
-    ...(flags.target !== undefined ? { targetFlag: flags.target } : {}),
     ...(options.env !== undefined ? { env: options.env } : {}),
   });
 
   const { config } = await loadProfileConfig(selection.workspaceRoot, selection.profile);
 
-  const asked = askedTarget(flags.target, env);
-  const selected = asked.target ?? config.instance.default_target;
+  const selected = flags.target ?? null;
   const names = Object.keys(config.targets);
 
   const summaries: TargetSummary[] = names.map((name) => {
     const declared = config.targets[name]!;
     return {
       name,
-      isDefault: name === config.instance.default_target,
       isSelected: name === selected,
       credentials: declared.credentials.adapter,
       storage: declared.storage.adapter,
       vault: declared.vault?.adapter ?? 'file',
+      knowledge: declared.knowledge ? describeKnowledge(declared.knowledge) : null,
       deployed: declared.deploy !== undefined,
       deployment: deploymentIdentity(declared.deploy),
     };
   });
 
   return {
-    resolution: { ...selection, target: selected, targetSource: asked.source ?? 'config-default' },
+    selection,
     config,
     listing: {
       root: selection.workspaceRoot,
       profile: selection.profile,
       path: selection.profilePath,
-      default: config.instance.default_target,
       selected,
-      selectedSource: asked.source ?? 'config-default',
-      selectedDeclared: names.includes(selected),
+      selectedDeclared: selected === null || names.includes(selected),
       // Asking the platform is opt-in: one `gcloud` subprocess per deployable
       // target, and the profiles that make this command worth running are
       // exactly the ones with several. A discovery command that takes ten
@@ -161,15 +161,15 @@ async function withUrls(
 }
 
 export async function targetList(flags: TargetFlags): Promise<void> {
-  const { resolution, listing } = await survey(flags, { urls: flags.urls === true });
+  const { listing } = await survey(flags, { urls: flags.urls === true });
 
   return emit(flags.json, listing, () => {
-    announce(resolution);
+    print(style.dim(`${listing.profile}  ${listing.path}`));
     print();
 
     table(
       listing.targets.map((target) => [
-        `  ${target.isDefault ? style.green('*') : ' '} ${target.isSelected ? style.cyan('→') : ' '}`,
+        `  ${target.isSelected ? style.cyan('→') : ' '}`,
         style.bold(target.name),
         style.dim(target.credentials),
         style.dim(target.storage),
@@ -178,27 +178,21 @@ export async function targetList(flags: TargetFlags): Promise<void> {
     );
 
     print();
-    print(style.dim(`  ${style.green('*')}  instance.default_target — what commands run against`));
-    print(style.dim(`  ${style.cyan('→')}  what this shell resolves to right now`));
 
-    // Printed only when the two disagree, which is the whole reason both markers
-    // exist. Saying it every time would train people to stop reading it.
-    if (listing.selectedSource === 'environment') {
-      print(
-        style.dim(
-          `     ${TARGET_ENV}=${listing.selected} is set in this shell and overrides the file.`,
-        ),
-      );
+    // This command takes no required `--target`, and that is not an oversight:
+    // it is the command you run to find out what to pass. Requiring the answer
+    // as input would be circular, and it has to keep working in the state every
+    // other command fails in — which is what `selectedDeclared` reports.
+    if (listing.selected === null) {
+      print(style.dim('  Every other command names one of these with --target.'));
+      return;
     }
+
+    print(style.dim(`  ${style.cyan('→')}  the target you named`));
 
     if (!listing.selectedDeclared) {
       print();
-      print(
-        warn(
-          `"${listing.selected}" is not declared here — every command will refuse until it is ` +
-            (listing.selectedSource === 'environment' ? `unset (${TARGET_ENV}).` : 'corrected.'),
-        ),
-      );
+      print(warn(`"${listing.selected}" is not declared here — every command naming it will refuse.`));
     }
   });
 }
@@ -215,50 +209,25 @@ function deploymentCell(target: TargetSummary): string {
 }
 
 /**
- * `lanes link target use <name>` — rewrite `instance.default_target`.
+ * `lanes link target use <name>` — removed.
  *
- * The persisted half of the switch, and a *declared* one: the value lands in the
- * profile YAML, where the operator can read it, `check` validates it, and every
- * command prints that it came from there. That is the distinction `#profile`'s
- * `workspace.ts` draws — what was rejected is hidden per-shell state in a
- * dotfile nothing prints, not a default written where defaults already live.
+ * It wrote `instance.default_target`, which nothing reads (ADR-037). A command
+ * that writes a key nothing reads is worse than no command at all: it reports
+ * success and changes nothing observable, which is the exact failure this whole
+ * change exists to remove.
+ *
+ * Kept as a refusal rather than deleted outright, for one release. Falling
+ * through to `Unknown: lanes link target use` would send someone hunting a typo
+ * in a command they have run for months.
  */
-export async function targetUse(name: string | undefined, flags: GlobalFlags): Promise<void> {
-  if (!name) throw new Error('Usage: lanes link target use <name>');
-
-  const selection = await resolveSelection({
-    ...(flags.profile !== undefined ? { profileFlag: flags.profile } : {}),
-  });
-  const { config } = await loadProfileConfig(selection.workspaceRoot, selection.profile);
-
-  // Where this profile stands before the edit, not what the edit will make true.
-  announce({
-    ...selection,
-    target: config.instance.default_target,
-    targetSource: 'config-default',
-  });
-
-  // `name` is an argument being validated, not a selection being resolved, so
-  // no environment gets a say in whether it exists.
-  if (!(name in config.targets)) throw undeclaredTarget(name, config);
-
-  if (config.instance.default_target === name) {
-    print(ok(`${style.bold(name)} is already the default`));
-    return;
-  }
-
-  const document = await ConfigDocument.open(selection.workspaceRoot, selection.profile);
-  document.setIn(['instance', 'default_target'], name);
-  await document.save();
-
-  print(ok(`default target is now ${style.bold(name)}`));
-
-  // Otherwise the operator edits the file, sees nothing change, and concludes
-  // the command is broken. The variable is the thing that is winning.
-  const fromEnv = process.env[TARGET_ENV];
-  if (fromEnv && fromEnv !== name) {
-    print(warn(`${TARGET_ENV}=${fromEnv} is set in this shell, and still wins over the file.`));
-  }
+export function targetUse(name: string | undefined): never {
+  throw new ConfigError(
+    'lanes link target use was removed.\n' +
+      '  Nothing reads instance.default_target any more — pass --target on every\n' +
+      '  command instead:\n' +
+      `    lanes link status --profile <name> --target ${name ?? '<target>'}\n` +
+      '  If the key is still in your profile it is inert, and safe to delete.',
+  );
 }
 
 /**
@@ -271,10 +240,20 @@ export async function targetUse(name: string | undefined, flags: GlobalFlags): P
  */
 export async function targetShow(name: string | undefined, flags: TargetFlags): Promise<void> {
   const { config, listing } = await survey(flags);
-  const wanted = name ?? listing.selected;
-  const summary = listing.targets.find((candidate) => candidate.name === wanted);
 
-  if (!summary) throw undeclaredTarget(wanted, config, listing.selectedSource);
+  // Positionally or by flag, but one of them: this command's whole subject is a
+  // single target, and there is no default left to mean "the one you would have
+  // got". `list` is the command for "I do not know which".
+  const wanted = name ?? listing.selected;
+  if (!wanted) {
+    throw new ConfigError(
+      'Usage: lanes link target show <name> --profile <name>\n' +
+        `  Declared here: ${listing.targets.map((one) => one.name).join(', ') || 'none'}`,
+    );
+  }
+
+  const summary = listing.targets.find((candidate) => candidate.name === wanted);
+  if (!summary) throw undeclaredTarget(wanted, config, listing.profile);
 
   const url = summary.deployment
     ? await waiting('asking the platform for an address', () =>
@@ -290,6 +269,9 @@ export async function targetShow(name: string | undefined, flags: TargetFlags): 
       ['  credentials', summary.credentials],
       ['  storage', summary.storage],
       ['  vault', summary.vault],
+      ...(summary.knowledge
+        ? [['  knowledge', summary.knowledge, style.dim('memory and skills')]]
+        : []),
     ]);
 
     if (!summary.deployment) {

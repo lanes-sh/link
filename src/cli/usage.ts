@@ -24,11 +24,13 @@ ${style.bold('Everyday')}
   ${PROGRAM} connect <provider>         add an account (run once per account)
   ${PROGRAM} connect <provider>.<id>    re-authorise one existing account
   ${PROGRAM} connect <...> --replace    ask for the stored password or key again
+  ${PROGRAM} connect <...> --auth <method>  pick how, where there is a choice
   ${PROGRAM} connect <...> --non-interactive [--json]
                                         answer nothing from a terminal: take every value
                                         from the credential store, or say what is missing
   ${PROGRAM} start [--only]             reconcile and serve every profile on one endpoint
   ${PROGRAM} outputs [--show] [--json]  the endpoint an agent needs
+  ${PROGRAM} dashboard [--print]        open the local endpoint's page in a browser
   ${PROGRAM} mcp add [claude|codex]     register this endpoint, and install the agent skill
   ${PROGRAM} mcp add --no-skill         register only, leaving the agent's own files alone
   ${PROGRAM} mcp list                   where it is registered, and whether the skill is current
@@ -37,16 +39,22 @@ ${style.bold('Everyday')}
   ${PROGRAM} status [--json]            connections, reachable capabilities, endpoint
 
 ${style.bold('Profiles')}
-  ${PROGRAM} profile add <name> [--default] [--json]
+  ${PROGRAM} profile add <name> --target <name> [--target <name>] [--json]
+                                 a target per place it runs; local is derived, the
+                                 rest are copied from a sibling profile
   ${PROGRAM} profile list [--json]
-  ${PROGRAM} profile default <name>
   ${PROGRAM} profile remove <name> [--target t] [--dry-run] [--yes] [--json]
                                  the profile, its credentials, and its data
 
 ${style.bold('Targets')}
-  ${PROGRAM} target list [--urls]      where this profile can run, and which one is in play
-  ${PROGRAM} target show [<name>]      one target's adapters, and the address it answers on
-  ${PROGRAM} target use <name>         make one the profile's default_target
+  ${PROGRAM} target list [--urls]      where this profile can run
+  ${PROGRAM} target show <name>        one target's adapters, and the address it answers on
+
+${style.bold('Who you are')}
+  ${PROGRAM} identity add <kind> <value> [--note text] [--json]
+                                 e.g. name, email, github — any kind you like
+  ${PROGRAM} identity list [--json]
+  ${PROGRAM} identity remove <kind> <value> [--json]
 
 ${style.bold('Permissions')}
   ${PROGRAM} policy list
@@ -65,6 +73,14 @@ ${style.bold('Your own context')}
   ${PROGRAM} skills show <name>
   ${PROGRAM} skills add <name> [--file f]             document on stdin
   ${PROGRAM} skills remove <name>
+
+  ${PROGRAM} knowledge show            where memory and skills are kept, and how many
+  ${PROGRAM} knowledge use github --repo <owner/name> [--branch b] [--path p]
+                                 keep both in a private repository, over the GitHub API
+                                 [--migrate] moves what is already stored, in one commit
+                                 [--no-migrate] switches and leaves it where it is
+                                 [--keep] moves it, and leaves the local copies unread
+  ${PROGRAM} knowledge use local [--migrate]        bring them back onto this target
 
   ${PROGRAM} vault list                 names only, never values
   ${PROGRAM} vault get <id> [--show|--raw]
@@ -96,9 +112,13 @@ ${style.bold('Attachments')}
   ${PROGRAM} attach <file> --connection <provider>.<account>
                                         stage a file, print a handle to send it by
 
-${style.bold('Global flags')}
-  --profile <name>               overrides LANES_LINK_PROFILE and the workspace default
-  --target <name>                overrides LANES_LINK_TARGET and instance.default_target
+${style.bold('Naming what a command acts on')}
+  --profile <name>               required by every command that reads or writes a profile
+  --target <name>                required by every command that opens a target's stores.
+                                 There is no default and no environment variable: a
+                                 command that names neither refuses and lists what exists.
+
+${style.bold('Other flags')}
   --connection <id>              which memory/skills/vault connection, if a profile has several
   --yes                          skip the confirmation a destructive command would ask for
   --json                         machine-readable output, where a command offers it
@@ -107,7 +127,10 @@ ${style.bold('Global flags')}
   --accept-broad-scopes          agree in advance to scopes broader than a provider needs
   --own-client                   register your own OAuth client instead of using the
                                  one this project operates (connect only)
+  --auth <method>                which way in, where a provider offers two (connect
+                                 only). "oauth" is the browser; the other is named
+                                 in the choice connect prints
   --port <n>                     override the configured port (start only)
 
-Every command prints the resolved profile and target before acting.
+Every command prints the profile and target it is acting on, before it acts.
 `;

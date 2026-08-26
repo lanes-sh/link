@@ -24,10 +24,18 @@ export const GOOGLE_APP = 'google';
  * and there is no way to withdraw one copy of a secret.
  *
  * What this buys the operator is the whole of `setup/google.md`: no project, no
- * console, no scope list to transcribe, and no seven-day refresh-token expiry,
- * because that expiry is a property of a project left in "Testing" and this one
- * is not. What it costs is recorded in ADR-028 and in the guarantee table in
- * `docs/detailed/security.md` — chiefly that the exchange stops being local.
+ * console, and no scope list to transcribe. What it costs is recorded in
+ * ADR-028 and in the guarantee table in `docs/detailed/security.md` — chiefly
+ * that the exchange stops being local.
+ *
+ * What it does *not* buy, and used to claim to: escape from the seven-day
+ * refresh-token expiry. That expiry is a property of the client's publishing
+ * status rather than of its verification, and a client under review has the
+ * status it has — so a connection made this way is re-authorised weekly until
+ * the review lands, exactly like one made against a client of the operator's
+ * own that was left in "Testing". The way around it is not a different client.
+ * It is `auth.assertion`: a key does not expire because nothing consented, and
+ * `./service-account.ts` is that route.
  */
 const BROKER_ORIGIN = 'https://api.lanes.sh';
 const BROKER_PATH = '/v1/auth/link/google';
@@ -62,8 +70,12 @@ export const GOOGLE_OAUTH = {
   authorize_params: { access_type: 'offline', prompt: 'select_account consent' },
   // Every REST provider here spreads this block, so one line turns brokering on
   // for all seven. `gmail_mcp` and `drive_mcp` write their auth longhand and do
-  // not spread it, which is what keeps them bring-your-own — the SDK owns their
-  // exchange and `defineProvider` refuses a broker on an mcp connector.
+  // not spread it, which is what keeps them bring-your-own.
+  //
+  // That is now a choice rather than a constraint. ADR-040 made a broker legal
+  // on an mcp connector that names its own endpoints, so these two could follow
+  // Slack — what stops them is that nobody has established which client Google
+  // would have us use for its MCP servers, not that the machinery refuses.
   broker: GOOGLE_BROKER,
 } as const;
 

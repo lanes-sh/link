@@ -182,7 +182,7 @@ describe('the Google manifests stay at the documented minimum', () => {
     );
   });
 
-  test('the broad scopes are exactly the six that were argued for', () => {
+  test('the broad scopes are exactly the thirteen that were argued for', () => {
     const broad = PROVIDERS.flatMap((manifest) => {
       const scopes = manifest.auth.kind === 'oauth' ? manifest.auth.scopes : [];
       return describeScopes(scopes)
@@ -208,6 +208,25 @@ describe('the Google manifests stay at the documented minimum', () => {
         'docs https://www.googleapis.com/auth/documents',
         'calendar https://www.googleapis.com/auth/calendar.events',
         'tasks https://www.googleapis.com/auth/tasks',
+        // Slack's seven, which arrived when its scopes moved off a setup page
+        // and into the manifest. Nothing widened to put them here: this is the
+        // same grant the setup page asked the operator to transcribe, now
+        // somewhere it can be shown before consent rather than after.
+        //
+        // Six of the seven are one argument — Slack draws no line between
+        // "read a conversation" and "read a private conversation", so the
+        // history and search scopes for private channels, DMs, and group DMs
+        // each reach the most sensitive thing in a workspace while reading like
+        // routine access. `chat:write` is the seventh and the only write:
+        // messages it sends are from the person, not from an app, and there is
+        // nothing in Slack's UI that says otherwise afterwards.
+        'slack search:read.private',
+        'slack search:read.im',
+        'slack search:read.mpim',
+        'slack groups:history',
+        'slack im:history',
+        'slack mpim:history',
+        'slack chat:write',
       ].sort(),
     );
   });

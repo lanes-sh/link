@@ -20,6 +20,17 @@
  */
 export const BROKERED = 'broker';
 
+/**
+ * Stamped on a credential nobody here minted — the operator pasted it.
+ *
+ * The third answer, and the one that is not a client at all. It matters for the
+ * same reason as the other two and one more: a pasted token cannot be
+ * refreshed, cannot be attributed to a registration, and cannot be re-obtained
+ * by re-running a flow. `doctor` reads it to say so rather than offering a
+ * re-authorisation that would not apply.
+ */
+export const PASTED = 'pasted';
+
 /** What the broker will authorise, and whether it is currently doing so. */
 export interface BrokerConfig {
   readonly clientId: string;
@@ -27,6 +38,20 @@ export interface BrokerConfig {
   readonly scopesSupported: readonly string[];
   /** Added to every request so the exchange returns an identity assertion. */
   readonly identityScopes: readonly string[];
+  /**
+   * Where the vendor sends the browser back, when it will not send it here.
+   *
+   * Absent for a vendor that accepts a loopback redirect, which is all of them
+   * but Slack: the listener names itself and the broker is only asked to
+   * redeem. Present where the vendor demands HTTPS — then the redirect lands on
+   * the broker's own origin and is bounced down to the listener, and this is
+   * the URL both legs of the flow have to agree on.
+   *
+   * Published rather than derived, because which URL is correct depends on
+   * which deployment answered `/config` — and a broker running on loopback for
+   * a test would otherwise need a flag of its own.
+   */
+  readonly redirectUri: string | undefined;
   readonly open: boolean;
   /** Why it is closed, or near capacity. The broker's words, printed verbatim. */
   readonly notice: string | undefined;
@@ -217,6 +242,7 @@ export async function brokerConfig(
     clientId,
     scopesSupported: strings(data['scopes_supported']),
     identityScopes: strings(data['identity_scopes']),
+    redirectUri: str(data['redirect_uri']),
     open: data['status'] !== 'closed',
     notice: str(data['notice']),
     docsUrl: str(data['docs_url']),

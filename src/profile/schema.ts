@@ -1,6 +1,8 @@
 import { z } from 'zod';
-import { capabilityPattern, credentialRef, identifier } from './primitives.ts';
+import { browserOrigin, capabilityPattern, credentialRef, identifier } from './primitives.ts';
 import { authorizationSchema } from './authorization.ts';
+import { identitySchema } from './identity.ts';
+import { knowledgeTargetSchema } from './knowledge.ts';
 
 /**
  * Configuration is declarative desired state. This file is the source of truth
@@ -214,6 +216,15 @@ export const targetSchema = z
     audit: auditTargetSchema.optional(),
     storage: storageTargetSchema,
     vault: vaultTargetSchema.optional(),
+    /**
+     * Memory and skills, somewhere other than `storage` above.
+     *
+     * Optional and absent by default, so every profile written before it keeps
+     * storing both exactly where it did. See `knowledge.ts` for why these two
+     * are separable from the rest and why the credential store and the vault
+     * are not.
+     */
+    knowledge: knowledgeTargetSchema.optional(),
     deploy: deployTargetSchema.optional(),
     /** @deprecated Write `deploy` with `platform: cloudrun`. */
     cloudrun: legacyCloudRunSchema.optional(),
@@ -313,7 +324,22 @@ export const configSchema = z.object({
 
   instance: z.object({
     profile: identifier,
-    default_target: z.string().min(1),
+    /**
+     * @deprecated Parsed, never read. See ADR-037.
+     *
+     * Every command names its target on the command line now, so nothing
+     * consults this. It stays *declared* rather than being dropped, and that is
+     * the whole point: an undeclared key is stripped silently by the schema,
+     * which would leave `check` and `doctor` with nothing to report and an
+     * operator staring at a line they reasonably believe still selects
+     * something. Declaring it is what lets them be told it is inert.
+     *
+     * Optional, so a profile written today needs no such line, and unvalidated,
+     * so a stale value naming a target that no longer exists is harmless rather
+     * than a failure on a key nothing reads. The `database:` note above records
+     * the same decision for the same reason.
+     */
+    default_target: z.string().min(1).optional(),
     port: z.number().int().min(1).max(65535).default(7337),
     /**
      * Loopback by default. Binding elsewhere is possible but the server
@@ -334,6 +360,15 @@ export const configSchema = z.object({
        * get one. Omitting it leaves every existing profile behaving identically.
        */
       authorization: authorizationSchema.optional(),
+      /**
+       * Browser origins that may call a *deployment's* MCP endpoint. Absent
+       * means `*`, so naming any is a narrowing and nothing needs setting.
+       *
+       * A deployment only, and this cannot widen that: a loopback endpoint
+       * refuses every cross-origin request and must keep doing so. Why the
+       * default is a wildcard is `src/server/cors.ts` and ADR-040.
+       */
+      allowed_origins: z.array(browserOrigin).optional(),
     })
     .default({ mode: 'bearer', token_ref: 'profile/token' }),
 
@@ -353,6 +388,13 @@ export const configSchema = z.object({
    */
   connections: z.array(connectionSchema).default([]),
   policy: policySchema.default({ allow: [], deny: [] }),
+
+  /**
+   * Who the owner is, for anything written as them. Optional and additive, so
+   * every profile written before it keeps loading unchanged — the same reasoning
+   * as `auth.authorization` above, and the reason `contract` does not move.
+   */
+  identity: identitySchema.default([]),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -361,7 +403,8 @@ export type PolicyRuleConfig = z.infer<typeof policyRuleSchema>;
 export type TargetConfig = z.infer<typeof targetSchema>;
 export type DeployConfig = z.infer<typeof deployTargetSchema>;
 export type AuthorizationConfig = z.infer<typeof authorizationSchema>;
-export { authorizationSchema };
+export { authorizationSchema, identitySchema };
+export type { IdentityEntry } from './identity.ts';
 
 /** The workspace file: `lanes-link.yaml`, alongside a `profiles/` directory. */
 export const workspaceSchema = z.object({

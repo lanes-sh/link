@@ -35,7 +35,7 @@ const BROWSER = defineProvider({
   auth: { kind: 'oauth', scopes: ['read'] },
 });
 
-const context = { profile: 'personal', connections: ['thing.main', 'other.x'] };
+const context = { profile: 'personal', target: 'local', connections: ['thing.main', 'other.x'] };
 
 describe('planFor', () => {
   test('always names the profile, never leaving it to the shell', () => {
@@ -50,14 +50,14 @@ describe('planFor', () => {
     const plan = planFor(KEYED, context);
 
     expect(plan.needsId).toBe(true);
-    expect(plan.command).toBe('lanes link connect thing --profile personal --id <name>');
+    expect(plan.command).toBe('lanes link connect thing --profile personal --target local --id <name>');
   });
 
   test('a named connection puts its id in the command instead of a placeholder', () => {
     const plan = planFor(KEYED, context, 'work');
 
     expect(plan.needsId).toBe(false);
-    expect(plan.command).toBe('lanes link connect thing --profile personal --id work');
+    expect(plan.command).toBe('lanes link connect thing --profile personal --target local --id work');
     expect(plan.requires[0]?.ref).toBe('thing/work');
   });
 
@@ -125,13 +125,13 @@ describe('a provider whose client somebody else operates', () => {
   });
 
   test('needs nothing, and says the difference between that and needing nothing', () => {
-    const plan = planFor(brokered, { profile: 'personal', connections: [] });
+    const plan = planFor(brokered, { profile: 'personal', target: 'local', connections: [] });
 
     expect(plan.requires).toEqual([]);
     expect(plan.brokered).toBe(true);
     expect(plan.clientOperator).toBe('Someone');
     expect(plan.ownClientCommand).toBe(
-      'lanes link connect vendor_mail --profile personal --own-client',
+      'lanes link connect vendor_mail --profile personal --target local --own-client',
     );
   });
 
@@ -140,6 +140,7 @@ describe('a provider whose client somebody else operates', () => {
     // taken it must not be told they need nothing and then asked for two values.
     const plan = planFor(brokered, {
       profile: 'personal',
+      target: 'local',
       connections: [],
       ownClients: ['vendor'],
     });
@@ -152,6 +153,138 @@ describe('a provider whose client somebody else operates', () => {
   test('the console walkthrough survives in the data for whoever still needs it', () => {
     // Suppressing it is a rendering decision. A console with a disclosure and a
     // terminal that heads it "or register your own" both need it present.
-    expect(planFor(brokered, { profile: 'personal', connections: [] }).steps).toHaveLength(2);
+    expect(planFor(brokered, { profile: 'personal', target: 'local', connections: [] }).steps).toHaveLength(2);
+  });
+});
+
+/**
+ * The target, which every caller has to know.
+ *
+ * Credentials are per-target, so `connect` writes into whichever target the
+ * pasted command names — and nothing else names one. This started out optional,
+ * falling back to `LANES_LINK_TARGET` or `instance.default_target` when the
+ * caller had none; ADR-037 withdrew both fallbacks and made the field required,
+ * on the argument that a fallback which survives is how the mistake surfaces
+ * one command later, detached from its cause.
+ *
+ * So there is no "no target" case left to pin. What is pinned instead is that
+ * the flag is unconditional: present on the plain command, on the `--id`
+ * placeholder form, on the own-client escape hatch, and on every shipped
+ * provider.
+ */
+describe('the target in a command', () => {
+  test('names the target beside the profile, always', () => {
+    expect(planFor(KEYED, context, 'work').command).toBe(
+      'lanes link connect thing --profile personal --target local --id work',
+    );
+  });
+
+  test('an id placeholder still comes last, so the part to edit is at the end', () => {
+    const targeted = { ...context, target: 'local' };
+
+    expect(planFor(KEYED, targeted).command).toBe(
+      'lanes link connect thing --profile personal --target local --id <name>',
+    );
+  });
+
+  test('the own-client escape hatch carries it too', () => {
+    // It is the same command plus a flag, so a target on one and not the other
+    // would send the reader to a different store than the line above it.
+    const plan = planFor(BROWSER, { ...context, target: 'cloud' });
+
+    expect(plan.command).toContain('--target cloud');
+  });
+
+  test('every shipped provider carries it', () => {
+    for (const plan of planAll(PROVIDER_MANIFESTS, { ...context, target: 'cloud' })) {
+      expect(plan.command).toContain('--target cloud');
+      if (plan.ownClientCommand) expect(plan.ownClientCommand).toContain('--target cloud');
+    }
+  });
+});
+
+/**
+ * A pasted credential is an alternative, not a prerequisite.
+ *
+ * Slack is the first OAuth provider with a per-connection prompt, and before
+ * this the plan rendered it beside the requirements — a mandatory-looking field
+ * in a setup whose whole point is that it has none, under a second "Values it
+ * needs" heading immediately after one saying there are none.
+ */
+describe('a provider that offers a pasted token as well as a browser', () => {
+  const withToken = defineProvider({
+    id: 'vendor_chat',
+    name: 'Vendor Chat',
+    connector: { kind: 'mcp', endpoint: 'https://mcp.example.com/mcp' },
+    auth: {
+      kind: 'oauth',
+      registration: 'manual',
+      app: 'vendor',
+      scopes: ['chat.read'],
+      authorize_url: 'https://accounts.example.com/authorize',
+      token_url: 'https://accounts.example.com/token',
+      broker: { url: 'https://api.example.com/v1/auth/link/vendor', operator: 'Someone' },
+    },
+    setup: {
+      prompts: [{ key: 'token', label: 'User token', secret: true, scope: 'connection' as const }],
+    },
+  });
+
+  const plan = planFor(withToken, { profile: 'personal', target: 'local', connections: [] });
+
+  test('does not list the token among the values it needs', () => {
+    expect(plan.requires).toEqual([]);
+    expect(plan.brokered).toBe(true);
+  });
+
+  test('does not demand an --id for a name the browser flow settles itself', () => {
+    expect(plan.needsId).toBe(false);
+    expect(plan.command).not.toContain('--id');
+  });
+
+  test('offers the token as a route --auth selects, naming what it asks for', () => {
+    expect(plan.tokenCommand).toBe(
+      'lanes link connect vendor_chat --profile personal --target local --auth pasted_token',
+    );
+    expect(plan.pastedCredential).toBe('User token');
+  });
+
+  test('does not offer --own-client, because this manifest describes no client', () => {
+    // `resolveOAuthClient` refuses the flag on exactly that ground, so printing
+    // it would be handing somebody a command that answers back with "there is
+    // no such path".
+    expect(plan.ownClientCommand).toBeUndefined();
+  });
+
+  test('a provider that does describe one still offers it', () => {
+    const withClientPrompts = defineProvider({
+      id: 'vendor_files',
+      name: 'Vendor Files',
+      connector: { kind: 'http', base_url: 'https://api.test', openapi: './t.json' },
+      auth: {
+        kind: 'oauth',
+        registration: 'manual',
+        app: 'vendor',
+        scopes: ['a'],
+        authorize_url: 'https://accounts.example.com/authorize',
+        token_url: 'https://accounts.example.com/token',
+        broker: { url: 'https://api.example.com/v1/auth/link/vendor', operator: 'Someone' },
+      },
+      setup: {
+        prompts: [
+          { key: 'client_id', label: 'Client id', credential_ref: 'vendor/client_id' },
+          {
+            key: 'client_secret',
+            label: 'Client secret',
+            secret: true,
+            credential_ref: 'vendor/client_secret',
+          },
+        ],
+      },
+    });
+
+    const plan = planFor(withClientPrompts, { profile: 'personal', target: 'local', connections: [] });
+    expect(plan.ownClientCommand).toContain('--own-client');
+    expect(plan.tokenCommand).toBeUndefined();
   });
 });

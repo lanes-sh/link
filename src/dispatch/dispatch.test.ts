@@ -405,7 +405,7 @@ describe('rate limits', () => {
 });
 
 describe('connection status', () => {
-  test('an unauthorized connection returns the command that fixes it', async () => {
+  test('an unauthorized connection says what fixes it, without pretending to be a command', async () => {
     const { dispatcher, state } = harness();
     await state.connections.upsert({
       provider: 'example',
@@ -416,7 +416,14 @@ describe('connection status', () => {
 
     const outcome = await dispatcher.invoke(call('example.echo', 'example.a', { message: 'x' }));
     expect(outcome.ok).toBe(false);
-    if (!outcome.ok) expect(outcome.message).toContain('lanes link connect example.a');
+    // Named, not pasteable. This reaches an agent over MCP, and a `lanes link
+    // connect` here would be missing the two flags that decide which store it
+    // writes into — the dispatcher holds a config but never a target. A
+    // half-command an agent runs is worse than a sentence it reports.
+    if (!outcome.ok) {
+      expect(outcome.message).toContain('example.a');
+      expect(outcome.message).not.toContain('lanes link');
+    }
     expect(handlerCalls).toEqual([]);
   });
 

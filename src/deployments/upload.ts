@@ -7,7 +7,8 @@ import {
   type Config,
   type TargetConfig,
 } from '#profile';
-import { ConfigDocument, ensureSetupConnection, repairLines, repaired } from '#cli/config-edit.ts';
+import { ConfigDocument } from '#cli/config-edit.ts';
+import { ensureSetupConnection, repairLines, repaired } from '#cli/config-repair.ts';
 import { ok, print, style, warn } from '#cli/output.ts';
 
 /**

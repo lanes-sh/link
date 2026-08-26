@@ -16,9 +16,14 @@ import { ensureOAuthApp } from './setup.ts';
 /**
  * Getting a token, and saying what it will be able to do first.
  *
- * Two paths, because two kinds of upstream: an MCP server publishes metadata
- * worth discovering and the SDK drives it, while a plain REST API announces
- * nothing and the manifest has to name its endpoints.
+ * Two paths, and what chooses between them is not the kind of upstream but
+ * whether the manifest names its own endpoints. Without them there is nothing
+ * to authorise against but what the server advertises, so the SDK discovers it
+ * and drives the flow. With them there is nothing left to discover, and the
+ * flow is ours — which is the only arrangement in which a client somebody else
+ * holds can redeem the code. A REST API never announces an authorization
+ * server, so it is always on the second path; an MCP server may be on either.
+ * See ADR-040.
  */
 
 /**
@@ -65,8 +70,8 @@ export async function authorise(input: {
   /** How the operator spelled the target, so a refusal names a command they typed. */
   target?: string;
   profile: string;
-  /** `--own-client`: register a client rather than using the one a broker runs. */
-  ownClient?: boolean;
+  /** Which OAuth client, when the operator chose one. `undefined` keeps today's precedence. */
+  client?: 'own' | 'hosted' | undefined;
   prompter?: Prompter;
   /** The operator has already said yes to scopes broader than the provider needs. */
   acceptBroadScopes?: boolean;
@@ -86,13 +91,24 @@ export async function authorise(input: {
   // announces. So the manifest names the endpoints and we run the flow
   // directly — the same loopback listener, PKCE, and exchange, minus the
   // discovery the SDK would otherwise do for us.
-  if (manifest.connector.kind !== 'mcp') {
+  //
+  // An MCP connector takes that path too when it names both endpoints, and that
+  // is the *only* thing declaring them means. The SDK's flow ends by posting to
+  // the token endpoint with whatever `clientInformation()` returned, which is
+  // fine for a client the operator holds and impossible for one held by a
+  // broker — so a provider whose client lives somewhere else opts out here
+  // rather than discovering it after consent. Nothing is lost by opting out:
+  // discovery is all the SDK was doing that this does not, and a manifest that
+  // names its endpoints has nothing left to discover. Notion, Linear, and
+  // Google's two MCP servers name neither and are untouched. See ADR-040.
+  if (
+    manifest.connector.kind !== 'mcp' ||
+    (manifest.auth.authorize_url !== undefined && manifest.auth.token_url !== undefined)
+  ) {
     await authoriseDirect(input);
     return;
   }
 
-  // An MCP provider is always bring-your-own: `defineProvider` refuses a broker
-  // on one, because the SDK owns the exchange and there is no seam to route it.
   if (manifest.auth.registration === 'manual') {
     await ensureOAuthApp(input);
   }
@@ -187,7 +203,7 @@ async function authoriseDirect(input: {
   firstForProvider: boolean;
   target?: string;
   profile: string;
-  ownClient?: boolean;
+  client?: 'own' | 'hosted' | undefined;
   prompter?: Prompter;
   acceptBroadScopes?: boolean;
   fetch?: typeof globalThis.fetch;
@@ -210,7 +226,7 @@ async function authoriseDirect(input: {
     document: input.document,
     changes: input.changes,
     firstForProvider: input.firstForProvider,
-    ownClient: input.ownClient === true,
+    client: input.client,
     target: input.target ?? manifest.id,
     profile: input.profile,
     ...(input.prompter ? { prompter: input.prompter } : {}),
@@ -234,19 +250,39 @@ async function authoriseDirect(input: {
     throw new Error('Cancelled — nothing was authorised.');
   }
 
+  // What a response carrying no refresh token means, which only the manifest
+  // knows: Google omitting one is a failure worth stopping for, Slack omitting
+  // one is the ordinary success. See `RefreshTokenPolicy`.
+  const refreshToken = {
+    required: manifest.auth.refresh_token === 'required',
+    vendor: manifest.name,
+    ...(manifest.auth.revoke_url ? { revokeUrl: manifest.auth.revoke_url } : {}),
+  };
+
   let tokens;
   try {
     tokens = await runOAuthFlow({
       authorizeUrl,
-      clientId: client.kind === 'own' ? client.clientId : client.config.clientId,
-      ...(client.kind === 'own'
-        ? { tokenUrl, clientSecret: client.clientSecret }
-        : {
+      clientId: client.kind === 'brokered' ? client.config.clientId : client.clientId,
+      ...(client.kind === 'brokered'
+        ? {
             exchange: brokerExchangeVia({
               url: client.url,
+              refreshToken,
               ...(input.fetch ? { fetch: input.fetch } : {}),
             }),
+          }
+        : {
+            tokenUrl,
+            clientSecret: client.clientSecret,
           }),
+      refreshToken,
+      // Only where the broker published one, which means only where the vendor
+      // refuses a loopback redirect. The broker owns the URL because the
+      // correct value depends on which deployment answered `/config`.
+      ...(client.kind === 'brokered' && client.config.redirectUri
+        ? { relayRedirect: client.config.redirectUri }
+        : {}),
       scopes,
       connectionLabel: manifest.name,
       ...(manifest.auth.authorize_params
@@ -283,10 +319,18 @@ async function authoriseDirect(input: {
     `${manifest.id}/${connectionId}`,
     JSON.stringify({
       access_token: tokens.accessToken,
-      refresh_token: tokens.refreshToken,
+      // Both omitted rather than defaulted where the vendor issues neither.
+      //
+      // A long-lived token has no refresh token and states no lifetime, and
+      // inventing an hour for it would have `doctor` reporting a healthy
+      // connection as stale forever while telling the operator to re-run a
+      // command that changes nothing. Absent is what `upstreamAccessToken`
+      // already reads as "hand back what is stored", which is correct here.
+      ...(tokens.refreshToken ? { refresh_token: tokens.refreshToken } : {}),
       token_type: 'Bearer',
-      expires_in: tokens.expiresIn,
-      expires_at: Date.now() + tokens.expiresIn * 1000,
+      ...(tokens.expiresIn !== undefined
+        ? { expires_in: tokens.expiresIn, expires_at: Date.now() + tokens.expiresIn * 1000 }
+        : {}),
       scope: tokens.scope,
       issuer: new URL(authorizeUrl).origin,
       ...(tokens.idToken ? { id_token: tokens.idToken } : {}),

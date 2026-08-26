@@ -162,21 +162,128 @@ describe('a broker as the other answer to "where does the client come from"', ()
     expect(() => provider(oauth({ broker, authorize_url: undefined }))).toThrow(/authorize_url/);
   });
 
-  test('an mcp connector is refused, because the SDK owns its exchange', () => {
-    // Discovered at definition rather than after the operator has already
-    // approved a consent screen.
-    expect(() =>
-      defineProvider({
-        id: 'vendor_mcp',
-        name: 'Vendor',
-        connector: { kind: 'mcp', endpoint: 'https://mcp.example.com/sse' },
-        auth: oauth({ broker }),
-      }),
-    ).toThrow(/cannot route it through a broker/);
+  const mcp = (auth: Record<string, unknown>) =>
+    defineProvider({
+      id: 'vendor_mcp',
+      name: 'Vendor',
+      connector: { kind: 'mcp', endpoint: 'https://mcp.example.com/mcp' },
+      auth,
+    });
+
+  test('an mcp connector may be brokered once it names its own endpoints', () => {
+    // This used to be refused outright, on the grounds that the SDK owns an MCP
+    // provider's exchange and there is no seam to route it. The seam is naming
+    // the endpoints: that takes the provider off the SDK's flow and onto the
+    // one this repository drives, where the exchange is ours. See ADR-040.
+    expect(() => mcp(oauth({ broker }))).not.toThrow();
+  });
+
+  test('an mcp connector without a token url is refused, because the SDK would own it', () => {
+    // Half-declared is the dangerous state: the SDK would run the flow and then
+    // post to the token endpoint with a client the broker holds and it does
+    // not. Refused at definition rather than after a consent screen.
+    expect(() => mcp(oauth({ broker, token_url: undefined }))).toThrow(/auth\.token_url/);
   });
 
   test('tokens still land per provider, not under the app the broker names', () => {
     const gmailish = provider(oauth({ broker }), 'vendor_mail');
     expect(credentialRefForConnection(gmailish, 'main')).toBe('vendor_mail/main');
+  });
+});
+
+/**
+ * A second way in, declared on the block that already describes the first.
+ *
+ * `auth.assertion` is not a `kind`, which is the whole reason it needs its own
+ * guards: nothing about the discriminated union stops a manifest declaring one
+ * somewhere it cannot possibly work, so `defineProvider` has to. Each of these
+ * would otherwise be discovered by an operator, after choosing the method, with
+ * a credential already stored.
+ */
+describe('an assertion alternative', () => {
+  const assertion = {
+    method: 'service_account',
+    label: 'Service account key',
+    key_ref: 'vendor/key',
+    reach: 'only what is shared with it',
+    subject_label: 'Account to act as',
+    setup: {
+      prompts: [
+        { key: 'key', label: 'Key', secret: true, scope: 'shared', credential_ref: 'vendor/key' },
+      ],
+    },
+  };
+
+  const withAssertion = (overrides: Record<string, unknown> = {}) => ({
+    kind: 'oauth',
+    registration: 'manual',
+    app: 'vendor',
+    scopes: ['https://api.test/auth/read'],
+    authorize_url: 'https://accounts.example.com/o/oauth2/v2/auth',
+    token_url: 'https://oauth2.example.com/token',
+    setup: { prompts: [{ key: 'client_id', label: 'Id', credential_ref: 'vendor/client_id' }] },
+    assertion: { ...assertion, ...overrides },
+  });
+
+  test('is accepted beside the browser flow, and changes where nothing lands', () => {
+    const manifest = defineProvider({
+      id: 'vendor_mail',
+      name: 'Vendor Mail',
+      connector: http,
+      auth: withAssertion(),
+      setup: { prompts: [{ key: 'client_id', label: 'Id', credential_ref: 'vendor/client_id' }] },
+    });
+
+    // Still per provider, and still where the OAuth path already looks: both
+    // methods write here, and only the shape of what is stored tells them apart.
+    expect(credentialRefForConnection(manifest, 'main')).toBe('vendor_mail/main');
+  });
+
+  test('defaults to standing on its own, rather than borrowing an identity', () => {
+    const manifest = defineProvider({
+      id: 'vendor_mail',
+      name: 'Vendor Mail',
+      connector: http,
+      auth: withAssertion(),
+      setup: { prompts: [{ key: 'client_id', label: 'Id', credential_ref: 'vendor/client_id' }] },
+    });
+
+    expect(manifest.auth.kind === 'oauth' && manifest.auth.assertion?.delegation).toBe('optional');
+  });
+
+  test('is refused on an mcp connector, where there is nowhere to present it', () => {
+    expect(() =>
+      defineProvider({
+        id: 'vendor_mcp',
+        name: 'Vendor',
+        connector: { kind: 'mcp', endpoint: 'https://mcp.example.com/sse' },
+        auth: withAssertion(),
+        setup: { prompts: [{ key: 'client_id', label: 'Id', credential_ref: 'vendor/client_id' }] },
+      }),
+    ).toThrow(/cannot present a signed assertion/);
+  });
+
+  test('is refused with no scopes, because the token would be permitted nothing', () => {
+    expect(() =>
+      defineProvider({
+        id: 'vendor_mail',
+        name: 'Vendor Mail',
+        connector: http,
+        auth: { ...withAssertion(), scopes: [], broker: undefined },
+        setup: { prompts: [{ key: 'client_id', label: 'Id', credential_ref: 'vendor/client_id' }] },
+      }),
+    ).toThrow(/nothing to grant/);
+  });
+
+  test('is refused with no prompt, because there is no key to ask for', () => {
+    expect(() =>
+      defineProvider({
+        id: 'vendor_mail',
+        name: 'Vendor Mail',
+        connector: http,
+        auth: withAssertion({ setup: { prompts: [] } }),
+        setup: { prompts: [{ key: 'client_id', label: 'Id', credential_ref: 'vendor/client_id' }] },
+      }),
+    ).toThrow(/no way to learn what key to ask for/);
   });
 });

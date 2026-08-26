@@ -22,11 +22,13 @@ export {
 
 export {
   authNoneSchema,
+  authAssertionSchema,
   authBrokerSchema,
   authOAuthSchema,
   authSchema,
   authStrategySchema,
   authTokenSchema,
+  type AuthAssertion,
   type AuthBroker,
   type AuthConfig,
 } from './auth.ts';
@@ -43,4 +45,4 @@ export {
 } from './provider.ts';
 
 export type { SetupRequirement, SetupNeeds } from './requirements.ts';
-export { setupRequirements, UNNAMED_ID } from './requirements.ts';
+export { hasOwnClientPath, setupRequirements, UNNAMED_ID } from './requirements.ts';

@@ -44,6 +44,11 @@ Nothing in the codebase depends on it.
 | [034](034-updating-is-a-reinstall.md) | Updating is replacing the installed package; Bun is the only installer driven, a checkout is refused, and nothing updates itself |
 | [035](035-a-replayed-refresh-token-must-not-log-the-owner-out.md) | A replayed refresh token is refused on its own and recorded; the family it belongs to survives |
 | [036](036-a-client-is-told-this-endpoint-keeps-it-signed-in.md) | `offline_access` is advertised and granted, a rejected credential is told `invalid_token`, and scope is narrowed rather than echoed |
+| [037](037-a-command-names-what-it-acts-on.md) | A command names its profile and target as flags, or it does not run; the environment variables and config defaults are parsed and no longer read |
+| [038](038-a-key-is-the-second-way-into-an-account.md) | A service account key is a second way into a Google account, for the consent nobody can give a background job |
+| [039](039-cross-origin-access-is-a-deployment-only-grant.md) | Cross-origin access is granted only by a deployment, and a preflight is answered ahead of the credential check |
+| [040](040-an-mcp-connector-may-use-a-pre-registered-client.md) | An `mcp` connector that names its own endpoints may be brokered, and a vendor that refuses a loopback redirect gets one bounced through the broker — so Slack costs a browser round trip rather than a console visit |
+| [041](041-memory-and-skills-in-a-repository.md) | Memory and skills may be kept in a GitHub repository; the vault, the credential store, state and the log may not |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 
@@ -88,3 +93,21 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
   for logging a connector out; this one removes the reason a client had for not refreshing. Both
   were needed and neither was sufficient, which is the shape worth remembering: the endpoint was
   correct and the client was correct, and the session still ended at a consent screen.
+
+- **ADR-037** withdraws half of an argument rather than reversing it. The claim that persisted
+  selection is how operators act on the wrong thing still stands, and is why the rule exists; what
+  did not survive is the conclusion that making the fallback *visible* was enough. A printed line
+  is not a guard, and a fallback made an ignored flag survivable — so the mistake surfaced one
+  command later, from a different source, detached from its cause.
+
+- **ADR-038** follows from ADR-028 rather than amending it: the hosted client stays the default and
+  the browser stays the ordinary route. What it corrects is a claim ADR-028's implementation made
+  and could not keep — that a hosted client escapes the seven-day refresh-token expiry — and what
+  it adds is the only arrangement that genuinely does, which is a credential nobody consented to.
+
+- **ADR-041** narrows ADR-013 rather than reopening it. That decision says one cloud host supplies
+  both stores and that adapters are named for the protocol; this leaves both standing and adds a
+  second, *smaller* choice beside the target's `storage:` block — where two directories of documents
+  the owner wrote are kept. What it may hold is fixed by having no field for anything else: the
+  credential store and the vault cannot be named by it, by a flag, or by an example somebody copies.
+  It also settles the one cost ADR-030 wrote down and declined to pay.

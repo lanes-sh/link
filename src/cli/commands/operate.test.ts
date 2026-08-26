@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { tokenInvocation } from './operate/outputs.ts';
 import { markdownCell } from './operate.ts';
 
 /**
@@ -34,5 +35,26 @@ describe('audit markdown cells', () => {
 
   test('leaves an ordinary value alone', () => {
     expect(markdownCell('{"id":"msg_1"}')).toBe('`{"id":"msg_1"}`');
+  });
+});
+
+/**
+ * The token command `outputs` hands over, and the two flags it must carry.
+ *
+ * A token is per-target. Printing a bare `token show --raw` beside a deployed
+ * URL hands over the *local* token — a credential that looks like an answer and
+ * fails as a wrong password, which is the failure mode this whole helper was
+ * written to avoid and reintroduced one flag lower down.
+ */
+describe('the token command outputs prints', () => {
+  test('names both the profile and the target, on either path', async () => {
+    // Whichever branch is taken — a `lanes` on PATH that matches, or the
+    // checkout-relative fallback — the selection has to survive into the line
+    // somebody pastes.
+    const invocation = await tokenInvocation('a-token-no-endpoint-will-match', 'work', 'cloud');
+
+    expect(invocation.command).toContain('--profile work');
+    expect(invocation.command).toContain('--target cloud');
+    expect(invocation.command).toContain('token show --raw');
   });
 });

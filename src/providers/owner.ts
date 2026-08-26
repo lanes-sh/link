@@ -1,5 +1,5 @@
 /**
- * The owner layer — memory, skills, vault.
+ * The owner layer — memory, skills, vault, setup, identity.
  *
  * Three providers that hold no third-party account: no OAuth, no vendor API, no
  * rate limit anyone else imposes. They are ordinary `defineLocalProvider`
@@ -19,7 +19,14 @@
  * read-only by construction — see ADR-019 for why describing setup is not one
  * of ADR-007's control-plane exclusions.
  *
- * The ids `memory`, `skills`, `vault`, and `setup` are reserved (`RESERVED_PROVIDER_IDS`)
+ * `identity` is the fifth and holds no account either. It says who the owner is
+ * — the names and addresses to write as them — and is read-only for the reason
+ * `setup` is: what it reports is configuration, and configuration is changed in
+ * the CLI. It is a provider of its own rather than a section of `setup` so that
+ * naming the owner and describing what is connected are two policy decisions
+ * instead of one.
+ *
+ * The ids `memory`, `skills`, `vault`, `setup`, and `identity` are reserved (`RESERVED_PROVIDER_IDS`)
  * and still refused by default — the registry has to be built with
  * `allowReserved` to hold them, so a third-party provider cannot claim a
  * namespace whose policy rules would then mean something else.
@@ -29,6 +36,7 @@ export { memoryProvider, memoryStorage, assertEntryId, type MemoryEntry } from '
 export { createSkillsProvider, type SkillsProviderOptions } from './skills/provider.ts';
 export { createVaultProvider, type VaultProviderOptions } from './vault/provider.ts';
 export { createSetupProvider, type SetupProviderOptions } from './setup/provider.ts';
+export { createIdentityProvider, type IdentityProviderOptions } from './identity/provider.ts';
 export { planAll, planFor, type PlanContext, type ProviderPlan } from './setup/plan.ts';
 // The vault's *store* is not here: it is `#secrets`, beside the system
 // credential store it must never become. What lives in `./vault/` is the

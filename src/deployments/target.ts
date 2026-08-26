@@ -271,15 +271,16 @@ export async function openStorage(
  * Two refs make the same two mistakes available twice over, and "undefined is
  * not a string" from inside an S3 client is not a diagnosis.
  */
-async function requireSecret(
+export async function requireSecret(
   secrets: SecretStore,
   ref: string | undefined,
   field: string,
   target: string,
+  requiredBy = 'the s3 adapter',
 ): Promise<string> {
   if (!ref) {
     throw new ConfigError(
-      `${field} is required for the s3 adapter — the key is a credential, so config names it ` +
+      `${field} is required for ${requiredBy} — the value is a credential, so config names it ` +
         'rather than carrying it.',
     );
   }

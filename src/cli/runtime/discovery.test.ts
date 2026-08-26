@@ -77,14 +77,14 @@ describe('a committed spec outranks the cache', () => {
       'permissions.list',
     ].map(capability);
 
-    let runtime = await openRuntime({ target: 'local' });
+    let runtime = await openRuntime({ profile: 'personal', target: 'local' });
     try {
       await runtime.state.kv.set('discovery', 'drive', JSON.stringify(stale));
     } finally {
       await runtime.close();
     }
 
-    runtime = await openRuntime({ target: 'local' });
+    runtime = await openRuntime({ profile: 'personal', target: 'local' });
     try {
       const names = (runtime.registry.discovered('drive') ?? []).map((entry) => entry.name);
       expect(names).toContain('files.update');
@@ -102,7 +102,7 @@ describe('a committed spec outranks the cache', () => {
     // `drafts.create` was removed deliberately — it duplicates the authored
     // `send_message` and takes a base64url `raw` no model can assemble for an
     // attachment. A cache written before that change kept serving it.
-    let runtime = await openRuntime({ target: 'local' });
+    let runtime = await openRuntime({ profile: 'personal', target: 'local' });
     try {
       await runtime.state.kv.set(
         'discovery',
@@ -113,7 +113,7 @@ describe('a committed spec outranks the cache', () => {
       await runtime.close();
     }
 
-    runtime = await openRuntime({ target: 'local' });
+    runtime = await openRuntime({ profile: 'personal', target: 'local' });
     try {
       const names = (runtime.registry.discovered('gmail') ?? []).map((entry) => entry.name);
       expect(names).not.toContain('users.drafts.create');

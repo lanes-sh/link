@@ -1,0 +1,167 @@
+import { describe, expect, test } from 'bun:test';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { assertKnownFlags, requireSelection, requirementFor, SELECTION } from './selection.ts';
+
+/**
+ * That every command says what it needs, and that nothing can be added without
+ * saying.
+ *
+ * The bug this file exists for is not a wrong answer, it is a missing one:
+ * `main.ts` built an options literal for `profile add` and dropped `--target`
+ * into it, and nothing refused because nothing held a list of what the command
+ * accepts. A table only helps if it cannot fall behind the grammar, so the first
+ * test reads `main.ts` rather than trusting anyone to keep two files in step.
+ */
+
+const MAIN = join(import.meta.dir, 'main.ts');
+
+/** Every `case 'x':` in the dispatch, in order, so nesting can be reconstructed. */
+async function dispatchedCommands(): Promise<Set<string>> {
+  const source = await readFile(MAIN, 'utf8');
+  const found = new Set<string>();
+
+  // The outer switch is on `first` and each nested one on `second`; indentation
+  // is what tells them apart, and it is stable because the file is formatted.
+  let outer: string | undefined;
+  for (const line of source.split('\n')) {
+    const top = /^ {4}case '([a-z-]+)':/.exec(line);
+    if (top) {
+      outer = top[1]!;
+      found.add(outer);
+      continue;
+    }
+
+    const nested = /^ {8}case '([a-z-]+)':/.exec(line);
+    if (nested && outer) found.add(`${outer} ${nested[1]!}`);
+  }
+
+  return found;
+}
+
+describe('every dispatched command declares what it needs', () => {
+  test('the table covers the grammar, so a new command cannot default quietly', async () => {
+    const dispatched = await dispatchedCommands();
+
+    // A command may be absent from SELECTION only if its bare form is present:
+    // `memory get` inherits from `memory`, which is the point of the fallback.
+    const uncovered = [...dispatched].filter((command) => {
+      if (command in SELECTION) return false;
+      const [first] = command.split(' ');
+      return !(first! in SELECTION);
+    });
+
+    expect(uncovered).toEqual([]);
+  });
+
+  test('an unrecognised command still gets the strict default', () => {
+    // Not an oversight, and the safe direction: a command nobody classified
+    // asks for both rather than silently opening whatever it likes.
+    expect(requirementFor('something-new', undefined)).toBe('profile+target');
+  });
+});
+
+describe('requiring a selection', () => {
+  // A workspace that does not exist: these assert *which* refusal is reached,
+  // and the listings inside it are `#profile`'s to get right — `workspace.test`
+  // and `targets.test` cover the wording.
+  const nowhere = { LANES_LINK_HOME: '/nonexistent-workspace-for-a-test' };
+
+  test('refuses a command that names no profile', async () => {
+    await expect(requireSelection('status', undefined, {}, nowhere)).rejects.toThrow(
+      '--profile is required',
+    );
+  });
+
+  test('asks target-independent commands for a profile only', async () => {
+    // `check` validates a YAML file, `config show` prints the whole of it, and
+    // `policy list` reads a block declared once for every target. Demanding a
+    // target here is the ceremony that teaches people to type `--target local`
+    // without reading it, which is how a required flag stops being a guard.
+    for (const command of ['check', 'config show', 'policy list'] as const) {
+      const [first, second] = command.split(' ');
+      await expect(
+        requireSelection(first!, second, { profile: 'work' }, nowhere),
+      ).resolves.toBeUndefined();
+    }
+  });
+
+  test('asks target list for no target at all', async () => {
+    // It is the command you run to find out what to pass. Requiring the answer
+    // as input would be circular.
+    await expect(
+      requireSelection('target', 'list', { profile: 'work' }, nowhere),
+    ).resolves.toBeUndefined();
+  });
+
+  test('accepts a command that names both', async () => {
+    await expect(
+      requireSelection('status', undefined, { profile: 'work', target: 'cloud' }, nowhere),
+    ).resolves.toBeUndefined();
+  });
+
+  test('asks profile add for neither, because there is nothing to select yet', async () => {
+    await expect(requireSelection('profile', 'add', {}, nowhere)).resolves.toBeUndefined();
+  });
+
+  test('says nothing when the subcommand itself does not exist', async () => {
+    // The switch has a better sentence for that, and complaining about
+    // --profile on a command that does not exist sends someone to fix the
+    // wrong thing.
+    await expect(requireSelection('vault', 'bogus', {}, nowhere)).resolves.toBeUndefined();
+  });
+});
+
+describe('refusing a flag the command does not read', () => {
+  test('names the flag and what is accepted', () => {
+    expect(() => assertKnownFlags('status', undefined, { nonsense: true })).toThrow(
+      'Unknown flag "--nonsense"',
+    );
+  });
+
+  test('guesses at a near miss, which is what makes a required flag survivable', () => {
+    // Without this, requiring --profile makes a typo *worse*: `--porfile work`
+    // used to fall through to a default and mostly work, and would now produce
+    // "--profile is required" while naming a flag the operator did pass.
+    expect(() => assertKnownFlags('status', undefined, { porfile: 'work' })).toThrow(
+      'Did you mean --profile?',
+    );
+    expect(() => assertKnownFlags('status', undefined, { taget: 'cloud' })).toThrow(
+      'Did you mean --target?',
+    );
+  });
+
+  test('does not guess when nothing is close', () => {
+    expect(() => assertKnownFlags('status', undefined, { wildlyoff: true })).toThrow(
+      'Unknown flag',
+    );
+    expect(() => assertKnownFlags('status', undefined, { wildlyoff: true })).not.toThrow(
+      'Did you mean',
+    );
+  });
+
+  test('refuses --target on a command with nothing to select', () => {
+    // The reported bug, as a test: `profile add work --target cloud` printed ok
+    // and dropped the flag. It now declares a target rather than selecting one,
+    // so it is accepted here — but a profile flag is not.
+    expect(() => assertKnownFlags('profile', 'add', { target: 'cloud' })).not.toThrow();
+    expect(() => assertKnownFlags('profile', 'add', { profile: 'work' })).toThrow('Unknown flag');
+  });
+
+  test('lets every command take --json, --help and --quiet', () => {
+    expect(() =>
+      assertKnownFlags('status', undefined, { json: true, help: true, quiet: true }),
+    ).not.toThrow();
+  });
+
+  test('lets a command take its own flags', () => {
+    expect(() =>
+      assertKnownFlags('connect', undefined, { id: 'main', 'own-client': true }),
+    ).not.toThrow();
+    expect(() => assertKnownFlags('deploy', undefined, { 'dry-run': true })).not.toThrow();
+  });
+
+  test('but not another command’s', () => {
+    expect(() => assertKnownFlags('status', undefined, { 'dry-run': true })).toThrow('Unknown flag');
+  });
+});

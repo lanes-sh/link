@@ -5,6 +5,7 @@ import {
   auditVerify,
   check,
   configShow,
+  dashboard,
   doctor,
   outputs,
   plan,
@@ -19,6 +20,7 @@ import {
 import { profileAdd, profileDefault, profileList } from './commands/profile.ts';
 import { removeProfile as profileRemove } from './commands/profile/remove.ts';
 import { targetList, targetShow, targetUse } from './commands/target.ts';
+import { identityAdd, identityList, identityRemove } from './commands/identity.ts';
 import { setupPlan } from './commands/setup.ts';
 import { mcpAdd, mcpList, mcpStdio, skillDocument } from './commands/mcp.ts';
 import { deploy } from '#deployments/deploy.ts';
@@ -38,8 +40,10 @@ import {
   vaultRemove,
   vaultSet,
 } from './commands/owner.ts';
+import { knowledgeShow, knowledgeUse } from './commands/knowledge.ts';
 import { update } from './commands/update.ts';
-import { globalFlags, ownerFlags, parseArgv, text } from './argv.ts';
+import { all, globalFlags, knowledgeFlags, ownerFlags, parseArgv, text } from './argv.ts';
+import { assertKnownFlags, requireSelection } from './selection.ts';
 import { PROGRAM, USAGE } from './usage.ts';
 import { version } from './version.ts';
 import { print } from './output.ts';
@@ -74,6 +78,14 @@ export async function run(argv: readonly string[]): Promise<void> {
     return;
   }
 
+  // Before the switch, so no command can be reached having been handed a flag it
+  // does not read or missing one it needs. One call site rather than a check per
+  // case: the reported bug was a single command building its own options literal
+  // and dropping `--target` into it, which is exactly what a per-case check
+  // leaves room for.
+  assertKnownFlags(first, second, flags);
+  await requireSelection(first, second, flags);
+
   switch (first) {
     case 'connect':
       if (!second) throw new Error(`Usage: ${PROGRAM} connect <provider>`);
@@ -85,6 +97,7 @@ export async function run(argv: readonly string[]): Promise<void> {
         nonInteractive: flags['non-interactive'] === true,
         acceptBroadScopes: flags['accept-broad-scopes'] === true,
         ownClient: flags['own-client'] === true,
+        auth: text(flags, 'auth'),
         json,
       });
 
@@ -97,8 +110,17 @@ export async function run(argv: readonly string[]): Promise<void> {
     case 'profile':
       switch (second) {
         case 'add':
-          if (!rest[0]) throw new Error(`Usage: ${PROGRAM} profile add <name> [--default]`);
-          return profileAdd(rest[0], { default: flags['default'] === true, json });
+          if (!rest[0]) {
+            throw new Error(`Usage: ${PROGRAM} profile add <name> --target <name> [--target <name>]`);
+          }
+          return profileAdd(rest[0], {
+            // Read from argv rather than from `flags`, because this is the one
+            // place a flag is a list: a profile declares every target it can run
+            // on, and the parser keeps only the last value of a repeated flag.
+            targets: all(argv, 'target'),
+            nonInteractive: flags['non-interactive'] === true,
+            json,
+          });
         case 'list':
         case undefined:
           return profileList({ json });
@@ -128,12 +150,34 @@ export async function run(argv: readonly string[]): Promise<void> {
           return targetList({ ...global, json, urls: flags['urls'] === true });
         case 'use':
           if (!rest[0]) throw new Error(`Usage: ${PROGRAM} target use <name>`);
-          return targetUse(rest[0], global);
+          return targetUse(rest[0]);
         case 'show':
           return targetShow(rest[0], { ...global, json });
         default:
           throw new Error(`Unknown: ${PROGRAM} target ${second}`);
       }
+
+    case 'identity': {
+      // Both subcommands take the same two positionals, so the usage line is
+      // built once rather than written twice with one of them going stale.
+      const [kind, value] = rest;
+      const usage = (form: string): string =>
+        `Usage: ${PROGRAM} identity ${form}\n  e.g. ${PROGRAM} identity add name "Your Name" --note "for open-source work"`;
+
+      switch (second) {
+        case 'add':
+          if (!kind || !value) throw new Error(usage('add <kind> <value> [--note text]'));
+          return identityAdd(kind, value, { ...global, note: text(flags, 'note'), json });
+        case 'list':
+        case undefined:
+          return identityList({ ...global, json });
+        case 'remove':
+          if (!kind || !value) throw new Error(usage('remove <kind> <value>'));
+          return identityRemove(kind, value, { ...global, json });
+        default:
+          throw new Error(`Unknown: ${PROGRAM} identity ${second}`);
+      }
+    }
 
     case 'policy':
       switch (second) {
@@ -221,6 +265,19 @@ export async function run(argv: readonly string[]): Promise<void> {
           throw new Error(`Unknown: ${PROGRAM} skills ${second}`);
       }
 
+    // Beside `memory` and `skills` because it is the question they raise next:
+    // those two say what is stored, and this says where it is kept.
+    case 'knowledge':
+      switch (second) {
+        case 'show':
+        case undefined:
+          return knowledgeShow(knowledgeFlags(flags));
+        case 'use':
+          return knowledgeUse(rest[0], knowledgeFlags(flags));
+        default:
+          throw new Error(`Unknown: ${PROGRAM} knowledge ${second}`);
+      }
+
     case 'vault':
       switch (second) {
         case 'list':
@@ -251,6 +308,13 @@ export async function run(argv: readonly string[]): Promise<void> {
       return status({ ...global, json });
     case 'outputs':
       return outputs({ ...global, show, json });
+
+    // Beside `outputs` for the same reason `tools` is: it answers the next
+    // question a person has rather than the next one an agent has. `outputs`
+    // hands a harness a URL and a token; this opens the one page a person can
+    // read, and only a local endpoint serves it.
+    case 'dashboard':
+      return dashboard({ ...global, print: flags['print'] === true });
 
     // Beside `outputs` because it answers the next question. `outputs` says
     // where the endpoint is; this says what it would hand a client that asked

@@ -22,6 +22,7 @@ export {
   openSecretStoreFor,
   ownerPrincipal,
   resolveProfile,
+  resolveProfileOnly,
   type GlobalFlags,
 } from './runtime/select.ts';
 
@@ -31,4 +32,4 @@ export {
   type OwnerLayerOptions,
 } from './runtime/registry.ts';
 
-export { openRuntime, type Runtime } from './runtime/open.ts';
+export { openRuntime, type OpenOptions, type Runtime } from './runtime/open.ts';

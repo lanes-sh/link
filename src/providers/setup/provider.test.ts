@@ -86,7 +86,7 @@ async function textOf(capability: Capability, input: unknown): Promise<string> {
 
 describe('the surface is read-only', () => {
   test('offers exactly two capabilities, and both are tools', () => {
-    const list = capabilities({ profile: 'personal' });
+    const list = capabilities({ profile: 'personal', target: 'local' });
 
     // The absence of a write is the design, so it is asserted rather than
     // reviewed. A third capability here should fail until somebody has argued
@@ -96,7 +96,7 @@ describe('the surface is read-only', () => {
   });
 
   test('declares no write bundle', () => {
-    const bundles = createSetupProvider({ profile: 'personal' }).manifest.bundles ?? [];
+    const bundles = createSetupProvider({ profile: 'personal', target: 'local' }).manifest.bundles ?? [];
 
     expect(bundles.map((bundle) => bundle.name)).toEqual(['read']);
   });
@@ -106,6 +106,7 @@ describe('setup.overview', () => {
   test('names only the connections it was given', async () => {
     const text = await textOf(tool('overview', {
       profile: 'personal',
+      target: 'local',
       catalogue: CATALOGUE,
       reachable: () => [{ key: 'thing.main', provider: 'thing', account: 'you@example.test' }],
     }), {});
@@ -120,12 +121,14 @@ describe('setup.overview', () => {
     // not distinguish that from a `thing` nobody ever connected.
     const denied = await textOf(tool('overview', {
       profile: 'personal',
+      target: 'local',
       catalogue: CATALOGUE,
       reachable: () => [],
     }), {});
 
     const never = await textOf(tool('overview', {
       profile: 'personal',
+      target: 'local',
       catalogue: CATALOGUE,
       reachable: () => [],
     }), {});
@@ -139,6 +142,7 @@ describe('setup.overview', () => {
     let connections: { key: string; provider: string; account: string }[] = [];
     const capability = tool('overview', {
       profile: 'personal',
+      target: 'local',
       catalogue: CATALOGUE,
       reachable: () => connections,
     });
@@ -152,6 +156,7 @@ describe('setup.overview', () => {
   test('points at sibling profiles by name only', async () => {
     const text = await textOf(tool('overview', {
       profile: 'personal',
+      target: 'local',
       profiles: ['personal', 'work'],
       catalogue: CATALOGUE,
     }), {});
@@ -182,6 +187,7 @@ describe('setup.overview', () => {
 
     const connectedThing = {
       profile: 'personal',
+      target: 'local',
       catalogue: MIXED,
       reachable: () => [{ key: 'thing.main', provider: 'thing', account: 'you@example.test' }],
     };
@@ -214,6 +220,7 @@ describe('setup.overview', () => {
     test('a provider holding no account is never offered a second one', async () => {
       const text = await textOf(tool('overview', {
         profile: 'personal',
+        target: 'local',
         catalogue: MIXED,
         reachable: () => [{ key: 'local.main', provider: 'local', account: 'Local' }],
       }), {});
@@ -229,6 +236,7 @@ describe('setup.overview', () => {
       // must read as never-connected rather than as "connected, add another".
       const denied = await textOf(tool('overview', {
         profile: 'personal',
+        target: 'local',
         catalogue: MIXED,
         reachable: () => [],
       }), {});
@@ -245,7 +253,7 @@ describe('setup.overview', () => {
 });
 
 describe('setup.provider', () => {
-  const options = { profile: 'personal', catalogue: CATALOGUE };
+  const options = { profile: 'personal', target: 'local', catalogue: CATALOGUE };
 
   test('emits a command naming the profile it was stamped with', async () => {
     const text = await textOf(tool('provider', options), { id: 'thing' });
@@ -262,11 +270,11 @@ describe('setup.provider', () => {
     // a person something to paste — so the two must never diverge on the one
     // line that matters. Derived from `planFor` rather than written out, so it
     // keeps holding when the wording around it changes.
-    const context = { profile: 'personal', connections: [] };
+    const context = { profile: 'personal', target: 'local', connections: [] };
 
     for (const plan of planAll(PROVIDER_MANIFESTS, context)) {
       const text = await textOf(
-        tool('provider', { profile: 'personal', catalogue: PROVIDER_MANIFESTS }),
+        tool('provider', { profile: 'personal', target: 'local', catalogue: PROVIDER_MANIFESTS }),
         { id: plan.id },
       );
 

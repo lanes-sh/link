@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { emit } from '../output.ts';
@@ -94,44 +95,106 @@ describe('createProfile', () => {
   test('gives each profile its own port, so two can serve at once', async () => {
     await workspace();
 
-    const first = await createProfile('personal', {});
-    const second = await createProfile('work', {});
+    const first = await createProfile('personal', { targets: ['local'] });
+    const second = await createProfile('work', { targets: ['local'] });
 
     expect(first.port).toBe(7337);
     expect(second.port).toBe(7338);
   });
 
-  test('the first profile becomes the default without being asked', async () => {
+  test('declares every target it was given, in the order given', async () => {
+    // The reported bug: `--target` was accepted and dropped, and the template
+    // could only ever emit `local` — so the command reported success and made a
+    // profile that could not reach the deployment it had just been told about.
     await workspace();
 
-    const first = await createProfile('personal', {});
-    const second = await createProfile('work', {});
+    const created = await createProfile('personal', { targets: ['local'] });
+    const text = await readFile(created.path, 'utf8');
 
-    // Not merely a convenience: `resolveSelection` refuses to pick a profile on
-    // its own, so a workspace whose only profile is not the default makes every
-    // subsequent command fail until `--profile` is passed.
-    expect(first.isDefault).toBe(true);
-    expect(second.isDefault).toBe(false);
+    expect(created.targets).toEqual(['local']);
+    expect(text).toContain('  local:');
+    expect(text).toContain('./data/personal/credentials.enc');
+  });
+
+  test('writes no default_target, because nothing reads one', async () => {
+    await workspace();
+
+    const created = await createProfile('personal', { targets: ['local'] });
+
+    expect(await readFile(created.path, 'utf8')).not.toContain('default_target');
+  });
+
+  test('refuses a target no sibling declares rather than inventing one', async () => {
+    // The one place guessing is actively harmful. `deploy`'s survey proposes a
+    // *fresh* project id, which is right for a first deploy and exactly wrong
+    // here: pressing return would build a second, separate deployment instead
+    // of adding this profile to the one that already exists.
+    await workspace();
+    await createProfile('personal', { targets: ['local'] });
+
+    await expect(
+      createProfile('work', { targets: ['local', 'cloud'], nonInteractive: true }),
+    ).rejects.toThrow(/No profile in this workspace declares a target called "cloud"/);
+  });
+
+  test('and leaves nothing behind when it refuses', async () => {
+    // Everything that can fail happens before the first write, so a refusal
+    // leaves the workspace as it was rather than half a profile behind.
+    const root = await workspace();
+    await createProfile('personal', { targets: ['local'] });
+
+    await createProfile('work', { targets: ['cloud'], nonInteractive: true }).catch(() => {});
+
+    expect(existsSync(join(root, 'profiles', 'work.yaml'))).toBe(false);
+  });
+
+  test('copies a sibling’s adapters, with a service name of its own', async () => {
+    const root = await workspace();
+    await createProfile('personal', { targets: ['local'] });
+    await writeFile(
+      join(root, 'profiles', 'personal.yaml'),
+      (await readFile(join(root, 'profiles', 'personal.yaml'), 'utf8')).replace(
+        '    storage: { adapter: filesystem, path: ./data/personal }\n',
+        '    storage: { adapter: filesystem, path: ./data/personal }\n' +
+          '  cloud:\n' +
+          '    credentials: { adapter: gcp-secret-manager, project: my-project }\n' +
+          '    storage: { adapter: gcs, bucket: your-bucket }\n' +
+          '    vault: { adapter: secret }\n' +
+          '    deploy: { platform: cloudrun, project: my-project, region: europe-west1, service: my-service, access: public }\n',
+      ),
+    );
+
+    const created = await createProfile('work', {
+      targets: ['local', 'cloud'],
+      nonInteractive: true,
+    });
+    const text = await readFile(created.path, 'utf8');
+
+    expect(created.copiedFrom).toEqual({ cloud: 'personal' });
+    expect(text).toContain('project: my-project');
+    expect(text).toContain('bucket: your-bucket');
+    // The one field that must differ: two profiles in one project need two
+    // services, which is what makes them separately deployable.
+    expect(text).toContain('service: lanes-link-work-mcp');
   });
 
   test('refuses to overwrite a profile that already exists', async () => {
     await workspace();
-    await createProfile('personal', {});
+    await createProfile('personal', { targets: ['local'] });
 
-    await expect(createProfile('personal', {})).rejects.toThrow(/already exists/);
+    await expect(createProfile('personal', { targets: ['local'] })).rejects.toThrow(/already exists/);
   });
 });
 
 describe('readProfiles', () => {
   test('reports the root, the default, and a path per profile', async () => {
     const root = await workspace();
-    await createProfile('personal', {});
-    await createProfile('work', { default: true });
+    await createProfile('personal', { targets: ['local'] });
+    await createProfile('work', { targets: ['local'] });
 
     const listing = await readProfiles();
 
     expect(listing.root).toBe(root);
-    expect(listing.default).toBe('work');
     expect(listing.profiles.map((profile) => profile.name).sort()).toEqual(['personal', 'work']);
     expect(listing.profiles[0]?.path).toContain(join('profiles'));
   });
@@ -146,14 +209,13 @@ describe('readProfiles', () => {
 describe('profile list --json', () => {
   test('puts nothing but JSON on stdout', async () => {
     await workspace();
-    await createProfile('personal', {});
+    await createProfile('personal', { targets: ['local'] });
 
     const written = await captureStdout(() => profileList({ json: true }));
 
     // The assertion is the parse: a resolution line, a heading, or a table row
     // in front of this would throw here and nowhere else.
-    const parsed = JSON.parse(written) as { default: string; profiles: { name: string }[] };
-    expect(parsed.default).toBe('personal');
+    const parsed = JSON.parse(written) as { profiles: { name: string }[] };
     expect(parsed.profiles.map((profile) => profile.name)).toEqual(['personal']);
   });
 

@@ -27,11 +27,11 @@ there is one.
 A profile is one set of accounts with one set of permissions. Most people start with one.
 
 ```console
-$ lanes link profile add personal --default
+$ lanes link profile add personal --target local
 ok    created profile personal
-      config  ~/.lanes-link/profiles/personal.yaml
-      port    7337
-      set as the workspace default
+      config   ~/.lanes-link/profiles/personal.yaml
+      port     7337
+      targets  local
 ```
 
 ## 3. Add your own context
@@ -40,19 +40,22 @@ Memory, skills, and the vault hold your material rather than an account, so they
 and no browser. One command each:
 
 ```console
-$ lanes link connect memory
+$ lanes link connect memory --profile personal --target local
 ok    connected memory.main
       connections += memory.main (Memory)
       policy.allow += memory.*
       5 capabilities discovered, all reachable
       2 of them write — lanes link policy deny memory.<capability> to withhold one
 
-$ lanes link connect skills
-$ lanes link connect vault
+$ lanes link connect skills --profile personal --target local
+$ lanes link connect vault --profile personal --target local
 ```
 
 `connect` takes one provider at a time. Connecting grants that provider's whole namespace, write
 half included — `lanes link policy deny memory.write` narrows it.
+
+Both are stored on this machine. `lanes link knowledge use github --repo <owner/name> --migrate`
+keeps them in a private repository instead, so they have a history and follow you between machines.
 
 All three belong to the profile you ran them under. A second profile starts empty and stays that
 way: nothing you store in one is visible from another.
@@ -60,8 +63,8 @@ way: nothing you store in one is visible from another.
 ## 4. Start the endpoint
 
 ```console
-$ lanes link start
-profile personal (workspace-default)  target local (config-default)  ~/.lanes-link
+$ lanes link start --profile personal --target local
+profile personal  target local  ~/.lanes-link
   + setup.main  create (active)
   + memory.main  create (active)
 ok    reconciled
@@ -87,7 +90,7 @@ shows what you have.
 In another shell:
 
 ```console
-$ lanes link mcp add          # every agent installed; or name one: claude, codex
+$ lanes link mcp add --profile personal --target local          # every agent installed; or name one: claude, codex
 ok    registered lanes-link with Claude Code (user scope)
       installed skill at ~/.claude/skills/lanes-link/SKILL.md
       installed scout agent at ~/.claude/agents/lanes-link-scout.md
@@ -105,7 +108,7 @@ See [Add it to your agent](clients.md).
 A mail or calendar account is the first thing that costs any setup:
 
 ```console
-$ lanes link connect gmail
+$ lanes link connect gmail --profile personal --target local
 ```
 
 That opens a browser and nothing else — Google authorises against the OAuth client Lanes operates,
@@ -119,9 +122,9 @@ was running, the connection is saved and served when you next start one.
 ## 7. Check what you have
 
 ```console
-$ lanes link status                 # connections, reachable capabilities, endpoint
-$ lanes link audit tail --limit 25  # what your agents have actually done
-$ lanes link policy list            # what they are allowed to do
+$ lanes link status --profile personal --target local                 # connections, reachable capabilities, endpoint
+$ lanes link audit tail --profile personal --target local --limit 25  # what your agents have actually done
+$ lanes link policy list --profile personal            # what they are allowed to do
 ```
 
 Ask an agent to search your mail. If it is refused, that is the permission system working — run
@@ -134,7 +137,7 @@ Work and personal never share a credential store, a state store, or an audit log
 ```console
 $ lanes link profile add work
 $ lanes link --profile work connect notion
-$ lanes link start
+$ lanes link start --profile personal --target local
 ok    serving http://127.0.0.1:7337/mcp
       profiles: personal, work
 ```

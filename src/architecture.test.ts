@@ -247,18 +247,71 @@ const MAX_LINES = 400;
  * the seam the budget exists to point at: they were not too long, they were
  * two things.
  *
- * `server/harness.ts` is the newest entry and the one with a seam already
+ * `server/endpoint.ts` is the one entry here that no single change earned. It
+ * was 371 lines on `main` and under the budget on all four branches that were
+ * open at once; it crossed at 416 only when they were integrated, gaining the
+ * target-aware authorization surface from one and the dashboard route from
+ * another. The seam is the second of those — the dashboard is a whole surface
+ * reached over the same port, and `server/dashboard.ts` already holds most of
+ * it. Cut there rather than by line count.
+ *
+ * `server/harness.ts` is the one with a seam already
  * visible: `startStdioHarness` and `StdioHarness` are 135 lines serving the
  * same profiles over a different transport, and only two tests import them.
  * It crossed the line by one, adding the target an endpoint runs as to the
  * authorization surface, and splitting it was a larger change than the one
  * that revealed it. Cut there when something needs to touch this file next.
+ *
+ * `profile/schema.ts` is `server/endpoint.ts` again, and a second occurrence is
+ * what makes that a pattern rather than an accident. It was 385 lines, and two
+ * branches open at once added ten net lines each — an `identity` block on the
+ * config, and `allowed_origins` on the authorization block. Both were green,
+ * because each was measured against a base without the other, and the merge
+ * that put them together was the first thing to see 405. A budget that only one
+ * branch at a time can check will keep finding this.
+ *
+ * Exempt rather than split, and this one is not a deferral. The file holds
+ * seventeen Zod declarations and no functions at all: its length is the size of
+ * the config format, not a count of responsibilities. The seam this budget
+ * exists to point at is a second subject — what `deployments/adapters/postgres.ts`
+ * and `stores/database/conformance.ts` each turned out to be — and there is no
+ * second subject here to find. Splitting it by line count would put
+ * `targetSchema` and `configSchema` in different files to satisfy an arithmetic
+ * that is not measuring anything about them. What would earn a split is
+ * something that is not a schema appearing beside them; that is the thing to
+ * watch for, and it is visible in a diff.
+ */
+/**
+ * `cli/main.ts` is the same case as `profile/schema.ts` above, and is exempt for
+ * the same reason rather than as a deferral.
+ *
+ * It is one `switch` and nothing else — its own docstring says so: "the grammar
+ * and nothing else: which word maps to which function". Its length is a count of
+ * *commands*, which is a count of what this tool does, not of what this file is
+ * responsible for. That is the argument this budget already accepts for a test
+ * file two tests down: length that is cases rather than responsibilities, where
+ * splitting scatters a subject.
+ *
+ * And splitting really would. Half a grammar means a reader asking "what does
+ * `lanes link vault set` run" has two files to check and no rule saying which.
+ * Every candidate cut — the owner-layer nouns, the deploy-side ones — is a
+ * grouping this file deliberately does not make, because argv does not make it
+ * either.
+ *
+ * What would earn a split is the thing that is not grammar appearing here: a
+ * command implemented inline rather than dispatched to, or flag handling that
+ * outgrows `argv.ts`. Both are visible in a diff. It crossed the line adding
+ * `knowledge`, which is fourteen lines of the same shape as the twenty-seven
+ * cases around it.
  */
 const KNOWN_LONG = new Set([
+  'cli/main.ts',
   'connectivity/transports/dav/ical.ts',
   'deployments/adapters/gcp-secret-manager.ts',
+  'profile/schema.ts',
   'providers/google/specs/vendor.ts',
   'providers/memory/provider.ts',
+  'server/endpoint.ts',
   'server/harness.ts',
 ]);
 

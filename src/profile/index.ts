@@ -19,10 +19,20 @@ export {
   type Config,
   type ConnectionConfig,
   type DeployConfig,
+  type IdentityEntry,
   type PolicyRuleConfig,
   type TargetConfig,
   type WorkspaceConfig,
 } from './schema.ts';
+
+export {
+  KNOWLEDGE_LAYOUT,
+  knowledgeRoot,
+  knowledgeTargetSchema,
+  parseRepository,
+  type KnowledgeArea,
+  type KnowledgeConfig,
+} from './knowledge.ts';
 
 export {
   ConfigError,
@@ -41,10 +51,10 @@ export {
 
 export {
   WORKSPACE_FILE,
-  describeSelection,
   installRoot,
   listProfiles,
   loadProfileConfig,
+  noProfileNamed,
   profilePath,
   readWorkspace,
   resolveSelection,
@@ -52,10 +62,9 @@ export {
   workspacePath,
 } from './workspace.ts';
 export {
-  TARGET_ENV,
-  askedTarget,
-  resolveDeployTarget,
-  resolveTarget,
+  LEGACY_TARGET_ENV,
+  noTargetNamed,
+  requireTarget,
   undeclaredTarget,
 } from './targets.ts';
 export {
@@ -65,6 +74,7 @@ export {
   writeWorkspaceFile,
 } from './files.ts';
 export {
+  type ProfileSelection,
   type Resolution,
   type ResolveOptions,
 } from './workspace.ts';

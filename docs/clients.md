@@ -7,7 +7,7 @@ One endpoint, one token, every profile — so you register once per agent, not o
 | [Claude Code](#claude-code) | `lanes link mcp add claude` | `lanes link mcp add claude --target cloud` |
 | [Codex](#codex) | `lanes link mcp add codex` | `lanes link mcp add codex --target cloud` |
 | [Claude Desktop, Cowork](#claude-desktop-and-cowork) | by hand — see below | it cannot be given a URL |
-| [claude.ai, ChatGPT, a phone](#claudeai-chatgpt-and-your-phone) | nothing there reaches your machine | a custom connector, by URL |
+| [claude.ai](#claudeai-chatgpt-and-your-phone), [ChatGPT](#chatgpt), a phone | nothing there reaches your machine | a custom connector, by URL |
 | [Anything else](#anything-else) | `lanes link outputs` | `lanes link outputs --target cloud` |
 
 `lanes link mcp add` with no argument covers every agent it finds. It runs each one's own `mcp add`
@@ -37,7 +37,7 @@ do. `--no-skill` registers without writing anything.
 ## Claude Code
 
 ```console
-$ lanes link mcp add claude       # user scope: your accounts are not one repository's tooling
+$ lanes link mcp add claude --profile personal --target local       # user scope: your accounts are not one repository's tooling
 ```
 
 Claude Code stores the token as a value, so after `lanes link token rotate` run `mcp add` again with
@@ -46,7 +46,7 @@ Claude Code stores the token as a value, so after `lanes link token rotate` run 
 ## Codex
 
 ```console
-$ lanes link mcp add codex
+$ lanes link mcp add codex --profile personal --target local
 $ export LANES_LINK_TOKEN="$(lanes link token show --raw)"   # put this in your shell profile
 ```
 
@@ -65,7 +65,7 @@ instead of connecting to it:
   "mcpServers": {
     "lanes-link": {
       "command": "/Users/you/.bun/bin/lanes",
-      "args": ["link", "mcp", "stdio"]
+      "args": ["link", "mcp", "stdio", "--profile", "personal", "--target", "local"]
     }
   }
 }
@@ -82,7 +82,7 @@ Two things to get right:
   `#!/usr/bin/env bun`, so an absolute path to it is not enough on its own. Claude Desktop passes a
   `PATH` that includes `~/.bun/bin`, so the entry above works as written. If a client fails with
   `env: bun: No such file or directory`, name Bun yourself:
-  `"command": "/Users/you/.bun/bin/bun", "args": ["run", "/path/to/link/src/cli/lanes.ts", "link", "mcp", "stdio"]`.
+  `"command": "/Users/you/.bun/bin/bun", "args": ["run", "/path/to/link/src/cli/lanes.ts", "link", "mcp", "stdio", "--profile", "personal", "--target", "local"]`.
 
 Three consequences of Desktop spawning the process:
 
@@ -91,6 +91,10 @@ Three consequences of Desktop spawning the process:
 - **`lanes link start` is not needed for it.** Run the endpoint for the clients that use HTTP.
 - **The tool list is fixed for the session.** A skill added while Desktop is running appears next
   time it starts.
+
+Both flags are required. This client spawns the endpoint rather than being pointed at a URL, so its
+config file is the only place that can say which profile and target it serves — an entry without
+them fails to start, and the reason appears in the client's MCP log.
 
 This is a local registration with no deployed counterpart: a deployment is a URL, which is the one
 thing this client cannot be given.
@@ -107,6 +111,12 @@ client registers itself, a browser opens on your endpoint's own approval page, a
 target's token once — from `lanes link outputs --show --target cloud`. Same flow on a laptop and on a
 phone.
 
+**The token has to be the one that target's store holds.** Credentials are per target, and `outputs`
+mints a fresh token when the store is empty rather than saying so — so a target whose secrets were
+never pushed hands you one the deployed endpoint has never seen, and the approval page answers *"That
+token was not accepted"* with nothing pointing at why. `lanes link secrets push --from local --to
+cloud` is what fills it.
+
 If a connector reports the server as unreachable, three documents are how it learns it needs a token.
 Read them in order; the first that does not answer is the problem:
 
@@ -115,6 +125,37 @@ $ curl -i -X POST https://…run.app/mcp | head -3          # 401, with resource
 $ curl -s https://…run.app/.well-known/oauth-protected-resource | jq
 $ curl -s https://…run.app/.well-known/oauth-authorization-server | jq
 ```
+
+### ChatGPT
+
+Its connector UI is off by default and the setting is not where an older walkthrough will send you:
+Connectors was renamed Plugins, so there is no longer a Connectors → Advanced to find.
+
+1. **Settings → Security and login → Developer mode**, on. Plus, Pro, Business, Enterprise or Edu,
+   and web only — a free account cannot.
+2. **Plugins → `+` → New Plugin.** Name it; the icon and description are optional.
+3. **Connection** is **Server URL** — Tunnel is for a server on your own machine, which this is not.
+   Paste the `/mcp` address, with the path: it is what the endpoint names as the protected resource,
+   and the bare origin is a different string.
+4. **Authentication** is **OAuth**. There is nowhere to paste a bearer token, and *No authentication*
+   gets a 401.
+5. **Open Advanced OAuth settings.** Discovery runs from this panel, and leaving it unopened is
+   enough to make Create do nothing at all. Choose **dynamic client registration**, leave the client
+   id and secret empty, and take `mcp offline_access` as the scopes. Nothing has to be typed if
+   discovery filled it in.
+6. Tick the risk checkbox and **Create**, then connect. Your endpoint's own approval page opens,
+   naming `chatgpt.com` as where the code goes — worth recognising, since registration is open by
+   design and a client may call itself anything. Paste the token.
+7. Enable the plugin in the composer. Individual tools can be switched off on its own page.
+
+Nothing has to be entered by hand: `offline_access` is what keeps the connector signed in, and this
+endpoint registers clients dynamically, so there is no OAuth client to create and no redirect URI to
+register anywhere.
+
+**After `lanes link connect` adds an account, refresh the plugin.** This endpoint promises no
+`listChanged` notification — it cannot keep one, being stateless ([ADR-032](detailed/adr/032-a-stateless-endpoint-does-not-announce-its-tools.md))
+— so a client that does not ask again keeps the tool list it first saw. A connected account that
+never appears is this, not a broken deployment.
 
 ### When a working connector drops
 
@@ -151,7 +192,7 @@ not as a failure.
 ## Anything else
 
 ```console
-$ lanes link outputs --show
+$ lanes link outputs --profile personal --target local --show
 Endpoint
   http://127.0.0.1:7337/mcp  running
 Token

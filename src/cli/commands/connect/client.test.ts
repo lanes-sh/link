@@ -1,3 +1,4 @@
+import { localBlock } from '../profile/declare.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -21,7 +22,9 @@ import { brokeredScopes, hostedClientRefusal, resolveOAuthClient } from './clien
 
 const BROKER = { url: 'https://api.example.com/v1/auth/link/vendor', operator: 'Someone' };
 
-const manifest = (broker: object | null = BROKER, withPrompts = true) =>
+const SHIPPED_ID = 'shipped-client';
+
+const manifest = (broker: object | null = BROKER, withPrompts = true, shipped?: string) =>
   defineProvider({
     id: 'vendor_mail',
     name: 'Vendor Mail',
@@ -34,6 +37,7 @@ const manifest = (broker: object | null = BROKER, withPrompts = true) =>
       authorize_url: 'https://accounts.example.com/o/oauth2/v2/auth',
       token_url: 'https://oauth2.example.com/token',
       ...(broker ? { broker } : {}),
+      ...(shipped ? { client_id: shipped } : {}),
     },
     ...(withPrompts
       ? {
@@ -73,7 +77,7 @@ async function document(body?: string): Promise<ConfigDocument> {
   const root = await mkdtemp(join(tmpdir(), 'lanes-link-client-'));
   roots.push(root);
   await mkdir(join(root, 'profiles'), { recursive: true });
-  await writeFile(join(root, 'profiles', 'personal.yaml'), body ?? newProfileTemplate('personal', 7337));
+  await writeFile(join(root, 'profiles', 'personal.yaml'), body ?? newProfileTemplate('personal', 7337, localBlock('personal')));
   return await ConfigDocument.open(root, 'personal');
 }
 
@@ -101,7 +105,7 @@ const choice = async (over: Partial<Parameters<typeof resolveOAuthClient>[0]> = 
   document: await document(),
   changes: [] as string[],
   firstForProvider: true,
-  ownClient: false,
+  client: undefined,
   target: 'vendor_mail',
   profile: 'personal',
   fetch: brokerAnswering(OPEN),
@@ -167,7 +171,7 @@ describe('which client a connect uses', () => {
       await choice({
         document: doc,
         changes,
-        ownClient: true,
+        client: 'own' as const,
         credentials: memoryStore({ 'vendor/client_id': 'id', 'vendor/client_secret': 'secret' }),
       }),
     );
@@ -180,9 +184,52 @@ describe('which client a connect uses', () => {
   test('--own-client on a provider that describes no client refuses, and says why', async () => {
     await expect(
       resolveOAuthClient(
-        await choice({ manifest: manifest(BROKER, false), ownClient: true }),
+        await choice({ manifest: manifest(BROKER, false), client: 'own' }),
       ),
     ).rejects.toThrow(/no bring-your-own client path/);
+  });
+});
+
+/**
+ * Asking outright, on a profile that already registered a client.
+ *
+ * The `oauth_apps` entry used to be final, and it was final for a good reason:
+ * a refresh token minted by one client is refused by another, so a profile
+ * silently moved off its own client would find every existing connection
+ * unrefreshable. What makes overriding it safe is that the *token* records
+ * which client minted it — so an override moves this connection and no other.
+ */
+describe('overriding the profile', () => {
+  const registered = () =>
+    memoryStore({ 'vendor/client_id': 'id', 'vendor/client_secret': 'secret' });
+
+  test('the hosted client is used when it is the answer given', async () => {
+    const client = await resolveOAuthClient(
+      await choice({ credentials: registered(), client: 'hosted' }),
+    );
+
+    expect(client.kind).toBe('brokered');
+  });
+
+  test('the profile keeps its own client when nothing was asked for', async () => {
+    // The precedence that has always applied, unchanged by the override above:
+    // an unanswered connect on a profile that registered a client stays on it.
+    const client = await resolveOAuthClient(await choice({ credentials: registered() }));
+
+    expect(client.kind).toBe('own');
+  });
+
+  test('overriding does not un-declare the entry the profile holds', async () => {
+    const changes: string[] = [];
+    const doc = await document();
+
+    await resolveOAuthClient(
+      await choice({ credentials: registered(), client: 'hosted', document: doc, changes }),
+    );
+
+    // The other connections still refresh against it. Removing the entry here
+    // would be an edit on their behalf that nobody asked for.
+    expect(changes).toEqual([]);
   });
 });
 
@@ -258,6 +305,7 @@ describe('brokeredScopes', () => {
     notice: undefined,
     docsUrl: undefined,
     capacity: undefined,
+    redirectUri: undefined,
   };
 
   test('appends the identity scopes the broker asks for', () => {
@@ -381,5 +429,74 @@ describe('what a brokered connect says out loud', () => {
     });
 
     expect(err).not.toContain('LANES_LINK_BROKER_ORIGIN');
+  });
+});
+
+/**
+ * A broker that cannot serve, for a provider that has no other way in.
+ *
+ * There was briefly a fallback here — a client id shipped in the manifest,
+ * redeemed locally with PKCE. The relay removed it: Slack will not register a
+ * loopback redirect, so the browser has to land on the broker's own HTTPS
+ * origin, and a client with no broker behind it has nowhere for the redirect to
+ * go. A refusal is the honest answer and these hold it.
+ */
+describe('a broker that cannot serve', () => {
+  const unreachable = (async () => {
+    throw new Error('connect ECONNREFUSED');
+  }) as unknown as typeof globalThis.fetch;
+
+  test('is a refusal, not a silent downgrade', async () => {
+    await expect(resolveOAuthClient(await choice({ fetch: unreachable }))).rejects.toThrow(
+      /could not be authorised/,
+    );
+  });
+
+  test('and so is one that has closed its doors', async () => {
+    const closed = brokerAnswering({
+      success: true,
+      data: { client_id: 'hosted-client', status: 'closed', notice: 'Paused.' },
+    });
+
+    await expect(resolveOAuthClient(await choice({ fetch: closed }))).rejects.toThrow(/Paused\./);
+  });
+
+  test('a profile with its own client does not need it and is unaffected', async () => {
+    const client = await resolveOAuthClient(
+      await choice({
+        credentials: memoryStore({ 'vendor/client_id': 'mine', 'vendor/client_secret': 's' }),
+        fetch: unreachable,
+      }),
+    );
+
+    expect(client.kind).toBe('own');
+    if (client.kind === 'own') expect(client.clientId).toBe('mine');
+  });
+
+  test('the relay it publishes reaches the caller', async () => {
+    // The CLI never hardcodes this: which URL is right depends on which
+    // deployment answered, so the broker that owns it says what it is.
+    const withRelay = brokerAnswering({
+      success: true,
+      data: {
+        client_id: 'hosted-client',
+        scopes_supported: ['https://api.test/auth/mail.read'],
+        status: 'open',
+        redirect_uri: 'https://api.example.com/v1/auth/link/vendor/callback',
+      },
+    });
+
+    const client = await resolveOAuthClient(await choice({ fetch: withRelay }));
+
+    expect(client.kind).toBe('brokered');
+    if (client.kind === 'brokered') {
+      expect(client.config.redirectUri).toBe('https://api.example.com/v1/auth/link/vendor/callback');
+    }
+  });
+
+  test('a broker that publishes none leaves the listener to name itself', async () => {
+    const client = await resolveOAuthClient(await choice());
+    expect(client.kind).toBe('brokered');
+    if (client.kind === 'brokered') expect(client.config.redirectUri).toBeUndefined();
   });
 });

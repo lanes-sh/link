@@ -1,14 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 import { parseConfig } from './load.ts';
-import { resolveDeployTarget, resolveTarget } from './targets.ts';
+import { noTargetNamed, requireTarget } from './targets.ts';
 
 /**
- * Which target a command acts on, and where that answer came from.
+ * Which target a command acts on.
  *
- * Every case passes an explicit `env`. A developer who exports
- * `LANES_LINK_TARGET` in their own shell would otherwise change what these
- * assert, which is the failure mode the variable itself exists to make visible
- * and the last place it should be able to hide.
+ * `--target`, or it does not run. What used to be tested here was a precedence
+ * chain — flag, then `LANES_LINK_TARGET`, then `instance.default_target` — and
+ * those cases are gone rather than inverted, because the thing they described
+ * no longer exists (ADR-037). What is left is worth more: that a command
+ * naming nothing is refused with the list, and that the refusal names the two
+ * things an operator is most likely to still be looking at.
  */
 
 describe('target resolution', () => {
@@ -54,18 +56,43 @@ targets:
     deploy: { platform: cloudrun, project: p2, region: r, service: s2 }
 `).config;
 
-  test('defaults to instance.default_target', () => {
-    expect(resolveTarget(twoTargets, undefined, { env: {} })).toEqual({
-      target: 'local',
-      source: 'config-default',
-    });
+  test('a named target is the target', () => {
+    expect(requireTarget(twoTargets, 'cloud')).toBe('cloud');
+    expect(requireTarget(twoTargets, 'local')).toBe('local');
   });
 
-  test('--target overrides it', () => {
-    expect(resolveTarget(twoTargets, 'cloud', { env: {} })).toEqual({
-      target: 'cloud',
-      source: 'flag',
-    });
+  test('naming none is refused, with what there is to choose from', () => {
+    // The case the whole change exists for. Falling back here is what let an
+    // ignored `--target` produce a working command and surface one command
+    // later, detached from its cause.
+    expect(() => requireTarget(twoTargets, undefined)).toThrow('--target is required');
+    expect(() => requireTarget(twoTargets, undefined)).toThrow('local');
+    expect(() => requireTarget(twoTargets, undefined)).toThrow('cloud');
+  });
+
+  test('the refusal names an exported variable that no longer resolves', () => {
+    // The single most confusing state during the change: a shell still
+    // configured for the old world, where nothing on screen says the variable
+    // stopped counting. Self-limiting — it disappears when the variable does.
+    const message = noTargetNamed(twoTargets, 'personal', {
+      LANES_LINK_TARGET: 'cloud',
+    }).message;
+
+    expect(message).toContain('LANES_LINK_TARGET=cloud');
+    expect(message).toContain('no longer read');
+  });
+
+  test('and the inert key still sitting in the profile', () => {
+    // Which is why the schema keeps parsing it. A key stripped by the schema is
+    // a key nothing can report, and an operator looking at
+    // `default_target: local` has every reason to think it still selects one.
+    expect(noTargetNamed(twoTargets, 'personal', {}).message).toContain(
+      'instance.default_target: local',
+    );
+  });
+
+  test('says nothing about a variable that is not set', () => {
+    expect(noTargetNamed(twoTargets, 'personal', {}).message).not.toContain('LANES_LINK_TARGET');
   });
 
   test('one config yields a different adapter set per target', () => {
@@ -78,96 +105,19 @@ targets:
   });
 
   test('an undeclared target fails and lists what exists', () => {
-    expect(() => resolveTarget(twoTargets, 'staging', { env: {} })).toThrow(
-      /Target "staging" is not declared.*local, cloud/s,
-    );
+    expect(() => requireTarget(twoTargets, 'clod')).toThrow('is not declared');
+    expect(() => requireTarget(twoTargets, 'clod')).toThrow('local, cloud');
   });
 
-  test('a deploy works out which target it meant', () => {
-    // `--target cloud` was required on every deploy because an absent flag fell
-    // back to `instance.default_target` — `local`, a target that is by
-    // definition not deployed. The one command whose subject is never ambiguous
-    // was the one that made you say it.
-    expect(resolveDeployTarget(twoTargets)).toEqual({ target: 'cloud', source: 'deployable' });
+  test('unless the caller is going to create it — which is deploy, on a first run', () => {
+    expect(requireTarget(localOnly, 'cloud', { allowUndeclared: true })).toBe('cloud');
   });
 
-  test('--target still wins, which is how you deploy the second one', () => {
-    expect(resolveDeployTarget(twoTargets, 'staging')).toEqual({
-      target: 'staging',
-      source: 'flag',
-    });
-  });
-
-  test('with nothing deployable it proposes the conventional name', () => {
-    // The first run: no target has a deployment yet, and `cloud` is what every
-    // example names. The survey then creates it.
-    expect(resolveDeployTarget(localOnly)).toEqual({ target: 'cloud', source: 'deployable' });
-  });
-
-  test('two deployable targets is a real question, so it asks', () => {
-    // Rolling a revision to whichever came first in a YAML mapping is the one
-    // answer that cannot be right on purpose.
-    expect(() => resolveDeployTarget(twoDeployable)).toThrow(
-      /2 deployable targets \(cloud, staging\).*--target/s,
-    );
-  });
-
-  test('unless the caller is going to create it', () => {
-    // `deploy` on a first run: the target it names is the one it is about to
-    // write. Refusing there made a command whose whole job is bootstrapping
-    // demand that the thing already exist. Nothing else passes this — a typo
-    // in `--target` should still hit the list above rather than quietly
-    // deploying a target nobody declared.
-    expect(resolveTarget(twoTargets, 'staging', { allowUndeclared: true, env: {} })).toEqual({
-      target: 'staging',
-      source: 'flag',
-    });
-  });
-
-  test('LANES_LINK_TARGET sits between the flag and the config default', () => {
-    const env = { LANES_LINK_TARGET: 'cloud' };
-
-    expect(resolveTarget(twoTargets, undefined, { env })).toEqual({
-      target: 'cloud',
-      source: 'environment',
-    });
-    expect(resolveTarget(twoTargets, 'local', { env })).toEqual({
-      target: 'local',
-      source: 'flag',
-    });
-  });
-
-  test('an empty LANES_LINK_TARGET is not an answer', () => {
-    // `export LANES_LINK_TARGET=` leaves the name set to the empty string, which
-    // is a target nobody declared. Reading it as "unset" is the only reading
-    // that does not fail every command in the shell with a puzzle.
-    expect(resolveTarget(twoTargets, undefined, { env: { LANES_LINK_TARGET: '' } })).toEqual({
-      target: 'local',
-      source: 'config-default',
-    });
-  });
-
-  test('an undeclared target from the environment says so, and how to undo it', () => {
-    // Without this, an exported typo fails every command in the shell with a
-    // message that reads as a problem with the config file — and the file is
-    // fine. The variable is the only thing that knows where the name came from.
-    expect(() =>
-      resolveTarget(twoTargets, undefined, { env: { LANES_LINK_TARGET: 'clod' } }),
-    ).toThrow(/LANES_LINK_TARGET=clod is set in this shell/);
-  });
-
-  test('deploy ignores LANES_LINK_TARGET, deliberately', () => {
-    // `deploy` is the one caller that may name an undeclared target, so an
-    // exported typo would not be refused here — it would be surveyed, written
-    // into the profile, and rolled out as a new service. An environment
-    // variable must not be able to name a Cloud Run service into existence.
-    const previous = process.env['LANES_LINK_TARGET'];
-    process.env['LANES_LINK_TARGET'] = 'local';
-    try {
-      expect(resolveDeployTarget(twoTargets)).toEqual({ target: 'cloud', source: 'deployable' });
-    } finally {
-      if (previous === undefined) delete process.env['LANES_LINK_TARGET'];
-      else process.env['LANES_LINK_TARGET'] = previous;
-    }
+  test('a profile with two deployable targets is no longer a question', () => {
+    // `resolveDeployTarget` guessed, refused, or invented a name depending on
+    // how many targets declared a deploy block. Naming one answers it
+    // structurally, on the one command that creates cloud resources.
+    expect(requireTarget(twoDeployable, 'staging')).toBe('staging');
+    expect(() => requireTarget(twoDeployable, undefined)).toThrow('--target is required');
   });
 });

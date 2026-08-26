@@ -92,3 +92,8 @@ export async function moveCredential(
   await credentials.set(to, value);
   await credentials.delete(from);
 }
+
+/** What a spec that named an account rather than a provider turned out to mean. */
+export function familyNote(providerId: string, family: readonly string[]): string {
+  return `${providerId} is ${family.length} services on one account: ${family.join(', ')}`;
+}

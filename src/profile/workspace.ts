@@ -6,7 +6,6 @@ import { homedir } from 'node:os';
 import { parse as parseYaml } from 'yaml';
 import { ConfigError } from './load.ts';
 import { workspaceSchema, type Config, type WorkspaceConfig } from './schema.ts';
-import { askedTarget } from './targets.ts';
 
 /**
  * Workspace and profile resolution.
@@ -19,50 +18,52 @@ import { askedTarget } from './targets.ts';
  *     work.yaml
  *   data/               local state per profile, gitignored
  *
- * There is deliberately no sticky `lanes link use` that persists a *hidden*
- * current selection. Persisted context state is the standard way operators run
- * destructive commands against the wrong target, and the version of it that
- * bites is the dotfile nothing prints.
+ * **A command says which profile it means, or it does not run** (ADR-037).
+ * `--profile` is the only thing that selects one. `LANES_LINK_PROFILE` and
+ * `default_profile` are parsed and ignored.
  *
- * So both ways of not retyping a flag are visible ones.
- * `export LANES_LINK_PROFILE=work` and `export LANES_LINK_TARGET=cloud` live in
- * the shell, where `env` shows them; `default_profile` and
- * `instance.default_target` live in files the operator reads and `check`
- * validates, written by `lanes link profile default` and `lanes link target
- * use`. Every command prints which of the four it landed on and where that came
- * from — see `announce`.
+ * The argument this replaces was that persisted selection is how operators act
+ * on the wrong thing, and that a *visible* fallback — an exported variable, a
+ * key in a file the operator reads, and a line printed before every command —
+ * was therefore safe. The first half stands and is why this rule exists at all.
+ * What did not survive is the conclusion: the printed line is a dim grey one,
+ * and a fallback made an ignored flag survivable, so `profile add --target
+ * cloud` dropping its flag surfaced on the *next* command, from a different
+ * source, detached from its cause. A resolver with nothing to fall back to
+ * cannot do that.
+ *
+ * The workspace root is deliberately not part of this and keeps its chain —
+ * `LANES_LINK_HOME`, then an ancestor holding `lanes-link.yaml`, then
+ * `~/.lanes-link`. Getting it wrong yields "no profiles here" rather than an
+ * action against the wrong account, it is the only channel a container has for
+ * its bucket (ADR-023), and the ancestor walk is what makes a per-repository
+ * workspace work at all.
  */
 
 export const WORKSPACE_FILE = 'lanes-link.yaml';
 
-export interface Resolution {
+/** A profile, found. Everything a command needs before it has read the config. */
+export interface ProfileSelection {
   readonly workspaceRoot: string;
   readonly profile: string;
   readonly profilePath: string;
+}
+
+/**
+ * A profile and the target whose stores a command will open.
+ *
+ * There is no `profileSource`/`targetSource` any more, and nothing should
+ * reintroduce them: with one way to select each, a source field has one
+ * inhabitant, and `announce` would print `(flag)` twice on every line of every
+ * command forever. `target.ts` already makes that argument about a line printed
+ * unconditionally — it stops being read.
+ */
+export interface Resolution extends ProfileSelection {
   readonly target: string;
-  /** Where the value came from, so every command can print how it got here. */
-  readonly profileSource: 'flag' | 'environment' | 'workspace-default';
-  /**
-   * `deployable` is `deploy` choosing the only target it could have meant.
-   *
-   * It is its own source rather than reusing `config-default` because it is a
-   * different claim: the config default is what *commands* run against, and for
-   * every other command that is the local target. Printing "config-default"
-   * beside a target the config does not default to would be a lie on the one
-   * line that exists to say how the command got here.
-   *
-   * `environment` is `LANES_LINK_TARGET`, and it earns its own name for the
-   * same reason: a target chosen by a variable exported in another terminal an
-   * hour ago is the one an operator is most likely to be surprised by, and the
-   * fix — `unset` — is not the fix for a config default. `deploy` never
-   * produces it; `resolveDeployTarget` says why.
-   */
-  readonly targetSource: 'flag' | 'environment' | 'config-default' | 'deployable';
 }
 
 export interface ResolveOptions {
   readonly profileFlag?: string | undefined;
-  readonly targetFlag?: string | undefined;
   readonly cwd?: string;
   readonly env?: Record<string, string | undefined>;
 }
@@ -172,45 +173,20 @@ export async function listProfiles(workspaceRoot: string): Promise<string[]> {
 }
 
 /**
- * Resolve which profile and target a command acts on.
+ * Find the profile a command names, or refuse saying what there is.
  *
- * Order: `--profile`, then `LANES_LINK_PROFILE`, then the workspace's
- * `default_profile`, then an error that lists what is available — never a
- * silent pick, because the wrong guess here operates on the wrong accounts.
+ * `--profile` and nothing else. The refusal lists the workspace's profiles,
+ * because "which one" is the question it is asking, and it names
+ * `LANES_LINK_PROFILE` when that is set — the shell still configured for the old
+ * world is the single most confusing state to be in during the change, and it
+ * is self-limiting: the line disappears the moment the variable does.
  */
-export async function resolveSelection(options: ResolveOptions = {}): Promise<Resolution> {
+export async function resolveSelection(options: ResolveOptions = {}): Promise<ProfileSelection> {
   const env = options.env ?? (process.env as Record<string, string | undefined>);
   const workspaceRoot = resolveWorkspaceRoot(options);
+  const profile = options.profileFlag;
 
-  let profile: string | undefined;
-  let profileSource: Resolution['profileSource'] = 'workspace-default';
-
-  if (options.profileFlag) {
-    profile = options.profileFlag;
-    profileSource = 'flag';
-  } else if (env['LANES_LINK_PROFILE']) {
-    profile = env['LANES_LINK_PROFILE'];
-    profileSource = 'environment';
-  } else {
-    profile = (await readWorkspace(workspaceRoot))?.default_profile;
-    profileSource = 'workspace-default';
-  }
-
-  if (!profile) {
-    const available = await listProfiles(workspaceRoot);
-    throw new ConfigError(
-      `No profile selected in workspace ${workspaceRoot}.\n` +
-        (available.length > 0
-          ? `Available: ${available.join(', ')}\n` +
-            `Pass --profile <name>, set LANES_LINK_PROFILE, or set default_profile in ${WORKSPACE_FILE}.`
-          : `No profiles exist yet. Create one with: lanes link profile add <name> --default`),
-    );
-  }
-
-  // Provisional: the config has not been read yet, so `instance.default_target`
-  // is not available to fall back to. `resolveTarget` settles it, from the same
-  // helper, so the two cannot disagree about what beats what.
-  const asked = askedTarget(options.targetFlag, env);
+  if (!profile) throw noProfileNamed(workspaceRoot, await listProfiles(workspaceRoot), env);
 
   const path = profilePath(workspaceRoot, profile);
   if (!(await workspaceFiles(workspaceRoot).has(`profiles/${profile}.yaml`))) {
@@ -221,14 +197,35 @@ export async function resolveSelection(options: ResolveOptions = {}): Promise<Re
     );
   }
 
-  return {
-    workspaceRoot,
-    profile,
-    profilePath: path,
-    target: asked.target ?? '',
-    profileSource,
-    targetSource: asked.source ?? 'config-default',
-  };
+  return { workspaceRoot, profile, profilePath: path };
+}
+
+/** The refusal for a command that named no profile. Exported so it can be tested. */
+export function noProfileNamed(
+  workspaceRoot: string,
+  available: readonly string[],
+  env: Record<string, string | undefined> = process.env as Record<string, string | undefined>,
+): ConfigError {
+  if (available.length === 0) {
+    return new ConfigError(
+      `--profile is required, and ${workspaceRoot} holds no profiles yet.\n` +
+        '  Create one with: lanes link profile add <name> --target local',
+    );
+  }
+
+  const stale = env['LANES_LINK_PROFILE'];
+
+  return new ConfigError(
+    '--profile is required. Every command names the profile it acts on, and\n' +
+      'nothing else selects one.\n\n' +
+      `  Profiles in ${workspaceRoot}\n` +
+      available.map((name) => `    ${name}`).join('\n') +
+      `\n\n  e.g. lanes link status --profile ${available[0]} --target <target>` +
+      (stale
+        ? `\n\n  LANES_LINK_PROFILE=${stale} is set in this shell and is no longer read.\n` +
+          '  Unset it, or pass --profile.'
+        : ''),
+  );
 }
 
 /**
@@ -249,14 +246,4 @@ export function workspacePath(workspaceRoot: string, path: string): string {
     );
   }
   return isAbsolute(path) ? path : resolve(workspaceRoot, path);
-}
-
-/**
- * The line every command prints before acting, read-only commands included.
- *
- * This is the primary guard against operating on the wrong instance, and it
- * costs one line.
- */
-export function describeSelection(resolution: Resolution): string {
-  return `profile: ${resolution.profile} (${resolution.profileSource})   target: ${resolution.target} (${resolution.targetSource})`;
 }

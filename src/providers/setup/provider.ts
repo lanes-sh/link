@@ -47,6 +47,13 @@ export interface SetupProviderOptions {
    * here — one registry is built per profile, so each instance gets its own.
    */
   readonly profile: string;
+  /**
+   * Which target this instance's stores came from.
+   *
+   * Stamped at construction for the same reason `profile` is, and it travels no
+   * further than the commands this provider emits — nothing here opens a store.
+   */
+  readonly target: string;
   /** Sibling profile names on this endpoint. Names only; already at `/health`. */
   readonly profiles?: readonly string[];
   /**
@@ -79,6 +86,7 @@ export function createSetupProvider(options: SetupProviderOptions): ProviderDefi
 
   const context = () => ({
     profile: options.profile,
+    target: options.target,
     connections: reachable().map((connection) => connection.key),
     ...(options.ownClients ? { ownClients: options.ownClients } : {}),
   });
@@ -306,6 +314,21 @@ function renderProvider(plan: ProviderPlan): string {
         'organisations require it — the same command takes --own-client and then asks for ' +
         `the client id and secret:`,
       `  ${plan.ownClientCommand}`,
+    );
+  }
+
+  // An alternative, said as one. It is not a value the command above needs, and
+  // rendering it beside the requirements — which is what it did before there
+  // was anywhere else to put it — reads as a second mandatory step in a setup
+  // whose whole selling point is that it has none.
+  if (plan.tokenCommand && plan.pastedCredential) {
+    lines.push(
+      '',
+      'If the browser path is refused — a workspace that has not approved this app, which an ' +
+        `admin decides — the same command takes --auth pasted_token and asks for the ` +
+        `${plan.pastedCredential}:`,
+      `  ${plan.tokenCommand}`,
+      '  The console steps for obtaining one are in the setup documentation above.',
     );
   }
 

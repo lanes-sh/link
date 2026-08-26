@@ -24,6 +24,9 @@ export async function start(
     port: flags.port,
     only: flags.only,
     mintToken: true,
+    // Local, so there is a browser and a person at it. `container.ts` does not
+    // pass this — see `#server/dashboard.ts`.
+    dashboard: true,
     // Stderr, not stdout: `--json` and `--raw` callers parse the other stream.
     // A refused credential is the event worth seeing while this runs in the
     // foreground, and until now nothing printed it.

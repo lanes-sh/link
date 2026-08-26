@@ -17,6 +17,10 @@ export interface ConnectOutcome {
   readonly ok: boolean;
   readonly key?: string;
   readonly account?: string;
+  /** The profile written to, for a caller that cannot see the announce line. */
+  readonly profile?: string;
+  /** The target written to — which credential store now holds this account. */
+  readonly target?: string;
   readonly changes: readonly string[];
   readonly granted: readonly string[];
   /**
@@ -44,6 +48,35 @@ export interface ConnectOutcome {
 export const NOTHING = { changes: [], granted: [], discovered: 0 } as const;
 
 export const ALREADY = 'Already connected — nothing changed.';
+
+/**
+ * One result for an account that turned out to be several services.
+ *
+ * The whole account succeeded only if every service did. A partial result is the
+ * case worth surfacing: one member blocked on a value leaves an account half
+ * connected, which `status` shows and prose does not.
+ */
+export function familyOutcome(members: readonly ConnectOutcome[]): ConnectOutcome {
+  const blocked = members.find((outcome) => !outcome.ok);
+
+  return {
+    ...NOTHING,
+    ok: members.every((outcome) => outcome.ok),
+    members,
+    ...(blocked?.reason ? { reason: blocked.reason } : {}),
+  };
+}
+
+/**
+ * Which store an account landed in, for the caller not reading the terminal.
+ *
+ * `announceConnectTarget` fixes the human channel. A `--json` caller had the
+ * same blindness the operator did — and an agent is exactly the reader who
+ * cannot see the line printed above it.
+ */
+export function where(runtime: { resolution: { profile: string; target: string } }) {
+  return { profile: runtime.resolution.profile, target: runtime.resolution.target };
+}
 
 /**
  * What `connect` says last.
@@ -101,7 +134,15 @@ export function renderOutcome(outcome: ConnectOutcome): void {
  */
 function renderBlocked(outcome: ConnectOutcome): void {
   progress();
-  print(fail(outcome.reason === 'needs_browser' ? 'a browser is needed' : 'more is needed first'));
+  print(
+    fail(
+      outcome.reason === 'needs_browser'
+        ? 'a browser is needed'
+        : outcome.reason === 'needs_terminal'
+          ? 'a terminal is needed'
+          : 'more is needed first',
+    ),
+  );
 
   for (const line of (outcome.message ?? '').split('\n')) print(`      ${line}`);
 

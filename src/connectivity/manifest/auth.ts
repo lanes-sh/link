@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { credentialRef, identifier } from './primitives.ts';
+import { setupSchema } from './setup.ts';
 
 /**
  * Credential types — how we prove who we are, orthogonal to how we connect.
@@ -34,14 +35,86 @@ export const authBrokerSchema = z.object({
 
 export type AuthBroker = z.infer<typeof authBrokerSchema>;
 
+/**
+ * A second way in, for an authorization server that also accepts an assertion.
+ *
+ * RFC 7523: instead of a person approving a consent screen, the operator holds
+ * a private key, signs a short-lived JWT with it, and exchanges that for an
+ * access token. There is no refresh token because there is nothing to refresh —
+ * a new assertion is signed whenever the last token ages out — which is the
+ * whole reason this exists beside `oauth`. An authorization-code refresh token
+ * can be expired by the issuer's own policy; a key the operator holds cannot.
+ *
+ * Declared *on* the OAuth block rather than as a fourth `kind`, because it is
+ * an alternative arrangement for the same provider rather than a different
+ * provider. Everything that branches on `kind` — where the credential lands,
+ * what setup requires, which refs a deployed revision may rewrite — is
+ * unchanged, and a manifest that omits this reads and behaves exactly as before.
+ *
+ * Which one a connection actually uses is not recorded here or in config. The
+ * stored credential's *shape* is the switch, the same way an `oauth_apps` entry
+ * is the switch between a broker's client and the operator's own.
+ */
+export const authAssertionSchema = z.object({
+  /**
+   * What the operator types after `--auth`, and how a chosen method is named
+   * back to them.
+   *
+   * The provider's word rather than the protocol's. "Assertion" is what this is
+   * to the authorization server and means nothing to the person holding the
+   * file; they downloaded a service account key, and that is what the prompt
+   * and the flag should say. Keeping it here is also what stops the CLI from
+   * learning a vendor's vocabulary in order to print it.
+   */
+  method: identifier,
+  /** The short name shown beside the choice — a noun, not a sentence. */
+  label: z.string().min(1),
+  /**
+   * Whether the assertion may stand for itself, or must name a user to act as.
+   *
+   * `optional` — the key is an identity in its own right, and reaches whatever
+   * has been shared with it. `required` — it can only borrow someone else's,
+   * so a connection without a subject would authenticate cleanly and then find
+   * nothing there. The CLI refuses a blank subject on `required` for that
+   * reason: the failure is otherwise a 404 on every call with no explanation.
+   */
+  delegation: z.enum(['optional', 'required']).default('optional'),
+  /**
+   * Where the profile-shared key lives.
+   *
+   * Shared, not per-connection: one key covers every provider of a vendor, and
+   * asking for it once per provider would be seven pastes of the same file.
+   * The per-connection half is the subject, which is not a secret and is small
+   * enough to sit in the pointer the connection stores.
+   */
+  key_ref: credentialRef,
+  /** One line for the choice prompt: what this method reaches, and what it does not. */
+  reach: z.string().min(1),
+  /**
+   * What to call the account this acts as, when it acts as one.
+   *
+   * Asked per connection and stored beside the pointer. Not a secret — it is an
+   * address — but it lives in the credential store rather than in config
+   * because it is half of a credential, and splitting a credential across two
+   * files is how the halves come to disagree.
+   */
+  subject_label: z.string().min(1),
+  /** The console walkthrough for this method, rendered by the same code as `setup`. */
+  setup: setupSchema,
+});
+
+export type AuthAssertion = z.infer<typeof authAssertionSchema>;
+
 export const authOAuthSchema = z.object({
   kind: z.literal('oauth'),
   /**
    * `dynamic` — the authorization server offers Dynamic Client Registration, so
    * we register ourselves and the operator does nothing at all (Notion, Linear).
    *
-   * `manual` — the vendor requires a pre-registered client, so the operator
-   * supplies an id and secret (Google, including for Google's own MCP servers).
+   * `manual` — the vendor requires a pre-registered client. Who supplies it is
+   * the profile's to decide and not this field's: an id and secret the operator
+   * registered (Google, if they choose to), or the client behind `broker`.
+   * `manual` says only that self-registration is not on offer.
    */
   registration: z.enum(['dynamic', 'manual']).default('dynamic'),
   /** Which `oauth_apps` entry holds the client, for `manual`. Shared across providers of a vendor. */
@@ -57,6 +130,30 @@ export const authOAuthSchema = z.object({
    * that claimed one or the other would be wrong half the time.
    */
   broker: authBrokerSchema.optional(),
+  /**
+   * The other way in, where the vendor offers one. Absent means browser or nothing.
+   *
+   * Additive and inert on its own: declaring it makes `connect` offer a choice
+   * and makes the resolver able to read an assertion credential. It changes
+   * nothing about a connection that authorised in a browser.
+   */
+  assertion: authAssertionSchema.optional(),
+  /**
+   * Whether a token response carrying no refresh token is a failure.
+   *
+   * `required` — it is, and stopping is kinder than succeeding: the connection
+   * would work until the access token expires and then quietly stop. Google
+   * omits one when the account was already authorised for the app, which is a
+   * real and recoverable mistake.
+   *
+   * `optional` — the vendor issues a long-lived token and no refresh token is
+   * the normal, successful answer. Slack does this unless token rotation is
+   * enabled on the app, so demanding one would refuse every connection that
+   * worked.
+   */
+  refresh_token: z.enum(['required', 'optional']).default('required'),
+  /** Where the operator withdraws a grant, named in the refusal above. */
+  revoke_url: z.url().optional(),
   scopes: z.array(z.string()).default([]),
   /**
    * Usually discovered from the resource's metadata; set only to override.

@@ -1,5 +1,5 @@
 import type { ProviderManifest } from '#connectivity';
-import { setupRequirements, type SetupRequirement } from '#connectivity';
+import { hasOwnClientPath, setupRequirements, type SetupRequirement } from '#connectivity';
 
 /**
  * What connecting a provider involves, assembled from its manifest.
@@ -68,10 +68,22 @@ export interface ProviderPlan {
   readonly clientOperator?: string;
   /** The line that opts out of it and registers one of your own instead. */
   readonly ownClientCommand?: string;
+  /** What `--auth pasted_token` asks for, where that is a way in. */
+  readonly pastedCredential?: string;
+  /** The line that takes that way in. */
+  readonly tokenCommand?: string;
 }
 
 export interface PlanContext {
   readonly profile: string;
+  /**
+   * Which target's stores the emitted command should act on.
+   *
+   * Stamped like `profile` is, and for a stronger reason: a connection's
+   * credential lives in one target's store, so a `connect` that lands in the
+   * wrong one authorises an account the endpoint asking for it cannot read.
+   */
+  readonly target: string;
   /** Every configured connection this caller may see, as `provider.id`. */
   readonly connections: readonly string[];
   /**
@@ -88,21 +100,22 @@ export function planFor(
   context: PlanContext,
   connectionId?: string,
 ): ProviderPlan {
-  const { requirements, needsId, brokered } = setupRequirements(
+  const { requirements, needsId, brokered, pastedCredential } = setupRequirements(
     manifest,
     connectionId,
-    context.profile,
+    { profile: context.profile, target: context.target },
     { ...(context.ownClients ? { ownClients: context.ownClients } : {}) },
   );
 
   const connected = context.connections.filter((key) => key.startsWith(`${manifest.id}.`));
 
-  // `--profile` always, never conditionally. One endpoint serves every profile,
-  // and the shell this command is pasted into may default to a different one —
-  // which is exactly what `resolveSelection`'s "never a silent pick" rule
-  // exists to prevent.
+  // Both, always, never conditionally. One endpoint serves every profile and
+  // each profile may declare several targets, and the shell this is pasted into
+  // supplies neither — nothing but the command line does. An emitted command
+  // missing either is one that refuses, or worse, writes a credential into a
+  // store the endpoint that asked for it does not read.
   const command =
-    `lanes link connect ${manifest.id} --profile ${context.profile}` +
+    `lanes link connect ${manifest.id} --profile ${context.profile} --target ${context.target}` +
     (needsId ? ' --id <name>' : connectionId ? ` --id ${connectionId}` : '');
 
   return {
@@ -119,13 +132,22 @@ export function planFor(
     needsId,
     command,
     brokered,
+    ...(pastedCredential
+      ? { pastedCredential, tokenCommand: `${command} --auth pasted_token` }
+      : {}),
     ...(brokered && manifest.auth.kind === 'oauth' && manifest.auth.broker
       ? {
           clientOperator: manifest.auth.broker.operator,
           // The steps stay in `steps` either way. A renderer decides whether to
           // show a console walkthrough for a path nobody has asked for; the
           // plan's job is to say the path exists and what opens it.
-          ownClientCommand: `${command} --own-client`,
+          //
+          // Offered only where the manifest actually describes a client to
+          // register. Slack's does not — it asks for a token, never for a
+          // client id and secret — and `resolveOAuthClient` refuses the flag on
+          // exactly that ground, so printing it here would be handing somebody
+          // a command that answers back with "there is no such path".
+          ...(hasOwnClientPath(manifest) ? { ownClientCommand: `${command} --own-client` } : {}),
         }
       : {}),
   };

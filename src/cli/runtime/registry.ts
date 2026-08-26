@@ -6,11 +6,13 @@ import { loadProfileProviders } from '#providers/custom/index.ts';
 import { loadProfileSkills, type LoadedSkill } from '#providers/skills/store.ts';
 import { exampleProvider } from '#providers/example/provider.ts';
 import {
+  createIdentityProvider,
   createMemoryVaultStore,
   createSetupProvider,
   createSkillsProvider,
   createVaultProvider,
   memoryProvider,
+  type IdentityProviderOptions,
   type SetupProviderOptions,
   type VaultStore,
 } from '#providers/owner.ts';
@@ -64,6 +66,15 @@ export interface OwnerLayerOptions {
    * two capabilities that would report an empty profile as the truth.
    */
   readonly setup?: SetupProviderOptions;
+  /**
+   * Who the profile says its owner is.
+   *
+   * Absent for a registry built to read manifests, which has no config to read
+   * it from. The provider still registers — it reports an empty declaration
+   * rather than vanishing, so the difference between "nothing declared" and
+   * "this build has no such surface" stays visible.
+   */
+  readonly identity?: IdentityProviderOptions;
 }
 
 /**
@@ -72,7 +83,8 @@ export interface OwnerLayerOptions {
  * Statically imported for now; the registry does not care where a manifest came
  * from, which is what lets workspace YAML register alongside these.
  *
- * `allowReserved` is what admits `memory`, `skills`, and `vault`. The guard
+ * `allowReserved` is what admits `memory`, `skills`, `vault`, `setup`, and
+ * `identity`. The guard
  * stays rather than being retired: it exists so a *third-party* provider cannot
  * claim a namespace whose policy rules would then silently mean something else,
  * and that reason survives the owner layer shipping. Only this one construction
@@ -95,9 +107,11 @@ export function buildRegistry(owner: OwnerLayerOptions = {}): ProviderRegistry {
 
   registry.register(
     createSetupProvider(
-      owner.setup ?? { profile: '', catalogue: PROVIDER_MANIFESTS },
+      owner.setup ?? { profile: '', target: '', catalogue: PROVIDER_MANIFESTS },
     ),
   );
+
+  registry.register(createIdentityProvider(owner.identity ?? { profile: '' }));
 
   for (const manifest of PROVIDERS) registry.register(manifest);
   return registry;
@@ -175,6 +189,50 @@ export async function reloadSkills(
     }),
   );
   return fingerprint;
+}
+
+/**
+ * The skills a starting runtime should register, and their fingerprint.
+ *
+ * `tolerant` is for a skills store that is somewhere else — a repository, and
+ * therefore a network dependency whose failures are ordinary rather than
+ * exceptional: an expired token, a spent rate limit, no connectivity on a
+ * train. Without it, one of those takes down `openRuntime` itself, and with it
+ * every command in the CLI, **including the two that diagnose and undo the
+ * arrangement** (`lanes link doctor` and `lanes link knowledge use local`). A
+ * token expiring would brick the profile and hide the fix.
+ *
+ * So a store that cannot be read comes back empty and says so on the log,
+ * rather than throwing. This is the same trade `Generation.refreshSkills`
+ * already makes for the poll — the endpoint keeps serving what it has instead
+ * of falling over — applied to the one read that had no such guard.
+ *
+ * **A malformed skill still throws, in either mode.** That is not a store
+ * failure, it is a document the owner wrote and wants to hear about, and
+ * swallowing it would leave one skill silently missing forever.
+ */
+export async function readSkillsForStart(
+  store: BlobStore,
+  tolerant: boolean,
+  warn: (message: string) => void,
+  /** `--profile x --target y`, so the two commands in the warning are pasteable. */
+  selection = '',
+): Promise<{ skills: LoadedSkill[]; fingerprint: string }> {
+  try {
+    return { skills: await loadProfileSkills(store), fingerprint: await skillFingerprint(store) };
+  } catch (error) {
+    if (!tolerant || error instanceof ConfigError) throw error;
+
+    warn(
+      `could not read this profile's skills: ${(error as Error).message}\n` +
+        `  Nothing else is affected. Run \`lanes link doctor${selection}\` for what is wrong, ` +
+        `or \`lanes link knowledge use local --migrate${selection}\` to bring them back onto ` +
+        'this machine.',
+    );
+    // An empty fingerprint rather than one of nothing, so the next poll retries
+    // instead of concluding the store is empty and staying that way.
+    return { skills: [], fingerprint: '' };
+  }
 }
 
 export async function skillFingerprint(store: BlobStore): Promise<string> {

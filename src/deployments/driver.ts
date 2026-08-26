@@ -39,7 +39,14 @@ export interface PlanInput {
   readonly deploy: DeployConfig;
   readonly tag: string;
   readonly target: string;
-  readonly profile?: string | undefined;
+  /**
+   * The primary profile this revision serves.
+   *
+   * Required rather than optional: `deploy` names it (ADR-037), and a revision
+   * that boots without `LANES_LINK_PROFILE` refuses. Leaving it optional here is
+   * what let deployments ship without the variable at all.
+   */
+  readonly profile: string;
   /**
    * Where the running instance reads its config, as a store URL.
    *

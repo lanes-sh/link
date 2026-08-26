@@ -1,5 +1,6 @@
 import { defineProvider, defineProviderWithCapabilities } from '#connectivity';
 import { GMAIL_IDENTITY, GOOGLE_APP, GOOGLE_OAUTH, specPath } from '../shared/oauth.ts';
+import { googleServiceAccount } from '../shared/service-account.ts';
 import { googleSetup } from '../shared/setup.ts';
 import { GMAIL_HOST } from './api.ts';
 import { GMAIL_HINTS } from './hints.ts';
@@ -85,6 +86,7 @@ const manifest = defineProvider({
     app: GOOGLE_APP,
     scopes: GMAIL_SCOPES,
     ...GOOGLE_OAUTH,
+    assertion: googleServiceAccount('Gmail', GMAIL_SCOPES, 'required', ['gmail.googleapis.com'], 'gmail_imap'),
   },
   // The REST API rather than the MCP server: it answers with the address under
   // scopes we already hold, so labelling a connection costs no extra consent.

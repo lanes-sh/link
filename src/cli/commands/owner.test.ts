@@ -64,7 +64,7 @@ afterAll(async () => {
 describe('the CLI and the provider address the same bytes', () => {
   test('an entry written the CLI way is what memory.get returns', async () => {
     await workspace();
-    const runtime = await openRuntime({});
+    const runtime = await openRuntime({ profile: 'personal', target: 'local' });
 
     try {
       const store = memoryStore(runtime, {});
@@ -98,7 +98,7 @@ describe('the CLI and the provider address the same bytes', () => {
 
   test('an entry written by memory.write is what the CLI lists', async () => {
     await workspace();
-    const runtime = await openRuntime({});
+    const runtime = await openRuntime({ profile: 'personal', target: 'local' });
 
     try {
       await runtime.dispatcher.invoke({
@@ -121,7 +121,7 @@ describe('the CLI and the provider address the same bytes', () => {
 
   test('a vault item set from the CLI is the one the vault provider reads', async () => {
     await workspace();
-    const runtime = await openRuntime({});
+    const runtime = await openRuntime({ profile: 'personal', target: 'local' });
 
     try {
       await runtime.vault.put('owner', { id: 'github_token', value: 'ghp_secret' });
@@ -141,7 +141,7 @@ describe('the CLI and the provider address the same bytes', () => {
     // act ADR-012 §3 describes, rather than a limitation to work around.
     await workspace();
 
-    const first = await openRuntime({});
+    const first = await openRuntime({ profile: 'personal', target: 'local' });
     try {
       await first.vault.put('owner', { id: 'github_token', value: 'ghp_secret' });
       expect(first.registry.capabilities().map((entry) => entry.id)).not.toContain(
@@ -151,7 +151,7 @@ describe('the CLI and the provider address the same bytes', () => {
       await first.close();
     }
 
-    const second = await openRuntime({});
+    const second = await openRuntime({ profile: 'personal', target: 'local' });
     try {
       expect(second.registry.capabilities().map((entry) => entry.id)).toContain(
         'vault.get.github_token',

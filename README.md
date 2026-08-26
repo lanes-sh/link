@@ -48,8 +48,8 @@ Needs [Bun](https://bun.com) 1.3.11+. Nothing else — no account anywhere.
 
 ```console
 $ bun install -g @lanes-sh/link                # puts `lanes` on your PATH
-$ lanes link profile add personal --default
-$ lanes link start
+$ lanes link profile add personal --target local
+$ lanes link start --profile personal --target local
 ok    serving http://127.0.0.1:7337/mcp
       profiles: personal
 ```
@@ -57,7 +57,7 @@ ok    serving http://127.0.0.1:7337/mcp
 Then, in another shell:
 
 ```console
-$ lanes link mcp add                           # every agent installed; or name one: claude, codex
+$ lanes link mcp add --profile personal --target local                           # every agent installed; or name one: claude, codex
 ok    registered lanes-link with Claude Code (user scope)
 ok    registered lanes-link with Codex
 ```
@@ -77,6 +77,17 @@ calendar are the next step. **[Full quickstart →](docs/quickstart.md)**
 
 Memory and skills are plain Markdown files, so a text editor and an agent reach the same bytes. All
 four belong to one profile: what you add under `work` is invisible under `personal`.
+
+Keep those two in a private GitHub repository instead of on this machine, and get history, diffs,
+and the same notes from anywhere you run this:
+
+```console
+$ lanes link knowledge use github --repo <owner/name> --migrate
+```
+
+It moves what you have already stored, in one commit, and `lanes link knowledge use local
+--migrate` brings it back. Nothing else moves — your credentials and your vault stay where they
+are, and there is no setting that would put them in a repository.
 
 ## Connect an account
 
@@ -99,15 +110,17 @@ One command per account. Run it again to add a second mailbox, a second calendar
 | Linear | `lanes link connect linear` |
 | GitHub | `lanes link connect github` |
 | Slack | `lanes link connect slack` |
+| Gmail (IMAP, app password) | `lanes link connect gmail_imap` |
 | Gmail (Google MCP) | `lanes link connect gmail_mcp` |
 | Drive (Google MCP) | `lanes link connect drive_mcp` |
 
 Three things worth knowing up front. `lanes link connect icloud` sets up Mail, Calendar, and
-Contacts together, because one app-specific password covers all three. Google needs no OAuth client
-of your own: `lanes link connect gmail` authorises against the one Lanes operates, so there is no
-Cloud console to visit — add `--own-client` if you would rather register your own. And GitHub and
-Slack take a token you paste rather than a browser sign-in, because neither will register a client
-for us; for Slack that means creating a Slack app once, which is the one console visit left here.
+Contacts together, because one app-specific password covers all three. Google and Slack need no
+OAuth client of your own: both authorise against the one Lanes operates, so there is no console to
+visit — for Google, add `--own-client` if you would rather register your own, or take a service
+account key or an app password over IMAP where you would rather nothing expired. And GitHub takes a
+token you paste rather than a browser sign-in, because it will not register a client for us; that
+is the one console visit left here.
 
 Full guide — what each one gives your agent, what it needs, and adding your own:
 **[docs/connect.md](docs/connect.md)**.

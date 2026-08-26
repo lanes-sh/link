@@ -47,9 +47,21 @@ export interface EndpointReporter {
   reconciled(input: { profile: string; plan: string; ofMany: boolean }): void;
   /** No profile token existed and one was minted. */
   tokenMinted(minted: { target: string }): void;
+  /**
+   * A sibling profile that could not be opened against this target.
+   *
+   * Optional because it is new and every caller predates it, and because
+   * silence is a defensible reading for a caller that only wants what it got.
+   */
+  skipped?(input: { profile: string; reason: string }): void;
 }
 
 const SILENT: EndpointReporter = { reconciled() {}, tokenMinted() {} };
+
+/** The first line of an error, which is the part fit to print beside a name. */
+function message(error: unknown): string {
+  return error instanceof Error ? (error.message.split('\n')[0] ?? error.message) : String(error);
+}
 
 export interface EndpointOptions {
   readonly flags: GlobalFlags;
@@ -65,6 +77,16 @@ export interface EndpointOptions {
   readonly reporter?: EndpointReporter | undefined;
   /** Operational events. Silent when absent, which is what the tests want. */
   readonly log?: Logger | undefined;
+  /**
+   * Serve the dashboard at `/dashboard`.
+   *
+   * True for `lanes link start`, absent in a container — the same split as
+   * `mintToken`, and for a related reason. A deployed instance has no door a
+   * browser can come through (ADR-018), so a page there would be either
+   * unreachable or unguarded depending on `deploy.access`, and both are worse
+   * than not having one.
+   */
+  readonly dashboard?: boolean | undefined;
 }
 
 export interface RunningEndpoint {
@@ -103,7 +125,22 @@ async function openReconciled(options: {
   try {
     for (const name of names) {
       if (runtimes.has(name)) continue;
-      runtimes.set(name, await openRuntime({ ...options.flags, profile: name }));
+
+      // A sibling that does not declare this target is skipped, not fatal.
+      //
+      // Every profile here is opened against the one target the endpoint was
+      // started with, and a workspace may hold a profile that runs somewhere
+      // else entirely. Refusing would let one such profile take the endpoint
+      // down for all of them, which is the opposite of what `start` is for —
+      // and in a container it is a revision that never goes healthy. Skipping
+      // is not an assumption: it is reported, and `served` below is derived
+      // from what actually opened rather than from what is on disk.
+      try {
+        runtimes.set(name, await openRuntime({ ...options.flags, profile: name }));
+      } catch (error) {
+        if (name === primary.resolution.profile) throw error;
+        reporter.skipped?.({ profile: name, reason: message(error) });
+      }
     }
 
     for (const [name, runtime] of runtimes) {
@@ -147,6 +184,12 @@ function profileRuntimes(runtimes: ReadonlyMap<string, Runtime>): Map<string, Pr
         // through `skills.manage.write`, or by `lanes link skills add` in another
         // terminal — is a prompt without a restart (ADR-014).
         refreshSkills: runtime.refreshSkills,
+        // For a surface that reports rather than dispatches. A thunk rather
+        // than a snapshot because a reconcile lands between requests, and the
+        // dashboard reading a list captured at boot would keep showing an
+        // account as unauthorized after the connect that fixed it.
+        target: runtime.target,
+        connections: () => runtime.state.connections.list(),
       },
     ]),
   );
@@ -293,6 +336,7 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
         : primary.authenticator,
       log,
       ...(gate ? { authorization: gate.surface } : {}),
+      ...(options.dashboard ? { dashboard: true } : {}),
       ...(options.port !== undefined ? { port: options.port } : {}),
       ...(options.host !== undefined ? { host: options.host } : {}),
     });

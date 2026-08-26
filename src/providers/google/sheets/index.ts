@@ -1,5 +1,6 @@
 import { defineProvider } from '#connectivity';
 import { DRIVE_IDENTITY, GOOGLE_APP, GOOGLE_OAUTH, specPath } from '../shared/oauth.ts';
+import { googleServiceAccount } from '../shared/service-account.ts';
 import { googleSetup } from '../shared/setup.ts';
 import { SHEETS_HINTS } from './hints.ts';
 import { SHEETS_REDACT } from './redact.ts';
@@ -60,6 +61,7 @@ export const sheets = defineProvider({
     app: GOOGLE_APP,
     scopes: SHEETS_SCOPES,
     ...GOOGLE_OAUTH,
+    assertion: googleServiceAccount('Sheets', SHEETS_SCOPES, 'optional', ['sheets.googleapis.com', 'drive.googleapis.com']),
   },
   identity: DRIVE_IDENTITY,
   setup: googleSetup('Sheets', SHEETS_SCOPES, {

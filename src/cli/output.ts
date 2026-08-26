@@ -106,15 +106,31 @@ export async function waiting<T>(label: string, work: () => Promise<T>): Promise
  * The line every command prints before acting, read-only commands included.
  *
  * This is the primary guard against operating on the wrong instance, and it
- * costs one line. It names where each value came from, because "profile: work"
- * is much less useful than knowing it came from an environment variable you
- * forgot you exported.
+ * costs one line. It used to name where each value came from, which mattered
+ * while four things could supply them. Only the command line can now (ADR-037),
+ * so the parenthetical would say `(flag)` twice on every line forever — which
+ * `target.ts` already argues is how a line stops being read.
  */
+/**
+ * The same line for a command that opens no target.
+ *
+ * `identity list` reads a block declared once in the YAML, so it takes no
+ * `--target` (ADR-037) and there is none to name. Printing `target undefined`
+ * or omitting the line entirely were the alternatives; the first is a lie and
+ * the second loses the guard that this line exists to be.
+ */
+export function announceProfile(selection: {
+  readonly profile: string;
+  readonly workspaceRoot: string;
+}): void {
+  print(style.dim(`profile ${style.bold(selection.profile)}  ${selection.workspaceRoot}`));
+}
+
 export function announce(resolution: Resolution): void {
   print(
     style.dim(
-      `profile ${style.bold(resolution.profile)} (${resolution.profileSource})  ` +
-        `target ${style.bold(resolution.target)} (${resolution.targetSource})  ` +
+      `profile ${style.bold(resolution.profile)}  ` +
+        `target ${style.bold(resolution.target)}  ` +
         `${resolution.workspaceRoot}`,
     ),
   );

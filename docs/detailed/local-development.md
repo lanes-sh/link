@@ -28,7 +28,7 @@ Use a throwaway workspace so you never touch a real profile:
 
 ```console
 $ export LANES_LINK_HOME=/tmp/lanes-link-dev
-$ bun run lanes link profile add personal --default
+$ bun run lanes link profile add personal --target local
 $ bun run lanes link connect example
 $ bun run lanes link start
 ```

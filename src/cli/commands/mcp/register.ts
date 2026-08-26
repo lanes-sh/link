@@ -78,7 +78,15 @@ export async function mcpAdd(target: string | undefined, options: McpAddOptions)
     // registered loopback with the agent: a registration that reports success,
     // names the right server, and points at a port with nothing behind it.
     const url = await endpointUrl(runtime.config, runtime.target);
-    const input: AddInput = { name, url, token, tokenEnv, scope };
+    const input: AddInput = {
+      name,
+      url,
+      token,
+      tokenEnv,
+      scope,
+      profile: runtime.resolution.profile,
+      target: runtime.resolution.target,
+    };
 
     // Registering an endpoint that is down is legitimate — the harness stores
     // the address and connects on demand — but it is usually a mistake worth

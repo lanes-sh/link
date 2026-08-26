@@ -53,6 +53,7 @@ export { defineLocalProvider, defineProviderWithCapabilities } from './provider.
 export type {
   ProviderManifest,
   ConnectorConfig,
+  AuthAssertion,
   AuthBroker,
   AuthConfig,
   SetupDeclaration,
@@ -69,6 +70,7 @@ export {
   bundleSchema,
   credentialRefForConnection,
   rotatableCredentialRefs,
+  hasOwnClientPath,
   setupRequirements,
   UNNAMED_ID,
   RESERVED_PROVIDER_IDS,

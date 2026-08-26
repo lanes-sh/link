@@ -189,6 +189,40 @@ describe('the habits it teaches', () => {
     expect(granted).toContain('inventing it is not');
   });
 
+  /**
+   * The paragraph that must not carry what it points at.
+   *
+   * Inlining the declaration was the obvious shape and is the wrong one: the
+   * ceiling is fixed, so the workspace with the most identities to keep apart
+   * is the one whose list would be summarised away first — and it would leak
+   * every profile's names to a client that had asked about none of them. A
+   * pointer costs the same at any size, so this asserts both halves: the
+   * pointer is there, and no name came with it.
+   */
+  test('points at the declared identity without reciting it', () => {
+    const granted = serverInstructions(
+      ['personal'],
+      new Map([
+        ['gmail.send', reaching({ personal: ['gmail.a'] })],
+        ['identity.list', reaching({ personal: ['identity.main'] })],
+      ]),
+    );
+
+    expect(granted).toContain('identity_list');
+    expect(granted).toContain('Identity is declared, not inferred');
+    // The instruction is to fetch, so the fetchable part must not be here.
+    expect(granted).not.toContain('note on when it applies.\n  ');
+  });
+
+  test('says nothing about identity for a profile that declares none', () => {
+    // A profile with no identity block gets no `identity` connection, so the
+    // capability is unreachable and the paragraph is unspent. Telling a client
+    // to call a tool it cannot see is the contradiction the test above this one
+    // exists to prevent.
+    expect(text).not.toContain('identity_list');
+    expect(text).not.toContain('Identity is declared');
+  });
+
   test('says nothing about setup when there is no surface to point at', () => {
     expect(text).not.toContain('setup_overview');
   });
@@ -237,6 +271,13 @@ describe('the habits it teaches', () => {
     // back over — and the prose is now assembled per principal, so the worst
     // case is every owner-layer provider granted at the same time. Both at once
     // is the case that has to hold.
+    //
+    // `remoteClients` is passed for the same reason. It was omitted here while
+    // `AVAILABILITY` was the paragraph the ceiling had last been raised for — so
+    // the case this test called the worst was ~180 characters short of one an
+    // endpoint actually serves, and the ceiling it certified was the wrong
+    // number to certify. Every paragraph that can be spent at once is spent
+    // here, or the budget is guarded against a case that does not happen.
     const profiles = Array.from({ length: 20 }, (_, i) => `a-fairly-long-profile-name-${i}`);
     const reachable = new Map(
       profiles.map((profile) => [
@@ -254,7 +295,9 @@ describe('the habits it teaches', () => {
         ['skills.manage.list', reaching({ [first]: ['skills.owner'] })],
         ['vault.put', reaching({ [first]: ['vault.owner'] })],
         ['setup.overview', reaching({ [first]: ['setup.main'] })],
+        ['identity.list', reaching({ [first]: ['identity.main'] })],
       ]),
+      true,
     );
 
     expect(worst.length).toBeLessThan(MAX_INSTRUCTIONS);
@@ -274,7 +317,7 @@ describe('the habits it teaches', () => {
   /**
    * The budget must not spend itself on prose and leave nothing for the facts.
    *
-   * A fully set-up workspace grants all four owner-layer providers, so its prose
+   * A fully set-up workspace grants all five owner-layer providers, so its prose
    * is the longest there is — and a reserve guessed in advance meant the listing
    * could not fit behind it *at any workspace size*. A single profile with two
    * mailboxes was told "1 profiles" with a hundred characters of the ceiling

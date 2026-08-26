@@ -166,7 +166,16 @@ const BY_EXTENSION: Record<string, string> = {
   '.yml': 'application/yaml',
 };
 
-function inferContentType(path: string): string | undefined {
+/**
+ * Exported so `github.ts` answers identically.
+ *
+ * That adapter has nowhere to *store* a content type — a sidecar there would be
+ * a file in the owner's own repository, listed beside their entries — so the
+ * extension is all it has. Sharing the map means a `.md` written locally and
+ * the same `.md` in a repository do not report different types, which is what
+ * `#stores/blobs/conformance.ts` exists to hold.
+ */
+export function inferContentType(path: string): string | undefined {
   const dot = path.lastIndexOf('.');
   return dot === -1 ? undefined : BY_EXTENSION[path.slice(dot).toLowerCase()];
 }

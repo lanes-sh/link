@@ -24,7 +24,7 @@ export async function refreshDirectly(
 
   if (!refreshToken) {
     throw new Error(
-      `No refresh token stored for ${manifest.id}. Run: lanes link connect ${manifest.id}`,
+      `No refresh token stored for ${manifest.id}. Connecting it again for this profile and target would store one.`,
     );
   }
 
@@ -72,7 +72,7 @@ async function viaBroker(
     const notice = cause instanceof BrokerError && cause.notice ? `\n${cause.notice}` : '';
     throw new Error(
       `The credential for ${manifest.id} could not be refreshed. ` +
-        `Re-authorise with: lanes link connect ${manifest.id}\n${String(
+        `Re-authorise ${manifest.id} for this profile and target.\n${String(
           cause instanceof Error ? cause.message : cause,
         ).slice(0, 200)}${notice}`,
     );
@@ -110,7 +110,7 @@ async function viaStoredClient(
     // is always the same, so say it rather than surfacing the raw grant error.
     throw new Error(
       `The credential for ${manifest.id} could not be refreshed (${response.status}). ` +
-        `Re-authorise with: lanes link connect ${manifest.id}\n${text.slice(0, 200)}`,
+        `Re-authorise ${manifest.id} for this profile and target.\n${text.slice(0, 200)}`,
     );
   }
 

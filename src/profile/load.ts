@@ -114,11 +114,9 @@ function assertReferentialIntegrity(config: Config, source: string): void {
   if (targetNames.size === 0) {
     problems.push('targets: at least one target must be declared');
   }
-  if (!targetNames.has(config.instance.default_target)) {
-    problems.push(
-      `instance.default_target: "${config.instance.default_target}" is not a declared target (have: ${[...targetNames].join(', ') || 'none'})`,
-    );
-  }
+  // `instance.default_target` is deliberately not checked. Nothing reads it
+  // (ADR-037), so validating it would be validating a comment — and failing
+  // `check` on a stale value would teach that the key still matters.
 
   // Only what holds for every platform. What one platform needs and the next
   // has no concept of — a GCP project, an AWS role ARN — is refused by the
@@ -144,6 +142,20 @@ function assertReferentialIntegrity(config: Config, source: string): void {
       problems.push(`connections[${index}]: duplicate connection "${key}"`);
     }
     connectionKeys.add(key);
+  });
+
+  // Same reason as a duplicate connection: two entries with the same kind and
+  // value cannot both be meant, and the one that loses is invisible. It matters
+  // more here than it looks, because the two would usually differ only in their
+  // `note` — so the discarded one is precisely the guidance someone wrote down
+  // to stop an agent picking wrong.
+  const identityKeys = new Set<string>();
+  config.identity.forEach((entry, index) => {
+    const key = `${entry.kind}=${entry.value}`;
+    if (identityKeys.has(key)) {
+      problems.push(`identity[${index}]: duplicate entry "${entry.kind}: ${entry.value}"`);
+    }
+    identityKeys.add(key);
   });
 
   const checkRules = (rules: readonly PolicyRuleConfig[], field: 'allow' | 'deny'): void => {
