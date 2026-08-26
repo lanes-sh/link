@@ -1,5 +1,5 @@
 import { planAll, planFor, type ProviderPlan } from '#providers/setup/plan.ts';
-import { emit, heading, print, style, table } from '../output.ts';
+import { announce, emit, heading, print, style, table } from '../output.ts';
 import { missingRequirements } from './connect/requirements.ts';
 import { openRuntime, type GlobalFlags } from '../runtime.ts';
 
@@ -55,16 +55,19 @@ export async function setupPlan(provider: string | undefined, flags: SetupFlags)
             ),
           );
 
-      return emit(
-        flags.json,
-        { ...plan, missing: [...missing] },
-        () => renderOne(plan, missing),
-      );
+      // Inside the render callback, not before it: `emit` returns the JSON
+      // early, so this is where a line of prose is safe. `connect` needs its
+      // own guard because its announce has to precede a browser.
+      return emit(flags.json, { ...plan, missing: [...missing] }, () => {
+        announce(runtime.resolution);
+        renderOne(plan, missing);
+      });
     }
 
     const plans = planAll(manifests, context);
 
     return emit(flags.json, { profile: context.profile, providers: plans }, () => {
+      announce(runtime.resolution);
       heading(`Connected in ${style.bold(context.profile)}`);
       const done = plans.filter((plan) => plan.connected.length > 0);
       if (done.length === 0) print(style.dim('  nothing yet'));

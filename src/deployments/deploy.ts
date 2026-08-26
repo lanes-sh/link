@@ -1,4 +1,4 @@
-import { ConfigError, resolveDeployTarget, type DeployConfig } from '#profile';
+import { ConfigError, TARGET_ENV, resolveDeployTarget, type DeployConfig } from '#profile';
 import { announce, fail, heading, ok, print, style, warn } from '#cli/output.ts';
 import { staleNudge } from '#cli/release.ts';
 import { confirm, isInteractive } from '#cli/prompt.ts';
@@ -8,6 +8,7 @@ import { printSteps, runSteps } from './steps.ts';
 import { driverFor } from './drivers.ts';
 import { prepareSecrets, readableRefs, rotatableRefs } from './prepare.ts';
 import { deployedWorkspace, repairSetupSurface, uploadWorkspace } from './upload.ts';
+import { defaultTargetHandOff } from './handoff.ts';
 
 /**
  * `lanes link deploy` — set up what is missing, build the image, roll a revision,
@@ -211,16 +212,31 @@ export async function deploy(flags: DeployFlags): Promise<void> {
         `deployed, but the platform reported no URL yet — run: lanes link outputs --target ${target}`,
       ),
     );
-    return;
+  } else {
+    heading('Endpoint');
+    print(`  ${url}/mcp`);
+    print(await healthLine(url));
+    print('');
+    print(registerLine(target));
+
+    reportUnauthorised(prepared.warnings, target);
   }
 
-  heading('Endpoint');
-  print(`  ${url}/mcp`);
-  print(await healthLine(url));
-  print('');
-  print(registerLine(target));
-
-  reportUnauthorised(prepared.warnings, target);
+  // Last, and on the no-URL path too — that deploy still succeeded, and where
+  // the operator's next command runs is just as wrong either way. It goes after
+  // `reportUnauthorised` for the reason that function's own comment gives about
+  // going last: this one governs every subsequent command, so it has the
+  // strongest claim on the bottom of the screen. On a first deploy nothing is
+  // unauthorised yet and this is the only thing left on it.
+  const handOff = defaultTargetHandOff({
+    deployed: target,
+    defaultTarget: config.instance.default_target,
+    ...(process.env[TARGET_ENV] ? { fromEnv: process.env[TARGET_ENV] } : {}),
+  });
+  if (handOff) {
+    print('');
+    print(handOff);
+  }
 }
 
 /**

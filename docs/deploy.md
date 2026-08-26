@@ -36,6 +36,11 @@ There is no second deploy. `connect` copies the config to where the running revi
 asks that revision to re-read it, so the account is reachable as soon as the browser consent is
 done. Deploying is how new code gets there, and authorising an account changes no code (ADR-029).
 
+`--target cloud` is on those last two for a reason: deploying does not move `instance.default_target`,
+so a command without the flag still acts on `local` and the deployment never sees the account. The
+deploy says so when it finishes, and `connect` warns when it is about to write somewhere your
+deployment cannot read.
+
 `cloud` there is a name, not a keyword — it is what the first deploy calls the target it creates.
 `lanes link target list` shows what your profile declares and which one commands are using.
 

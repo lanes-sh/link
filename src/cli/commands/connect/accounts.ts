@@ -92,3 +92,32 @@ export async function moveCredential(
   await credentials.set(to, value);
   await credentials.delete(from);
 }
+
+/**
+ * The providers that make up one vendor account, when a spec names the account.
+ *
+ * `lanes link connect icloud` names no provider at all. Everyone models iCloud
+ * this way: Apple's own Settings, macOS Internet Accounts, Thunderbird, DAVx⁵.
+ * One authorisation, three services. It is three *providers* underneath because
+ * mail and calendars are different protocols, and because a policy line per
+ * provider is what lets someone allow `icloud_calendar.*` while never granting
+ * mail — but nobody should have to know that to connect their account.
+ *
+ * Asked of the registry rather than matched on the id, for the reason
+ * `siblingAccountId` gives: `app` is a manifest field, and a provider is free to
+ * declare `app: icloud` under any name it likes.
+ */
+export function familyMembers(
+  providerId: string,
+  registry: { list(): readonly { readonly manifest: ProviderManifest }[] },
+): string[] {
+  return registry
+    .list()
+    .filter((candidate) => credentialApp(candidate.manifest) === providerId)
+    .map((candidate) => candidate.manifest.id);
+}
+
+/** What a spec that named an account rather than a provider turned out to mean. */
+export function familyNote(providerId: string, family: readonly string[]): string {
+  return `${providerId} is ${family.length} services on one account: ${family.join(', ')}`;
+}

@@ -6,13 +6,14 @@ import { ConfigDocument, ensureSetupConnection, repaired } from '../../config-ed
 import { emit, print, progress, style } from '../../output.ts';
 import { nonInteractivePrompter, terminalPrompter, type Prompter } from '../../prompt.ts';
 import { openRuntime, type GlobalFlags } from '../../runtime.ts';
-import { credentialApp, matchesRule, moveCredential, siblingAccountId } from './accounts.ts';
+import { familyMembers, familyNote, matchesRule, moveCredential, siblingAccountId } from './accounts.ts';
 import { authorise } from './authorise.ts';
 import { preflight } from './requirements.ts';
-import { ALREADY, NOTHING, renderOutcome, type ConnectOutcome } from './outcome.ts';
+import { ALREADY, NOTHING, familyOutcome, renderOutcome, where, type ConnectOutcome } from './outcome.ts';
 import { nextAfterEdit, publishRuntimeEdit } from '#cli/publish.ts';
 import { ensureStaticCredential } from './setup.ts';
 import { settleIdentity } from './settle.ts';
+import { announceConnectTarget } from './target-note.ts';
 
 /**
  * `lanes link connect <provider>` — the one command that adds an account.
@@ -83,7 +84,12 @@ export async function connect(target: string, options: ConnectOptions): Promise<
   return emit(options.json, outcome, () => renderOutcome(outcome));
 }
 
-async function runConnect(target: string, options: ConnectOptions): Promise<ConnectOutcome> {
+async function runConnect(
+  target: string,
+  options: ConnectOptions,
+  /** A family member — the account this belongs to has already said where it goes. */
+  announced = false,
+): Promise<ConnectOutcome> {
   const separator = target.indexOf('.');
   const providerId = separator === -1 ? target : target.slice(0, separator);
   const namedId = separator === -1 ? undefined : target.slice(separator + 1);
@@ -93,28 +99,24 @@ async function runConnect(target: string, options: ConnectOptions): Promise<Conn
   const runtime = await openRuntime(options);
 
   try {
+    // After the runtime rather than before, like every other command that
+    // announces: the alternative is resolving the profile twice, which for a
+    // `gs://` workspace is a second network read of the same YAML. Still long
+    // before the browser opens, which is the part that matters. Inside the
+    // `try` so the `finally` closes the runtime if the rendering throws.
+    if (!announced) announceConnectTarget(runtime, target, options.json);
+
     const registry = runtime.registry;
     const entry = registry.get(providerId);
 
-    // `lanes link connect icloud` — an account rather than a provider.
-    //
-    // Everyone models iCloud this way: Apple's own Settings, macOS Internet
-    // Accounts, Thunderbird, DAVx⁵. One authorisation, three services. It is
-    // three *providers* underneath because mail and calendars are different
-    // protocols, and because a policy line per provider is what lets someone
-    // allow `icloud_calendar.*` while never granting mail — but nobody should
-    // have to know that to connect their account.
+    // `lanes link connect icloud` — an account rather than a provider. What that
+    // means, and why it is three providers underneath, is in `familyMembers`.
     if (!entry) {
-      const family = registry
-        .list()
-        .filter((candidate) => credentialApp(candidate.manifest) === providerId)
-        .map((candidate) => candidate.manifest.id);
+      const family = familyMembers(providerId, registry);
 
       if (family.length > 1) {
         await runtime.close();
-        progress(
-          style.dim(`${providerId} is ${family.length} services on one account: ${family.join(', ')}`),
-        );
+        progress(style.dim(familyNote(providerId, family)));
         // In sequence, and the order matters: the first settles the account id
         // and stores the credential, and the rest find both already there.
         //
@@ -123,22 +125,14 @@ async function runConnect(target: string, options: ConnectOptions): Promise<Conn
         // that is then thrown away, and recursing with `options` alone dropped
         // it — the command named an account and each member silently invented
         // its own.
+        //
+        // `announced` because the line naming the target belongs to the account,
+        // not to each service: three copies of it is three times nothing new.
         const inherited = { ...options, id: options.id ?? namedId };
         const members: ConnectOutcome[] = [];
-        for (const member of family) members.push(await runConnect(member, inherited));
+        for (const member of family) members.push(await runConnect(member, inherited, true));
 
-        // The whole account succeeded only if every service did. A partial
-        // result is the case worth surfacing: one member blocked on a value
-        // leaves an account half connected, which `status` shows and prose does
-        // not.
-        return {
-          ...NOTHING,
-          ok: members.every((outcome) => outcome.ok),
-          members,
-          ...(members.find((outcome) => !outcome.ok)?.reason
-            ? { reason: members.find((outcome) => !outcome.ok)!.reason }
-            : {}),
-        };
+        return familyOutcome(members);
       }
     }
 
@@ -369,6 +363,7 @@ async function runConnect(target: string, options: ConnectOptions): Promise<Conn
         ok: true,
         key: connectionKey,
         account,
+        ...where(runtime),
         discovered: discovered.length,
         next: ALREADY,
       };
@@ -384,6 +379,7 @@ async function runConnect(target: string, options: ConnectOptions): Promise<Conn
       ok: true,
       key: connectionKey,
       account,
+      ...where(runtime),
       changes,
       granted,
       ...(notes.length > 0 ? { notes } : {}),
