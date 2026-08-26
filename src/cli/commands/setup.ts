@@ -24,6 +24,7 @@ export async function setupPlan(provider: string | undefined, flags: SetupFlags)
   try {
     const context = {
       profile: runtime.resolution.profile,
+      target: runtime.resolution.target,
       connections: runtime.config.connections.map((c) => `${c.provider}.${c.id}`),
       // Declaring an `oauth_apps` entry is how a profile says "use my own
       // client". Without this the plan would tell someone who has already

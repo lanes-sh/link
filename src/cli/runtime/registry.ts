@@ -95,7 +95,7 @@ export function buildRegistry(owner: OwnerLayerOptions = {}): ProviderRegistry {
 
   registry.register(
     createSetupProvider(
-      owner.setup ?? { profile: '', catalogue: PROVIDER_MANIFESTS },
+      owner.setup ?? { profile: '', target: '', catalogue: PROVIDER_MANIFESTS },
     ),
   );
 

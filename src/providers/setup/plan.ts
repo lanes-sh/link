@@ -72,6 +72,14 @@ export interface ProviderPlan {
 
 export interface PlanContext {
   readonly profile: string;
+  /**
+   * Which target's stores the emitted command should act on.
+   *
+   * Stamped like `profile` is, and for a stronger reason: a connection's
+   * credential lives in one target's store, so a `connect` that lands in the
+   * wrong one authorises an account the endpoint asking for it cannot read.
+   */
+  readonly target: string;
   /** Every configured connection this caller may see, as `provider.id`. */
   readonly connections: readonly string[];
   /**
@@ -91,18 +99,19 @@ export function planFor(
   const { requirements, needsId, brokered } = setupRequirements(
     manifest,
     connectionId,
-    context.profile,
+    { profile: context.profile, target: context.target },
     { ...(context.ownClients ? { ownClients: context.ownClients } : {}) },
   );
 
   const connected = context.connections.filter((key) => key.startsWith(`${manifest.id}.`));
 
-  // `--profile` always, never conditionally. One endpoint serves every profile,
-  // and the shell this command is pasted into may default to a different one —
-  // which is exactly what `resolveSelection`'s "never a silent pick" rule
-  // exists to prevent.
+  // Both, always, never conditionally. One endpoint serves every profile and
+  // each profile may declare several targets, and the shell this is pasted into
+  // supplies neither — nothing but the command line does. An emitted command
+  // missing either is one that refuses, or worse, writes a credential into a
+  // store the endpoint that asked for it does not read.
   const command =
-    `lanes link connect ${manifest.id} --profile ${context.profile}` +
+    `lanes link connect ${manifest.id} --profile ${context.profile} --target ${context.target}` +
     (needsId ? ' --id <name>' : connectionId ? ` --id ${connectionId}` : '');
 
   return {

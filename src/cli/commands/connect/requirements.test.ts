@@ -55,7 +55,7 @@ const NO_AUTH = defineProvider({
 
 describe('setupRequirements', () => {
   test('a per-account key derives one ref from the connection id', () => {
-    const { requirements, needsId } = setupRequirements(HEADER, 'main', 'personal');
+    const { requirements, needsId } = setupRequirements(HEADER, 'main', { profile: 'personal', target: 'local' });
 
     expect(needsId).toBe(false);
     expect(requirements).toHaveLength(1);
@@ -67,7 +67,7 @@ describe('setupRequirements', () => {
     // The failure this prevents: two `secrets set` calls against `post/ada`,
     // the second overwriting the first, leaving a credential that is a password
     // where the transport expects `username:password`.
-    const { requirements } = setupRequirements(BASIC, 'ada', 'personal');
+    const { requirements } = setupRequirements(BASIC, 'ada', { profile: 'personal', target: 'local' });
 
     expect(requirements).toHaveLength(1);
     expect(requirements[0]?.prompts).toEqual(['username', 'password']);
@@ -75,7 +75,7 @@ describe('setupRequirements', () => {
   });
 
   test('a provider that authenticates to nothing needs nothing', () => {
-    expect(setupRequirements(NO_AUTH, undefined, 'personal')).toEqual({
+    expect(setupRequirements(NO_AUTH, undefined, { profile: 'personal', target: 'local' })).toEqual({
       requirements: [],
       needsId: false,
       brokered: false,
@@ -83,14 +83,14 @@ describe('setupRequirements', () => {
   });
 
   test('needsId is true exactly when a per-account value has no id to derive from', () => {
-    expect(setupRequirements(HEADER, undefined, 'personal').needsId).toBe(true);
-    expect(setupRequirements(HEADER, 'main', 'personal').needsId).toBe(false);
-    expect(setupRequirements(NO_AUTH, undefined, 'personal').needsId).toBe(false);
+    expect(setupRequirements(HEADER, undefined, { profile: 'personal', target: 'local' }).needsId).toBe(true);
+    expect(setupRequirements(HEADER, 'main', { profile: 'personal', target: 'local' }).needsId).toBe(false);
+    expect(setupRequirements(NO_AUTH, undefined, { profile: 'personal', target: 'local' }).needsId).toBe(false);
   });
 
   test('the emitted command names a ref the credential store accepts', () => {
     for (const manifest of [HEADER, BASIC]) {
-      for (const requirement of setupRequirements(manifest, 'main', 'personal').requirements) {
+      for (const requirement of setupRequirements(manifest, 'main', { profile: 'personal', target: 'local' }).requirements) {
         expect(() => assertValidSecretRef(requirement.ref)).not.toThrow();
         expect(requirement.command).toContain(`lanes link secrets set ${requirement.ref}`);
         expect(requirement.command).toContain('--profile personal');
@@ -101,7 +101,7 @@ describe('setupRequirements', () => {
 
 describe('missingRequirements', () => {
   test('reports only what the store does not already hold', async () => {
-    const { requirements } = setupRequirements(HEADER, 'main', 'personal');
+    const { requirements } = setupRequirements(HEADER, 'main', { profile: 'personal', target: 'local' });
     const held = new Set(['thing/main']);
 
     const missing = await missingRequirements(requirements, {
@@ -134,14 +134,15 @@ describe('preflight', () => {
       connectionId: 'main',
       profile: 'personal',
       credentials: always,
-      target: 'cloudy',
+      target: 'local',
+      spec: 'cloudy',
     });
 
     // `connect` would spawn a browser and then block on a loopback listener for
     // five minutes. An agent's shell times out first, taking the listener with
     // it, and the operator gets no token and no explanation.
     expect(blocked?.reason).toBe('needs_browser');
-    expect(blocked?.then).toBe('lanes link connect cloudy --profile personal');
+    expect(blocked?.then).toBe('lanes link connect cloudy --profile personal --target local');
     expect(blocked?.needs).toEqual([]);
   });
 
@@ -151,7 +152,8 @@ describe('preflight', () => {
       connectionId: undefined,
       profile: 'personal',
       credentials: never,
-      target: 'thing',
+      target: 'local',
+      spec: 'thing',
     });
 
     expect(blocked?.reason).toBe('needs_id');
@@ -164,7 +166,8 @@ describe('preflight', () => {
       connectionId: 'ada',
       profile: 'personal',
       credentials: never,
-      target: 'post',
+      target: 'local',
+      spec: 'post',
     });
 
     expect(blocked?.reason).toBe('missing_credentials');
@@ -179,7 +182,8 @@ describe('preflight', () => {
         connectionId: 'main',
         profile: 'personal',
         credentials: always,
-        target: 'thing',
+        target: 'local',
+        spec: 'thing',
       }),
     ).toBeNull();
   });

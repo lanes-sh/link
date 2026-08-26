@@ -179,8 +179,9 @@ async function runConnect(
         manifest,
         connectionId: named ?? adopted,
         profile,
+        target: runtime.target,
         credentials: runtime.credentials,
-        target,
+        spec: target,
       });
 
       if (blocked) return { ...NOTHING, ok: false, ...blocked };

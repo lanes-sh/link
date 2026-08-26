@@ -60,12 +60,22 @@ export async function preflight(input: {
   readonly manifest: ProviderManifest;
   readonly connectionId: string | undefined;
   readonly profile: string;
-  readonly credentials: { has(ref: string): Promise<boolean> };
-  /** How the operator spelled the target — `icloud`, or `gmail.main`. */
+  /** Which target's credential store the values have to be in. */
   readonly target: string;
+  readonly credentials: { has(ref: string): Promise<boolean> };
+  /**
+   * How the operator spelled the provider — `icloud`, or `gmail.main`.
+   *
+   * Called `spec` and not `target`, which is what it was: this file holds the
+   * only two meanings of that word in one scope, and the Lanes target is the one
+   * that decides which credential store a suggested command writes into. A
+   * transposition here produces a command that runs and stores a credential
+   * somewhere nobody looks.
+   */
+  readonly spec: string;
 }): Promise<Blocked | null> {
-  const { manifest, connectionId, profile, target } = input;
-  const rerun = `lanes link connect ${target} --profile ${profile}`;
+  const { manifest, connectionId, profile, target, spec } = input;
+  const rerun = `lanes link connect ${spec} --profile ${profile} --target ${target}`;
 
   if (manifest.auth.kind === 'oauth') {
     return {
@@ -78,7 +88,7 @@ export async function preflight(input: {
     };
   }
 
-  const { requirements, needsId } = setupRequirements(manifest, connectionId, profile);
+  const { requirements, needsId } = setupRequirements(manifest, connectionId, { profile, target });
 
   if (needsId) {
     return {

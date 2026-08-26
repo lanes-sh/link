@@ -234,6 +234,7 @@ export async function openRuntime(flags: GlobalFlags): Promise<Runtime> {
     vault: { store: vaultStore, items: await vaultStore.ids() },
     setup: {
       profile: config.instance.profile,
+      target,
       profiles: await listProfiles(root),
       catalogue: PROVIDER_MANIFESTS,
       ownClients: Object.keys(config.oauth_apps),
