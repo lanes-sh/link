@@ -99,7 +99,11 @@ export async function outputs(flags: OutputsFlags): Promise<void> {
     );
     print('');
 
-    const invocation = await tokenInvocation(runtime.config.auth.token_ref, token, flags.profile);
+    const invocation = await tokenInvocation(
+      token,
+      runtime.resolution.profile,
+      runtime.resolution.target,
+    );
 
     print(
       `  claude mcp add --transport http lanes-link ${url} \\\n` +
@@ -140,18 +144,25 @@ export async function outputs(flags: OutputsFlags): Promise<void> {
  * checking it returns *this* token; otherwise the printed command names this
  * checkout, which always works.
  */
-async function tokenInvocation(
-  tokenRef: string,
+export async function tokenInvocation(
   expected: string,
-  profile: string | undefined,
+  profile: string,
+  target: string,
 ): Promise<{ command: string; onPath: boolean }> {
-  const suffix = profile ? ` --profile ${profile}` : '';
-  const short = `lanes link token show --raw${suffix}`;
+  // Both, always, and from the *resolved* selection rather than the flags. A
+  // token is per-target, so `outputs --target cloud` printing a bare
+  // `token show --raw` hands over the local one beside a deployed URL — a
+  // credential that looks like an answer and fails as a wrong password. Naming
+  // the profile as well makes the line pasteable into any shell rather than
+  // only into one where the same default happens to resolve.
+  const selection = ` --profile ${profile} --target ${target}`;
+  const short = `lanes link token show --raw${selection}`;
+  const argv = ['link', 'token', 'show', '--raw', '--profile', profile, '--target', target];
 
   const resolved = Bun.which('lanes');
   if (resolved) {
     try {
-      const result = Bun.spawnSync([resolved, 'link', 'token', 'show', '--raw', ...(profile ? ['--profile', profile] : [])]);
+      const result = Bun.spawnSync([resolved, ...argv]);
       // Compared against the token rather than merely checking it exited zero:
       // a `lanes` on PATH could belong to a different workspace entirely,
       // and would hand the harness a token this endpoint rejects.
@@ -168,6 +179,6 @@ async function tokenInvocation(
   // which is the empty-token failure this whole function exists to avoid,
   // reintroduced by the fallback meant to prevent it.
   const entry = fileURLToPath(new URL('../../lanes.ts', import.meta.url));
-  return { command: `bun run ${entry} link token show --raw${suffix}`, onPath: false };
+  return { command: `bun run ${entry} link token show --raw${selection}`, onPath: false };
 }
 

@@ -9,6 +9,7 @@ import { driverFor } from './drivers.ts';
 import { prepareSecrets, readableRefs, rotatableRefs } from './prepare.ts';
 import { deployedWorkspace, repairSetupSurface, uploadWorkspace } from './upload.ts';
 import { defaultTargetHandOff } from './handoff.ts';
+import { unservableProfiles, unservableRefusal } from './servable.ts';
 
 /**
  * `lanes link deploy` — set up what is missing, build the image, roll a revision,
@@ -194,6 +195,25 @@ export async function deploy(flags: DeployFlags): Promise<void> {
   // the upload sends would leave a served profile without the surface — this
   // bug again, one profile over.
   if (workspace) {
+    // Before anything is copied, and before the rollout: the endpoint opens
+    // every profile in the bucket against this one target, so a profile that
+    // does not declare it is not a profile that gets skipped — it is a revision
+    // that never goes healthy. `servable.ts` has the whole failure.
+    //
+    // Here rather than at the top of the command because it reads the same
+    // scope the upload does, and that scope is not settled until `workspace`
+    // says there is a bucket to send to at all.
+    const unservable = await unservableProfiles({
+      workspaceRoot: resolution.workspaceRoot,
+      profile: flags.profile,
+      target,
+    });
+
+    if (unservable.length > 0) {
+      heading('Cannot be served');
+      throw new ConfigError(unservableRefusal(unservable, target));
+    }
+
     await repairSetupSurface(resolution.workspaceRoot, flags.profile);
 
     // Before the rollout, so the revision that comes up finds a config to read.
