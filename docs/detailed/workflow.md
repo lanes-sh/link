@@ -6,7 +6,7 @@ The normative CLI contract. Implement against this; keep it updated when a comma
 It is the primary guard against operating on the wrong instance, and it costs one line.
 
 ```
-profile personal (workspace-default)  target local (config-default)  /Users/you/.lanes-link
+profile personal  target local  /Users/you/.lanes-link
 ```
 
 The parenthesised source matters: `profile: work` is much less useful than knowing it came from an
@@ -17,15 +17,15 @@ environment variable you forgot you exported.
 No external service and no credentials of any kind:
 
 ```console
-$ lanes link profile add personal --default
+$ lanes link profile add personal --target local
 ok    created profile personal
-      config  ~/.lanes-link/profiles/personal.yaml
-      port    7337
-      set as the workspace default
+      config   ~/.lanes-link/profiles/personal.yaml
+      port     7337
+      targets  local
 
-Next: lanes link connect example    # add a connection, no credentials needed
+Next: lanes link connect example --profile personal --target local
 
-$ lanes link connect example
+$ lanes link connect example --profile personal --target local
 ok    connected example.main
       providers.example.enabled = true
       connections += example.main
@@ -36,8 +36,8 @@ ok    connected example.main
 
 Next: lanes link start
 
-$ lanes link start
-profile personal (workspace-default)  target local (config-default)  ~/.lanes-link
+$ lanes link start --profile personal --target local
+profile personal  target local  ~/.lanes-link
   + example.main  create (active)
 ok    reconciled
 warn  minted a profile token — run: lanes link outputs --show
@@ -48,7 +48,7 @@ Ctrl-C to stop.
 In another shell:
 
 ```console
-$ lanes link outputs --show
+$ lanes link outputs --profile personal --target local --show
 Endpoint
   http://127.0.0.1:7337/mcp  running
 
@@ -80,10 +80,10 @@ there is no `claude skill add` to delegate to ([ADR-016](adr/016-what-the-endpoi
 One command, run once per account. The second run skips whatever the first established.
 
 ```console
-$ lanes link connect example      # → example.main
-$ lanes link connect example      # → example.main2
-$ lanes link connect gmail        # → straight to the browser, nothing to register
-$ lanes link connect gmail        # → again, another account
+$ lanes link connect example --profile personal --target local      # → example.main
+$ lanes link connect example --profile personal --target local      # → example.main2
+$ lanes link connect gmail --profile personal --target local        # → straight to the browser, nothing to register
+$ lanes link connect gmail --profile personal --target local        # → again, another account
 ```
 
 `lanes link connect gmail.main` re-authorises one existing account. `--id` overrides the derived connection
@@ -93,8 +93,8 @@ To see what one takes before starting — the console work, the values it will a
 a browser is involved:
 
 ```console
-$ lanes link setup plan               # every provider, connected or not
-$ lanes link setup plan icloud_mail   # the steps, the values, the command
+$ lanes link setup plan --profile personal --target local               # every provider, connected or not
+$ lanes link setup plan icloud_mail --profile personal --target local   # the steps, the values, the command
 ```
 
 ### Without a terminal to answer
@@ -104,14 +104,14 @@ credential store before writing anything, and refuses with what is missing and t
 stores it:
 
 ```console
-$ lanes link connect icloud_mail --id ada --non-interactive --json
+$ lanes link connect icloud_mail --profile personal --target local --id ada --non-interactive --json
 { "ok": false, "reason": "missing_credentials",
   "needs": [{ "ref": "icloud/ada",
               "command": "printf %s \"<username>:<password>\" | lanes link secrets set icloud/ada --profile personal" }],
   "then": "lanes link connect icloud_mail --profile personal --id ada --non-interactive" }
 
 $ printf %s "ada@example.com:xxxx-xxxx-xxxx-xxxx" | lanes link secrets set icloud/ada
-$ lanes link connect icloud_mail --id ada --non-interactive --json
+$ lanes link connect icloud_mail --profile personal --target local --id ada --non-interactive --json
 ```
 
 Credentials go in through `secrets set` on stdin, never as a flag — an argument is in the shell
@@ -133,7 +133,7 @@ ok    created profile work
 $ lanes-link --profile work connect notion
 $ lanes-link --profile work policy deny notion.create-pages
 
-$ lanes link start
+$ lanes link start --profile personal --target local
 ok    serving http://127.0.0.1:7337/mcp
       profiles: personal, work
 ```
@@ -141,7 +141,7 @@ ok    serving http://127.0.0.1:7337/mcp
 Register it **once** — one URL, one token, both profiles ([ADR-009](adr/009-one-endpoint-per-workspace.md)):
 
 ```console
-$ lanes link mcp add                 # every harness installed; or: lanes link mcp add codex
+$ lanes link mcp add --profile personal --target local                 # every harness installed; or: lanes link mcp add codex
 ok    registered lanes-link with Claude Code (user scope)
       installed skill at ~/.claude/skills/lanes-link/SKILL.md
       installed scout agent at ~/.claude/agents/lanes-link-scout.md
@@ -180,8 +180,8 @@ deployment. Connections, providers, policy and limits are declared once and appl
 so moving between them changes where the bytes go and nothing above them.
 
 ```console
-$ lanes link target list
-profile personal (workspace-default)  target local (config-default)  ~/.lanes-link
+$ lanes link target list --profile personal
+profile personal  target local  ~/.lanes-link
 
        cloud    gcp-secret-manager  gcs         cloudrun  my-service  europe-west1
        staging  gcp-secret-manager  gcs         —
@@ -198,7 +198,7 @@ Two markers, because two things choose and they can disagree. `*` is the profile
 ```console
 $ lanes link target use cloud       # rewrite instance.default_target, for good
 $ export LANES_LINK_TARGET=cloud    # or just for this shell
-$ lanes link target show cloud      # adapters, deployment, and the address it answers on
+$ lanes link target show cloud --profile personal      # adapters, deployment, and the address it answers on
 ```
 
 `target list` reads the file and asks nobody; `--urls` adds one platform lookup per deployable
@@ -209,43 +209,49 @@ opens that target's stores directly, so `lanes link connect gmail --target cloud
 consent on your machine and writes the refresh token into the deployment's credential store. The
 deployed revision picks it up when it next boots, which is what the second `deploy` below is for.
 
-## Resolution order
+## Selection
 
-**Workspace root:** `LANES_LINK_HOME` → nearest ancestor containing `lanes-link.yaml` → `~/.lanes-link`
+**Workspace root:** `LANES_LINK_HOME` → nearest ancestor containing `lanes-link.yaml` →
+`~/.lanes-link`. This one still resolves, deliberately: getting it wrong yields "no profiles here"
+rather than an action against the wrong account, and it is the only channel a container has for its
+bucket.
 
-**Profile:** `--profile` → `LANES_LINK_PROFILE` → `default_profile` → an error listing what exists.
-Never a silent pick: the wrong guess operates on the wrong accounts.
+**Profile and target:** `--profile` and `--target`, and nothing else (ADR-037). No environment
+variable, no key in a file, no default. A command that names neither refuses and lists what there is
+to choose from.
 
-**Target:** `--target` → `LANES_LINK_TARGET` → `instance.default_target`
+```console
+$ lanes link status
+error  --profile is required. Every command names the profile it acts on, and
+       nothing else selects one.
 
-`deploy` alone resolves it differently: `--target` → the one target declaring a `deploy` block →
-`cloud`. `instance.default_target` is where commands *run*, which is the local target — never an
-answer to "deploy what", so falling back to it made the one unambiguous command the one that
-insisted you say it. Several deployable targets is a real question and is asked rather than guessed.
+         Profiles in ~/.lanes-link
+           personal
+           work
+```
 
-**`deploy` does not read `LANES_LINK_TARGET` either**, for the same reason and one more: it is the
-only command that may name a target which does not exist yet, so an exported typo would not be
-refused — it would be surveyed, written into your profile, and rolled out as a new service. An
-environment variable must not be able to name a Cloud Run service into existence.
+There used to be a chain — flag, then variable, then config key — and the argument for it was that
+each step was *visible*: `env` shows a variable, `check` validates a key, and every command printed
+which of the four it had landed on. What that missed is that a fallback makes an ignored flag
+survivable. `lanes link profile add work --target cloud` dropped its flag, and the next command
+carried on from a different source and worked, so the mistake surfaced one command later with
+nothing connecting it to its cause. A command that refuses cannot be wrong quietly.
 
-There is deliberately **no sticky `lanes link use`** — no hidden per-shell file recording a current
-selection. Persisted context state is the standard way operators run destructive commands against
-the wrong target, and the version that bites is the one nothing prints.
+`instance.default_target` and `default_profile` are still parsed and no longer read. They stay
+declared so `check` and `doctor` can tell you the line in front of you is inert, rather than the
+schema dropping it and leaving you to believe it still selects something.
 
-Both ways of not retyping a flag are therefore visible ones:
+Three commands take no `--target`, and that is not an oversight. `check`, `config show` and
+`policy list` are target-independent. `target list` is the command you run to find out what to
+pass, so requiring the answer as input would be circular.
 
-| | Profile | Target | Where it lives |
-|---|---|---|---|
-| This shell | `LANES_LINK_PROFILE` | `LANES_LINK_TARGET` | your environment, where `env` shows it |
-| This workspace | `lanes link profile default <name>` | `lanes link target use <name>` | a config file `check` validates |
-
-Every command prints which one it landed on, and where that came from — the parenthesised source on
-the first line is `flag`, `environment`, `config-default`, or `workspace-default`.
+Typing it every time is the cost. A shell alias is the way to shorten it, and it is yours to write —
+this is the one place the tool declines to remember something on your behalf.
 
 ## Permissions
 
 ```console
-$ lanes link policy list
+$ lanes link policy list --profile personal
 Allow
   +  example.echo        example.main
   +  example.get_note    example.main
@@ -254,8 +260,8 @@ Deny
   A deny beats any allow, whatever the order in the file.
   -  example.echo        example.main2
 
-$ lanes link policy allow example.list_notes example.main
-$ lanes link policy deny  gmail.send         gmail.main
+$ lanes link policy allow example.list_notes example.main --profile personal --target local
+$ lanes link policy deny  gmail.send         gmail.main --profile personal --target local
 ```
 
 Tightening is local and instant. **Widening a vendor scope needs browser re-consent** and goes
@@ -273,9 +279,9 @@ control plane of their own. It reaches the same bytes an agent does.
 ```console
 $ printf 'The deploy window is Thursday evening.' \
     | lanes link memory write deploy-window --title "Deploy window" --tag ops
-$ lanes link memory list --tag ops
-$ lanes link memory get deploy-window
-$ lanes link memory forget deploy-window
+$ lanes link memory list --profile personal --target local --tag ops
+$ lanes link memory get deploy-window --profile personal --target local
+$ lanes link memory forget deploy-window --profile personal --target local
 ```
 
 An entry is one Markdown file with YAML frontmatter, so a text editor is an equally good client:
@@ -283,10 +289,10 @@ edit it in place and the next `memory.get` returns what you wrote. A file with n
 is an entry titled after its id.
 
 ```console
-$ lanes link skills add review-diff --file review-diff.md    # or the document on stdin
-$ lanes link skills list
-$ lanes link skills show review-diff
-$ lanes link skills remove review-diff
+$ lanes link skills add review-diff --profile personal --target local --file review-diff.md    # or the document on stdin
+$ lanes link skills list --profile personal --target local
+$ lanes link skills show review-diff --profile personal --target local
+$ lanes link skills remove review-diff --profile personal --target local
 ```
 
 A skill becomes the MCP prompt `skills_<name>`. A running endpoint picks up a new one within a few
@@ -296,15 +302,15 @@ seconds — no restart. Skills belong to the profile they were added under and n
 anyway, so narrowing it is one line:
 
 ```console
-$ lanes link policy deny skills.manage.*
+$ lanes link policy deny skills.manage.* --profile personal --target local
 ```
 
 ```console
 $ printf %s "$GITHUB_PAT" | lanes link vault set github_token --description "GitHub PAT"
-$ lanes link vault list                       # names and descriptions, never values
-$ lanes link vault get github_token --show
+$ lanes link vault list --profile personal --target local                       # names and descriptions, never values
+$ lanes link vault get github_token --profile personal --target local --show
 $ TOKEN="$(lanes link vault get github_token --raw)"
-$ lanes link vault remove github_token --yes
+$ lanes link vault remove github_token --profile personal --target local --yes
 ```
 
 `lanes link vault get` prints a value; `lanes link secrets` never does. Those are the two kinds of secret
@@ -313,8 +319,8 @@ $ lanes link vault remove github_token --yes
 A new item is **not readable over MCP until the endpoint restarts**, and it needs a grant naming it:
 
 ```console
-$ lanes link policy allow vault.get.github_token
-$ lanes link start                            # the item's capability exists from here on
+$ lanes link policy allow vault.get.github_token --profile personal --target local
+$ lanes link start --profile personal --target local                            # the item's capability exists from here on
 ```
 
 That is deliberate — a write cannot hand itself a read, so granting access to a new secret is
@@ -325,11 +331,11 @@ something you do between two runs rather than something an agent does mid-sessio
 Failures surface in the cheapest place first:
 
 ```console
-$ lanes link check     # static: schema, validation rules, no external calls
-$ lanes link doctor    # read-only external: credentials resolve, database reachable
-$ lanes link plan      # what reconcile would change; no mutation
-$ lanes link start     # apply reconcile, then serve locally
-$ lanes link deploy    # apply to the cloud target
+$ lanes link check --profile personal     # static: schema, validation rules, no external calls
+$ lanes link doctor --profile personal --target local    # read-only external: credentials resolve, database reachable
+$ lanes link plan --profile personal --target local      # what reconcile would change; no mutation
+$ lanes link start --profile personal --target local     # apply reconcile, then serve locally
+$ lanes link deploy --profile personal --target local    # apply to the cloud target
 ```
 
 `lanes link plan` exists specifically because reconcile disables undeclared connections, and that outcome
@@ -341,11 +347,11 @@ The same config runs in more than one place; a target names an adapter set, and 
 differ. [`docs/detailed/deployment-cloudrun.md`](deployment-cloudrun.md) is the full guide — the shape is:
 
 ```console
-$ lanes link deploy --dry-run              # every gcloud command, none of them run
-$ lanes link deploy                        # set up, build, push, roll a revision
-$ lanes link connect gmail --target cloud  # a browser consent per account
-$ lanes link deploy                        # again, so the revision sees them
-$ lanes link outputs --target cloud        # the deployed URL an agent needs
+$ lanes link deploy --profile personal --target local --dry-run              # every gcloud command, none of them run
+$ lanes link deploy --profile personal --target local                        # set up, build, push, roll a revision
+$ lanes link connect gmail --profile personal --target local --target cloud  # a browser consent per account
+$ lanes link deploy --profile personal --target local                        # again, so the revision sees them
+$ lanes link outputs --profile personal --target local --target cloud        # the deployed URL an agent needs
 ```
 
 `deploy` needs no `--target` when there is one deployment to mean: it deploys the target that has
@@ -366,10 +372,10 @@ instead of the `connect` step.
 as many deployable targets as you like. The second one is named on the deploy that creates it:
 
 ```console
-$ lanes link deploy --target staging      # surveys and writes targets.staging, then rolls it
-$ lanes link target list                  # what this profile declares, and which is in play
-$ lanes link connect gmail --target staging
-$ lanes link outputs --target staging
+$ lanes link deploy --profile personal --target local --target staging      # surveys and writes targets.staging, then rolls it
+$ lanes link target list --profile personal                  # what this profile declares, and which is in play
+$ lanes link connect gmail --profile personal --target local --target staging
+$ lanes link outputs --profile personal --target local --target staging
 ```
 
 Once two targets declare a deployment, a bare `lanes link deploy` refuses and asks which you meant —
@@ -382,27 +388,21 @@ consent.
 
 ### Which profiles a deploy uploads
 
-`deploy` uploads the workspace config the revision will read, and **the scope is the `--profile`
-flag rather than the resolved profile**:
+One: the profile you named. `deploy` requires `--profile`, so the flag *is* the resolved profile and
+the scope is never in doubt. It used to depend on how the profile had been resolved — the flag
+uploaded one, a variable or a config default uploaded the whole workspace — which was documented as
+surprising because it was.
 
-| Invocation | Uploads |
-|---|---|
-| `lanes link deploy --profile work` | `profiles/work.yaml` alone |
-| `LANES_LINK_PROFILE=work lanes link deploy` | **every** profile in the workspace |
-| `lanes link deploy` (profile from `default_profile`) | **every** profile in the workspace |
-
-That is surprising, and it is the behaviour rather than a description of a bug being fixed: the flag
-is read directly, so a profile resolved any other way leaves the scope undefined and the whole
-workspace travels. The endpoint then serves every profile whose YAML is in the bucket, under one
-token (ADR-009).
+A deploy also refuses if a profile it would upload does not declare the target being deployed. The
+endpoint opens every profile in the bucket against one target, so one that cannot run there is not
+skipped at boot — it is a revision that never goes healthy.
 
 No credential ever travels — `data/` is never uploaded and each target has its own store, so a
-connection you have not migrated reconciles as `unauthorized` rather than silently working. If you
-want one profile deployed, pass `--profile` explicitly; if you want a boundary that holds, use a
-second workspace.
+connection you have not migrated reconciles as `unauthorized` rather than silently working.
 
 ```console
-$ lanes link secrets list --target cloud     # reference names only; no command prints a value
+$ lanes link secrets list --profile personal --target local     # reference names only; no command prints a value
+$ lanes link secrets push --profile personal --from local --to cloud
 ```
 
 Credentials follow the target, because each target has its own credential store. `secrets push`
@@ -412,12 +412,12 @@ copies and never deletes, and skips a reference the destination already holds un
 ## Inspection
 
 ```console
-$ lanes link status                          # connections, reachable capabilities, endpoint
-$ lanes link audit tail --limit 25
-$ lanes link audit tail --denied-only        # the interesting half
-$ lanes link config show                     # the resolved config as JSON
-$ lanes link token show --show
-$ lanes link token rotate                    # invalidates every agent on this profile
+$ lanes link status --profile personal --target local                          # connections, reachable capabilities, endpoint
+$ lanes link audit tail --profile personal --target local --limit 25
+$ lanes link audit tail --profile personal --target local --denied-only        # the interesting half
+$ lanes link config show --profile personal                     # the resolved config as JSON
+$ lanes link token show --profile personal --target local --show
+$ lanes link token rotate --profile personal --target local                    # invalidates every agent on this profile
 $ lanes link version                         # which release this is
 $ lanes link update --check                  # is a newer one published (exit 1 if so)
 $ lanes link update                          # install it

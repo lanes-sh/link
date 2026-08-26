@@ -4,8 +4,8 @@ Each account is one connection, with its own credential, its own permissions, an
 `lanes link connect <provider>` once per account you want reachable.
 
 ```console
-$ lanes link connect gmail        # straight to the browser, nothing to register
-$ lanes link connect gmail        # again, for a second mailbox
+$ lanes link connect gmail --profile personal --target local        # straight to the browser, nothing to register
+$ lanes link connect gmail --profile personal --target local        # again, for a second mailbox
 ```
 
 `lanes link status` shows what is connected and what that makes reachable.
@@ -60,7 +60,7 @@ third-party clients, a Workspace app that must be "Internal", or a hosted client
 its account limit:
 
 ```console
-$ lanes link connect gmail --own-client
+$ lanes link connect gmail --profile personal --target local --own-client
 ```
 
 That walks through the Google Cloud console once, stores the client id and secret, and records the
@@ -99,8 +99,8 @@ one, whatever your agent's equivalent is.
 To see what a client would be handed right now:
 
 ```console
-$ lanes link tools                # names by provider, payload size
-$ lanes link tools --target cloud # ask the deployed endpoint instead
+$ lanes link tools --profile personal --target local                # names by provider, payload size
+$ lanes link tools --profile personal --target local --target cloud # ask the deployed endpoint instead
 ```
 
 If that count matches your client, its tools are current. If it does not, the client is holding an
@@ -114,8 +114,8 @@ reasoning and without waiting for a number to change.
 ## See what one takes before you start
 
 ```console
-$ lanes link setup plan               # every provider, connected or not
-$ lanes link setup plan icloud_mail   # the steps, the values it will ask for, the command
+$ lanes link setup plan --profile personal --target local               # every provider, connected or not
+$ lanes link setup plan icloud_mail --profile personal --target local   # the steps, the values it will ask for, the command
 ```
 
 An agent connected to your endpoint can see the same thing, so it can hand you the exact command
@@ -127,8 +127,8 @@ in this CLI.
 Connecting grants a read bundle. Tightening is instant and local:
 
 ```console
-$ lanes link policy list
-$ lanes link policy deny gmail.send gmail.main
+$ lanes link policy list --profile personal
+$ lanes link policy deny gmail.send gmail.main --profile personal --target local
 ```
 
 A deny beats an allow whatever the order in the file. Widening a vendor scope is different — it

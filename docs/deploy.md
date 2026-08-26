@@ -20,10 +20,10 @@ mints the service account and the bucket, and builds the image.
 ## The four commands
 
 ```console
-$ lanes link deploy --dry-run              # every gcloud command, none of them run
-$ lanes link deploy                        # creates the project and rolls a revision
-$ lanes link connect gmail --target cloud  # a browser consent per account
-$ lanes link outputs --target cloud        # the URL your agent needs
+$ lanes link deploy --profile personal --target cloud --dry-run              # every gcloud command, none of them run
+$ lanes link deploy --profile personal --target cloud                        # creates the project and rolls a revision
+$ lanes link connect gmail --profile personal --target cloud --target cloud  # a browser consent per account
+$ lanes link outputs --profile personal --target cloud --target cloud        # the URL your agent needs
 ```
 
 `connect` comes *after* the deploy: a credential store that does not exist yet is not somewhere to
@@ -36,10 +36,9 @@ There is no second deploy. `connect` copies the config to where the running revi
 asks that revision to re-read it, so the account is reachable as soon as the browser consent is
 done. Deploying is how new code gets there, and authorising an account changes no code (ADR-029).
 
-`--target cloud` is on those last two for a reason: deploying does not move `instance.default_target`,
-so a command without the flag still acts on `local` and the deployment never sees the account. The
-deploy says so when it finishes, and `connect` warns when it is about to write somewhere your
-deployment cannot read.
+`--target cloud` is on every one of them because every command names its target (ADR-037). There is
+no default to leave unset and nothing to forget: a command without it refuses rather than acting on
+`local` and leaving the deployment without the account.
 
 `cloud` there is a name, not a keyword — it is what the first deploy calls the target it creates.
 `lanes link target list` shows what your profile declares and which one commands are using.
@@ -53,14 +52,14 @@ already holds unless you pass `--overwrite`.
 Name it, and everything downstream takes the same flag:
 
 ```console
-$ lanes link deploy --target staging          # its own project, bucket, and service
-$ lanes link connect gmail --target staging   # same ordering: accounts before the URL
-$ lanes link outputs --target staging
+$ lanes link deploy --profile personal --target cloud --target staging          # its own project, bucket, and service
+$ lanes link connect gmail --profile personal --target cloud --target staging   # same ordering: accounts before the URL
+$ lanes link outputs --profile personal --target cloud --target staging
 ```
 
-Tired of typing it? `export LANES_LINK_TARGET=staging` for the shell, or
-`lanes link target use staging` to make it this profile's default. Every command prints which target
-it resolved and where that came from, so neither can act on you silently.
+Every command names its profile and target, and nothing else supplies them — no environment
+variable, no key in a file. That is deliberate (ADR-037): a selection you did not type is one you
+cannot check. A shell alias is the way to shorten it, and it is yours to write.
 
 ## Which profiles it serves
 
@@ -88,7 +87,7 @@ than as a configuration error, so it is worth getting right the first time.
 ## Then register it
 
 ```console
-$ lanes link mcp add claude --target cloud
+$ lanes link mcp add claude --profile personal --target cloud --target cloud
 ```
 
 Each target has its own credential store, so the deployed token is a different string from the local

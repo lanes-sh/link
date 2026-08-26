@@ -44,6 +44,7 @@ Nothing in the codebase depends on it.
 | [034](034-updating-is-a-reinstall.md) | Updating is replacing the installed package; Bun is the only installer driven, a checkout is refused, and nothing updates itself |
 | [035](035-a-replayed-refresh-token-must-not-log-the-owner-out.md) | A replayed refresh token is refused on its own and recorded; the family it belongs to survives |
 | [036](036-a-client-is-told-this-endpoint-keeps-it-signed-in.md) | `offline_access` is advertised and granted, a rejected credential is told `invalid_token`, and scope is narrowed rather than echoed |
+| [037](037-a-command-names-what-it-acts-on.md) | A command names its profile and target as flags, or it does not run; the environment variables and config defaults are parsed and no longer read |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 
@@ -88,3 +89,9 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
   for logging a connector out; this one removes the reason a client had for not refreshing. Both
   were needed and neither was sufficient, which is the shape worth remembering: the endpoint was
   correct and the client was correct, and the session still ended at a consent screen.
+
+- **ADR-037** withdraws half of an argument rather than reversing it. The claim that persisted
+  selection is how operators act on the wrong thing still stands, and is why the rule exists; what
+  did not survive is the conclusion that making the fallback *visible* was enough. A printed line
+  is not a guard, and a fallback made an ignored flag survivable — so the mistake surfaced one
+  command later, from a different source, detached from its cause.

@@ -37,7 +37,7 @@ do. `--no-skill` registers without writing anything.
 ## Claude Code
 
 ```console
-$ lanes link mcp add claude       # user scope: your accounts are not one repository's tooling
+$ lanes link mcp add claude --profile personal --target local       # user scope: your accounts are not one repository's tooling
 ```
 
 Claude Code stores the token as a value, so after `lanes link token rotate` run `mcp add` again with
@@ -46,7 +46,7 @@ Claude Code stores the token as a value, so after `lanes link token rotate` run 
 ## Codex
 
 ```console
-$ lanes link mcp add codex
+$ lanes link mcp add codex --profile personal --target local
 $ export LANES_LINK_TOKEN="$(lanes link token show --raw)"   # put this in your shell profile
 ```
 
@@ -65,7 +65,7 @@ instead of connecting to it:
   "mcpServers": {
     "lanes-link": {
       "command": "/Users/you/.bun/bin/lanes",
-      "args": ["link", "mcp", "stdio"]
+      "args": ["link", "mcp", "stdio", "--profile", "personal", "--target", "local"]
     }
   }
 }
@@ -82,7 +82,7 @@ Two things to get right:
   `#!/usr/bin/env bun`, so an absolute path to it is not enough on its own. Claude Desktop passes a
   `PATH` that includes `~/.bun/bin`, so the entry above works as written. If a client fails with
   `env: bun: No such file or directory`, name Bun yourself:
-  `"command": "/Users/you/.bun/bin/bun", "args": ["run", "/path/to/link/src/cli/lanes.ts", "link", "mcp", "stdio"]`.
+  `"command": "/Users/you/.bun/bin/bun", "args": ["run", "/path/to/link/src/cli/lanes.ts", "link", "mcp", "stdio", "--profile", "personal", "--target", "local"]`.
 
 Three consequences of Desktop spawning the process:
 
@@ -91,6 +91,10 @@ Three consequences of Desktop spawning the process:
 - **`lanes link start` is not needed for it.** Run the endpoint for the clients that use HTTP.
 - **The tool list is fixed for the session.** A skill added while Desktop is running appears next
   time it starts.
+
+Both flags are required. This client spawns the endpoint rather than being pointed at a URL, so its
+config file is the only place that can say which profile and target it serves — an entry without
+them fails to start, and the reason appears in the client's MCP log.
 
 This is a local registration with no deployed counterpart: a deployment is a URL, which is the one
 thing this client cannot be given.
@@ -151,7 +155,7 @@ not as a failure.
 ## Anything else
 
 ```console
-$ lanes link outputs --show
+$ lanes link outputs --profile personal --target local --show
 Endpoint
   http://127.0.0.1:7337/mcp  running
 Token

@@ -3,7 +3,7 @@
 One profile = one config file = one blob store = one credential store. One endpoint serves them all.
 
 ```
-lanes-link.yaml          workspace settings: contract, default_profile
+lanes-link.yaml          workspace settings: contract
 profiles/
   personal.yaml
   work.yaml
@@ -152,7 +152,7 @@ refused by another. Run `connect` again for any connection you want moved. See
 ## Removing a profile
 
 ```console
-$ lanes link profile remove work
+$ lanes link profile remove work --profile personal
 ```
 
 It prints what it would delete, then asks you to type the profile name. `--dry-run` stops after the
@@ -169,7 +169,7 @@ this command left them alone. Nothing another profile can see is deleted.
 
 What stays, and each for a reason:
 
-- **`lanes-link.yaml`.** If it named this profile as `default_profile`, that key is cleared rather
+- **`lanes-link.yaml`.** If it still names this profile as the inert `default_profile`, that key is cleared rather
   than repointed at whatever remains — choosing a new default would silently change what every
   other command in the workspace acts on.
 - **Infrastructure.** No Cloud Run service, bucket, or service account is touched. `deploy` created
@@ -205,7 +205,7 @@ only accepted by the client that minted it.
 5. **An `allow` rule naming a provider with no connection fails**, because a rule that silently
    grants nothing looks identical to a working one. A `deny` may name one: withholding something
    ahead of connecting it is reasonable, and refusing that would punish the cautious ordering.
-7. **`default_target` and any `--target` must name a declared target.**
+7. **`--target` must name a declared target.** `instance.default_target` is no longer read or validated (ADR-037).
 8. **A CLI write validates before writing**, and never leaves the file invalid on failure.
 
 ## Policy grammar
@@ -296,7 +296,7 @@ targets:
 ```
 
 `lanes link target list` prints what a profile declares and which target is in play;
-`lanes link target use <name>` rewrites `instance.default_target`. Once two targets declare a
+`lanes link target use` has been removed (ADR-037) — name the target on each command. Once two targets declare a
 `deploy` block, a bare `lanes link deploy` asks which you meant rather than picking.
 
 Each target's credential store is its own, so a connection authorised against `cloud` is absent from
@@ -333,8 +333,8 @@ unreadable while appearing to work. Mint one with `lanes link vault key generate
 | | |
 |---|---|
 | `LANES_LINK_HOME` | Workspace root. Otherwise the nearest ancestor holding `lanes-link.yaml`, else `~/.lanes-link`. |
-| `LANES_LINK_PROFILE` | Profile, below `--profile` and above the workspace default. |
-| `LANES_LINK_TARGET` | Target, below `--target` and above `instance.default_target`. Not read by `deploy`. Also how the container entrypoint selects its adapter set. |
+| `LANES_LINK_PROFILE` | **No longer read** (ADR-037). Pass `--profile`. Named in the refusal when it is set, so a shell configured for the old behaviour says so. |
+| `LANES_LINK_TARGET` | **No longer read** by the CLI (ADR-037). Pass `--target`. Still how the container entrypoint selects its adapter set — a deployed revision has no argv. |
 | `LANES_LINK_HOST` / `PORT` | Bind address and port in a container. |
 | `LANES_LINK_CREDENTIAL_KEY` | base64 32-byte key for the encrypted credential store. |
 | `LANES_LINK_VAULT_KEY` | base64 32-byte key for the vault. **A different key, deliberately** — one master secret reused across purposes turns any single compromise into a total one. |
