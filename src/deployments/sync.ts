@@ -41,11 +41,22 @@ export interface Change {
  * first entry of a kind is the one to reach for — so it is an ordered list and
  * compares as one.
  */
-const KEYED: Record<string, (item: Record<string, unknown>) => string> = {
-  connections: (item) => `${String(item['provider'])}.${String(item['id'])}`,
-  'policy.allow': (item) => String(item['capability']),
-  'policy.deny': (item) => String(item['capability']),
+const KEYED: Record<string, (item: unknown) => string | undefined> = {
+  connections: (item) =>
+    isRecord(item) ? `${String(item['provider'])}.${String(item['id'])}` : undefined,
+  // Two shapes, and both are reached. The diff runs over validated configs,
+  // where `allow: [gmail.*]` has become `[{capability: gmail.*}]`; the writer
+  // runs over the raw document, where it is still a string. A key function that
+  // knew only the validated shape found nothing to merge and silently wrote the
+  // array without it.
+  'policy.allow': capabilityOf,
+  'policy.deny': capabilityOf,
 };
+
+function capabilityOf(item: unknown): string | undefined {
+  if (typeof item === 'string') return item;
+  return isRecord(item) ? String(item['capability']) : undefined;
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -102,12 +113,16 @@ function walk(path: readonly string[], local: unknown, remote: unknown): Change[
  */
 function walkKeyed(
   path: readonly string[],
-  keyOf: (item: Record<string, unknown>) => string,
+  keyOf: (item: unknown) => string | undefined,
   local: readonly unknown[],
   remote: readonly unknown[],
 ): Change[] {
   const index = (items: readonly unknown[]): Map<string, unknown> =>
-    new Map(items.filter(isRecord).map((item) => [keyOf(item), item]));
+    new Map(
+      items
+        .map((item) => [keyOf(item), item] as const)
+        .filter((pair): pair is readonly [string, unknown] => pair[0] !== undefined),
+    );
 
   const here = index(local);
   const there = index(remote);
@@ -128,6 +143,19 @@ export function keyedArrayFor(path: readonly string[]): readonly string[] | unde
     if (path.slice(0, depth).join('.') in KEYED) return path.slice(0, depth);
   }
   return undefined;
+}
+
+/**
+ * How an element of a keyed array identifies itself, for the writer.
+ *
+ * The diff indexes these to compare them; applying one has to find the same
+ * element again in *both* raw documents, and it cannot re-derive the key from
+ * the path — `connections.gmail.work` is one key containing a dot, not two
+ * steps. Exported so the two halves cannot disagree about what identifies a
+ * connection.
+ */
+export function keyOfElement(arrayPath: readonly string[], item: unknown): string | undefined {
+  return KEYED[arrayPath.join('.')]?.(item);
 }
 
 /** Whether a set of changes can be applied without being told which side wins. */

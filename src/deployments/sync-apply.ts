@@ -8,7 +8,7 @@ import {
   type Config,
 } from '#profile';
 import { ConfigDocument } from '#cli/config-edit.ts';
-import { diffConfigs, keyedArrayFor, type Change } from './sync.ts';
+import { diffConfigs, keyOfElement, keyedArrayFor, type Change } from './sync.ts';
 import { isWorkspaceConfig } from './upload.ts';
 
 /**
@@ -155,26 +155,80 @@ export async function applyPulls(
   const remote = await readRawProfile(remoteRoot, profile);
   if (remote === undefined) return 0;
 
+  const local = document.toJSON();
   const written = new Set<string>();
+
   for (const change of pulls) {
     const array = keyedArrayFor(change.path);
-    const path = array ?? change.path;
 
-    // One write per array, however many of its elements were missing.
-    const key = path.join('.');
-    if (written.has(key)) continue;
-    written.add(key);
+    if (array) {
+      // One write per array, however many of its elements were missing — and
+      // the value written is the *merge*, never the remote array.
+      //
+      // It used to be `setIn(array, remoteArray)`, which reads as "pull the
+      // connections" and means "replace the connections". A profile that had
+      // gained six accounts locally since the last deploy lost all six to a
+      // command whose entire purpose is not losing things. The tests missed it
+      // because every one of them had a local array that was a subset of the
+      // remote — the case where replacing and merging agree.
+      const key = array.join('.');
+      if (written.has(key)) continue;
+      written.add(key);
 
-    const value = valueAt(remote, path);
+      const merged = mergeKeyed(
+        array,
+        valueAt(local, array),
+        valueAt(remote, array),
+        pulls
+          .filter((one) => keyedArrayFor(one.path)?.join('.') === key)
+          .map((one) => one.path[array.length])
+          .filter((name): name is string => name !== undefined),
+      );
+      if (merged !== undefined) document.setIn([...array], merged);
+      continue;
+    }
+
+    const value = valueAt(remote, change.path);
     // Absent from the raw document means the remote side only has it as a
     // default, which the local side fills in identically. Nothing to write.
     if (value === undefined) continue;
 
-    document.setIn([...path], value);
+    document.setIn([...change.path], value);
   }
 
   await document.save();
   return written.size;
+}
+
+/**
+ * The local array, with the named elements taken from the remote one.
+ *
+ * Element order is local's, with anything new appended, so a pull reads as a
+ * diff in the file rather than as a reshuffle. An element named in `wanted` and
+ * absent from the remote array is skipped rather than removed: the diff said it
+ * was missing locally, so it cannot also be missing remotely.
+ */
+function mergeKeyed(
+  arrayPath: readonly string[],
+  local: unknown,
+  remote: unknown,
+  wanted: readonly string[],
+): unknown[] | undefined {
+  if (!Array.isArray(remote)) return undefined;
+
+  const merged = Array.isArray(local) ? [...(local as unknown[])] : [];
+  const keyOf = (item: unknown): string | undefined => keyOfElement(arrayPath, item);
+
+  for (const name of new Set(wanted)) {
+    const incoming = remote.find((item) => keyOf(item) === name);
+    if (incoming === undefined) continue;
+
+    const at = merged.findIndex((item) => keyOf(item) === name);
+    if (at >= 0) merged[at] = incoming;
+    else merged.push(incoming);
+  }
+
+  return merged;
 }
 
 /** Read a path out of the raw document, for handing to `setIn`. */
