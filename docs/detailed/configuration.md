@@ -97,6 +97,16 @@ connections:
 policy:
   allow: ['*']
   deny:  [gmail.users.drafts.send]
+
+# Optional. Who the owner is, for anything written as them — a name to sign
+# with, an address to send from, a handle to attribute to. Order is the
+# ranking: the first of a kind is the default, and the note says when to
+# prefer another.
+identity:
+  - { kind: name,   value: Ada,         note: use for open-source work }
+  - { kind: name,   value: A. Lovelace, note: use on anything published }
+  - { kind: email,  value: ada.lovelace@example.com }
+  - { kind: github, value: octocat }
 ```
 
 There is no `providers` block: declaring a connection is what enables a provider, and a second
@@ -116,6 +126,34 @@ This value looked like a credential:
 ```
 
 There is deliberately no suppression flag.
+
+## Identity
+
+`kind` is any lowercase identifier, so `name`, `email` and `github` are conventions rather than a
+list this project ships — `linkedin`, `phone`, `pronouns` and `signature` need no code change.
+`value` is the name or address. `note` is prose, read by whatever is writing as you.
+
+Declare one through the CLI rather than by hand, because the block on its own is inert:
+
+```console
+$ lanes link identity add name "A. Lovelace" --note "use on anything published" --profile personal --target local
+$ lanes link identity add email ada.lovelace@example.com --profile personal --target local
+$ lanes link identity list --profile personal
+```
+
+The first of those writes three things: the entry, a `connections` row for the `identity`
+provider, and an `identity.*` allow rule. All three are needed before anything can read it — a
+provider with no connection row is filtered out before policy is consulted, so an `identity`
+block by itself is a file that says exactly what you meant and an agent that cannot see a word of
+it. `identity list` says `declared, but no agent can read it` when that is the state.
+
+What reads it is one read-only tool, `identity_list`. Nothing on the MCP surface can write here:
+an agent able to edit this could edit the one fact that stops it signing as the wrong person, so
+editing is CLI-only under ADR-007. The endpoint's own instructions carry a pointer to the tool and
+none of the values — see [ADR-039](adr/039-a-profile-declares-who-its-owner-is.md).
+
+Removing the last entry leaves the row and the rule in place, and the tool then reports that
+nothing is declared.
 
 ## A profile that uses the hosted OAuth client
 

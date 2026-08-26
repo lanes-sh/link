@@ -50,6 +50,12 @@ ${style.bold('Targets')}
   ${PROGRAM} target list [--urls]      where this profile can run
   ${PROGRAM} target show <name>        one target's adapters, and the address it answers on
 
+${style.bold('Who you are')}
+  ${PROGRAM} identity add <kind> <value> [--note text] [--json]
+                                 e.g. name, email, github — any kind you like
+  ${PROGRAM} identity list [--json]
+  ${PROGRAM} identity remove <kind> <value> [--json]
+
 ${style.bold('Permissions')}
   ${PROGRAM} policy list
   ${PROGRAM} policy allow <capability>  e.g. gmail.* or gmail.send_message

@@ -62,6 +62,27 @@ Use one to do the thing that needs it. Never quote it back, summarise it, echo
 it into a file, or paste it into a command whose output you will show. If a
 value has been printed by accident, say so.
 
+## Who you are writing as is declared, not inferred
+
+A profile may declare the names, addresses and handles its owner wants used when
+something is written as them. Call `identity_list` for the profile in play
+before signing a message, choosing an address to send from, or attributing work
+to a handle — **do not** read a name off the conversation, off a previous
+message's signature, or off the account label on a connection. That label is the
+identity a provider reports for a mailbox; it is not necessarily what they sign
+with.
+
+A profile may declare several of a kind on purpose. The first is the default and
+each carries a note saying when to prefer it, so read the notes rather than
+picking the first unconditionally. If none of them fits what you are doing, ask
+— do not combine two, and do not carry one profile's name into another. That
+crossing is the specific mistake this exists to prevent.
+
+If the tool is not there, the profile has declared nothing. Ask rather than
+inventing something; they add one with `lanes link identity add <kind> <value> --profile <profile>
+--target <target>` — both flags, because neither has a fallback.
+Nothing you can call writes here, deliberately.
+
 ## Attachments are named, not carried
 
 Where a tool takes `attachments`, each entry names **one** source and the endpoint

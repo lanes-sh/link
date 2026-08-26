@@ -144,6 +144,20 @@ function assertReferentialIntegrity(config: Config, source: string): void {
     connectionKeys.add(key);
   });
 
+  // Same reason as a duplicate connection: two entries with the same kind and
+  // value cannot both be meant, and the one that loses is invisible. It matters
+  // more here than it looks, because the two would usually differ only in their
+  // `note` — so the discarded one is precisely the guidance someone wrote down
+  // to stop an agent picking wrong.
+  const identityKeys = new Set<string>();
+  config.identity.forEach((entry, index) => {
+    const key = `${entry.kind}=${entry.value}`;
+    if (identityKeys.has(key)) {
+      problems.push(`identity[${index}]: duplicate entry "${entry.kind}: ${entry.value}"`);
+    }
+    identityKeys.add(key);
+  });
+
   const checkRules = (rules: readonly PolicyRuleConfig[], field: 'allow' | 'deny'): void => {
     rules.forEach((rule, index) => {
       const where = `policy.${field}[${index}]`;

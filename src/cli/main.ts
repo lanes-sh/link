@@ -20,6 +20,7 @@ import {
 import { profileAdd, profileDefault, profileList } from './commands/profile.ts';
 import { removeProfile as profileRemove } from './commands/profile/remove.ts';
 import { targetList, targetShow, targetUse } from './commands/target.ts';
+import { identityAdd, identityList, identityRemove } from './commands/identity.ts';
 import { setupPlan } from './commands/setup.ts';
 import { mcpAdd, mcpList, mcpStdio, skillDocument } from './commands/mcp.ts';
 import { deploy } from '#deployments/deploy.ts';
@@ -154,6 +155,28 @@ export async function run(argv: readonly string[]): Promise<void> {
         default:
           throw new Error(`Unknown: ${PROGRAM} target ${second}`);
       }
+
+    case 'identity': {
+      // Both subcommands take the same two positionals, so the usage line is
+      // built once rather than written twice with one of them going stale.
+      const [kind, value] = rest;
+      const usage = (form: string): string =>
+        `Usage: ${PROGRAM} identity ${form}\n  e.g. ${PROGRAM} identity add name "Your Name" --note "for open-source work"`;
+
+      switch (second) {
+        case 'add':
+          if (!kind || !value) throw new Error(usage('add <kind> <value> [--note text]'));
+          return identityAdd(kind, value, { ...global, note: text(flags, 'note'), json });
+        case 'list':
+        case undefined:
+          return identityList({ ...global, json });
+        case 'remove':
+          if (!kind || !value) throw new Error(usage('remove <kind> <value>'));
+          return identityRemove(kind, value, { ...global, json });
+        default:
+          throw new Error(`Unknown: ${PROGRAM} identity ${second}`);
+      }
+    }
 
     case 'policy':
       switch (second) {

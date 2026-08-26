@@ -19,6 +19,7 @@ export {
   type Config,
   type ConnectionConfig,
   type DeployConfig,
+  type IdentityEntry,
   type PolicyRuleConfig,
   type TargetConfig,
   type WorkspaceConfig,

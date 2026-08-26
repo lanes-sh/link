@@ -122,6 +122,22 @@ export class ConfigDocument {
   }
 
   /**
+   * Drop one item out of a sequence, by position.
+   *
+   * By index rather than by value because the items this is used on are
+   * mappings: matching one by value would mean deciding which fields count as
+   * its identity, and the caller has already decided that by finding it. The
+   * index is therefore the caller's to compute against the *validated* config,
+   * whose order this file preserves.
+   *
+   * `save` re-validates, so removing an item that something else references
+   * fails there rather than landing a config that no longer loads.
+   */
+  removeFrom(path: readonly (string | number)[], index: number): void {
+    this.#document.deleteIn([...path, index] as (string | number)[]);
+  }
+
+  /**
    * Force a collection we just grew onto multiple lines.
    *
    * A template starts with `connections: []`, and the YAML library keeps that
@@ -176,138 +192,6 @@ export class ConfigDocument {
   }
 }
 
-/** The reserved provider id the setup surface registers under. */
-const SETUP_PROVIDER_ID = 'setup';
-
-/**
- * What a repair did, split by what a caller does with each half.
- *
- * `connect` reports config edits under `changes` and policy under `granted`,
- * and both are serialised verbatim by `--json` — so an audit asking what a
- * command widened reads only the second, and one blended list of sentences
- * filed the grant as an edit and left prose in a field meant for matching.
- */
-export interface SetupRepair {
-  /** Config edits made, spelled for display. Empty when none were needed. */
-  readonly changes: readonly string[];
-  /** Allow rules added — patterns, not prose, so a caller can act on them. */
-  readonly granted: readonly string[];
-}
-
-/**
- * Give a profile the `setup` surface if it does not already have it.
- *
- * A profile written before the surface existed has neither the connection row
- * nor the allow rule, and the failure is silent in the worst way:
- * `allowedConnections` returns nothing for a provider with no connection row
- * *before* it consults policy, so `setup_overview` and `setup_provider` are
- * simply absent from `tools/list` with nothing saying why. An agent asked what
- * is connected then has nothing to read and invents a command — which is the
- * bug this exists to close, not a hypothetical.
- *
- * Both halves or neither: a connection row without `setup.*` is as inert as the
- * rule without the row, so adding one alone would look like a fix and change
- * nothing.
- *
- * CLI-side by construction. ADR-007 keeps configuration mutation off the served
- * surface, and a deployed revision holds `objectViewer` on `profiles/`
- * (ADR-023) so it could not write this even if the code let it.
- */
-export function ensureSetupConnection(document: ConfigDocument): SetupRepair {
-  // Raw YAML, so nothing here has been through a schema: this runs over sibling
-  // profiles that were never validated, and every field is whatever was typed.
-  const config = document.toJSON() as {
-    connections?: unknown;
-    policy?: { allow?: unknown; deny?: unknown };
-  } | null;
-
-  const rule = `${SETUP_PROVIDER_ID}.*`;
-  const covers = (pattern: string): boolean => pattern === '*' || pattern === rule;
-
-  // Denied on purpose, and a deny beats an allow — so writing the rule would
-  // widen nothing while announcing that an agent "can now see what is connected
-  // here", which would be false. Deleting the two lines no longer removes the
-  // surface, because the next `connect` or `deploy` puts them back; a deny is
-  // the way it stays off, so it is the one thing this must not undo.
-  //
-  // Only a rule covering the whole surface counts. `deny: [setup.provider]` is
-  // an operator narrowing it, not switching it off, and that narrowing survives
-  // the repair untouched — which is the point of denying one capability.
-  if (patternsIn(config?.policy?.deny).some(covers)) return { changes: [], granted: [] };
-
-  const changes: string[] = [];
-  const granted: string[] = [];
-
-  const connections = Array.isArray(config?.connections) ? config.connections : [];
-  const isSetup = (row: unknown): boolean =>
-    (row as { provider?: unknown } | null)?.provider === SETUP_PROVIDER_ID;
-
-  if (!connections.some(isSetup)) {
-    // Inline, and `main` for the id, so a repaired profile is spelled exactly
-    // like `newProfileTemplate` writes a fresh one. Two spellings of one row is
-    // how a template and its repair drift apart.
-    document.addTo(
-      ['connections'],
-      { id: 'main', provider: SETUP_PROVIDER_ID, account: 'Setup' },
-      { inline: true },
-    );
-    changes.push(`connections += ${SETUP_PROVIDER_ID}.main`);
-  }
-
-  // `*` already covers it. Re-stating the rule under a blanket allow would be
-  // noise in the file and a diff the operator did not ask for.
-  if (!patternsIn(config?.policy?.allow).some(covers)) {
-    document.addTo(['policy', 'allow'], rule, { inline: true });
-    granted.push(rule);
-  }
-
-  return { changes, granted };
-}
-
-/** Whether a repair did anything, without a caller adding up two lists. */
-export function repaired(repair: SetupRepair): boolean {
-  return repair.changes.length > 0 || repair.granted.length > 0;
-}
-
-/** The repair as display lines, in the order the two halves are applied. */
-export function repairLines(repair: SetupRepair): string[] {
-  return [...repair.changes, ...repair.granted.map((rule) => `policy.allow += ${rule}`)];
-}
-
-/**
- * The patterns a raw policy list puts *in force*, in either spelling.
- *
- * `policyRuleSchema` takes a bare pattern or `{ capability, expires_at }` and
- * both parse to the same thing, so reading only the string form would re-add a
- * rule the operator had already written with an expiry. Anything that is
- * neither is dropped rather than guessed at: this reads unvalidated YAML, and a
- * malformed rule is for `validateConfig` to report, not for this to interpret.
- *
- * **Expiry is part of the reading.** `evaluate` holds a rule to
- * `expiresAt === undefined || expiresAt > now` (`#policy`), so a lapsed rule
- * grants and denies nothing — and reading the capability alone got both
- * directions wrong. A lapsed *allow* read as live, so the repair wrote the row,
- * skipped the rule, and announced success: the inert half-state this exists to
- * prevent. A lapsed *deny* blocked the repair for good and printed nothing,
- * because having nothing to add is how "already had it" looks.
- *
- * An unparseable date reads as lapsed, which is the safe direction — it adds a
- * working rule rather than trusting a broken one, and the `save` that follows
- * hands the malformed value to `validateConfig`, whose job it is to complain.
- */
-function patternsIn(rules: unknown, now = Date.now()): string[] {
-  if (!Array.isArray(rules)) return [];
-
-  return rules
-    .filter((rule) => {
-      const expiry = (rule as { expires_at?: unknown } | null)?.expires_at;
-      return typeof expiry !== 'string' || Date.parse(expiry) > now;
-    })
-    .map((rule) =>
-      typeof rule === 'string' ? rule : (rule as { capability?: unknown } | null)?.capability,
-    )
-    .filter((pattern): pattern is string => typeof pattern === 'string');
-}
 
 /**
  * A fresh profile config.

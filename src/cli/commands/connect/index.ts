@@ -1,5 +1,6 @@
 import { credentialRefForConnection, WRITE_BUNDLE } from '#connectivity';
-import { ConfigDocument, ensureSetupConnection, repaired } from '../../config-edit.ts';
+import { ConfigDocument } from '../../config-edit.ts';
+import { ensureSetupConnection, repaired } from '../../config-repair.ts';
 import { emit, print } from '../../output.ts';
 import { nonInteractivePrompter, terminalPrompter, type Prompter } from '../../prompt.ts';
 import { openRuntime, type GlobalFlags } from '../../runtime.ts';

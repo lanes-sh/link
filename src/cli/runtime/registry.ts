@@ -6,11 +6,13 @@ import { loadProfileProviders } from '#providers/custom/index.ts';
 import { loadProfileSkills, type LoadedSkill } from '#providers/skills/store.ts';
 import { exampleProvider } from '#providers/example/provider.ts';
 import {
+  createIdentityProvider,
   createMemoryVaultStore,
   createSetupProvider,
   createSkillsProvider,
   createVaultProvider,
   memoryProvider,
+  type IdentityProviderOptions,
   type SetupProviderOptions,
   type VaultStore,
 } from '#providers/owner.ts';
@@ -64,6 +66,15 @@ export interface OwnerLayerOptions {
    * two capabilities that would report an empty profile as the truth.
    */
   readonly setup?: SetupProviderOptions;
+  /**
+   * Who the profile says its owner is.
+   *
+   * Absent for a registry built to read manifests, which has no config to read
+   * it from. The provider still registers — it reports an empty declaration
+   * rather than vanishing, so the difference between "nothing declared" and
+   * "this build has no such surface" stays visible.
+   */
+  readonly identity?: IdentityProviderOptions;
 }
 
 /**
@@ -72,7 +83,8 @@ export interface OwnerLayerOptions {
  * Statically imported for now; the registry does not care where a manifest came
  * from, which is what lets workspace YAML register alongside these.
  *
- * `allowReserved` is what admits `memory`, `skills`, and `vault`. The guard
+ * `allowReserved` is what admits `memory`, `skills`, `vault`, `setup`, and
+ * `identity`. The guard
  * stays rather than being retired: it exists so a *third-party* provider cannot
  * claim a namespace whose policy rules would then silently mean something else,
  * and that reason survives the owner layer shipping. Only this one construction
@@ -98,6 +110,8 @@ export function buildRegistry(owner: OwnerLayerOptions = {}): ProviderRegistry {
       owner.setup ?? { profile: '', target: '', catalogue: PROVIDER_MANIFESTS },
     ),
   );
+
+  registry.register(createIdentityProvider(owner.identity ?? { profile: '' }));
 
   for (const manifest of PROVIDERS) registry.register(manifest);
   return registry;

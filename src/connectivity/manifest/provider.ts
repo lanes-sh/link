@@ -65,7 +65,7 @@ export const providerManifestSchema = z.object({
 export type ProviderManifest = z.infer<typeof providerManifestSchema>;
 
 /** Provider ids reserved for the owner layer. */
-export const RESERVED_PROVIDER_IDS: readonly string[] = ['memory', 'skills', 'vault', 'setup'];
+export const RESERVED_PROVIDER_IDS: readonly string[] = ['memory', 'skills', 'vault', 'setup', 'identity'];
 
 /**
  * Validate a manifest, with the cross-field rules the schema alone cannot

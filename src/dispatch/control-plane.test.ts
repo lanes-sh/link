@@ -5,6 +5,7 @@ import { createMemoryBlobStore } from '#stores/blobs/testing.ts';
 import { defineLocalProvider, type ProviderContext } from '#connectivity';
 import { exampleProvider } from '#providers/example/provider.ts';
 import {
+  createIdentityProvider,
   createMemoryVaultStore,
   createSetupProvider,
   createSkillsProvider,
@@ -62,6 +63,14 @@ function registryWithBuiltins(): ProviderRegistry {
   // built with no items — a provider id in the catalogue is data, and what is
   // asserted here is the surface we author.
   registry.register(createSetupProvider({ profile: 'personal', target: 'local' }));
+  // Read-only for the same reason, and built with no entries for the same
+  // reason the vault is built with no items: an entry's `kind` is a word the
+  // *owner* chose, so a profile declaring `kind: api_token` would trip the
+  // token pattern below over their own data rather than over a surface we
+  // authored. What is asserted here is the surface we authored.
+  registry.register(
+    createIdentityProvider({ profile: 'personal', target: 'local', entries: [] }),
+  );
 
   return registry;
 }

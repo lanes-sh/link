@@ -22,6 +22,7 @@ export {
   openSecretStoreFor,
   ownerPrincipal,
   resolveProfile,
+  resolveProfileOnly,
   type GlobalFlags,
 } from './runtime/select.ts';
 
