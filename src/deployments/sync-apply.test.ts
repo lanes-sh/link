@@ -107,6 +107,55 @@ describe('pulling what the local copy has lost', () => {
     expect(recovered).not.toContain('capability: gmail.send_message');
   });
 
+  test('an account only the local copy has survives the pull', async () => {
+    // The bug this file did not catch, and it lost six real connections.
+    //
+    // Every keyed-array test here had a local array that was a subset of the
+    // remote one — the case where "replace with remote" and "merge" agree. Both
+    // sides holding something the other lacks is the case that tells them
+    // apart, and it is the ordinary state of a profile that has been used since
+    // the last deploy.
+    const conn = (provider: string, id: string): string =>
+      `  - { id: ${id}, provider: ${provider}, account: ${id}@example.com }\n`;
+    const withConns = (entries: string, rules: string): string =>
+      `${PROFILE}connections:\n${entries}policy:\n  allow: [${rules}]\n`;
+
+    const local = await workspace({
+      personal: withConns(conn('slack', 'mine'), 'slack.*'),
+    });
+    const remote = await workspace({
+      personal: withConns(conn('gmail', 'theirs'), 'gmail.*'),
+    });
+
+    const plan = await planProfile(local, remote, 'personal', undefined);
+    await applyPulls(local, remote, 'personal', plan.changes);
+
+    const recovered = await read(local, 'personal');
+    expect(recovered).toContain('provider: gmail');  // pulled
+    expect(recovered).toContain('provider: slack');  // and not lost
+    expect(recovered).toContain('gmail.*');
+    expect(recovered).toContain('slack.*');
+  });
+
+  test('a local element the remote also has is updated, not duplicated', async () => {
+    const local = await workspace({
+      personal: `${PROFILE}connections:\n  - { id: work, provider: gmail, account: old@example.com }\n  - { id: mine, provider: slack, account: m@example.com }\npolicy:\n  allow: [gmail.*, slack.*]\n`,
+    });
+    const remote = await workspace({
+      personal: `${PROFILE}connections:\n  - { id: work, provider: gmail, account: new@example.com }\npolicy:\n  allow: [gmail.*]\n`,
+    });
+
+    const plan = await planProfile(local, remote, 'personal', 'remote');
+    await applyPulls(local, remote, 'personal', resolved(plan.changes, 'remote'));
+
+    const recovered = await read(local, 'personal');
+    expect(recovered).toContain('new@example.com');
+    expect(recovered).not.toContain('old@example.com');
+    expect(recovered).toContain('provider: slack');
+    // One entry, not two.
+    expect(recovered.match(/provider: gmail/g)).toHaveLength(1);
+  });
+
   test('applying twice changes nothing the second time', async () => {
     const local = await workspace({ personal: PROFILE });
     const remote = await workspace({ personal: PROFILE + CLOUD });
