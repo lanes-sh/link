@@ -99,7 +99,8 @@ you pick. There are up to three:
 | Route | Console work | Re-authorised weekly? | Reaches |
 |---|---|---|---|
 | The hosted client (default) | none | **while its verification is pending, yes** | the whole account |
-| A client of your own | ~20 minutes, once per profile | **no, if you publish it** — see below | the whole account |
+| Your own client, **Internal** — needs a Workspace org | ~10 minutes, once per profile | **never** | the whole account |
+| Your own client, **External** | ~20 minutes, once per profile | **no, if you publish it** — see below | the whole account |
 | A service account key | ~10 minutes, once per profile | **never** | see [Service account](#connecting-with-a-service-account-key) |
 
 There is a fourth that is not on this list because it is not a way of connecting `gmail` — it is a
@@ -112,9 +113,16 @@ problem a checkbox solves. A client whose publishing status is **Testing** has e
 it issues expired after exactly seven days. A client set to **In production** does not — review
 pending, review never started, it makes no difference.
 
-That is why the middle row above beats the first one today: the hosted client is under review, and
-a client under review has whatever status it has. Registering your own and publishing it is the
-shortest path to connections that survive the week.
+That is why either own-client row beats the first one today: the hosted client is under review, and
+a client under review has whatever status it has.
+
+**An Internal app has no publishing status to have**, which is why its row says *never* rather than
+*not if you publish it*. There is no toggle to get wrong and nothing to remember to switch. If the
+project sits in a Google Workspace organisation and every account you connect is on that domain,
+this is both the shortest console detour on the list and the only own-client route with nothing to
+maintain — no test users, no verification, no scope registration. Its one prerequisite is real
+though: "Internal" means "inside my Workspace organisation", not "private to me", and Google does
+not offer it on a project with no organisation behind it.
 
 **Picking wrong is not a decision you are stuck with.** An account authenticates one way at a
 time, and `connect` is how it changes: run it again, pick another route, and the new credential
@@ -129,10 +137,16 @@ browser leaves Google still holding the consent you granted, which you remove yo
 
 ### If you register your own
 
-**Choose External if you have a mix of personal Gmail and Workspace accounts**, which is the common
-case. "Internal" sounds like the private option, but it only admits accounts on your own Workspace
-domain, so a personal `@gmail.com` account simply cannot authorise against it. An Internal app needs
-no verification and has no expiry, so if *every* account is on one domain it is the better choice.
+**Choose Internal if the project sits in a Google Workspace organisation and every account you will
+connect is on that domain.** This is the short path and it is much shorter: an Internal app has no
+publishing status at all, so there is no seven-day expiry, no verification question, no
+unverified-app warning screen, no test-user list to maintain, and no scopes to register on the Data
+Access page. Set the user type and go straight to creating the client.
+
+**Choose External for a personal `@gmail.com`, or a mix of personal and Workspace accounts.**
+"Internal" is Google's word for "inside my Workspace organisation", not "private to me" — the option
+is not offered at all on a project with no organisation behind it, and where it *is* offered it
+admits only your own domain. Everything from here to the end of this section is the External path.
 
 **Then publish it.** Publishing an unverified app is allowed and is not the same as being verified.
 What it costs:
@@ -206,7 +220,9 @@ App name and a support email. Nothing here is seen by anyone but you.
 
 ### 3. Audience
 
-**User type: External.** Choose External even with a Workspace domain — see the table above.
+**User type.** On a Workspace domain with every account on it, choose **Internal** — then skip the
+rest of this page's Audience and Data Access steps and go to [Clients](#5-clients). Otherwise choose
+**External** and continue. See the table above.
 
 Add every Google account you intend to connect under **Test users** (up to 100), personal and
 Workspace alike. An account not listed here cannot authorise.
@@ -519,10 +535,15 @@ warn  gmail.personal credential is 8 days old — Testing-status apps expire at 
 
 The escapes, cheapest first:
 
-- **Register a client of your own and publish it.** `lanes link connect <provider>` and pick the
-  "OAuth client you register" route, or `--auth own_client`. Publishing is a setting, not a review;
-  it costs an unverified-app screen and a lifetime cap of 100 new users on that project. This is
-  the one most people want.
+- **Register a client of your own as Internal**, if the project sits in a Google Workspace
+  organisation and every account is on that domain. `lanes link connect <provider>` and pick the
+  "OAuth client you register" route, or `--auth own_client`. An Internal app has no publishing
+  status, so there is nothing to expire, no warning screen, and no scopes to register. This is the
+  cheapest escape when it is available at all — it is not offered without a Workspace organisation.
+- **Register a client of your own as External and publish it.** Same route, for a personal
+  `@gmail.com` or a mix of account kinds. Publishing is a setting, not a review; it costs an
+  unverified-app screen and a lifetime cap of 100 new users on that project. This is the one most
+  people want.
 - **Use an app password over IMAP**, if this is a personal account and mail is what you need —
   `lanes link connect gmail_imap`. Nothing expires and there is no console project at all. See
   [Gmail over IMAP](#gmail-over-imap-on-a-personal-account).
@@ -545,7 +566,8 @@ working.
 
 | Symptom | Cause |
 |---|---|
-| `invalid_grant`, roughly weekly | The client is in Testing. Publish it, or use a key — see [The weekly re-authorisation](#the-weekly-re-authorisation). |
+| `invalid_grant`, roughly weekly | The client is External and in Testing. Publish it, switch it to Internal if you have a Workspace domain, or use a key — see [The weekly re-authorisation](#the-weekly-re-authorisation). |
+| `invalid_grant` once, after months of working | Not an expiry — an expiry is weekly and this was not. The consent was revoked: a Workspace admin withdrawing third-party app access, a password change, or a removal at [myaccount.google.com/permissions](https://myaccount.google.com/permissions). Publishing changes nothing here; re-run `lanes link connect <provider>.<id>` and, if an admin revoked it, get the client allowlisted first. |
 | `unauthorized_client` on a service account | Domain-wide delegation is missing, or was granted with a scope list that does not match exactly. The error names the scopes to paste. |
 | `invalid_grant` on a service account | The key was deleted or disabled, or this machine's clock is off by more than a few minutes. |
 | A service account connects but everything is empty | Nothing has been shared with the key's address yet. That is the design, not a fault. |
