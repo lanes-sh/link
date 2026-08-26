@@ -214,8 +214,17 @@ describe('referential integrity', () => {
     expect(config.policy.allow).toEqual([{ capability: 'example.*' }]);
   });
 
-  test('an undeclared default_target fails and lists what is available', () => {
-    rejects((y) => y.replace('default_target: local', 'default_target: cloud'), /not a declared target.*local/s);
+  test('a default_target naming nothing is harmless, because nothing reads it', () => {
+    // It used to be a validation failure. Nothing consults the key now
+    // (ADR-037), so failing `check` on a stale value would teach that it still
+    // matters — and every profile written before the change carries one.
+    expect(() =>
+      parseConfig(VALID.replace('default_target: local', 'default_target: clod'), 'x.yaml'),
+    ).not.toThrow();
+  });
+
+  test('and so is leaving it out entirely', () => {
+    expect(() => parseConfig(VALID.replace('  default_target: local\n', ''), 'x.yaml')).not.toThrow();
   });
 });
 

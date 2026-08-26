@@ -1,4 +1,4 @@
-import { ConfigError, TARGET_ENV, resolveDeployTarget, type DeployConfig } from '#profile';
+import { ConfigError, type DeployConfig } from '#profile';
 import { announce, fail, heading, ok, print, style, warn } from '#cli/output.ts';
 import { staleNudge } from '#cli/release.ts';
 import { confirm, isInteractive } from '#cli/prompt.ts';
@@ -8,7 +8,6 @@ import { printSteps, runSteps } from './steps.ts';
 import { driverFor } from './drivers.ts';
 import { prepareSecrets, readableRefs, rotatableRefs } from './prepare.ts';
 import { deployedWorkspace, repairSetupSurface, uploadWorkspace } from './upload.ts';
-import { defaultTargetHandOff } from './handoff.ts';
 import { unservableProfiles, unservableRefusal } from './servable.ts';
 
 /**
@@ -48,13 +47,20 @@ export interface DeployFlags extends GlobalFlags {
 export async function deploy(flags: DeployFlags): Promise<void> {
   // The one command allowed to name a target that does not exist yet: creating
   // it is what a first deploy is for.
-  const { resolution, config } = await resolveProfile(flags, { allowUndeclaredTarget: true });
-
-  // And the one command that can work out which target it meant. `resolveProfile`
-  // falls back to `instance.default_target`, which is the target commands *run*
-  // against — `local`, and never the answer to "deploy what".
-  const { target, source } = resolveDeployTarget(config, flags.target);
-  announce({ ...resolution, target, targetSource: source });
+  //
+  // It used to work out its own target too — the one declaring a `deploy` block,
+  // guessing when there was one, refusing when there were two, and inventing
+  // `cloud` when there were none. That inference was a defence against
+  // `instance.default_target`, which is `local` on a scaffolded profile and
+  // never the answer to "deploy what". With the fallback gone (ADR-037) the
+  // defence has nothing to defend against, and what is left is three behaviours
+  // from one command line on the command that creates cloud resources and rolls
+  // a public URL — where `allowUndeclaredTarget` means a mistake is not refused
+  // but surveyed, written into the profile, and deployed as a new service.
+  const { resolution, config, target } = await resolveProfile(flags, {
+    allowUndeclaredTarget: true,
+  });
+  announce(resolution);
 
   // `check` before anything external, per the gate order: a config that will be
   // rejected on boot should be rejected here, not after a five-minute build.
@@ -232,31 +238,16 @@ export async function deploy(flags: DeployFlags): Promise<void> {
         `deployed, but the platform reported no URL yet — run: lanes link outputs --target ${target}`,
       ),
     );
-  } else {
-    heading('Endpoint');
-    print(`  ${url}/mcp`);
-    print(await healthLine(url));
-    print('');
-    print(registerLine(target));
-
-    reportUnauthorised(prepared.warnings, target);
+    return;
   }
 
-  // Last, and on the no-URL path too — that deploy still succeeded, and where
-  // the operator's next command runs is just as wrong either way. It goes after
-  // `reportUnauthorised` for the reason that function's own comment gives about
-  // going last: this one governs every subsequent command, so it has the
-  // strongest claim on the bottom of the screen. On a first deploy nothing is
-  // unauthorised yet and this is the only thing left on it.
-  const handOff = defaultTargetHandOff({
-    deployed: target,
-    defaultTarget: config.instance.default_target,
-    ...(process.env[TARGET_ENV] ? { fromEnv: process.env[TARGET_ENV] } : {}),
-  });
-  if (handOff) {
-    print('');
-    print(handOff);
-  }
+  heading('Endpoint');
+  print(`  ${url}/mcp`);
+  print(await healthLine(url));
+  print('');
+  print(registerLine(target));
+
+  reportUnauthorised(prepared.warnings, target);
 }
 
 /**

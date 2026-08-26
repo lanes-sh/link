@@ -107,7 +107,7 @@ describe('what a profile declares', () => {
   test('reports every target, its adapters, and whether it deploys', async () => {
     const { env } = await workspace();
 
-    const listing = await readTargets({}, { env });
+    const listing = await readTargets({ profile: 'personal' }, { env });
 
     expect(listing.targets.map((target) => target.name).sort()).toEqual([
       'cloud',
@@ -132,74 +132,68 @@ describe('what a profile declares', () => {
 
     // Absent means "not asked" and null would mean "asked, no answer". A reader
     // that cannot tell those apart has to shell out to find out.
-    const listing = await readTargets({}, { env });
+    const listing = await readTargets({ profile: 'personal' }, { env });
     for (const target of listing.targets) expect('url' in target).toBe(false);
   });
 
-  test('the default and the selection are the same until something separates them', async () => {
+  test('nothing is selected until --target names one', async () => {
+    // This is the command you run to find out what to pass, so it is the one
+    // command that does not require the answer as input. Requiring it would be
+    // circular.
+    const listing = await readTargets({ profile: 'personal' }, { env: (await workspace()).env });
+
+    expect(listing.selected).toBeNull();
+    expect(listing.targets.every((target) => !target.isSelected)).toBe(true);
+  });
+
+  test('--target marks the one it names', async () => {
     const { env } = await workspace();
 
-    const listing = await readTargets({}, { env });
+    const listing = await readTargets({ profile: 'personal', target: 'cloud' }, { env });
 
-    expect(listing.default).toBe('local');
-    expect(listing.selected).toBe('local');
-    expect(listing.selectedSource).toBe('config-default');
-    expect(listing.selectedDeclared).toBe(true);
-  });
-
-  test('LANES_LINK_TARGET moves the selection without moving the default', async () => {
-    const { root } = await workspace();
-
-    const listing = await readTargets(
-      {},
-      { env: { LANES_LINK_HOME: root, LANES_LINK_TARGET: 'cloud' } },
-    );
-
-    expect(listing.default).toBe('local');
     expect(listing.selected).toBe('cloud');
-    expect(listing.selectedSource).toBe('environment');
-    expect(listing.targets.find((target) => target.name === 'local')!.isDefault).toBe(true);
-    expect(listing.targets.find((target) => target.name === 'cloud')!.isSelected).toBe(true);
+    expect(listing.targets.find((target) => target.isSelected)?.name).toBe('cloud');
   });
 
-  test('--target beats the environment', async () => {
+  test('an exported LANES_LINK_TARGET selects nothing', async () => {
+    // It used to move the selection without moving the default, and both
+    // markers existed to show the disagreement. Nothing reads it now, so there
+    // is no disagreement left to show.
     const { root } = await workspace();
 
     const listing = await readTargets(
-      { target: 'staging' },
+      { profile: 'personal' },
       { env: { LANES_LINK_HOME: root, LANES_LINK_TARGET: 'cloud' } },
     );
 
-    expect(listing.selected).toBe('staging');
-    expect(listing.selectedSource).toBe('flag');
+    expect(listing.selected).toBeNull();
   });
 });
 
-describe('when the environment names a target that does not exist', () => {
+describe('when --target names a target that does not exist', () => {
   test('the listing survives and says so', async () => {
-    const { root } = await workspace();
+    // The state in which every other command is refusing, and this is the
+    // command someone runs to find out why — so it must not fail the same way.
+    const { env } = await workspace();
 
-    // Every other command is refusing by now. This one has to answer, because
-    // it is the one that shows the name is wrong and what it was measured
-    // against — going through `resolveProfile` here would throw instead.
-    const listing = await readTargets(
-      {},
-      { env: { LANES_LINK_HOME: root, LANES_LINK_TARGET: 'clod' } },
-    );
+    const listing = await readTargets({ profile: 'personal', target: 'clod' }, { env });
 
-    expect(listing.selected).toBe('clod');
     expect(listing.selectedDeclared).toBe(false);
-    expect(listing.targets).toHaveLength(3);
+    expect(listing.targets.map((target) => target.name).sort()).toEqual([
+      'cloud',
+      'local',
+      'staging',
+    ]);
   });
 
-  test('and the printed output names the variable', async () => {
-    await workspace();
-    process.env['LANES_LINK_TARGET'] = 'clod';
+  test('and the printed output warns rather than throwing', async () => {
+    const { env } = await workspace();
 
-    const written = await captureStdout(() => targetList({}));
+    const printed = await captureStdout(async () => {
+      await targetList({ profile: 'personal', target: 'clod', ...({ env } as object) });
+    });
 
-    expect(written).toContain('LANES_LINK_TARGET');
-    expect(written).toContain('clod');
+    expect(printed).toContain('clod');
   });
 });
 
@@ -207,12 +201,12 @@ describe('target list --json', () => {
   test('puts nothing but JSON on stdout', async () => {
     await workspace();
 
-    const written = await captureStdout(() => targetList({ json: true }));
+    const written = await captureStdout(() => targetList({ profile: 'personal', json: true }));
 
-    // The assertion is the parse: the resolution line every command prints
-    // would throw here and nowhere else.
-    const parsed = JSON.parse(written) as { default: string; targets: { name: string }[] };
-    expect(parsed.default).toBe('local');
+    // The assertion is the parse: the profile line every command prints would
+    // throw here and nowhere else.
+    const parsed = JSON.parse(written) as { selected: string | null; targets: { name: string }[] };
+    expect(parsed.selected).toBeNull();
     expect(parsed.targets.map((target) => target.name).sort()).toEqual([
       'cloud',
       'local',
@@ -221,48 +215,14 @@ describe('target list --json', () => {
   });
 });
 
-describe('target use', () => {
-  test('rewrites default_target and leaves the comments alone', async () => {
-    const { root, env } = await workspace();
-
-    await captureStdout(() => targetUse('cloud', {}));
-
-    const written = await readFile(join(root, 'profiles', 'personal.yaml'), 'utf8');
-    expect(written).toContain('default_target: cloud');
-    expect(written).toContain('# A comment nobody asked this command to remove.');
-
-    expect((await readTargets({}, { env })).default).toBe('cloud');
-  });
-
-  test('refuses a target that is not declared, and lists what is', async () => {
-    await workspace();
-
-    await expect(captureStdout(() => targetUse('clod', {}))).rejects.toThrow(
-      /Target "clod" is not declared.*local, cloud, staging/s,
-    );
-  });
-
-  test('writing the value it already holds does not touch the file', async () => {
-    const { root } = await workspace();
-    const path = join(root, 'profiles', 'personal.yaml');
-    const before = await readFile(path, 'utf8');
-
-    await captureStdout(() => targetUse('local', {}));
-
-    // A no-op rewrite churns mtime for nothing, and on a bucket workspace it
-    // costs a PUT.
-    expect(await readFile(path, 'utf8')).toBe(before);
-  });
-
-  test('says when the environment will keep winning anyway', async () => {
-    await workspace();
-    process.env['LANES_LINK_TARGET'] = 'staging';
-
-    const written = await captureStdout(() => targetUse('cloud', {}));
-
-    // Otherwise the operator edits the file, sees nothing change, and concludes
-    // the command is broken.
-    expect(written).toContain('default target is now');
-    expect(written).toMatch(/LANES_LINK_TARGET=staging.*still wins/);
+describe('target use, after it was removed', () => {
+  test('refuses in its own words rather than as an unknown command', async () => {
+    // A command that writes a key nothing reads reports success and changes
+    // nothing observable — the exact failure this change removes. Deleting it
+    // outright would send someone hunting a typo in a command they have run for
+    // months, so it says what happened instead.
+    expect(() => targetUse('cloud')).toThrow('was removed');
+    expect(() => targetUse('cloud')).toThrow('instance.default_target');
+    expect(() => targetUse('cloud')).toThrow('--target cloud');
   });
 });

@@ -3,7 +3,6 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rotatableRefs } from './prepare.ts';
-import { defaultTargetHandOff } from './handoff.ts';
 import { unservableProfiles, unservableRefusal } from './servable.ts';
 import {
   deployedWorkspace,
@@ -472,63 +471,6 @@ describe('the allowlist against a real workspace listing', () => {
     const { source } = await populated();
 
     expect(await landed(source)).toContain('data/personal/credentials.enc.key');
-  });
-});
-
-/**
- * What a deploy leaves the operator's next command pointing at.
- *
- * The bug this closes is silent from both ends: `deploy` picks its own target
- * and never writes `instance.default_target`, so a bare `connect` straight
- * afterwards goes to the local store and the revision that just rolled goes on
- * refusing the account. Neither command says a word about it.
- */
-describe('the hand-off after a deploy', () => {
-  test('says nothing when a bare command already lands on the deployment', () => {
-    expect(defaultTargetHandOff({ deployed: 'cloud', defaultTarget: 'cloud' })).toBeNull();
-  });
-
-  test('names the file, the deployed target, and both ways to change it', () => {
-    const text = defaultTargetHandOff({ deployed: 'cloud', defaultTarget: 'local' })!;
-
-    expect(text).toContain('instance.default_target is still "local"');
-    expect(text).toContain('lanes link connect <provider> --target cloud');
-    expect(text).toContain('lanes link target use cloud');
-  });
-
-  test('says nothing when the variable already points at the deployment', () => {
-    // The case a naive `defaultTarget !== deployed` check gets wrong: the file
-    // disagrees, and it does not matter, because the variable wins and the
-    // operator's next command lands in the right place regardless.
-    expect(
-      defaultTargetHandOff({ deployed: 'cloud', defaultTarget: 'local', fromEnv: 'cloud' }),
-    ).toBeNull();
-  });
-
-  test('names the variable rather than the file when the variable is winning', () => {
-    // Telling someone to run `target use` while a variable overrides the file is
-    // advice that changes the file and nothing else — the same trap `target use`
-    // warns about from its own end.
-    const text = defaultTargetHandOff({
-      deployed: 'cloud',
-      defaultTarget: 'local',
-      fromEnv: 'staging',
-    })!;
-
-    expect(text).toContain('LANES_LINK_TARGET="staging"');
-    expect(text).toContain('wins over the file');
-    expect(text).toContain('export LANES_LINK_TARGET=cloud');
-    expect(text).not.toContain('lanes link target use');
-  });
-
-  test('names what a bare command actually resolves to, not what the file says', () => {
-    const text = defaultTargetHandOff({
-      deployed: 'cloud',
-      defaultTarget: 'local',
-      fromEnv: 'staging',
-    })!;
-
-    expect(text).toContain('still acts on "staging"');
   });
 });
 

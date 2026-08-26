@@ -4,9 +4,10 @@ import type { BlobStore } from '#stores/blobs';
 import {
   loadProfileConfig,
   resolveSelection,
-  resolveTarget,
+  requireTarget,
   undeclaredTarget,
   type Config,
+  type ProfileSelection,
   type Resolution,
 } from '#profile';
 import { openSecrets, openStorage } from '#deployments/target.ts';
@@ -45,23 +46,35 @@ export async function resolveProfile(
   // what means "read the real environment".
   const env = options.env !== undefined ? { env: options.env } : {};
 
-  const selection = await resolveSelection({
-    profileFlag: flags.profile,
-    targetFlag: flags.target,
-    ...env,
-  });
+  const selection = await resolveSelection({ profileFlag: flags.profile, ...env });
 
   const { config } = await loadProfileConfig(selection.workspaceRoot, selection.profile);
-  const { target, source } = resolveTarget(config, flags.target, {
+  const target = requireTarget(config, flags.target, {
     allowUndeclared: options.allowUndeclaredTarget === true,
-    ...env,
+    profile: selection.profile,
   });
 
-  return {
-    resolution: { ...selection, target, targetSource: source },
-    config,
-    target,
-  };
+  return { resolution: { ...selection, target }, config, target };
+}
+
+/**
+ * A profile without a target, for the commands that do not open one.
+ *
+ * `check` validates a YAML file, `config show` prints the whole of it, and
+ * `policy list` reads a block that is target-independent by construction. Making
+ * those three demand a `--target` would be the ceremony that teaches people to
+ * type `--target local` without reading it, which is how a required flag stops
+ * being a guard.
+ */
+export async function resolveProfileOnly(
+  flags: GlobalFlags,
+  options: { env?: Record<string, string | undefined> } = {},
+): Promise<{ selection: ProfileSelection; config: Config }> {
+  const env = options.env !== undefined ? { env: options.env } : {};
+  const selection = await resolveSelection({ profileFlag: flags.profile, ...env });
+  const { config } = await loadProfileConfig(selection.workspaceRoot, selection.profile);
+
+  return { selection, config };
 }
 
 /**

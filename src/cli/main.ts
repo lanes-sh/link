@@ -128,7 +128,7 @@ export async function run(argv: readonly string[]): Promise<void> {
           return targetList({ ...global, json, urls: flags['urls'] === true });
         case 'use':
           if (!rest[0]) throw new Error(`Usage: ${PROGRAM} target use <name>`);
-          return targetUse(rest[0], global);
+          return targetUse(rest[0]);
         case 'show':
           return targetShow(rest[0], { ...global, json });
         default:
