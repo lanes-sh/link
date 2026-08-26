@@ -14,11 +14,13 @@
 export {
   SUPPORTED_CONTRACT,
   configSchema,
+  deploymentRecordSchema,
   workspaceSchema,
   type AuthorizationConfig,
   type Config,
   type ConnectionConfig,
   type DeployConfig,
+  type DeploymentRecord,
   type IdentityEntry,
   type PolicyRuleConfig,
   type TargetConfig,
@@ -72,6 +74,7 @@ export {
   requireTarget,
   undeclaredTarget,
 } from './targets.ts';
+export { findDeployment, readDeployments, recordDeployment } from './deployments.ts';
 export {
   isRemoteWorkspace,
   readWorkspaceFile,
