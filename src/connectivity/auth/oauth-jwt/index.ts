@@ -103,7 +103,16 @@ const minted = new Map<string, { token: string; expiresAt: number }>();
 /** Re-mint slightly early: a token that expires mid-flight fails the call it was fetched for. */
 const EXPIRY_SKEW_MS = 60_000;
 
-/** Test seam. Nothing else clears this — a process holds its tokens until it exits. */
+/**
+ * Emptied when a reload lands, and by tests.
+ *
+ * The cache key is `<provider>.<connection>` with no subject in it, so a
+ * connection re-connected to act as somebody else — or re-connected to a route
+ * that is not this one at all — would otherwise keep serving the token minted
+ * for who it used to be, for up to an hour after the config said otherwise.
+ * `server/generations.ts` clears this beside `clearUpstreamTokens`, which
+ * exists for the same reason on the other path.
+ */
 export function clearMintedTokens(): void {
   minted.clear();
 }

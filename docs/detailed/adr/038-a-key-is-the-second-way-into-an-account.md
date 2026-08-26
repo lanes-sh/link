@@ -78,6 +78,26 @@ right one.
 `--auth <method>` is the non-interactive answer, and deliberately the only one: a run with nobody
 to ask does not guess, because guessing picks which credential gets overwritten.
 
+**A connection authenticates one way at a time, and connecting again replaces it.** Both routes
+write to `<provider>/<connection>`, `settleIdentity` resolves a re-run of `connect` on the same
+account back to the connection that already holds it, and the credential is overwritten in place
+— so switching an account from the browser to a key, or back, is a re-run of `connect` and needs
+nothing removed first. There is one connection and one credential afterwards, and the last run
+wins.
+
+The prompt says so rather than defaulting to the route already stored. Defaulting was tried and
+was wrong twice over. Mechanically it could not work: the route was read under the *provisional*
+connection id, which is `pending` until identity is settled, so it found nothing every time and
+fell back to the browser — performing the silent swap it existed to prevent. And in principle it
+answers the operator's question by reading their credential, which puts the consequential half of
+the decision behind a default that reads as a no-op. A sentence can be read; a default cannot.
+
+Two things it does not do. It does not revoke the grant it replaced: switching a connection from
+the browser to a key overwrites the stored token and leaves the issuer holding a live
+refresh-token grant for that account, which has to be withdrawn in the vendor's console. And it
+does not remember the subject — every connect asks who the key acts as, because remembering would
+mean reading the existing connection, which is the thing that was removed.
+
 Two costs worth stating plainly. A key never expires, which is the feature and also means a
 leaked key is good until someone deletes it — there is no consent to withdraw and no token to
 age out. And domain-wide delegation is a large grant to ask an administrator for; the walkthrough
@@ -88,4 +108,5 @@ refused identically to a missing one and the refusal does not say which scope wa
 
 Nothing about a connection that authorised in a browser. The union of `auth.kind` is untouched,
 the credential ref is unchanged, and a manifest that declares no `assertion` block reads, behaves
-and prompts exactly as it did.
+and prompts exactly as it did — including the warning above, which is printed only where there is
+a choice to warn about. Connecting GitHub, Slack or iCloud asks nothing and says nothing new.

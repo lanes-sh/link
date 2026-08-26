@@ -1,19 +1,24 @@
 import { describe, expect, test } from 'bun:test';
 import { defineProvider, type ProviderManifest } from '#connectivity';
-import { ASSERTION_GRANT } from '#connectivity/auth/index.ts';
-import type { SecretStore } from '#secrets';
 import type { Prompter } from '../../prompt.ts';
-import { chooseAuthMethod, currentAuthMethod, methodsFor } from './method.ts';
+import { chooseAuthMethod, methodsFor } from './method.ts';
 
 /**
  * Which way in, and who decides.
  *
- * Two properties matter here and neither is about the prompt. A provider that
- * offers one method must never ask — adding a choice to Google must not put a
- * question in front of somebody connecting GitHub. And re-running `connect` on
- * an existing account must default to what that account already uses, because
- * the alternative is a repair that quietly replaces the credential it was meant
- * to repair.
+ * Two properties matter here and neither is the wording of the prompt. A
+ * provider that offers one method must never ask — adding a choice to Google
+ * must not put a question in front of somebody connecting GitHub. And the
+ * choice must be made from the flag or from the operator and from nothing
+ * else: `chooseAuthMethod` takes no credential store, which is what makes
+ * "connecting again replaces what is there" a rule rather than an accident.
+ *
+ * It used to take one, indirectly — a `current` argument read off the stored
+ * credential, meant to default a re-run to the route the account already used.
+ * It was read under the *provisional* connection id, which is `pending` until
+ * identity is settled, so it was always undefined and the default was always
+ * the browser. The prompt now says what the choice does instead of trying to
+ * guess it.
  */
 
 const ASSERTION = {
@@ -79,15 +84,25 @@ const silent: Prompter = {
   confirm: async () => false,
 };
 
-function memoryStore(seed: Record<string, string> = {}): SecretStore {
-  const map = new Map(Object.entries(seed));
-  return {
-    get: async (ref: string) => map.get(ref) ?? null,
-    set: async (ref: string, value: string) => void map.set(ref, value),
-    has: async (ref: string) => map.has(ref),
-    delete: async (ref: string) => void map.delete(ref),
-    list: async () => [...map.keys()],
-  } as unknown as SecretStore;
+/**
+ * What was printed on the way to the answer.
+ *
+ * `progress` writes to stderr, and a warning that is built and discarded type-
+ * checks and runs exactly like one that is printed — so nothing but a test
+ * reading the stream can tell them apart.
+ */
+async function captured(body: () => Promise<void>): Promise<string> {
+  const errWrite = process.stderr.write.bind(process.stderr);
+  let err = '';
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (process.stderr as any).write = (chunk: string) => ((err += chunk), true);
+  try {
+    await body();
+  } finally {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (process.stderr as any).write = errWrite;
+  }
+  return err;
 }
 
 describe('what a provider offers', () => {
@@ -116,7 +131,6 @@ describe('choosing', () => {
     const chosen = await chooseAuthMethod({
       manifest: manifest(false),
       requested: undefined,
-      current: undefined,
       prompter: terminal,
     });
 
@@ -131,7 +145,6 @@ describe('choosing', () => {
     const chosen = await chooseAuthMethod({
       manifest: manifest(false),
       requested: 'oauth',
-      current: undefined,
       prompter: prompter(),
     });
 
@@ -144,7 +157,6 @@ describe('choosing', () => {
       manifest: manifest(true, true),
       requested: undefined,
       ownClient: true,
-      current: undefined,
       prompter: terminal,
     });
 
@@ -157,19 +169,17 @@ describe('choosing', () => {
       await chooseAuthMethod({
         manifest: manifest(true, true),
         requested: undefined,
-        current: undefined,
         prompter: prompter('3'),
       }),
-    ).toEqual({ kind: 'oauth', client: 'own' });
+    ).toEqual({ kind: 'oauth', id: 'own_client', client: 'own' });
 
     expect(
       await chooseAuthMethod({
         manifest: manifest(true, true),
         requested: undefined,
-        current: undefined,
         prompter: prompter('2'),
       }),
-    ).toEqual({ kind: 'oauth', client: 'hosted' });
+    ).toEqual({ kind: 'oauth', id: 'hosted_client', client: 'hosted' });
   });
 
   test('honours --auth without asking', async () => {
@@ -177,7 +187,6 @@ describe('choosing', () => {
     const chosen = await chooseAuthMethod({
       manifest: manifest(true),
       requested: 'service_account',
-      current: undefined,
       prompter: terminal,
     });
 
@@ -190,7 +199,6 @@ describe('choosing', () => {
       chooseAuthMethod({
         manifest: manifest(true),
         requested: 'app_password',
-        current: undefined,
         prompter: prompter(),
       }),
     ).rejects.toThrow(
@@ -203,7 +211,6 @@ describe('choosing', () => {
       chooseAuthMethod({
         manifest: manifest(false),
         requested: 'service_account',
-        current: undefined,
         prompter: prompter(),
       }),
     ).rejects.toThrow(/--auth accepts: oauth, own_client/);
@@ -213,11 +220,10 @@ describe('choosing', () => {
     const chosen = await chooseAuthMethod({
       manifest: manifest(true, true),
       requested: undefined,
-      current: undefined,
       prompter: prompter(''),
     });
 
-    expect(chosen).toEqual({ kind: 'oauth', client: 'hosted' });
+    expect(chosen).toEqual({ kind: 'oauth', id: 'hosted_client', client: 'hosted' });
   });
 
   test('takes the browser by default where nobody else runs a client', async () => {
@@ -226,32 +232,16 @@ describe('choosing', () => {
     const chosen = await chooseAuthMethod({
       manifest: manifest(true),
       requested: undefined,
-      current: undefined,
       prompter: prompter(''),
     });
 
     expect(chosen.kind).toBe('oauth');
   });
 
-  test('defaults to what the connection already uses, so a re-run repairs rather than replaces', async () => {
-    // The footgun this exists to close: `connect vendor_mail.main` on a key-backed
-    // connection, Enter pressed out of habit, and the key silently swapped for a
-    // browser flow the operator did not ask for.
-    const chosen = await chooseAuthMethod({
-      manifest: manifest(true),
-      requested: undefined,
-      current: 'assertion',
-      prompter: prompter(''),
-    });
-
-    expect(chosen.kind).toBe('assertion');
-  });
-
   test('accepts the method by name as well as by number', async () => {
     const chosen = await chooseAuthMethod({
       manifest: manifest(true),
       requested: undefined,
-      current: undefined,
       prompter: prompter('service_account'),
     });
 
@@ -263,7 +253,6 @@ describe('choosing', () => {
       chooseAuthMethod({
         manifest: manifest(true),
         requested: undefined,
-        current: undefined,
         prompter: prompter('yes'),
       }),
     ).rejects.toThrow(/not one of the choices. Answer 1 to 2/);
@@ -273,43 +262,56 @@ describe('choosing', () => {
     const chosen = await chooseAuthMethod({
       manifest: manifest(true),
       requested: undefined,
-      current: undefined,
       prompter: silent,
     });
 
     expect(chosen.kind).toBe('oauth');
   });
 
-  test('keeps a key-backed connection on its key when nobody is there to ask', async () => {
-    const chosen = await chooseAuthMethod({
-      manifest: manifest(true),
+  test('names the route it chose, so a reconnect can report what it became', async () => {
+    // `connect` puts this in `changes` — it is how somebody who passed `--auth`,
+    // and was therefore never prompted, sees that the route was swapped rather
+    // than the token refreshed.
+    const key = await chooseAuthMethod({
+      manifest: manifest(true, true),
       requested: undefined,
-      current: 'assertion',
-      prompter: silent,
+      prompter: prompter('1'),
     });
 
-    expect(chosen.kind).toBe('assertion');
+    expect(key).toMatchObject({ kind: 'assertion', id: 'service_account' });
+
+    // Unset where there was no choice to report: a provider with one way in
+    // reads exactly as it did before any of this existed.
+    expect(
+      await chooseAuthMethod({ manifest: manifest(false), requested: 'oauth', prompter: silent }),
+    ).toEqual({ kind: 'oauth', client: undefined });
   });
 });
 
-describe('what a connection uses today', () => {
-  test('is nothing, for one that does not exist yet', async () => {
-    expect(await currentAuthMethod(manifest(true), 'main', memoryStore())).toBeUndefined();
-  });
-
-  test('is read off the credential, not off config', async () => {
-    const store = memoryStore({
-      'vendor_mail/main': JSON.stringify({ grant: ASSERTION_GRANT, key_ref: 'vendor/key' }),
+describe('what the prompt says out loud', () => {
+  test('warns that the choice replaces whatever the account uses now', async () => {
+    // The whole of the protection that used to be attempted by defaulting. A
+    // default cannot be read; a sentence can, and it is true on a first connect
+    // too, where there is simply nothing to replace.
+    const err = await captured(async () => {
+      await chooseAuthMethod({
+        manifest: manifest(true, true),
+        requested: undefined,
+        prompter: prompter('2'),
+      });
     });
 
-    expect(await currentAuthMethod(manifest(true), 'main', store)).toBe('assertion');
+    expect(err).toContain('becomes the only way in for this account');
+    expect(err).toContain('a connection authenticates one way at a time');
   });
 
-  test('is the browser for a stored token blob', async () => {
-    const store = memoryStore({
-      'vendor_mail/main': JSON.stringify({ access_token: 'a', refresh_token: 'r' }),
+  test('says nothing at all for a provider with one way in', async () => {
+    // The property that matters more than the warning: connecting GitHub must
+    // not acquire a paragraph because Google grew a second route.
+    const err = await captured(async () => {
+      await chooseAuthMethod({ manifest: manifest(false), requested: undefined, prompter: prompter() });
     });
 
-    expect(await currentAuthMethod(manifest(true), 'main', store)).toBe('own');
+    expect(err).toBe('');
   });
 });

@@ -112,6 +112,17 @@ That is why the middle row above beats the first one today: the hosted client is
 a client under review has whatever status it has. Registering your own and publishing it is the
 shortest path to connections that survive the week.
 
+**Picking wrong is not a decision you are stuck with.** An account authenticates one way at a
+time, and `connect` is how it changes: run it again, pick another route, and the new credential
+replaces the old one on the same connection. Nothing has to be disconnected or removed first, and
+you do not end up with the account listed twice. The prompt says as much each time it asks, which
+is also the warning worth reading if you are re-running `connect` only to refresh a token — the
+last route you pick is the one that account uses from then on.
+
+One thing this does not do: it does not withdraw the access you had. Moving a connection off the
+browser leaves Google still holding the consent you granted, which you remove yourself at
+[myaccount.google.com/permissions](https://myaccount.google.com/permissions).
+
 ### If you register your own
 
 **Choose External if you have a mix of personal Gmail and Workspace accounts**, which is the common

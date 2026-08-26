@@ -1,5 +1,5 @@
 import type { Logger } from '#connectivity';
-import { clearUpstreamTokens } from '#connectivity/auth/index.ts';
+import { clearMintedTokens, clearUpstreamTokens } from '#connectivity/auth/index.ts';
 import type { ProfileRuntime } from '#server/mcp';
 import { Generation } from './generation.ts';
 
@@ -184,12 +184,21 @@ export class Generations {
     // cloud target is a network write, so this is reachable rather than
     // theoretical.
     try {
-      // Module-global and keyed per connection, so it survives a reload that
+      // Module-global and keyed per connection, so they survive a reload that
       // replaced everything else. Re-connecting `<provider>.<id>` to a different
       // account would otherwise serve the previous account's access token until
       // it expired — up to an hour after the config said otherwise. Unchanged
       // connections pay one refresh.
+      //
+      // Both caches, because a connection authenticates one way at a time and
+      // re-connecting is how it changes: the route is settled by what `connect`
+      // last stored, so a reload that cleared only the authorization-code cache
+      // would keep serving a token minted from a key for a connection that no
+      // longer authenticates with one — and, worse, keep acting as the
+      // previously impersonated user, since the minted cache is keyed by
+      // connection with no subject in it.
       clearUpstreamTokens();
+      clearMintedTokens();
 
       // After the swap: a request arriving during the retire already gets the
       // new generation, and this only waits on requests that started before it.
