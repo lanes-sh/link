@@ -31,11 +31,22 @@ const SHARE_HINT: Record<string, string> = {
     'a calendar (Settings for that calendar → "Share with specific people" → paste the address)',
 };
 
+/**
+ * Where a personal account should go instead, for the products that have
+ * somewhere.
+ *
+ * Only Gmail does. A key needs delegation for mail, contacts and task lists
+ * alike, and delegation needs an administrator — but mail is the one Google
+ * still serves over a protocol that takes a password, so `gmail_imap` is a real
+ * answer rather than a consolation. Contacts and Tasks have none, and saying so
+ * plainly beats sending somebody to look.
+ */
 export const googleServiceAccount = (
   product: string,
   scopes: readonly string[],
   delegation: 'optional' | 'required',
   apis: readonly string[],
+  instead?: string,
 ) => ({
   method: 'service_account',
   label: 'Service account key',
@@ -47,7 +58,8 @@ export const googleServiceAccount = (
         `key's own address, so nothing in the account moves until you share it.`
       : `a JSON key that never expires, and no browser. ${product} has nothing that belongs to ` +
         `a key, so this needs a Google Workspace administrator to let it act as you — a personal ` +
-        `Google account cannot do it.`,
+        `Google account cannot do it` +
+        (instead ? `, and wants ${instead} instead.` : '.'),
   subject_label:
     delegation === 'optional'
       ? 'Google account to act as, if an administrator has granted it'
@@ -61,7 +73,8 @@ export const googleServiceAccount = (
         : `${product} can authenticate with a service account key instead of signing in. The key ` +
           `does not expire — but a key has no mailbox, contacts or task lists of its own, so this ` +
           `route works only where a Google Workspace administrator has authorised the key to act ` +
-          `as a user in their domain. On a personal Google account, use the browser instead.`,
+          `as a user in their domain. On a personal Google account, use the browser instead` +
+          (instead ? `, or ${instead}, which is an app password over IMAP and does not expire either.` : '.'),
     docs: 'docs/detailed/setup/google.md',
     docs_url: 'https://console.cloud.google.com/iam-admin/serviceaccounts',
     steps: [

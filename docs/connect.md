@@ -29,6 +29,7 @@ $ lanes link connect gmail --profile personal --target local        # again, for
 | Linear | `lanes link connect linear` | Linear's own MCP server |
 | GitHub | `lanes link connect github` | Repositories, issues, pull requests, and workflow runs |
 | Slack | `lanes link connect slack` | Search, read, and send messages, threads, files, and canvases |
+| Gmail (IMAP) | `lanes link connect gmail_imap` | The same mailbox over IMAP and SMTP, with an app password that does not expire |
 | Gmail (Google MCP) | `lanes link connect gmail_mcp` | Google's own MCP server — Developer Preview only |
 | Drive (Google MCP) | `lanes link connect drive_mcp` | Likewise; use `drive` unless you are enrolled |
 

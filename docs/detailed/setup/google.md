@@ -102,6 +102,10 @@ you pick. There are up to three:
 | A client of your own | ~20 minutes, once per profile | **no, if you publish it** — see below | the whole account |
 | A service account key | ~10 minutes, once per profile | **never** | see [Service account](#connecting-with-a-service-account-key) |
 
+There is a fourth that is not on this list because it is not a way of connecting `gmail` — it is a
+different provider. `gmail_imap` reaches a personal mailbox over IMAP with an app password, which
+also never expires. See [Gmail over IMAP](#gmail-over-imap-on-a-personal-account).
+
 **The seven-day expiry is a property of publishing status, not of verification.** These are two
 different settings and confusing them is what sends people into the verification centre for a
 problem a checkbox solves. A client whose publishing status is **Testing** has every refresh token
@@ -422,7 +426,9 @@ shared yet. Leave the "account to act as" prompt blank and the key acts as itsel
 
 ### Delegation, for Gmail, Contacts and Tasks
 
-These need a Google Workspace administrator, and a personal Google account cannot do it at all.
+These need a Google Workspace administrator, and a personal Google account cannot do it at all. For
+mail specifically there is another way in — see
+[Gmail over IMAP](#gmail-over-imap-on-a-personal-account). Contacts and Tasks have none.
 
 Copy the service account's numeric **Unique ID** from its Details tab — the client ID, not the email
 address. Then, in the Workspace Admin console: **Security → Access and data control → API controls →
@@ -444,6 +450,48 @@ A key does not expire, which is the feature and also the whole of the risk: ther
 withdraw and no token to age out, so a leaked key is good until somebody deletes it in the console.
 Treat it as you would a password, and prefer sharing over delegation where sharing will do — one
 shared folder is a much smaller grant than the right to act as you.
+
+---
+
+## Gmail over IMAP, on a personal account
+
+A personal `@gmail.com` cannot use a service account for mail — the section above is why: a key has
+no mailbox, so it can only reach one by acting as a person, and that grant is made in an admin
+console a personal account does not have. But Google still serves that mailbox over IMAP, and IMAP
+takes an **app password**: sixteen characters you issue to yourself, which does not expire and is not
+your account password.
+
+```console
+$ lanes link connect gmail_imap
+```
+
+That is a different provider from `gmail`, not another route into it — a manifest has one connector,
+and IMAP is not HTTPS. Practically, that means:
+
+| | `gmail` | `gmail_imap` |
+|---|---|---|
+| Credential | OAuth token, or a service account key | An app password |
+| Expires | with the client's publishing status | **never** |
+| Works on a personal account | yes, with the weekly re-auth unless you publish a client | **yes** |
+| Works on Workspace | yes | no — Google ended basic auth there in March 2025, and an admin can disable app passwords anyway |
+| Reaches | Gmail's API: labels, threads, drafts, the lot | a mailbox: search, read, flag, move, send |
+| Policy rule | `gmail.*` | `gmail_imap.*` |
+
+They are separate connections and can both exist. Nothing shares a credential between them.
+
+**Getting the password.** Two-Step Verification has to be on first — without it the app-passwords
+page reports that the setting is not available for your account rather than saying why. Then
+[myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) → create one → name it
+"Lanes Link", which is the only way to revoke this one later without cutting off your other devices.
+Google shows the sixteen characters once, in four groups of four; the spaces are cosmetic.
+
+`connect` asks for your full address and then that password. If a login is refused, it is almost
+always the account password pasted where the app password belongs — IMAP reports both the same way.
+`lanes link connect gmail_imap --replace` is the command to fix it; a bare re-run finds the refused
+credential already stored and reuses it.
+
+IMAP itself is on by default. If a login succeeds and then mailboxes are missing, check
+**Gmail → Settings → See all settings → Forwarding and POP/IMAP → IMAP access**.
 
 ---
 
@@ -475,6 +523,9 @@ The escapes, cheapest first:
   "OAuth client you register" route, or `--auth own_client`. Publishing is a setting, not a review;
   it costs an unverified-app screen and a lifetime cap of 100 new users on that project. This is
   the one most people want.
+- **Use an app password over IMAP**, if this is a personal account and mail is what you need —
+  `lanes link connect gmail_imap`. Nothing expires and there is no console project at all. See
+  [Gmail over IMAP](#gmail-over-imap-on-a-personal-account).
 - **Connect with a service account key instead** — `--auth service_account`. Nothing expires,
   because nothing consented. It reaches less, and how much less depends on the product; see
   [Service account](#connecting-with-a-service-account-key).
