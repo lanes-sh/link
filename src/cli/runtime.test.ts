@@ -75,7 +75,7 @@ afterAll(async () => {
 describe('the local target', () => {
   test('opens the encrypted file and the filesystem', async () => {
     await workspace();
-    const runtime = await openRuntime({ target: 'local' });
+    const runtime = await openRuntime({ profile: 'personal', target: 'local' });
 
     try {
       expect(runtime.target).toBe('local');
@@ -105,7 +105,7 @@ describe('the owner layer follows the target — ADR-014', () => {
       '---\ndescription: Left at the old workspace path\n---\nIgnored.\n',
     );
 
-    const runtime = await openRuntime({ target: 'local' });
+    const runtime = await openRuntime({ profile: 'personal', target: 'local' });
     try {
       expect(runtime.registry.capabilities().map((entry) => entry.id)).toContain(
         'skills.review-diff',
@@ -123,7 +123,7 @@ describe('the owner layer follows the target — ADR-014', () => {
 
   test('a file vault is the default, and writes beside the credential store', async () => {
     const root = await workspace();
-    const runtime = await openRuntime({ target: 'local' });
+    const runtime = await openRuntime({ profile: 'personal', target: 'local' });
 
     try {
       await runtime.vault.put('owner', { id: 'token', value: 'secret' });
@@ -143,7 +143,7 @@ describe('the owner layer follows the target — ADR-014', () => {
     const root = await workspace();
     process.env['LANES_LINK_VAULT_KEY'] = Buffer.from(new Uint8Array(32).fill(3)).toString('base64');
 
-    const runtime = await openRuntime({ target: 'blob_vault' });
+    const runtime = await openRuntime({ profile: 'personal', target: 'blob_vault' });
     try {
       await runtime.vault.put('owner', { id: 'token', value: 'secret' });
 
@@ -159,14 +159,14 @@ describe('the owner layer follows the target — ADR-014', () => {
 describe('refusals', () => {
   test('an s3 target with no bucket says so before reaching for a credential', async () => {
     await workspace();
-    await expect(openRuntime({ target: 's3_no_bucket' })).rejects.toThrow(
+    await expect(openRuntime({ profile: 'personal', target: 's3_no_bucket' })).rejects.toThrow(
       /storage\.bucket is required for the s3 adapter/,
     );
   });
 
   test('an s3 target with no key refs says the key is a credential', async () => {
     await workspace();
-    await expect(openRuntime({ target: 's3_no_ref' })).rejects.toThrow(
+    await expect(openRuntime({ profile: 'personal', target: 's3_no_ref' })).rejects.toThrow(
       /access_key_id_ref is required for the s3 adapter/,
     );
   });
@@ -175,21 +175,21 @@ describe('refusals', () => {
     await workspace();
     // The first-deploy failure an operator actually hits, and the requirement
     // of it: carry the command, not an S3 client's auth error.
-    await expect(openRuntime({ target: 's3' })).rejects.toThrow(
+    await expect(openRuntime({ profile: 'personal', target: 's3' })).rejects.toThrow(
       /is not in this target's secret store.*lanes link secrets set cloud\/s3_access_key_id/s,
     );
   });
 
   test('gcp-secret-manager without a project fails before any API call', async () => {
     await workspace();
-    await expect(openRuntime({ target: 'gcp_no_project' })).rejects.toThrow(
+    await expect(openRuntime({ profile: 'personal', target: 'gcp_no_project' })).rejects.toThrow(
       /credentials\.project is required/,
     );
   });
 
   test('an undeclared target is refused by name', async () => {
     const root = await workspace();
-    const { config } = await resolveProfile({ target: 'local' });
+    const { config } = await resolveProfile({ profile: 'personal', target: 'local' });
     await expect(openSecretStoreFor(config, root, 'staging')).rejects.toThrow(
       /Target "staging" is not declared.*local, s3/s,
     );
@@ -199,7 +199,7 @@ describe('refusals', () => {
 describe('one credential store, two targets', () => {
   test('secrets push has a source and a destination without opening a state', async () => {
     const root = await workspace();
-    const { config } = await resolveProfile({ target: 'local' });
+    const { config } = await resolveProfile({ profile: 'personal', target: 'local' });
 
     // `s3` names a bucket this machine cannot reach; its credential store still
     // opens, which is what lets `secrets push --to cloud` work before the cloud

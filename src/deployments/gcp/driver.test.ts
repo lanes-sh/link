@@ -21,7 +21,13 @@ const cloudrun = {
 } as const satisfies DeployConfig;
 
 const plan = (overrides: Partial<DeployConfig> = {}, rest: { profile?: string } = {}) =>
-  deployPlan({ deploy: { ...cloudrun, ...overrides }, tag: '20260811T090000', target: 'cloud', ...rest });
+  deployPlan({
+    deploy: { ...cloudrun, ...overrides },
+    tag: '20260811T090000',
+    target: 'cloud',
+    profile: 'personal',
+    ...rest,
+  });
 
 const rollout = (overrides: Partial<DeployConfig> = {}, rest: { profile?: string } = {}) =>
   plan(overrides, rest).find((step) => step.argv[0] === 'run')!;
@@ -72,16 +78,23 @@ describe('the steps', () => {
   test('the revision is told which target to open', () => {
     const env = rollout().argv[rollout().argv.indexOf('--set-env-vars') + 1];
 
-    // The one thing that differs between running locally and running deployed.
-    expect(env).toBe('LANES_LINK_TARGET=cloud');
+    // The one thing that differs between running locally and running deployed —
+    // now always accompanied by the profile, which a revision also cannot do
+    // without.
+    expect(env).toBe('LANES_LINK_TARGET=cloud,LANES_LINK_PROFILE=personal');
   });
 
-  test('a profile flag is carried into the revision, and omitted when absent', () => {
+  test('the profile is always carried into the revision', () => {
+    // It used to be conditional on `--profile` having been passed, and deploying
+    // without it was the documented common case — so a large share of existing
+    // services carry no LANES_LINK_PROFILE at all, and a container that reads no
+    // workspace default refuses at boot. `deploy` names a profile now, so this
+    // is always known and always sent.
     const withProfile = rollout({}, { profile: 'work' });
     const env = withProfile.argv[withProfile.argv.indexOf('--set-env-vars') + 1];
     expect(env).toBe('LANES_LINK_TARGET=cloud,LANES_LINK_PROFILE=work');
 
-    expect(rollout().argv.join(' ')).not.toContain('LANES_LINK_PROFILE');
+    expect(rollout().argv.join(' ')).toContain('LANES_LINK_PROFILE=personal');
   });
 
   test('a deploy block with no project is refused by the driver, not by the schema', () => {
@@ -89,7 +102,12 @@ describe('the steps', () => {
     // without projects. The driver that needs it is the thing that says so.
     const { project: _project, ...withoutProject } = cloudrun;
     expect(() =>
-      deployPlan({ deploy: withoutProject as DeployConfig, tag: 't', target: 'cloud' }),
+      deployPlan({
+        deploy: withoutProject as DeployConfig,
+        tag: 't',
+        target: 'cloud',
+        profile: 'personal',
+      }),
     ).toThrow(/targets\.cloud\.deploy\.project is required/);
   });
 });
@@ -130,6 +148,7 @@ describe('who can reach the endpoint', () => {
       deploy: { ...cloudrun },
       tag: 't',
       target: 'cloud',
+      profile: 'personal',
       secretEnv: { LANES_LINK_VAULT_KEY: 'vault/key' },
     }).find((step) => step.argv[0] === 'run')!;
 

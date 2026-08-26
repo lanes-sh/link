@@ -1,4 +1,4 @@
-import { ConfigError, TARGET_ENV, resolveDeployTarget, type DeployConfig } from '#profile';
+import { ConfigError, type DeployConfig } from '#profile';
 import { announce, fail, heading, ok, print, style, warn } from '#cli/output.ts';
 import { staleNudge } from '#cli/release.ts';
 import { confirm, isInteractive } from '#cli/prompt.ts';
@@ -8,7 +8,7 @@ import { printSteps, runSteps } from './steps.ts';
 import { driverFor } from './drivers.ts';
 import { prepareSecrets, readableRefs, rotatableRefs } from './prepare.ts';
 import { deployedWorkspace, repairSetupSurface, uploadWorkspace } from './upload.ts';
-import { defaultTargetHandOff } from './handoff.ts';
+import { unservableProfiles, unservableRefusal } from './servable.ts';
 
 /**
  * `lanes link deploy` — set up what is missing, build the image, roll a revision,
@@ -47,13 +47,20 @@ export interface DeployFlags extends GlobalFlags {
 export async function deploy(flags: DeployFlags): Promise<void> {
   // The one command allowed to name a target that does not exist yet: creating
   // it is what a first deploy is for.
-  const { resolution, config } = await resolveProfile(flags, { allowUndeclaredTarget: true });
-
-  // And the one command that can work out which target it meant. `resolveProfile`
-  // falls back to `instance.default_target`, which is the target commands *run*
-  // against — `local`, and never the answer to "deploy what".
-  const { target, source } = resolveDeployTarget(config, flags.target);
-  announce({ ...resolution, target, targetSource: source });
+  //
+  // It used to work out its own target too — the one declaring a `deploy` block,
+  // guessing when there was one, refusing when there were two, and inventing
+  // `cloud` when there were none. That inference was a defence against
+  // `instance.default_target`, which is `local` on a scaffolded profile and
+  // never the answer to "deploy what". With the fallback gone (ADR-037) the
+  // defence has nothing to defend against, and what is left is three behaviours
+  // from one command line on the command that creates cloud resources and rolls
+  // a public URL — where `allowUndeclaredTarget` means a mistake is not refused
+  // but surveyed, written into the profile, and deployed as a new service.
+  const { resolution, config, target } = await resolveProfile(flags, {
+    allowUndeclaredTarget: true,
+  });
+  announce(resolution);
 
   // `check` before anything external, per the gate order: a config that will be
   // rejected on boot should be rejected here, not after a five-minute build.
@@ -104,7 +111,7 @@ export async function deploy(flags: DeployFlags): Promise<void> {
     deploy: deployConfig,
     tag,
     target,
-    ...(flags.profile !== undefined ? { profile: flags.profile } : {}),
+    profile: resolution.profile,
     ...(workspace !== undefined ? { workspace } : {}),
     ...(secretEnv ? { secretEnv } : {}),
   });
@@ -169,8 +176,9 @@ export async function deploy(flags: DeployFlags): Promise<void> {
     for (const problem of prepared.blocking) print(fail(problem));
     throw new ConfigError(
       'The deployed instance cannot start without these. Store them with ' +
-        `lanes link secrets set <ref> --target ${target}, or copy a local setup with ` +
-        `lanes link secrets push --from local --to ${target}.`,
+        `lanes link secrets set <ref> --profile ${resolution.profile} --target ${target}, or ` +
+        `copy a local setup with lanes link secrets push --profile ${resolution.profile} ` +
+        `--from local --to ${target}.`,
     );
   }
 
@@ -194,6 +202,25 @@ export async function deploy(flags: DeployFlags): Promise<void> {
   // the upload sends would leave a served profile without the surface — this
   // bug again, one profile over.
   if (workspace) {
+    // Before anything is copied, and before the rollout: the endpoint opens
+    // every profile in the bucket against this one target, so a profile that
+    // does not declare it is not a profile that gets skipped — it is a revision
+    // that never goes healthy. `servable.ts` has the whole failure.
+    //
+    // Here rather than at the top of the command because it reads the same
+    // scope the upload does, and that scope is not settled until `workspace`
+    // says there is a bucket to send to at all.
+    const unservable = await unservableProfiles({
+      workspaceRoot: resolution.workspaceRoot,
+      profile: flags.profile,
+      target,
+    });
+
+    if (unservable.length > 0) {
+      heading('Cannot be served');
+      throw new ConfigError(unservableRefusal(unservable, target));
+    }
+
     await repairSetupSurface(resolution.workspaceRoot, flags.profile);
 
     // Before the rollout, so the revision that comes up finds a config to read.
@@ -209,34 +236,19 @@ export async function deploy(flags: DeployFlags): Promise<void> {
   if (!url) {
     print(
       warn(
-        `deployed, but the platform reported no URL yet — run: lanes link outputs --target ${target}`,
+        `deployed, but the platform reported no URL yet — run: lanes link outputs --profile ${resolution.profile} --target ${target}`,
       ),
     );
-  } else {
-    heading('Endpoint');
-    print(`  ${url}/mcp`);
-    print(await healthLine(url));
-    print('');
-    print(registerLine(target));
-
-    reportUnauthorised(prepared.warnings, target);
+    return;
   }
 
-  // Last, and on the no-URL path too — that deploy still succeeded, and where
-  // the operator's next command runs is just as wrong either way. It goes after
-  // `reportUnauthorised` for the reason that function's own comment gives about
-  // going last: this one governs every subsequent command, so it has the
-  // strongest claim on the bottom of the screen. On a first deploy nothing is
-  // unauthorised yet and this is the only thing left on it.
-  const handOff = defaultTargetHandOff({
-    deployed: target,
-    defaultTarget: config.instance.default_target,
-    ...(process.env[TARGET_ENV] ? { fromEnv: process.env[TARGET_ENV] } : {}),
-  });
-  if (handOff) {
-    print('');
-    print(handOff);
-  }
+  heading('Endpoint');
+  print(`  ${url}/mcp`);
+  print(await healthLine(url));
+  print('');
+  print(registerLine(resolution.profile, target));
+
+  reportUnauthorised(prepared.warnings, resolution.profile, target);
 }
 
 /**
@@ -258,9 +270,10 @@ export async function deploy(flags: DeployFlags): Promise<void> {
  * appeared only on a later re-deploy, by which point the connector is usually
  * registered and the ordering is no longer available to get right.
  */
-function registerLine(target: string): string {
+function registerLine(profile: string, target: string): string {
   return style.dim(
-    `  Connect your accounts first, then register with: lanes link outputs --target ${target}\n` +
+    `  Connect your accounts first, then register with:\n` +
+      `    lanes link outputs --profile ${profile} --target ${target}\n` +
       '  A client keeps the tool list it fetched when it connected, so one registered\n' +
       '  before the accounts holds a surface without them until it is re-added.',
   );
@@ -280,7 +293,7 @@ function registerLine(target: string): string {
  * refusing it, naming the connection rather than the staleness. Reconcile now
  * runs again on every reload, and `connect` asks for one (ADR-029).
  */
-function reportUnauthorised(warnings: readonly string[], target: string): void {
+function reportUnauthorised(warnings: readonly string[], profile: string, target: string): void {
   if (warnings.length === 0) return;
 
   heading('Not authorised yet');
@@ -289,7 +302,7 @@ function reportUnauthorised(warnings: readonly string[], target: string): void {
   print(
     style.dim(
       '  A browser consent per account is the one step this cannot take for you:\n' +
-        `    lanes link connect <provider> --target ${target}\n` +
+        `    lanes link connect <provider> --profile ${profile} --target ${target}\n` +
         '  Each is served as soon as it is authorised. There is no second deploy —\n' +
         '  deploying is how code gets here, and authorising an account changes none.',
     ),
@@ -329,7 +342,7 @@ async function healthLine(url: string): Promise<string> {
     return ok(
       body.profiles
         ? `healthy — serving ${body.profiles.join(', ')}`
-        : 'healthy — run `lanes link outputs` for what it serves',
+        : 'healthy — run `lanes link outputs` with this profile and target for what it serves',
     );
   } catch {
     // A cold start plus a database connect can outrun a short probe, and

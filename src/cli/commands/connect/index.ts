@@ -104,7 +104,7 @@ async function runConnect(
     // `gs://` workspace is a second network read of the same YAML. Still long
     // before the browser opens, which is the part that matters. Inside the
     // `try` so the `finally` closes the runtime if the rendering throws.
-    if (!announced) announceConnectTarget(runtime, target, options.json);
+    if (!announced) announceConnectTarget(runtime, options.json);
 
     const registry = runtime.registry;
     const entry = registry.get(providerId);
@@ -179,8 +179,9 @@ async function runConnect(
         manifest,
         connectionId: named ?? adopted,
         profile,
+        target: runtime.target,
         credentials: runtime.credentials,
-        target,
+        spec: target,
       });
 
       if (blocked) return { ...NOTHING, ok: false, ...blocked };

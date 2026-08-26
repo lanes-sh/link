@@ -41,10 +41,10 @@ export {
 
 export {
   WORKSPACE_FILE,
-  describeSelection,
   installRoot,
   listProfiles,
   loadProfileConfig,
+  noProfileNamed,
   profilePath,
   readWorkspace,
   resolveSelection,
@@ -52,10 +52,9 @@ export {
   workspacePath,
 } from './workspace.ts';
 export {
-  TARGET_ENV,
-  askedTarget,
-  resolveDeployTarget,
-  resolveTarget,
+  LEGACY_TARGET_ENV,
+  noTargetNamed,
+  requireTarget,
   undeclaredTarget,
 } from './targets.ts';
 export {
@@ -65,6 +64,7 @@ export {
   writeWorkspaceFile,
 } from './files.ts';
 export {
+  type ProfileSelection,
   type Resolution,
   type ResolveOptions,
 } from './workspace.ts';

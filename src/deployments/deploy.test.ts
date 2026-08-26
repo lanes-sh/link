@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rotatableRefs } from './prepare.ts';
-import { defaultTargetHandOff } from './handoff.ts';
+import { unservableProfiles, unservableRefusal } from './servable.ts';
 import {
   deployedWorkspace,
   isWorkspaceConfig,
@@ -475,58 +475,90 @@ describe('the allowlist against a real workspace listing', () => {
 });
 
 /**
- * What a deploy leaves the operator's next command pointing at.
+ * Whether every profile a deploy sends can run where it is sending them.
  *
- * The bug this closes is silent from both ends: `deploy` picks its own target
- * and never writes `instance.default_target`, so a bare `connect` straight
- * afterwards goes to the local store and the revision that just rolled goes on
- * refusing the account. Neither command says a word about it.
+ * The endpoint opens every profile in the bucket against the one target the
+ * revision was baked with, so a profile that does not declare it is not skipped
+ * — it throws on the way up and the revision never goes healthy. The symptom is
+ * a deploy that reports success followed by a service that will not start, and
+ * nothing in either points at the profile that caused it.
  */
-describe('the hand-off after a deploy', () => {
-  test('says nothing when a bare command already lands on the deployment', () => {
-    expect(defaultTargetHandOff({ deployed: 'cloud', defaultTarget: 'cloud' })).toBeNull();
+describe('whether a profile can run where it is being sent', () => {
+  const PROFILE = (name: string, targets: string) => `contract: 1
+instance:
+  profile: ${name}
+  default_target: local
+  port: 7337
+targets:
+${targets}
+connections: []
+policy:
+  allow: []
+  deny: []
+`;
+
+  const LOCAL = `  local:
+    credentials: { adapter: file, path: ./data/x/credentials.enc }
+    storage: { adapter: filesystem, path: ./data/x }`;
+
+  const CLOUD = `  cloud:
+    credentials: { adapter: gcp-secret-manager, project: my-project }
+    storage: { adapter: gcs, bucket: your-bucket }
+    vault: { adapter: secret }`;
+
+  async function workspaceOf(profiles: Record<string, string>): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), 'lanes-link-servable-'));
+    roots.push(root);
+    await mkdir(join(root, 'profiles'), { recursive: true });
+    for (const [name, targets] of Object.entries(profiles)) {
+      await writeFile(join(root, 'profiles', `${name}.yaml`), PROFILE(name, targets));
+    }
+    return root;
+  }
+
+  test('says nothing when every profile declares the target', async () => {
+    const root = await workspaceOf({
+      personal: `${LOCAL}\n${CLOUD}`,
+      work: `${LOCAL}\n${CLOUD}`,
+    });
+
+    expect(await unservableProfiles({ workspaceRoot: root, profile: undefined, target: 'cloud' })).toEqual([]);
   });
 
-  test('names the file, the deployed target, and both ways to change it', () => {
-    const text = defaultTargetHandOff({ deployed: 'cloud', defaultTarget: 'local' })!;
+  test('names the profile that would take the revision down', async () => {
+    const root = await workspaceOf({ personal: `${LOCAL}\n${CLOUD}`, work: LOCAL });
 
-    expect(text).toContain('instance.default_target is still "local"');
-    expect(text).toContain('lanes link connect <provider> --target cloud');
-    expect(text).toContain('lanes link target use cloud');
+    const found = await unservableProfiles({ workspaceRoot: root, profile: undefined, target: 'cloud' });
+
+    expect(found).toEqual([{ profile: 'work', declares: ['local'] }]);
   });
 
-  test('says nothing when the variable already points at the deployment', () => {
-    // The case a naive `defaultTarget !== deployed` check gets wrong: the file
-    // disagrees, and it does not matter, because the variable wins and the
-    // operator's next command lands in the right place regardless.
+  test('is scoped as the upload is, so --profile narrows it too', async () => {
+    // The set that gets uploaded is the set that gets served. Checking a wider
+    // one would refuse a deploy that was never going to send the bad profile.
+    const root = await workspaceOf({ personal: `${LOCAL}\n${CLOUD}`, work: LOCAL });
+
+    expect(await unservableProfiles({ workspaceRoot: root, profile: 'personal', target: 'cloud' })).toEqual([]);
     expect(
-      defaultTargetHandOff({ deployed: 'cloud', defaultTarget: 'local', fromEnv: 'cloud' }),
-    ).toBeNull();
+      (await unservableProfiles({ workspaceRoot: root, profile: 'work', target: 'cloud' })).map((one) => one.profile),
+    ).toEqual(['work']);
   });
 
-  test('names the variable rather than the file when the variable is winning', () => {
-    // Telling someone to run `target use` while a variable overrides the file is
-    // advice that changes the file and nothing else — the same trap `target use`
-    // warns about from its own end.
-    const text = defaultTargetHandOff({
-      deployed: 'cloud',
-      defaultTarget: 'local',
-      fromEnv: 'staging',
-    })!;
+  test('leaves an unparseable profile to the error that reads better', async () => {
+    // It is already fatal further along, and a YAML syntax error dressed up as
+    // "cannot run on cloud" sends someone looking at their targets.
+    const root = await workspaceOf({ personal: `${LOCAL}\n${CLOUD}` });
+    await writeFile(join(root, 'profiles', 'broken.yaml'), 'targets: [unclosed\n');
 
-    expect(text).toContain('LANES_LINK_TARGET="staging"');
-    expect(text).toContain('wins over the file');
-    expect(text).toContain('export LANES_LINK_TARGET=cloud');
-    expect(text).not.toContain('lanes link target use');
+    expect(await unservableProfiles({ workspaceRoot: root, profile: undefined, target: 'cloud' })).toEqual([]);
   });
 
-  test('names what a bare command actually resolves to, not what the file says', () => {
-    const text = defaultTargetHandOff({
-      deployed: 'cloud',
-      defaultTarget: 'local',
-      fromEnv: 'staging',
-    })!;
+  test('the refusal names the target, what was declared, and both ways out', () => {
+    const text = unservableRefusal([{ profile: 'work', declares: ['local'] }], 'cloud');
 
-    expect(text).toContain('still acts on "staging"');
+    expect(text).toContain('cannot run on "cloud"');
+    expect(text).toContain('work   declares: local');
+    expect(text).toContain('lanes link profile add <name> --target cloud');
+    expect(text).toContain('--profile <name>');
   });
 });

@@ -313,7 +313,22 @@ export const configSchema = z.object({
 
   instance: z.object({
     profile: identifier,
-    default_target: z.string().min(1),
+    /**
+     * @deprecated Parsed, never read. See ADR-037.
+     *
+     * Every command names its target on the command line now, so nothing
+     * consults this. It stays *declared* rather than being dropped, and that is
+     * the whole point: an undeclared key is stripped silently by the schema,
+     * which would leave `check` and `doctor` with nothing to report and an
+     * operator staring at a line they reasonably believe still selects
+     * something. Declaring it is what lets them be told it is inert.
+     *
+     * Optional, so a profile written today needs no such line, and unvalidated,
+     * so a stale value naming a target that no longer exists is harmless rather
+     * than a failure on a key nothing reads. The `database:` note above records
+     * the same decision for the same reason.
+     */
+    default_target: z.string().min(1).optional(),
     port: z.number().int().min(1).max(65535).default(7337),
     /**
      * Loopback by default. Binding elsewhere is possible but the server

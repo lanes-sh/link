@@ -560,6 +560,13 @@ data/               # local state per profile, gitignored
 
 Workspace root resolves from `LANES_LINK_HOME`, else the nearest ancestor directory containing `lanes-link.yaml`, else `~/.lanes-link`.
 
+> **Amended by [ADR-037](adr/037-a-command-names-what-it-acts-on.md).** The resolution chains in
+> this section, and the `lanes link profile default` / `lanes link target use` commands that write
+> into them, have been withdrawn. `--profile` and `--target` are required flags; the two
+> environment variables and the two config keys are parsed and no longer read. The paragraph below
+> on *not* implementing a sticky `lanes link use` still stands — this goes further than it did,
+> for the reason it gives.
+
 Profile resolves from `--profile <name>`, then `LANES_LINK_PROFILE`, then `default_profile` in the workspace file, then an error listing available profiles. A profile name maps to `profiles/<name>.yaml`.
 
 Target resolves from `--target <name>`, then `LANES_LINK_TARGET`, then `instance.default_target`. `lanes link deploy` resolves it differently — the one target declaring a `deploy` block, else `cloud` — and deliberately does not read the environment variable, because it is the one command that may name a target which does not exist yet.

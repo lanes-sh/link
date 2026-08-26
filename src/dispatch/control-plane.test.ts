@@ -61,7 +61,7 @@ function registryWithBuiltins(): ProviderRegistry {
   // authorises nothing. Built with no catalogue for the same reason the vault is
   // built with no items — a provider id in the catalogue is data, and what is
   // asserted here is the surface we author.
-  registry.register(createSetupProvider({ profile: 'personal' }));
+  registry.register(createSetupProvider({ profile: 'personal', target: 'local' }));
 
   return registry;
 }

@@ -37,16 +37,16 @@ ${style.bold('Everyday')}
   ${PROGRAM} status [--json]            connections, reachable capabilities, endpoint
 
 ${style.bold('Profiles')}
-  ${PROGRAM} profile add <name> [--default] [--json]
+  ${PROGRAM} profile add <name> --target <name> [--target <name>] [--json]
+                                 a target per place it runs; local is derived, the
+                                 rest are copied from a sibling profile
   ${PROGRAM} profile list [--json]
-  ${PROGRAM} profile default <name>
   ${PROGRAM} profile remove <name> [--target t] [--dry-run] [--yes] [--json]
                                  the profile, its credentials, and its data
 
 ${style.bold('Targets')}
-  ${PROGRAM} target list [--urls]      where this profile can run, and which one is in play
-  ${PROGRAM} target show [<name>]      one target's adapters, and the address it answers on
-  ${PROGRAM} target use <name>         make one the profile's default_target
+  ${PROGRAM} target list [--urls]      where this profile can run
+  ${PROGRAM} target show <name>        one target's adapters, and the address it answers on
 
 ${style.bold('Permissions')}
   ${PROGRAM} policy list
@@ -96,9 +96,13 @@ ${style.bold('Attachments')}
   ${PROGRAM} attach <file> --connection <provider>.<account>
                                         stage a file, print a handle to send it by
 
-${style.bold('Global flags')}
-  --profile <name>               overrides LANES_LINK_PROFILE and the workspace default
-  --target <name>                overrides LANES_LINK_TARGET and instance.default_target
+${style.bold('Naming what a command acts on')}
+  --profile <name>               required by every command that reads or writes a profile
+  --target <name>                required by every command that opens a target's stores.
+                                 There is no default and no environment variable: a
+                                 command that names neither refuses and lists what exists.
+
+${style.bold('Other flags')}
   --connection <id>              which memory/skills/vault connection, if a profile has several
   --yes                          skip the confirmation a destructive command would ask for
   --json                         machine-readable output, where a command offers it
@@ -109,5 +113,5 @@ ${style.bold('Global flags')}
                                  one this project operates (connect only)
   --port <n>                     override the configured port (start only)
 
-Every command prints the resolved profile and target before acting.
+Every command prints the profile and target it is acting on, before it acts.
 `;

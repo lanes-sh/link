@@ -48,8 +48,8 @@ Needs [Bun](https://bun.com) 1.3.11+. Nothing else — no account anywhere.
 
 ```console
 $ bun install -g @lanes-sh/link                # puts `lanes` on your PATH
-$ lanes link profile add personal --default
-$ lanes link start
+$ lanes link profile add personal --target local
+$ lanes link start --profile personal --target local
 ok    serving http://127.0.0.1:7337/mcp
       profiles: personal
 ```
@@ -57,7 +57,7 @@ ok    serving http://127.0.0.1:7337/mcp
 Then, in another shell:
 
 ```console
-$ lanes link mcp add                           # every agent installed; or name one: claude, codex
+$ lanes link mcp add --profile personal --target local                           # every agent installed; or name one: claude, codex
 ok    registered lanes-link with Claude Code (user scope)
 ok    registered lanes-link with Codex
 ```

@@ -75,6 +75,7 @@ function providersFor(profile: string, granted: readonly string[]) {
   return [
     createSetupProvider({
       profile,
+      target: 'local',
       catalogue: CATALOGUE,
       reachable: () =>
         granted.includes('example')

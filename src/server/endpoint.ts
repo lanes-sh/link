@@ -47,9 +47,21 @@ export interface EndpointReporter {
   reconciled(input: { profile: string; plan: string; ofMany: boolean }): void;
   /** No profile token existed and one was minted. */
   tokenMinted(minted: { target: string }): void;
+  /**
+   * A sibling profile that could not be opened against this target.
+   *
+   * Optional because it is new and every caller predates it, and because
+   * silence is a defensible reading for a caller that only wants what it got.
+   */
+  skipped?(input: { profile: string; reason: string }): void;
 }
 
 const SILENT: EndpointReporter = { reconciled() {}, tokenMinted() {} };
+
+/** The first line of an error, which is the part fit to print beside a name. */
+function message(error: unknown): string {
+  return error instanceof Error ? (error.message.split('\n')[0] ?? error.message) : String(error);
+}
 
 export interface EndpointOptions {
   readonly flags: GlobalFlags;
@@ -103,7 +115,22 @@ async function openReconciled(options: {
   try {
     for (const name of names) {
       if (runtimes.has(name)) continue;
-      runtimes.set(name, await openRuntime({ ...options.flags, profile: name }));
+
+      // A sibling that does not declare this target is skipped, not fatal.
+      //
+      // Every profile here is opened against the one target the endpoint was
+      // started with, and a workspace may hold a profile that runs somewhere
+      // else entirely. Refusing would let one such profile take the endpoint
+      // down for all of them, which is the opposite of what `start` is for —
+      // and in a container it is a revision that never goes healthy. Skipping
+      // is not an assumption: it is reported, and `served` below is derived
+      // from what actually opened rather than from what is on disk.
+      try {
+        runtimes.set(name, await openRuntime({ ...options.flags, profile: name }));
+      } catch (error) {
+        if (name === primary.resolution.profile) throw error;
+        reporter.skipped?.({ profile: name, reason: message(error) });
+      }
     }
 
     for (const [name, runtime] of runtimes) {

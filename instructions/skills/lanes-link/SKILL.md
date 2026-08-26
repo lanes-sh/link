@@ -24,6 +24,13 @@ is listed first.** Quietly picking one crosses the line the profile exists to
 draw. There is no "current profile" to switch — the choice is made per call, and
 `lanes link profile list` shows what exists.
 
+**Every `lanes link` command names its profile and its target.** Both are required
+flags with no default, no environment variable, and nothing in a config file
+behind them, so a command missing either refuses rather than acting somewhere
+else. When you write one out for the owner, either fill both in or leave them as
+`<name>` for them to complete — never drop them. `lanes link target list
+--profile <name>` shows what a profile declares.
+
 A `connection` names an account within that profile. One profile may hold
 several of the same kind, and naming a connection belonging to a *different*
 profile is refused rather than guessed at.
@@ -37,7 +44,7 @@ try more than one wording before deciding it is not there.
 Writing is a separate grant, and it should be. What you write is served back to
 every later session, including to a different agent, so **write when you are
 asked to remember something, not as a habit.** The owner reaches the same
-entries with `lanes link memory list` and a text editor.
+entries with `lanes link memory list --profile <name> --target <name>` and a text editor.
 
 ## Skills are theirs, not yours
 
@@ -47,7 +54,7 @@ cannot read a skill's body; that is deliberate, not a gap to work around.
 
 So when a task has a skill for it, **say the skill exists and let them invoke
 it** rather than improvising your own version of their procedure. They manage
-these with `lanes link skills list` and `lanes link skills show <name>`.
+these with `lanes link skills list --profile <name> --target <name>` and `lanes link skills show <skill> --profile <name> --target <name>`.
 
 ## Vault values are credentials
 
@@ -84,7 +91,7 @@ its content.
 
 **If the endpoint is not on the same machine as the file**, `path` names the
 *server's* filesystem rather than theirs, and will not find it. Ask them to run
-`lanes link attach <file> --connection <provider>.<account>`, which prints a
+`lanes link attach <file> --profile <name> --target <name> --connection <provider>.<account>`, which prints a
 handle to use instead.
 
 **`draft_only: true`** saves instead of sending, where they should see it before
@@ -104,9 +111,9 @@ granted, and retrying will not reveal it. A call that *is* refused was refused b
 policy on purpose.
 
 Report it plainly and let the owner decide whether to widen the grant —
-`lanes link policy list` shows the rules, `lanes link policy allow <capability>`
+`lanes link policy list --profile <name>` shows the rules, `lanes link policy allow <capability> --profile <name> --target <name>`
 changes them, and that is their call, not yours. **Do not look for another route
-to the same data.** Every call is audited either way; `lanes link audit tail`
+to the same data.** Every call is audited either way; `lanes link audit tail --profile <name> --target <name>`
 shows what was attempted, refusals included.
 
 ## Setting something up
@@ -125,9 +132,9 @@ credential — those are `lanes link` in a terminal, deliberately. What you can 
 know exactly what to hand over, and say what it will ask for before they start.
 
 If you have a shell, you can run it yourself for anything that does *not* need a
-browser: `lanes link setup plan <provider> --json` lists what to store,
-`lanes link secrets set <ref>` takes the value on stdin, and
-`lanes link connect <provider> --id <name> --non-interactive --json` finishes.
+browser: `lanes link setup plan <provider> --profile <name> --target <name> --json` lists what to store,
+`lanes link secrets set <ref> --profile <name> --target <name>` takes the value on stdin, and
+`lanes link connect <provider> --profile <name> --target <name> --id <id> --non-interactive --json` finishes.
 Anything with a browser sign-in belongs to whoever owns the account — give them
 the line.
 
@@ -139,10 +146,10 @@ straight after connecting will still not show it. Say so rather than retrying.
 
 ## Registering it, and re-registering it
 
-`lanes link mcp add` runs each harness's own registration command and installs
+`lanes link mcp add --profile <name> --target <name>` runs each harness's own registration command and installs
 this skill where that harness keeps them. With no argument it does every harness
 installed; name one (`claude`, `codex`) to be specific. Run it again after
-`lanes link token rotate` — add `--force`, since Claude Code stores the token as
+`lanes link token rotate --profile <name> --target <name>` — add `--force`, since Claude Code stores the token as
 a value rather than a command.
 
 **Never paste the token.** There is a right way and a wrong way, and the
@@ -151,7 +158,7 @@ difference matters:
 ```bash
 # RIGHT — the token goes from the CLI to the harness. You never see it.
 claude mcp add --transport http lanes-link http://127.0.0.1:7337/mcp \
-  --header "Authorization: Bearer $(lanes link token show --raw)"
+  --header "Authorization: Bearer $(lanes link token show --raw --profile <name> --target <name>)"
 
 # WRONG — the token is now in your context, and in the transcript, forever.
 lanes link token show --show          # then copying the value into the command
@@ -159,9 +166,9 @@ lanes link token show --show          # then copying the value into the command
 
 The token reaches every account of every profile the endpoint serves. Use the
 substitution form. If you have already printed one by accident, say so and offer
-`lanes link token rotate`.
+`lanes link token rotate --profile <name> --target <name>`.
 
-Prefer `lanes link mcp add` to writing the command yourself: it checks the
+Prefer `lanes link mcp add --profile <name> --target <name>` to writing the command yourself: it checks the
 endpoint is reachable, refuses to silently shadow an existing registration, and
 cannot mistype the token. For a harness it does not know, take the command from
 `lanes link outputs` rather than writing it blind — that command checks whether
@@ -173,7 +180,7 @@ If you register Codex, tell the user to export the token — Codex stores only t
 variable name, so nothing works until it is set:
 
 ```bash
-export LANES_LINK_TOKEN="$(lanes link token show --raw)"
+export LANES_LINK_TOKEN="$(lanes link token show --raw --profile <name> --target <name>)"
 ```
 
 One registration covers every profile. Do not add one per profile; they share a

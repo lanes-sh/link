@@ -15,7 +15,7 @@ export function resolveBasic(value: string, ref: string, providerId: string): Re
   if (colon === -1) {
     throw new Error(
       `The credential at ${ref} is not a "username:password" pair, which basic auth requires. ` +
-        `Re-run: lanes link connect ${providerId}`,
+        `Connect "${providerId}" again for this profile and target.`,
     );
   }
 

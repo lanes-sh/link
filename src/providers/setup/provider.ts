@@ -47,6 +47,13 @@ export interface SetupProviderOptions {
    * here — one registry is built per profile, so each instance gets its own.
    */
   readonly profile: string;
+  /**
+   * Which target this instance's stores came from.
+   *
+   * Stamped at construction for the same reason `profile` is, and it travels no
+   * further than the commands this provider emits — nothing here opens a store.
+   */
+  readonly target: string;
   /** Sibling profile names on this endpoint. Names only; already at `/health`. */
   readonly profiles?: readonly string[];
   /**
@@ -79,6 +86,7 @@ export function createSetupProvider(options: SetupProviderOptions): ProviderDefi
 
   const context = () => ({
     profile: options.profile,
+    target: options.target,
     connections: reachable().map((connection) => connection.key),
     ...(options.ownClients ? { ownClients: options.ownClients } : {}),
   });

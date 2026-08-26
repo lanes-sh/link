@@ -64,8 +64,23 @@ export interface SetupNeeds {
  * command someone is told to paste and a command the CLI suggests should not be
  * two different sentences.
  */
-function storeCommand(ref: string, placeholder: string, profile: string): string {
-  return `printf %s "${placeholder}" | lanes link secrets set ${ref} --profile ${profile}`;
+function storeCommand(ref: string, placeholder: string, where: Selection): string {
+  return (
+    `printf %s "${placeholder}" | lanes link secrets set ${ref}` +
+    ` --profile ${where.profile} --target ${where.target}`
+  );
+}
+
+/**
+ * Which store a suggested command should write into.
+ *
+ * One object rather than two positional strings, because the pair travels
+ * together everywhere and a caller that transposed them would produce a command
+ * that runs, writes a credential, and puts it somewhere nobody looks.
+ */
+export interface Selection {
+  readonly profile: string;
+  readonly target: string;
 }
 
 /** How the value is spelled, for a ref that several prompts combine into. */
@@ -83,7 +98,7 @@ function placeholderFor(prompts: readonly SetupPrompt[]): string {
 export function setupRequirements(
   manifest: ProviderManifest,
   connectionId: string | undefined,
-  profile: string,
+  where: Selection,
   options: {
     /** `oauth_apps` entries this profile declares — the clients that are its own. */
     readonly ownClients?: readonly string[];
@@ -115,7 +130,7 @@ export function setupRequirements(
       secret: prompt.secret,
       scope: 'shared',
       prompts: [prompt.key],
-      command: storeCommand(prompt.credential_ref, '<value>', profile),
+      command: storeCommand(prompt.credential_ref, '<value>', where),
     });
   }
 
@@ -133,7 +148,7 @@ export function setupRequirements(
         secret: perConnection.some((prompt) => prompt.secret),
         scope: 'connection',
         prompts: perConnection.map((prompt) => prompt.key),
-        command: storeCommand(ref, placeholderFor(perConnection), profile),
+        command: storeCommand(ref, placeholderFor(perConnection), where),
       });
     }
   }

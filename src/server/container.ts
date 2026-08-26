@@ -24,7 +24,9 @@ import { streamLogger } from './logging.ts';
  *                      nobody wrote — so the endpoint refuses rather than
  *                      serving an empty workspace.
  *   LANES_LINK_TARGET   which target's adapters to open. Baked to `cloud`.
- *   LANES_LINK_PROFILE  optional; the workspace default otherwise.
+ *   LANES_LINK_PROFILE  the primary profile this revision serves. Required —
+ *                      there is no workspace default any more (ADR-037), and
+ *                      `lanes link deploy` sets it at rollout.
  *   PORT               injected by Cloud Run. 8080 is its default.
  */
 
@@ -41,6 +43,21 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
   process.exit(1);
 }
 const host = env['LANES_LINK_HOST'] ?? '0.0.0.0';
+
+// In this container's own voice, not the CLI's. A revision serves one primary
+// profile — it decides the token that opens the endpoint — and nothing here can
+// pick one. `lanes link deploy` sets the variable at rollout, in the same
+// `gcloud run deploy` as the image, so the two never disagree; a container
+// started by hand has to be told. Refusing here beats a CLI-shaped "pass
+// --profile" reaching a log where there is no command line to pass it on.
+if (!env['LANES_LINK_PROFILE']) {
+  process.stderr.write(
+    'LANES_LINK_PROFILE is not set on this service. A deployed revision serves one\n' +
+      'primary profile and must be told which. `lanes link deploy` sets it at rollout;\n' +
+      'if this container was started by hand, pass -e LANES_LINK_PROFILE=<name>.\n',
+  );
+  process.exit(1);
+}
 
 const log = (message: string): void => {
   process.stdout.write(`${new Date().toISOString()} ${message}\n`);

@@ -133,7 +133,7 @@ export class CredentialOAuthProvider {
     if (!this.#options.openBrowser) {
       throw new Error(
         `Connection ${this.#options.manifest.id}.${this.#options.connectionId} needs re-authorisation, ` +
-          `which requires a browser. Run: lanes link connect ${this.#options.manifest.id}.${this.#options.connectionId}`,
+          `which requires a browser. Connect ${this.#options.manifest.id}.${this.#options.connectionId} again for this profile and target.`,
       );
     }
     this.#options.openBrowser(authorizationUrl);

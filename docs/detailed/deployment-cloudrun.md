@@ -6,8 +6,8 @@ directory becomes a bucket. Everything above them — connections, providers, po
 declared once and applies to both.
 
 ```console
-$ lanes link start   # local:    a directory, an encrypted file
-$ lanes link deploy  # deployed: one bucket, Secret Manager, Cloud Run
+$ lanes link start --profile personal --target cloud   # local:    a directory, an encrypted file
+$ lanes link deploy --profile personal --target cloud  # deployed: one bucket, Secret Manager, Cloud Run
 ```
 
 **Two standing dependencies, and that is the whole list.** No database: state is one object per
@@ -121,9 +121,9 @@ policy:
 ## The deploy loop
 
 ```console
-$ lanes link deploy                        # everything, from nothing
-$ lanes link connect gmail --target cloud  # a browser consent per account
-$ lanes link outputs --target cloud        # the URL an agent needs
+$ lanes link deploy --profile personal --target cloud                        # everything, from nothing
+$ lanes link connect gmail --profile personal --target cloud --target cloud  # a browser consent per account
+$ lanes link outputs --profile personal --target cloud --target cloud        # the URL an agent needs
 ```
 
 `connect` publishes the config to the bucket the revision reads and asks the revision to re-read
@@ -135,10 +135,10 @@ it, so it takes effect without a second deploy. Deploy again when the *code* cha
 creates it, and everything downstream takes the same flag:
 
 ```console
-$ lanes link deploy --target staging       # surveys, writes targets.staging, rolls a revision
-$ lanes link target list                   # what this profile declares, and which is in play
-$ lanes link secrets push --from cloud --to staging
-$ lanes link outputs --target staging
+$ lanes link deploy --profile personal --target cloud --target staging       # surveys, writes targets.staging, rolls a revision
+$ lanes link target list --profile personal                   # what this profile declares, and which is in play
+$ lanes link secrets push --profile personal --from cloud --to staging
+$ lanes link outputs --profile personal --target cloud --target staging
 ```
 
 The revision carries its own name — the rollout sets `LANES_LINK_TARGET=<target>` on the service, so
@@ -242,8 +242,8 @@ in the store is left alone.
 If you would rather do it up front, or copy a setup you already built locally:
 
 ```console
-$ lanes link token rotate --target cloud            # mints the profile bearer token
-$ lanes link secrets push --from local --to cloud   # or copy a setup you built locally
+$ lanes link token rotate --profile personal --target cloud --target cloud            # mints the profile bearer token
+$ lanes link secrets push --profile personal --from local --to cloud   # or copy a setup you built locally
 ```
 
 `secrets push` copies; it never deletes from the source, and it skips a reference the destination

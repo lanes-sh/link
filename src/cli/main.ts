@@ -39,7 +39,8 @@ import {
   vaultSet,
 } from './commands/owner.ts';
 import { update } from './commands/update.ts';
-import { globalFlags, ownerFlags, parseArgv, text } from './argv.ts';
+import { all, globalFlags, ownerFlags, parseArgv, text } from './argv.ts';
+import { assertKnownFlags, requireSelection } from './selection.ts';
 import { PROGRAM, USAGE } from './usage.ts';
 import { version } from './version.ts';
 import { print } from './output.ts';
@@ -74,6 +75,14 @@ export async function run(argv: readonly string[]): Promise<void> {
     return;
   }
 
+  // Before the switch, so no command can be reached having been handed a flag it
+  // does not read or missing one it needs. One call site rather than a check per
+  // case: the reported bug was a single command building its own options literal
+  // and dropping `--target` into it, which is exactly what a per-case check
+  // leaves room for.
+  assertKnownFlags(first, second, flags);
+  await requireSelection(first, second, flags);
+
   switch (first) {
     case 'connect':
       if (!second) throw new Error(`Usage: ${PROGRAM} connect <provider>`);
@@ -97,8 +106,17 @@ export async function run(argv: readonly string[]): Promise<void> {
     case 'profile':
       switch (second) {
         case 'add':
-          if (!rest[0]) throw new Error(`Usage: ${PROGRAM} profile add <name> [--default]`);
-          return profileAdd(rest[0], { default: flags['default'] === true, json });
+          if (!rest[0]) {
+            throw new Error(`Usage: ${PROGRAM} profile add <name> --target <name> [--target <name>]`);
+          }
+          return profileAdd(rest[0], {
+            // Read from argv rather than from `flags`, because this is the one
+            // place a flag is a list: a profile declares every target it can run
+            // on, and the parser keeps only the last value of a repeated flag.
+            targets: all(argv, 'target'),
+            nonInteractive: flags['non-interactive'] === true,
+            json,
+          });
         case 'list':
         case undefined:
           return profileList({ json });
@@ -128,7 +146,7 @@ export async function run(argv: readonly string[]): Promise<void> {
           return targetList({ ...global, json, urls: flags['urls'] === true });
         case 'use':
           if (!rest[0]) throw new Error(`Usage: ${PROGRAM} target use <name>`);
-          return targetUse(rest[0], global);
+          return targetUse(rest[0]);
         case 'show':
           return targetShow(rest[0], { ...global, json });
         default:

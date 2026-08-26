@@ -114,11 +114,9 @@ function assertReferentialIntegrity(config: Config, source: string): void {
   if (targetNames.size === 0) {
     problems.push('targets: at least one target must be declared');
   }
-  if (!targetNames.has(config.instance.default_target)) {
-    problems.push(
-      `instance.default_target: "${config.instance.default_target}" is not a declared target (have: ${[...targetNames].join(', ') || 'none'})`,
-    );
-  }
+  // `instance.default_target` is deliberately not checked. Nothing reads it
+  // (ADR-037), so validating it would be validating a comment — and failing
+  // `check` on a stale value would teach that the key still matters.
 
   // Only what holds for every platform. What one platform needs and the next
   // has no concept of — a GCP project, an AWS role ARN — is refused by the

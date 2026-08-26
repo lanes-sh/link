@@ -108,10 +108,14 @@ targets:
 `,
     );
 
-    // The exact shape outputs.ts builds: the bin, the area token, the command.
-    const result = Bun.spawnSync(['bun', 'run', BIN, 'link', 'token', 'show', '--raw'], {
-      env: { ...process.env, LANES_LINK_HOME: root },
-    });
+    // The exact shape outputs.ts builds: the bin, the area token, the command,
+    // and the two flags that now name where the token lives.
+    const result = Bun.spawnSync(
+      ['bun', 'run', BIN, 'link', 'token', 'show', '--raw', '--profile', 'scratch', '--target', 'local'],
+      {
+        env: { ...process.env, LANES_LINK_HOME: root },
+      },
+    );
 
     const token = new TextDecoder().decode(result.stdout).trim();
     expect(result.exitCode).toBe(0);
@@ -137,7 +141,7 @@ describe('token rotate', () => {
         stderr: new TextDecoder().decode(result.stderr),
       };
     };
-    run(['link', 'profile', 'add', 'scratch', '--default']);
+    run(['link', 'profile', 'add', 'scratch', '--target', 'local']);
     return run;
   }
 
@@ -149,8 +153,8 @@ describe('token rotate', () => {
     // leak.
     const run = await workspace();
 
-    const rotated = run(['link', 'token', 'rotate']);
-    const minted = run(['link', 'token', 'show', '--raw']).stdout.trim();
+    const rotated = run(['link', 'token', 'rotate', '--profile', 'scratch', '--target', 'local']);
+    const minted = run(['link', 'token', 'show', '--raw', '--profile', 'scratch', '--target', 'local']).stdout.trim();
 
     expect(minted).toStartWith('llk_');
     expect(rotated.stdout).toContain('token rotated');
@@ -160,8 +164,8 @@ describe('token rotate', () => {
   test('prints it with --show, the way `token show` does', async () => {
     const run = await workspace();
 
-    const rotated = run(['link', 'token', 'rotate', '--show']);
-    const minted = run(['link', 'token', 'show', '--raw']).stdout.trim();
+    const rotated = run(['link', 'token', 'rotate', '--show', '--profile', 'scratch', '--target', 'local']);
+    const minted = run(['link', 'token', 'show', '--raw', '--profile', 'scratch', '--target', 'local']).stdout.trim();
 
     expect(rotated.stdout).toContain(minted);
   });
@@ -169,7 +173,7 @@ describe('token rotate', () => {
   test('still says every agent must be re-registered', async () => {
     // The part that has to stay loud: nothing re-reads the token on its own.
     const run = await workspace();
-    expect(run(['link', 'token', 'rotate']).stdout).toContain('re-registered');
+    expect(run(['link', 'token', 'rotate', '--profile', 'scratch', '--target', 'local']).stdout).toContain('re-registered');
   });
 });
 

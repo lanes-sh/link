@@ -159,7 +159,7 @@ describe('refreshDirectly', () => {
     expect(current()['id_token']).toBe('newer');
   });
 
-  test('a broker refusal names the command the owner runs, not the agent', async () => {
+  test('a broker refusal names what the owner must do, not something the agent can run', async () => {
     // This reaches an agent mid-request. It must not read as something the
     // agent could do next.
     const { fetch } = recording(403, { success: false, error: 'withdrawn', notice: 'Revoked.' });
@@ -173,7 +173,8 @@ describe('refreshDirectly', () => {
       fetch,
     ).catch((e) => e)) as Error;
 
-    expect(error.message).toContain('lanes link connect vendor_mail');
+    expect(error.message).toContain('vendor_mail');
+    expect(error.message).not.toContain('lanes link');
     expect(error.message).toContain('Revoked.');
   });
 

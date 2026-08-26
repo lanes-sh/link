@@ -1,7 +1,7 @@
 # Connecting Gmail, Drive, Sheets, Docs, Calendar, Tasks, and Contacts
 
 ```console
-$ lanes link connect gmail
+$ lanes link connect gmail --profile personal --target local
 ```
 
 That is the whole of it. A browser opens, you approve the scopes, the connection is made.
@@ -33,7 +33,7 @@ You would want to, and the rest of this page is how, if:
 - or the hosted client is at capacity.
 
 ```console
-$ lanes link connect gmail --own-client
+$ lanes link connect gmail --profile personal --target local --own-client
 ```
 
 It asks for a client id and secret, stores them, and writes an `oauth_apps` entry to your profile.
@@ -69,7 +69,7 @@ Google's MCP servers are in Developer Preview, and without enrolment they fail i
 way — silently, and late:
 
 ```
-$ lanes link connect gmail_mcp
+$ lanes link connect gmail_mcp --profile personal --target local
 ok    authorised                       ← consent succeeds
       13 capabilities discovered       ← tools/list succeeds
 
@@ -313,16 +313,16 @@ loopback port without pre-registration.
 ## Connect
 
 ```console
-$ lanes link connect gmail      # asks for client id + secret, then opens the browser
-$ lanes link connect gmail      # second account — straight to the browser
-$ lanes link connect drive      # reuses the same client; no prompts
-$ lanes link connect sheets     # ditto, but do step 1 and step 4 for Sheets first
-$ lanes link connect docs
-$ lanes link connect calendar
-$ lanes link connect tasks
-$ lanes link connect contacts
+$ lanes link connect gmail --profile personal --target local      # asks for client id + secret, then opens the browser
+$ lanes link connect gmail --profile personal --target local      # second account — straight to the browser
+$ lanes link connect drive --profile personal --target local      # reuses the same client; no prompts
+$ lanes link connect sheets --profile personal --target local     # ditto, but do step 1 and step 4 for Sheets first
+$ lanes link connect docs --profile personal --target local
+$ lanes link connect calendar --profile personal --target local
+$ lanes link connect tasks --profile personal --target local
+$ lanes link connect contacts --profile personal --target local
 
-$ lanes link connect gmail_mcp  # only if you are enrolled in the preview
+$ lanes link connect gmail_mcp --profile personal --target local  # only if you are enrolled in the preview
 ```
 
 **Adding a Google product to a profile that already has one is where this trips people up.** The
@@ -362,7 +362,7 @@ Re-authorise with: lanes link connect gmail.work
 `lanes link doctor` reports stale connections before you hit them:
 
 ```console
-$ lanes link doctor
+$ lanes link doctor --profile personal --target local
 warn  gmail.personal credential is 8 days old — Testing-status apps expire at 7. Run: lanes link connect gmail.personal
 ```
 

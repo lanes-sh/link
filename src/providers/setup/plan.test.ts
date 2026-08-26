@@ -35,7 +35,7 @@ const BROWSER = defineProvider({
   auth: { kind: 'oauth', scopes: ['read'] },
 });
 
-const context = { profile: 'personal', connections: ['thing.main', 'other.x'] };
+const context = { profile: 'personal', target: 'local', connections: ['thing.main', 'other.x'] };
 
 describe('planFor', () => {
   test('always names the profile, never leaving it to the shell', () => {
@@ -50,14 +50,14 @@ describe('planFor', () => {
     const plan = planFor(KEYED, context);
 
     expect(plan.needsId).toBe(true);
-    expect(plan.command).toBe('lanes link connect thing --profile personal --id <name>');
+    expect(plan.command).toBe('lanes link connect thing --profile personal --target local --id <name>');
   });
 
   test('a named connection puts its id in the command instead of a placeholder', () => {
     const plan = planFor(KEYED, context, 'work');
 
     expect(plan.needsId).toBe(false);
-    expect(plan.command).toBe('lanes link connect thing --profile personal --id work');
+    expect(plan.command).toBe('lanes link connect thing --profile personal --target local --id work');
     expect(plan.requires[0]?.ref).toBe('thing/work');
   });
 
@@ -125,13 +125,13 @@ describe('a provider whose client somebody else operates', () => {
   });
 
   test('needs nothing, and says the difference between that and needing nothing', () => {
-    const plan = planFor(brokered, { profile: 'personal', connections: [] });
+    const plan = planFor(brokered, { profile: 'personal', target: 'local', connections: [] });
 
     expect(plan.requires).toEqual([]);
     expect(plan.brokered).toBe(true);
     expect(plan.clientOperator).toBe('Someone');
     expect(plan.ownClientCommand).toBe(
-      'lanes link connect vendor_mail --profile personal --own-client',
+      'lanes link connect vendor_mail --profile personal --target local --own-client',
     );
   });
 
@@ -140,6 +140,7 @@ describe('a provider whose client somebody else operates', () => {
     // taken it must not be told they need nothing and then asked for two values.
     const plan = planFor(brokered, {
       profile: 'personal',
+      target: 'local',
       connections: [],
       ownClients: ['vendor'],
     });
@@ -152,6 +153,6 @@ describe('a provider whose client somebody else operates', () => {
   test('the console walkthrough survives in the data for whoever still needs it', () => {
     // Suppressing it is a rendering decision. A console with a disclosure and a
     // terminal that heads it "or register your own" both need it present.
-    expect(planFor(brokered, { profile: 'personal', connections: [] }).steps).toHaveLength(2);
+    expect(planFor(brokered, { profile: 'personal', target: 'local', connections: [] }).steps).toHaveLength(2);
   });
 });

@@ -1,8 +1,8 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseDocument } from 'yaml';
 import {
+  ConfigError,
   WORKSPACE_FILE,
   listProfiles,
   profilePath,
@@ -10,6 +10,7 @@ import {
   resolveWorkspaceRoot,
 } from '#profile';
 import { newProfileTemplate, newWorkspaceTemplate } from '../config-edit.ts';
+import { askTarget, localBlock, siblingTarget } from './profile/declare.ts';
 import { emit, ok, print, style, table } from '../output.ts';
 
 /**
@@ -32,7 +33,10 @@ export interface ProfileCreated {
   readonly name: string;
   readonly path: string;
   readonly port: number;
-  readonly isDefault: boolean;
+  /** Every target the new profile declares, in the order they were named. */
+  readonly targets: readonly string[];
+  /** Which sibling supplied each non-local target's adapters, where one did. */
+  readonly copiedFrom: Readonly<Record<string, string>>;
 }
 
 export interface ProfileListing {
@@ -41,10 +45,17 @@ export interface ProfileListing {
   readonly profiles: ReadonlyArray<{ readonly name: string; readonly path: string }>;
 }
 
-/** Write a new profile, and the workspace file if this is the first one. */
+/**
+ * Write a new profile, and the workspace file if this is the first one.
+ *
+ * The targets are the argument that used to be missing. `--target` was accepted
+ * and dropped here, and the template could only ever emit `local` — so the
+ * command reported success and produced a profile that could not reach the
+ * deployment the operator had just told it about.
+ */
 export async function createProfile(
   name: string,
-  options: { default?: boolean },
+  options: { targets: readonly string[]; nonInteractive?: boolean },
 ): Promise<ProfileCreated> {
   const root = resolveWorkspaceRoot();
   const path = profilePath(root, name);
@@ -58,23 +69,37 @@ export async function createProfile(
   const existing = await listProfiles(root);
   const port = FIRST_PORT + existing.length;
 
-  const workspaceFile = join(root, WORKSPACE_FILE);
-  const isFirst = existing.length === 0;
-  const isDefault = options.default === true || isFirst;
+  // Everything that can fail — a target nobody declares, a prompt nobody can
+  // answer — happens before the first write, so a refusal leaves the workspace
+  // exactly as it was rather than half a profile behind.
+  const blocks: string[] = [];
+  const copiedFrom: Record<string, string> = {};
 
-  if (!existsSync(workspaceFile)) {
-    await writeFile(workspaceFile, newWorkspaceTemplate(isDefault ? name : undefined), {
-      mode: 0o600,
+  for (const target of options.targets) {
+    if (target === 'local') {
+      blocks.push(localBlock(name));
+      continue;
+    }
+
+    const declared = await askTarget({
+      target,
+      profile: name,
+      sibling: await siblingTarget(root, target, name),
+      ...(options.nonInteractive === true ? { nonInteractive: true } : {}),
     });
-  } else if (options.default) {
-    const document = parseDocument(await Bun.file(workspaceFile).text());
-    document.set('default_profile', name);
-    await writeFile(workspaceFile, document.toString({ lineWidth: 0 }), { mode: 0o600 });
+
+    blocks.push(declared.block);
+    if (declared.from) copiedFrom[target] = declared.from;
   }
 
-  await writeFile(path, newProfileTemplate(name, port), { mode: 0o600 });
+  const workspaceFile = join(root, WORKSPACE_FILE);
+  if (!existsSync(workspaceFile)) {
+    await writeFile(workspaceFile, newWorkspaceTemplate(), { mode: 0o600 });
+  }
 
-  return { name, path, port, isDefault };
+  await writeFile(path, newProfileTemplate(name, port, blocks.join('')), { mode: 0o600 });
+
+  return { name, path, port, targets: options.targets, copiedFrom };
 }
 
 /**
@@ -99,18 +124,36 @@ export async function readProfiles(): Promise<ProfileListing> {
 
 export async function profileAdd(
   name: string,
-  options: { default?: boolean; json?: boolean },
+  options: { targets: readonly string[]; nonInteractive?: boolean; json?: boolean },
 ): Promise<void> {
+  if (options.targets.length === 0) {
+    throw new ConfigError(
+      'Say which targets this profile declares:\n' +
+        `  lanes link profile add ${name} --target local\n` +
+        `  lanes link profile add ${name} --target local --target cloud\n` +
+        '\n' +
+        '  A target is where a profile runs — a credential store and a blob store.\n' +
+        '  There is no default to inherit before the profile exists.',
+    );
+  }
+
   const created = await createProfile(name, options);
 
   return emit(options.json, created, () => {
     print(ok(`created profile ${style.bold(created.name)}`));
-    print(`      config  ${created.path}`);
-    print(`      port    ${created.port}`);
-    if (created.isDefault) print(`      set as the workspace default`);
+    print(`      config   ${created.path}`);
+    print(`      port     ${created.port}`);
+    print(`      targets  ${created.targets.join(', ')}`);
+
+    for (const [target, from] of Object.entries(created.copiedFrom)) {
+      print(`      ${style.dim(`${target} adapters copied from profile "${from}"`)}`);
+    }
+
     print();
     print(
-      style.dim('Next: lanes link connect example    # add a connection, no credentials needed'),
+      style.dim(
+        `Next: lanes link connect example --profile ${created.name} --target ${created.targets[0]}`,
+      ),
     );
   });
 }
@@ -121,7 +164,7 @@ export async function profileList(options: { json?: boolean } = {}): Promise<voi
   return emit(options.json, listing, () => {
     if (listing.profiles.length === 0) {
       print(style.dim(`No profiles in ${listing.root}.`));
-      print(style.dim('Create one with: lanes link profile add personal --default'));
+      print(style.dim('Create one with: lanes link profile add personal --target local'));
       return;
     }
 
@@ -136,19 +179,24 @@ export async function profileList(options: { json?: boolean } = {}): Promise<voi
   });
 }
 
-export async function profileDefault(name: string): Promise<void> {
-  const root = resolveWorkspaceRoot();
-  if (!existsSync(profilePath(root, name))) throw new Error(`Profile "${name}" does not exist`);
-
-  const workspaceFile = join(root, WORKSPACE_FILE);
-  const document = existsSync(workspaceFile)
-    ? parseDocument(await Bun.file(workspaceFile).text())
-    : parseDocument(newWorkspaceTemplate());
-
-  document.set('default_profile', name);
-  await writeFile(workspaceFile, document.toString({ lineWidth: 0 }), { mode: 0o600 });
-
-  print(ok(`default profile is now ${style.bold(name)}`));
+/**
+ * `lanes link profile default <name>` — removed.
+ *
+ * It wrote `default_profile`, which nothing reads (ADR-037). A command that
+ * writes a key nothing reads reports success and changes nothing observable,
+ * which is the failure this change exists to remove.
+ *
+ * A refusal rather than a deletion, for one release: falling through to
+ * "Unknown: lanes link profile default" would send someone hunting a typo in a
+ * command they have run for months.
+ */
+export function profileDefault(name: string | undefined): never {
+  throw new ConfigError(
+    'lanes link profile default was removed.\n' +
+      '  Nothing reads default_profile any more — pass --profile on every command:\n' +
+      `    lanes link status --profile ${name ?? '<name>'} --target <target>\n` +
+      '  If the key is still in lanes-link.yaml it is inert, and safe to delete.',
+  );
 }
 
 // The bundled agent skill used to be printed from here, because `installRoot`
