@@ -16,7 +16,8 @@ each decision was made, not just what to type.
 
 | | |
 |---|---|
-| [`workflow.md`](detailed/workflow.md) | Every CLI command, end to end |
+| [`commands.md`](detailed/commands.md) | Every command, its arguments, and its flags |
+| [`workflow.md`](detailed/workflow.md) | The lifecycle end to end, in order |
 | [`configuration.md`](detailed/configuration.md) | The profile file, policy grammar, targets, environment variables |
 | [`providers.md`](detailed/providers.md) | Every capability, what it does, and what its audit entries withhold |
 | [`architecture.md`](detailed/architecture.md) | How it fits together, and the dispatch path a call takes |
