@@ -14,11 +14,19 @@ import { assertKnownFlags, requireSelection, requirementFor, SELECTION } from '.
  * test reads `main.ts` rather than trusting anyone to keep two files in step.
  */
 
-const MAIN = join(import.meta.dir, 'main.ts');
+/**
+ * Every file holding part of the grammar.
+ *
+ * `main.ts` alone until the owner commands moved out. Reading both matters more
+ * than it looks: this test is the reason a new command cannot default quietly,
+ * and a dispatch that had grown a second file would have gone unread — the
+ * check would keep passing while covering less.
+ */
+const DISPATCH = ['main.ts', 'dispatch-owner.ts'].map((name) => join(import.meta.dir, name));
 
 /** Every `case 'x':` in the dispatch, in order, so nesting can be reconstructed. */
 async function dispatchedCommands(): Promise<Set<string>> {
-  const source = await readFile(MAIN, 'utf8');
+  const source = (await Promise.all(DISPATCH.map((path) => readFile(path, 'utf8')))).join('\n');
   const found = new Set<string>();
 
   // The outer switch is on `first` and each nested one on `second`; indentation
@@ -249,5 +257,17 @@ describe('a target-independent command is runnable in the spelling it demands', 
     // either was refused on a command documented as taking it.
     expect(() => assertKnownFlags('memory', 'list', { tag: 'x' })).not.toThrow();
     expect(() => assertKnownFlags('mcp', 'list', { name: 'x', scope: 'user' })).not.toThrow();
+  });
+});
+
+describe('the grammar is read wherever it lives', () => {
+  test('a command dispatched outside main.ts is still covered', async () => {
+    // `memory get` and `vault key` moved to `dispatch-owner.ts`. If this test
+    // only read `main.ts` it would pass by not looking.
+    const dispatched = await dispatchedCommands();
+
+    for (const command of ['memory get', 'skills add', 'vault key']) {
+      expect(dispatched.has(command)).toBe(true);
+    }
   });
 });

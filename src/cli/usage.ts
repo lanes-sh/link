@@ -49,6 +49,11 @@ ${style.bold('Profiles')}
 ${style.bold('Targets')}
   ${PROGRAM} target list [--urls]      where this profile can run
   ${PROGRAM} target show <name>        one target's adapters, and the address it answers on
+  ${PROGRAM} sync targets --target t [--from gs://bucket] [--discover]
+                                 [--prefer local|remote] [--dry-run]
+                                 reconcile this workspace with the copy the
+                                 deployment reads; recovers a target a profile
+                                 has lost
 
 ${style.bold('Who you are')}
   ${PROGRAM} identity add <kind> <value> [--note text] [--json]

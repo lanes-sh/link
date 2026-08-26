@@ -125,6 +125,10 @@ export const SELECTION: Record<string, Requires> = {
   attach: 'profile+target',
   start: 'profile+target',
   deploy: 'profile+target',
+  // Both spellings: `sync` alone is `sync targets`, which is the only thing
+  // there is to sync, and naming it leaves room for the next one.
+  sync: 'target',
+  'sync targets': 'target',
   'policy allow': 'profile+target',
   'policy deny': 'profile+target',
   // Both, unlike `identity list`, and for the same reason the policy edits are:
@@ -174,6 +178,7 @@ const SUBCOMMANDS: Record<string, readonly string[]> = {
   mcp: ['skill', 'add', 'stdio', 'list'],
   secrets: ['push', 'set', 'list'],
   knowledge: ['show', 'use'],
+  sync: ['targets'],
 };
 
 /**
@@ -309,6 +314,8 @@ const ACCEPTS: Record<string, readonly string[]> = {
   skill: ['print', 'force'],
   deploy: ['dry-run', 'iam', 'access', 'service-account', 'tag', 'yes', 'non-interactive'],
   'secrets push': ['from', 'to', 'overwrite', 'dry-run'],
+  sync: ['dry-run', 'from', 'discover', 'prefer'],
+  'sync targets': ['dry-run', 'from', 'discover', 'prefer'],
   update: ['check'],
   'identity add': ['note'],
   memory: ['connection', 'title', 'description', 'file', 'tag'],
