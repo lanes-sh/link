@@ -142,7 +142,7 @@ export async function outputs(flags: OutputsFlags): Promise<void> {
 async function servable(workspaceRoot: string, target: string): Promise<string[]> {
   const all = await listProfiles(workspaceRoot);
   const cannot = new Set(
-    (await unservableProfiles({ workspaceRoot, profile: undefined, target })).map(
+    (await unservableProfiles({ workspaceRoot, profiles: undefined, target })).map(
       (one) => one.profile,
     ),
   );

@@ -6,10 +6,10 @@ import type { BlobStore } from '#stores/blobs';
 import type { AnyConnector, ProviderManifest } from '#connectivity';
 import { RateLimiter, allowedConnections } from '#policy';
 import {
-  ConfigError,
   KNOWLEDGE_LAYOUT,
   layout,
   listProfiles,
+  undeclaredTarget,
   workspacePath,
   type Config,
   type Resolution,
@@ -125,7 +125,12 @@ export async function openRuntime(
 ): Promise<Runtime> {
   const { resolution, config, target } = await resolveProfile(flags);
   const declared = config.targets[target];
-  if (!declared) throw new ConfigError(`Target "${target}" is not declared`);
+  // `resolveProfile` has already checked this, so reaching it means a caller
+  // passed `allowUndeclaredTarget`. Through the shared refusal all the same:
+  // this was a fourth spelling of that sentence with the profile name and the
+  // list of what exists both missing, and the comment on `undeclaredTarget`
+  // says why one copy is the most that survives.
+  if (!declared) throw undeclaredTarget(target, config, resolution.profile);
 
   const root = resolution.workspaceRoot;
   const adapters: TargetInput = { declared, config, root, target };

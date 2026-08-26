@@ -1,4 +1,4 @@
-import { ConfigError, type DeployConfig } from '#profile';
+import { ConfigError, recordDeployment, resolveWorkspaceRoot, type DeployConfig } from '#profile';
 import { announce, fail, heading, ok, print, style, warn } from '#cli/output.ts';
 import { staleNudge } from '#cli/release.ts';
 import { confirm, isInteractive } from '#cli/prompt.ts';
@@ -9,6 +9,8 @@ import { driverFor } from './drivers.ts';
 import { prepareSecrets, readableRefs, rotatableRefs } from './prepare.ts';
 import { deployedWorkspace, repairSetupSurface, uploadWorkspace } from './upload.ts';
 import { unservableProfiles, unservableRefusal } from './servable.ts';
+import { collidingRefs, collisionRefusal, servingProfiles } from './serving.ts';
+import { healthLine, reachability, registerLine, reportUnauthorised } from './report.ts';
 
 /**
  * `lanes link deploy` — set up what is missing, build the image, roll a revision,
@@ -42,6 +44,14 @@ export interface DeployFlags extends GlobalFlags {
    * this is for a terminal attached to a job nobody is watching.
    */
   readonly nonInteractive?: boolean | undefined;
+  /**
+   * Which profiles to send, narrowing the set the target implies.
+   *
+   * Repeatable, and absent means every profile declaring the target — the set
+   * the endpoint is going to open either way (ADR-043). The first one named is
+   * the primary.
+   */
+  readonly profiles?: readonly string[] | undefined;
 }
 
 export async function deploy(flags: DeployFlags): Promise<void> {
@@ -57,10 +67,34 @@ export async function deploy(flags: DeployFlags): Promise<void> {
   // from one command line on the command that creates cloud resources and rolls
   // a public URL — where `allowUndeclaredTarget` means a mistake is not refused
   // but surveyed, written into the profile, and deployed as a new service.
-  const { resolution, config, target } = await resolveProfile(flags, {
-    allowUndeclaredTarget: true,
+  //
+  // Which profiles is derived rather than named: every profile declaring the
+  // target, because that is the set the revision will try to open (ADR-009).
+  // `--profile` narrows it, and a first deploy still has to name one — a target
+  // nothing declares has no set to derive from.
+  const { profiles: serving, primary } = await servingProfiles({
+    workspaceRoot: resolveWorkspaceRoot(),
+    target: requireTargetFlag(flags),
+    named: flags.profiles ?? [],
   });
+
+  const { resolution, config, target } = await resolveProfile(
+    { ...flags, profile: primary },
+    { allowUndeclaredTarget: true },
+  );
   announce(resolution);
+  if (serving.length > 1) {
+    print(style.dim(`         serving ${serving.join(', ')} — ${primary} owns the token`));
+  }
+
+  // Before anything external, beside `check`, and for the same reason: two
+  // profiles writing one flat credential ref into one store is a failure with
+  // no later symptom worth having.
+  const colliding = await collidingRefs(resolution.workspaceRoot, serving);
+  if (colliding.length > 0) {
+    heading('Cannot share a credential store');
+    throw new ConfigError(collisionRefusal(colliding, target));
+  }
 
   // `check` before anything external, per the gate order: a config that will be
   // rejected on boot should be rejected here, not after a five-minute build.
@@ -91,8 +125,8 @@ export async function deploy(flags: DeployFlags): Promise<void> {
   // below are, and read from config and manifests before anything opens a
   // store — `--dry-run` must reach the printed step list without touching a
   // credential.
-  const rotatable = await rotatableRefs(resolution.workspaceRoot, flags.profile);
-  const readable = await readableRefs(resolution.workspaceRoot, flags.profile, declared);
+  const rotatable = await rotatableRefs(resolution.workspaceRoot, serving);
+  const readable = await readableRefs(resolution.workspaceRoot, serving, declared);
   const provision = await driver.provision({
     deploy: deployConfig,
     declared,
@@ -212,7 +246,7 @@ export async function deploy(flags: DeployFlags): Promise<void> {
     // says there is a bucket to send to at all.
     const unservable = await unservableProfiles({
       workspaceRoot: resolution.workspaceRoot,
-      profile: flags.profile,
+      profiles: serving,
       target,
     });
 
@@ -221,12 +255,22 @@ export async function deploy(flags: DeployFlags): Promise<void> {
       throw new ConfigError(unservableRefusal(unservable, target));
     }
 
-    await repairSetupSurface(resolution.workspaceRoot, flags.profile);
+    await repairSetupSurface(resolution.workspaceRoot, serving);
 
     // Before the rollout, so the revision that comes up finds a config to read.
     // Uploading after would leave a window where the service is serving and the
     // workspace it was told to read is not there yet.
-    await uploadWorkspace(resolution.workspaceRoot, workspace, flags.profile);
+    await uploadWorkspace(resolution.workspaceRoot, workspace, serving);
+
+    // Recorded once the bucket is known to hold this target's config. It is an
+    // index, not configuration (ADR-044) — the next recovery reads it instead
+    // of asking the platform.
+    await recordDeployment(resolution.workspaceRoot, {
+      target,
+      workspace,
+      primary: resolution.profile,
+      last_deploy: new Date().toISOString(),
+    });
   }
 
   heading('Rolling out');
@@ -251,103 +295,10 @@ export async function deploy(flags: DeployFlags): Promise<void> {
   reportUnauthorised(prepared.warnings, resolution.profile, target);
 }
 
-/**
- * How to register the endpoint, and when.
- *
- * The ordering is the whole point of the second half. A client captures
- * `tools/list` when it connects and keeps it: this endpoint is stateless, so
- * there is no stream on which to send `notifications/tools/list_changed`, and
- * `buildMcpServer` no longer pretends otherwise. A first deploy necessarily
- * publishes a profile whose only connection is `setup.main` — the accounts come
- * after — so a connector registered in that window captures a two-tool surface
- * and holds it. The endpoint is right, every reload lands, and the client shows
- * two tools until someone removes and re-adds it.
- *
- * Unconditional, and that is the correction that matters. This was gated on
- * `prepared.warnings.length`, which is zero in precisely the case it describes:
- * a fresh profile declares only `setup.main`, `setup` is a local provider with
- * no credential, so `prepareSecrets` has nothing to warn about. The advice
- * appeared only on a later re-deploy, by which point the connector is usually
- * registered and the ordering is no longer available to get right.
- */
-function registerLine(profile: string, target: string): string {
-  return style.dim(
-    `  Connect your accounts first, then register with:\n` +
-      `    lanes link outputs --profile ${profile} --target ${target}\n` +
-      '  A client keeps the tool list it fetched when it connected, so one registered\n' +
-      '  before the accounts holds a surface without them until it is re-added.',
-  );
-}
-
-/**
- * The accounts a browser still has to authorise, and the step after them.
- *
- * Printed last rather than before the build, because this is the only thing
- * left to do and a list eight steps up the scrollback is a list nobody reads.
- *
- * There is no second deploy at the end of it any more, and the reason the old
- * one existed is worth keeping. Connection *credentials* are read live on every
- * call, so a fresh `connect` looked like it should be picked up — but whether a
- * connection was usable at all was decided by a reconcile that ran once per
- * process, so a revision that came up with an account unauthorised went on
- * refusing it, naming the connection rather than the staleness. Reconcile now
- * runs again on every reload, and `connect` asks for one (ADR-029).
- */
-function reportUnauthorised(warnings: readonly string[], profile: string, target: string): void {
-  if (warnings.length === 0) return;
-
-  heading('Not authorised yet');
-  for (const problem of warnings) print(warn(problem));
-  print('');
-  print(
-    style.dim(
-      '  A browser consent per account is the one step this cannot take for you:\n' +
-        `    lanes link connect <provider> --profile ${profile} --target ${target}\n` +
-        '  Each is served as soon as it is authorised. There is no second deploy —\n' +
-        '  deploying is how code gets here, and authorising an account changes none.',
-    ),
-  );
-}
-
-/**
- * Who can reach the service once this lands.
- *
- * Printed on every deploy rather than only when it changes, because it is the
- * one property of a deployment that is invisible from the outside until someone
- * either cannot get in or should not have been able to.
- */
-function reachability(access: DeployConfig['access']): string {
-  return access === 'iam'
-    ? style.dim(
-        '  access:   iam — the platform admits only callers holding its own identity\n' +
-          '            token. No agent harness can mint one; use --access public with an\n' +
-          '            authorization block if a remote MCP client has to reach this.',
-      )
-    : style.dim(
-        '  access:   public — the platform lets requests through and this endpoint\n' +
-          '            authenticates them. The bearer token is what protects it.',
-      );
-}
-
-/** Ask the deployed endpoint whether it came up. */
-async function healthLine(url: string): Promise<string> {
-  try {
-    const response = await fetch(`${url}/health`, { signal: AbortSignal.timeout(10_000) });
-    if (!response.ok) return warn(`the endpoint answered /health with ${response.status}`);
-
-    // Asked anonymously, so it reports that the revision is up and nothing
-    // about what it serves — the profile list is behind the token now.
-    // `lanes link outputs` holds one and prints the rest.
-    const body = (await response.json()) as { profiles?: string[] };
-    return ok(
-      body.profiles
-        ? `healthy — serving ${body.profiles.join(', ')}`
-        : 'healthy — run `lanes link outputs` with this profile and target for what it serves',
-    );
-  } catch {
-    // A cold start plus a database connect can outrun a short probe, and
-    // `access: iam` makes /health unreachable from here by design. Neither is a
-    // failed deploy.
-    return warn('could not reach /health from here — with access: iam that is expected');
+/** `--target` is required by `SELECTION`; this is the type narrowing, not a check. */
+function requireTargetFlag(flags: DeployFlags): string {
+  if (!flags.target) {
+    throw new ConfigError('--target is required. It names the deployment this acts on.');
   }
+  return flags.target;
 }

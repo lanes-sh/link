@@ -148,6 +148,6 @@ the agent itself, use a second workspace.
 
 ---
 
-**Full reference:** [`detailed/workflow.md`](detailed/workflow.md) covers every command, the
+**Full reference:** [`detailed/commands.md`](detailed/commands.md) covers every command, the
 resolution order for profiles and targets, and the gate order (`check` → `doctor` → `plan` →
 `start`).

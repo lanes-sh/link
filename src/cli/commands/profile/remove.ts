@@ -12,12 +12,12 @@ import {
 import { parseDocument } from 'yaml';
 import { rm } from 'node:fs/promises';
 import { terminalPrompter, type Prompter } from '../../prompt.ts';
-import { announce, emit, fail, ok, print, style } from '../../output.ts';
+import { announceProfile, emit, fail, ok, print, style } from '../../output.ts';
 import {
   buildRegistryWithWorkspace,
   openBlobStoreFor,
   openSecretStoreFor,
-  resolveProfile,
+  resolveProfileOnly,
   type GlobalFlags,
 } from '../../runtime.ts';
 import { removalPlan, renderPlan, type RemovalItem, type RemovalPlan } from './removal.ts';
@@ -250,10 +250,10 @@ export interface RemoveFlags extends GlobalFlags {
  * in the tool.
  */
 export async function removeProfile(name: string, flags: RemoveFlags): Promise<void> {
-  const { resolution, config } = await resolveProfile({ ...flags, profile: name });
-  announce(resolution);
+  const { selection, config } = await resolveProfileOnly({ ...flags, profile: name });
+  announceProfile(selection);
 
-  const root = resolution.workspaceRoot;
+  const root = selection.workspaceRoot;
   const registry = await buildRegistryWithWorkspace(root, name);
   const files = workspaceFiles(root);
 

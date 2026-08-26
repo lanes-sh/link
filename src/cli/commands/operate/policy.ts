@@ -1,7 +1,7 @@
 import { loadConfigFile } from '#profile';
 import { ConfigDocument } from '../../config-edit.ts';
-import { announce, heading, ok, print, style, table } from '../../output.ts';
-import { resolveProfile, type GlobalFlags } from '../../runtime.ts';
+import { announce, announceProfile, heading, ok, print, style, table } from '../../output.ts';
+import { resolveProfile, resolveProfileOnly, type GlobalFlags } from '../../runtime.ts';
 import { nextAfterEdit, publishProfileEdit } from '../../publish.ts';
 
 /**
@@ -12,8 +12,8 @@ import { nextAfterEdit, publishProfileEdit } from '../../publish.ts';
  */
 
 export async function policyList(flags: GlobalFlags): Promise<void> {
-  const { resolution, config } = await resolveProfile(flags);
-  announce(resolution);
+  const { selection, config } = await resolveProfileOnly(flags);
+  announceProfile(selection);
 
   if (config.policy.allow.length === 0 && config.policy.deny.length === 0) {
     print(style.dim('No rules. Default deny is in effect: nothing is reachable.'));
@@ -73,8 +73,8 @@ export async function policyRule(
 }
 
 export async function configShow(flags: GlobalFlags): Promise<void> {
-  const { resolution } = await resolveProfile(flags);
-  announce(resolution);
-  const { config } = await loadConfigFile(resolution.profilePath);
+  const { selection } = await resolveProfileOnly(flags);
+  announceProfile(selection);
+  const { config } = await loadConfigFile(selection.profilePath);
   print(JSON.stringify(config, null, 2));
 }

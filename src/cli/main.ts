@@ -19,28 +19,15 @@ import {
 } from './commands/operate.ts';
 import { profileAdd, profileDefault, profileList } from './commands/profile.ts';
 import { removeProfile as profileRemove } from './commands/profile/remove.ts';
+import { syncTargets } from './commands/sync.ts';
 import { targetList, targetShow, targetUse } from './commands/target.ts';
 import { identityAdd, identityList, identityRemove } from './commands/identity.ts';
 import { setupPlan } from './commands/setup.ts';
 import { mcpAdd, mcpList, mcpStdio, skillDocument } from './commands/mcp.ts';
 import { deploy } from '#deployments/deploy.ts';
 import { secretsList, secretsPush, secretsSet } from './commands/secrets.ts';
-import {
-  memoryForget,
-  memoryGet,
-  memoryList,
-  memoryWrite,
-  skillsAdd,
-  skillsList,
-  skillsRemove,
-  skillsShow,
-  vaultGet,
-  vaultKeyGenerate,
-  vaultList,
-  vaultRemove,
-  vaultSet,
-} from './commands/owner.ts';
 import { knowledgeShow, knowledgeUse } from './commands/knowledge.ts';
+import { dispatchOwner } from './dispatch-owner.ts';
 import { update } from './commands/update.ts';
 import { all, globalFlags, knowledgeFlags, ownerFlags, parseArgv, text } from './argv.ts';
 import { assertKnownFlags, requireSelection } from './selection.ts';
@@ -235,38 +222,17 @@ export async function run(argv: readonly string[]): Promise<void> {
       if (second !== 'show' && second !== undefined) throw new Error(`Unknown: ${PROGRAM} config ${second}`);
       return configShow(global);
 
+    // memory, skills and vault — one subject, dispatched together.
+    // `vault key generate` is synchronous, so this returns the result rather
+    // than testing it for truthiness.
     case 'memory':
-      switch (second) {
-        case 'list':
-        case undefined:
-          return memoryList(owner);
-        case 'get':
-          return memoryGet(rest[0], owner);
-        case 'write':
-          return memoryWrite(rest[0], owner);
-        case 'forget':
-          return memoryForget(rest[0], owner);
-        default:
-          throw new Error(`Unknown: ${PROGRAM} memory ${second}`);
-      }
-
     case 'skills':
-      switch (second) {
-        case 'list':
-        case undefined:
-          return skillsList(owner);
-        case 'show':
-          return skillsShow(rest[0], owner);
-        case 'add':
-          return skillsAdd(rest[0], owner);
-        case 'remove':
-          return skillsRemove(rest[0], owner);
-        default:
-          throw new Error(`Unknown: ${PROGRAM} skills ${second}`);
-      }
+    case 'vault':
+      return dispatchOwner(first, second, rest, owner, PROGRAM);
 
     // Beside `memory` and `skills` because it is the question they raise next:
-    // those two say what is stored, and this says where it is kept.
+    // those two say what is stored, and this says where it is kept. Not one of
+    // them, though — it takes its own flags rather than the owner set.
     case 'knowledge':
       switch (second) {
         case 'show':
@@ -276,26 +242,6 @@ export async function run(argv: readonly string[]): Promise<void> {
           return knowledgeUse(rest[0], knowledgeFlags(flags));
         default:
           throw new Error(`Unknown: ${PROGRAM} knowledge ${second}`);
-      }
-
-    case 'vault':
-      switch (second) {
-        case 'list':
-        case undefined:
-          return vaultList(owner);
-        case 'get':
-          return vaultGet(rest[0], owner);
-        case 'set':
-          return vaultSet(rest[0], owner);
-        case 'remove':
-          return vaultRemove(rest[0], owner);
-        case 'key':
-          if (rest[0] !== 'generate') {
-            throw new Error(`Usage: ${PROGRAM} vault key generate`);
-          }
-          return vaultKeyGenerate(owner);
-        default:
-          throw new Error(`Unknown: ${PROGRAM} vault ${second}`);
       }
 
     case 'check':
@@ -365,6 +311,10 @@ export async function run(argv: readonly string[]): Promise<void> {
     case 'deploy':
       return deploy({
         ...global,
+        // Repeatable, like `profile add --target`: a deploy sends every profile
+        // that declares the target, and this narrows that set rather than
+        // selecting from it. The first named is the primary (ADR-043).
+        profiles: all(argv, 'profile'),
         dryRun: flags['dry-run'] === true,
         // `--iam` was a boolean that meant "add the platform's own check on top".
         // It is now one of two values of a declared field, because the opposite
@@ -376,6 +326,21 @@ export async function run(argv: readonly string[]): Promise<void> {
         yes: flags['yes'] === true,
         nonInteractive: flags['non-interactive'] === true,
       });
+
+    case 'sync':
+      switch (second) {
+        case undefined:
+        case 'targets':
+          return syncTargets({
+            ...global,
+            dryRun: flags['dry-run'] === true,
+            from: text(flags, 'from'),
+            discover: flags['discover'] === true,
+            prefer: text(flags, 'prefer'),
+          });
+        default:
+          throw new Error(`Unknown: ${PROGRAM} sync ${second}`);
+      }
 
     case 'secrets':
       switch (second) {

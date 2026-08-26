@@ -366,7 +366,7 @@ export const configSchema = z.object({
        *
        * A deployment only, and this cannot widen that: a loopback endpoint
        * refuses every cross-origin request and must keep doing so. Why the
-       * default is a wildcard is `src/server/cors.ts` and ADR-040.
+       * default is a wildcard is `src/server/cors.ts` and ADR-039.
        */
       allowed_origins: z.array(browserOrigin).optional(),
     })
@@ -406,10 +406,45 @@ export type AuthorizationConfig = z.infer<typeof authorizationSchema>;
 export { authorizationSchema, identitySchema };
 export type { IdentityEntry } from './identity.ts';
 
+/**
+ * Where a deployment lives — an index, not configuration.
+ *
+ * **Nothing resolves from this.** A target is still declared by the profile,
+ * and a command still acts on what the profile says. This exists because the
+ * profile file was the *only* record that a deployment existed, so rewriting
+ * one erased the sole pointer to a live service, a bucket holding every byte
+ * the endpoint remembered, and a credential store — none of which had gone
+ * anywhere. There was no command that could find them again.
+ *
+ * It lives in `lanes-link.yaml`, outside any profile, for exactly that reason:
+ * a record kept inside the thing it describes cannot survive the thing being
+ * lost. `lanes link sync targets` reads it, and reads it *only* to know where
+ * to look (ADR-044).
+ *
+ * Written by `deploy`, after an upload has succeeded — so it never names a
+ * workspace nothing was ever put in.
+ */
+export const deploymentRecordSchema = z.object({
+  target: identifier,
+  /** Where the deployed endpoint reads its config: `gs://bucket[/prefix]`. */
+  workspace: z.string().min(1),
+  /**
+   * Whose bearer token opens this endpoint (ADR-009).
+   *
+   * Recorded rather than inferred. One endpoint serves every profile in the
+   * bucket under one token, and which profile's token that is decides who gets
+   * in — the one question about a deployment that must not be guessed at.
+   */
+  primary: identifier.optional(),
+  last_deploy: z.string().optional(),
+});
+
 /** The workspace file: `lanes-link.yaml`, alongside a `profiles/` directory. */
 export const workspaceSchema = z.object({
   contract: z.number().int().positive(),
   default_profile: identifier.optional(),
+  deployments: z.array(deploymentRecordSchema).default([]),
 });
 
 export type WorkspaceConfig = z.infer<typeof workspaceSchema>;
+export type DeploymentRecord = z.infer<typeof deploymentRecordSchema>;

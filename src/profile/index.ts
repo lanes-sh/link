@@ -14,11 +14,13 @@
 export {
   SUPPORTED_CONTRACT,
   configSchema,
+  deploymentRecordSchema,
   workspaceSchema,
   type AuthorizationConfig,
   type Config,
   type ConnectionConfig,
   type DeployConfig,
+  type DeploymentRecord,
   type IdentityEntry,
   type PolicyRuleConfig,
   type TargetConfig,
@@ -54,19 +56,25 @@ export {
   installRoot,
   listProfiles,
   loadProfileConfig,
+  loadWorkspaceProfiles,
   noProfileNamed,
   profilePath,
   readWorkspace,
   resolveSelection,
   resolveWorkspaceRoot,
+  targetsByName,
   workspacePath,
+  type LoadedProfile,
+  type WorkspaceProfiles,
 } from './workspace.ts';
 export {
   LEGACY_TARGET_ENV,
+  noTargetInWorkspace,
   noTargetNamed,
   requireTarget,
   undeclaredTarget,
 } from './targets.ts';
+export { findDeployment, readDeployments, recordDeployment } from './deployments.ts';
 export {
   isRemoteWorkspace,
   readWorkspaceFile,

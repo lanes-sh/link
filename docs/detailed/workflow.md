@@ -1,6 +1,8 @@
 # Workflow
 
-The normative CLI contract. Implement against this; keep it updated when a command changes.
+The normative CLI contract, in the order you meet it. Implement against this; keep it updated when a
+command changes. To look one command up rather than follow the lifecycle, see
+[`commands.md`](commands.md).
 
 **Every command prints the resolved profile and target before acting**, read-only commands included.
 It is the primary guard against operating on the wrong instance, and it costs one line.
@@ -392,9 +394,9 @@ differ. [`docs/detailed/deployment-cloudrun.md`](deployment-cloudrun.md) is the 
 ```console
 $ lanes link deploy --profile personal --target local --dry-run              # every gcloud command, none of them run
 $ lanes link deploy --profile personal --target local                        # set up, build, push, roll a revision
-$ lanes link connect gmail --profile personal --target local --target cloud  # a browser consent per account
+$ lanes link connect gmail --profile personal --target cloud  # a browser consent per account
 $ lanes link deploy --profile personal --target local                        # again, so the revision sees them
-$ lanes link outputs --profile personal --target local --target cloud        # the deployed URL an agent needs
+$ lanes link outputs --profile personal --target cloud        # the deployed URL an agent needs
 ```
 
 `deploy` needs no `--target` when there is one deployment to mean: it deploys the target that has
@@ -415,10 +417,10 @@ instead of the `connect` step.
 as many deployable targets as you like. The second one is named on the deploy that creates it:
 
 ```console
-$ lanes link deploy --profile personal --target local --target staging      # surveys and writes targets.staging, then rolls it
+$ lanes link deploy --profile personal --target staging      # surveys and writes targets.staging, then rolls it
 $ lanes link target list --profile personal                  # what this profile declares, and which is in play
-$ lanes link connect gmail --profile personal --target local --target staging
-$ lanes link outputs --profile personal --target local --target staging
+$ lanes link connect gmail --profile personal --target staging
+$ lanes link outputs --profile personal --target staging
 ```
 
 Once two targets declare a deployment, a bare `lanes link deploy` refuses and asks which you meant —
@@ -510,17 +512,15 @@ rules:
 10:44:30  deny   example.set_note                0ms  {}
 ```
 
-## Global flags
+## Flags
 
-```
---profile <name>    overrides LANES_LINK_PROFILE and the workspace default
---target  <name>    overrides LANES_LINK_TARGET and instance.default_target
---connection <id>   which memory/skills/vault connection, when a profile has several
---yes               skip the confirmation a destructive command would otherwise ask for
---port    <n>       override the configured port (start only)
---show              reveal a token or a vault value rather than truncating it
---raw               print only the value, for $(…) — no profile line, no styling
-```
+`--json`, `--quiet` and `--help` are accepted everywhere. Everything else belongs to the command that
+reads it, and [`commands.md`](commands.md) lists them per command.
+
+`--profile` and `--target` are not overrides: nothing else selects either one, so there is nothing
+for them to override (ADR-037). The block that used to be here said they overrode
+`LANES_LINK_PROFILE` and `instance.default_target`, which the Selection section above has been
+contradicting since those stopped being read.
 
 A command that reads a value takes it on **stdin**, never on argv, so it does not land in shell
 history: `lanes link memory write`, `lanes link skills add`, `lanes link vault set`, and `lanes link secrets set` all work this way and

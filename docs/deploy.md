@@ -22,8 +22,8 @@ mints the service account and the bucket, and builds the image.
 ```console
 $ lanes link deploy --profile personal --target cloud --dry-run              # every gcloud command, none of them run
 $ lanes link deploy --profile personal --target cloud                        # creates the project and rolls a revision
-$ lanes link connect gmail --profile personal --target cloud --target cloud  # a browser consent per account
-$ lanes link outputs --profile personal --target cloud --target cloud        # the URL your agent needs
+$ lanes link connect gmail --profile personal --target cloud  # a browser consent per account
+$ lanes link outputs --profile personal --target cloud        # the URL your agent needs
 ```
 
 `connect` comes *after* the deploy: a credential store that does not exist yet is not somewhere to
@@ -52,20 +52,76 @@ already holds unless you pass `--overwrite`.
 Name it, and everything downstream takes the same flag:
 
 ```console
-$ lanes link deploy --profile personal --target cloud --target staging          # its own project, bucket, and service
-$ lanes link connect gmail --profile personal --target cloud --target staging   # same ordering: accounts before the URL
-$ lanes link outputs --profile personal --target cloud --target staging
+$ lanes link deploy --profile personal --target staging          # its own project, bucket, and service
+$ lanes link connect gmail --profile personal --target staging   # same ordering: accounts before the URL
+$ lanes link outputs --profile personal --target staging
 ```
 
-Every command names its profile and target, and nothing else supplies them — no environment
-variable, no key in a file. That is deliberate (ADR-037): a selection you did not type is one you
-cannot check. A shell alias is the way to shorten it, and it is yours to write.
+Every command that acts on one account names its profile and target, and nothing else supplies
+them — no environment variable, no key in a file. That is deliberate (ADR-037): a selection you
+did not type is one you cannot check. A shell alias is the way to shorten it, and it is yours to
+write.
+
+`deploy`, `status` and `sync targets` are the exception, and not because the rule is relaxed for
+them: their subject is the endpoint, which serves every profile in the workspace. They name the
+target, and `--profile` narrows what they act on rather than selecting it (ADR-043).
 
 ## Which profiles it serves
 
-`lanes link deploy` uploads **every** profile in your workspace unless you name one with
-`--profile`, and the endpoint serves all of them under one token. Pass `--profile personal` if you
-want just the one; use a second workspace if you want a boundary that holds.
+`lanes link deploy --target cloud` sends **every profile that declares `cloud`**, in one revision,
+and the endpoint serves all of them under one token. That set is the same one the endpoint will
+try to open, which is why it is derived rather than typed.
+
+```console
+$ lanes link deploy --target cloud                        # every profile declaring it
+$ lanes link deploy --target cloud --profile personal     # only this one
+```
+
+A first deploy is different: a target no profile declares yet has no set to derive, so name the
+profile it belongs to and `deploy` creates the target in it.
+
+Two things it will not decide for you. **Which profile owns the endpoint's token**, because one
+token reaches every profile behind it — you are asked once, and the answer is remembered. And
+whether the profiles can **share a credential store** at all: references are flat, so two profiles
+in one project both declaring `gmail/main` are declaring the same secret, and `deploy` refuses
+rather than letting the second overwrite the first. Give the connections different ids, or use a
+second target in its own project.
+
+## If the target goes missing from your profile
+
+The six lines declaring `cloud` in your profile are the only thing in the workspace pointing at
+the service, the bucket, and the credential store. Edit that file badly — or let a tool rewrite
+it — and every command reports the target as undeclared, while the deployment carries on
+answering:
+
+```console
+$ lanes link status --target cloud
+Profiles
+  personal  not declared  —
+
+Endpoint
+  No profile declares "cloud".
+```
+
+Nothing is lost. The bucket still holds the profile exactly as the last deploy left it, and
+`sync targets` merges the two copies back together:
+
+```console
+$ lanes link sync targets --target cloud --dry-run   # see what each side is missing
+$ lanes link sync targets --target cloud
+personal
+  ← targets.cloud             missing locally
+  ← auth.authorization        missing locally
+  ← connections.gmail.work    missing locally
+```
+
+It finds the bucket from the target you still declare, then from the `deployments:` index
+`deploy` writes into `lanes-link.yaml`, then from `--from gs://<bucket>` if you know it, then
+from `--discover`, which asks the platform and is the only one that works from nothing.
+
+It merges in both directions and never overwrites: anything one side is missing is copied to it,
+and anything both sides hold differently stops the run and prints the difference. `--prefer local`
+or `--prefer remote` decides those. Credentials, state and the audit log are never copied.
 
 ## Two answers in the first run decide whether an agent can reach it
 
@@ -87,7 +143,7 @@ than as a configuration error, so it is worth getting right the first time.
 ## Then register it
 
 ```console
-$ lanes link mcp add claude --profile personal --target cloud --target cloud
+$ lanes link mcp add claude --profile personal --target cloud
 ```
 
 Each target has its own credential store, so the deployed token is a different string from the local
