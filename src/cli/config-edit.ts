@@ -315,7 +315,7 @@ function patternsIn(rules: unknown, now = Date.now()): string[] {
  * Written with comments, because this is the file an operator will read first
  * and most of what it needs to say is *why*, not *what*.
  */
-export function newProfileTemplate(profile: string, port: number): string {
+export function newProfileTemplate(profile: string, port: number, targets: string): string {
   return `# Lanes Link profile: ${profile}
 #
 # This file is the source of truth for what exists. It never contains a
@@ -328,17 +328,19 @@ contract: 1
 
 instance:
   profile: ${profile}
-  default_target: local
   port: ${port}
   host: 127.0.0.1
 
-# Adapter selection is per target. Everything below "targets" is
-# target-independent and declared exactly once.
+# Adapter selection is per target, and every command names the one it means:
+#
+#     lanes link status --profile ${profile} --target <name>
+#
+# There is no default. A target is chosen on the command line or not at all,
+# so a flag that goes missing fails here rather than quietly running somewhere
+# else (ADR-037). Everything below "targets" is target-independent and declared
+# exactly once.
 targets:
-  local:
-    credentials: { adapter: file, path: ./data/${profile}/credentials.enc }
-    storage: { adapter: filesystem, path: ./data/${profile} }
-
+${targets}
 # The bearer token for the endpoint this profile serves.
 #
 # "lanes link start" serves every profile in the workspace from one URL, and this
@@ -386,12 +388,12 @@ policy:
 `;
 }
 
-export function newWorkspaceTemplate(defaultProfile?: string): string {
+export function newWorkspaceTemplate(): string {
   return `# Lanes Link workspace
 #
 # A workspace holds one or more profiles, and one endpoint serves all of them:
-# every call names the profile it means. Profiles never share a database or a
-# credential store, so what one holds is invisible to another.
+# every call names the profile it means, with --profile. Profiles never share a
+# database or a credential store, so what one holds is invisible to another.
 contract: 1
-${defaultProfile ? `default_profile: ${defaultProfile}\n` : ''}`;
+`;
 }

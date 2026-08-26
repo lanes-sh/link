@@ -1,3 +1,4 @@
+import { localBlock } from '../profile/declare.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -73,7 +74,7 @@ async function document(body?: string): Promise<ConfigDocument> {
   const root = await mkdtemp(join(tmpdir(), 'lanes-link-client-'));
   roots.push(root);
   await mkdir(join(root, 'profiles'), { recursive: true });
-  await writeFile(join(root, 'profiles', 'personal.yaml'), body ?? newProfileTemplate('personal', 7337));
+  await writeFile(join(root, 'profiles', 'personal.yaml'), body ?? newProfileTemplate('personal', 7337, localBlock('personal')));
   return await ConfigDocument.open(root, 'personal');
 }
 

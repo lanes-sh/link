@@ -63,6 +63,32 @@ export function text(flags: Flags, name: string): string | undefined {
   return typeof value === 'string' ? value : undefined;
 }
 
+/**
+ * Every value given for a flag, in order.
+ *
+ * `profile add --target local --target cloud` is the one command where a flag
+ * legitimately repeats: it is declaring a list, not selecting one thing. The
+ * parser keeps the last value in `flags`, so this re-reads argv rather than
+ * changing that shape for every other flag's sake.
+ */
+export function all(argv: readonly string[], name: string): string[] {
+  const values: string[] = [];
+
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i]!;
+    if (token === `--${name}`) {
+      const next = argv[i + 1];
+      if (next !== undefined && !next.startsWith('--')) values.push(next);
+      continue;
+    }
+    if (token.startsWith(`--${name}=`)) values.push(token.slice(name.length + 3));
+  }
+
+  // Comma-separated is the other spelling people reach for, and refusing it
+  // would be a refusal with no reason behind it.
+  return values.flatMap((value) => value.split(',').map((part) => part.trim())).filter(Boolean);
+}
+
 /** The flags every command accepts. */
 export function globalFlags(flags: Flags): GlobalFlags {
   return {

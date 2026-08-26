@@ -1,3 +1,4 @@
+import { localBlock } from './commands/profile/declare.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { readdir } from 'node:fs/promises';
@@ -27,7 +28,7 @@ async function profileFile(contents?: string): Promise<{ root: string; path: str
   roots.push(root);
   await mkdir(join(root, 'profiles'), { recursive: true });
   const path = join(root, 'profiles', 'personal.yaml');
-  await writeFile(path, contents ?? newProfileTemplate('personal', 7337));
+  await writeFile(path, contents ?? newProfileTemplate('personal', 7337, localBlock('personal')));
   return { root, path };
 }
 

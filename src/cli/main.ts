@@ -39,7 +39,7 @@ import {
   vaultSet,
 } from './commands/owner.ts';
 import { update } from './commands/update.ts';
-import { globalFlags, ownerFlags, parseArgv, text } from './argv.ts';
+import { all, globalFlags, ownerFlags, parseArgv, text } from './argv.ts';
 import { assertKnownFlags, requireSelection } from './selection.ts';
 import { PROGRAM, USAGE } from './usage.ts';
 import { version } from './version.ts';
@@ -106,8 +106,17 @@ export async function run(argv: readonly string[]): Promise<void> {
     case 'profile':
       switch (second) {
         case 'add':
-          if (!rest[0]) throw new Error(`Usage: ${PROGRAM} profile add <name> [--default]`);
-          return profileAdd(rest[0], { default: flags['default'] === true, json });
+          if (!rest[0]) {
+            throw new Error(`Usage: ${PROGRAM} profile add <name> --target <name> [--target <name>]`);
+          }
+          return profileAdd(rest[0], {
+            // Read from argv rather than from `flags`, because this is the one
+            // place a flag is a list: a profile declares every target it can run
+            // on, and the parser keeps only the last value of a repeated flag.
+            targets: all(argv, 'target'),
+            nonInteractive: flags['non-interactive'] === true,
+            json,
+          });
         case 'list':
         case undefined:
           return profileList({ json });

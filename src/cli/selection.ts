@@ -229,7 +229,7 @@ const UNIVERSAL = ['help', 'json', 'quiet'];
 const ACCEPTS: Record<string, readonly string[]> = {
   connect: ['id', 'display-name', 'replace', 'non-interactive', 'accept-broad-scopes', 'own-client'],
   setup: ['id'],
-  'profile add': ['target', 'default'],
+  'profile add': ['target', 'non-interactive'],
   'profile remove': ['dry-run', 'yes'],
   'target list': ['urls', 'target'],
   'target show': ['target'],
