@@ -261,10 +261,30 @@ const MAX_LINES = 400;
  * It crossed the line by one, adding the target an endpoint runs as to the
  * authorization surface, and splitting it was a larger change than the one
  * that revealed it. Cut there when something needs to touch this file next.
+ *
+ * `profile/schema.ts` is `server/endpoint.ts` again, and a second occurrence is
+ * what makes that a pattern rather than an accident. It was 385 lines, and two
+ * branches open at once added ten net lines each — an `identity` block on the
+ * config, and `allowed_origins` on the authorization block. Both were green,
+ * because each was measured against a base without the other, and the merge
+ * that put them together was the first thing to see 405. A budget that only one
+ * branch at a time can check will keep finding this.
+ *
+ * Exempt rather than split, and this one is not a deferral. The file holds
+ * seventeen Zod declarations and no functions at all: its length is the size of
+ * the config format, not a count of responsibilities. The seam this budget
+ * exists to point at is a second subject — what `deployments/adapters/postgres.ts`
+ * and `stores/database/conformance.ts` each turned out to be — and there is no
+ * second subject here to find. Splitting it by line count would put
+ * `targetSchema` and `configSchema` in different files to satisfy an arithmetic
+ * that is not measuring anything about them. What would earn a split is
+ * something that is not a schema appearing beside them; that is the thing to
+ * watch for, and it is visible in a diff.
  */
 const KNOWN_LONG = new Set([
   'connectivity/transports/dav/ical.ts',
   'deployments/adapters/gcp-secret-manager.ts',
+  'profile/schema.ts',
   'providers/google/specs/vendor.ts',
   'providers/memory/provider.ts',
   'server/endpoint.ts',
