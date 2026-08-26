@@ -156,3 +156,49 @@ describe('a provider whose client somebody else operates', () => {
     expect(planFor(brokered, { profile: 'personal', target: 'local', connections: [] }).steps).toHaveLength(2);
   });
 });
+
+/**
+ * The target, which every caller has to know.
+ *
+ * Credentials are per-target, so `connect` writes into whichever target the
+ * pasted command names — and nothing else names one. This started out optional,
+ * falling back to `LANES_LINK_TARGET` or `instance.default_target` when the
+ * caller had none; ADR-037 withdrew both fallbacks and made the field required,
+ * on the argument that a fallback which survives is how the mistake surfaces
+ * one command later, detached from its cause.
+ *
+ * So there is no "no target" case left to pin. What is pinned instead is that
+ * the flag is unconditional: present on the plain command, on the `--id`
+ * placeholder form, on the own-client escape hatch, and on every shipped
+ * provider.
+ */
+describe('the target in a command', () => {
+  test('names the target beside the profile, always', () => {
+    expect(planFor(KEYED, context, 'work').command).toBe(
+      'lanes link connect thing --profile personal --target local --id work',
+    );
+  });
+
+  test('an id placeholder still comes last, so the part to edit is at the end', () => {
+    const targeted = { ...context, target: 'local' };
+
+    expect(planFor(KEYED, targeted).command).toBe(
+      'lanes link connect thing --profile personal --target local --id <name>',
+    );
+  });
+
+  test('the own-client escape hatch carries it too', () => {
+    // It is the same command plus a flag, so a target on one and not the other
+    // would send the reader to a different store than the line above it.
+    const plan = planFor(BROWSER, { ...context, target: 'cloud' });
+
+    expect(plan.command).toContain('--target cloud');
+  });
+
+  test('every shipped provider carries it', () => {
+    for (const plan of planAll(PROVIDER_MANIFESTS, { ...context, target: 'cloud' })) {
+      expect(plan.command).toContain('--target cloud');
+      if (plan.ownClientCommand) expect(plan.ownClientCommand).toContain('--target cloud');
+    }
+  });
+});

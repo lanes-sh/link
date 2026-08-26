@@ -5,6 +5,7 @@ import {
   auditVerify,
   check,
   configShow,
+  dashboard,
   doctor,
   outputs,
   plan,
@@ -269,6 +270,13 @@ export async function run(argv: readonly string[]): Promise<void> {
       return status({ ...global, json });
     case 'outputs':
       return outputs({ ...global, show, json });
+
+    // Beside `outputs` for the same reason `tools` is: it answers the next
+    // question a person has rather than the next one an agent has. `outputs`
+    // hands a harness a URL and a token; this opens the one page a person can
+    // read, and only a local endpoint serves it.
+    case 'dashboard':
+      return dashboard({ ...global, print: flags['print'] === true });
 
     // Beside `outputs` because it answers the next question. `outputs` says
     // where the endpoint is; this says what it would hand a client that asked

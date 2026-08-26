@@ -247,7 +247,15 @@ const MAX_LINES = 400;
  * the seam the budget exists to point at: they were not too long, they were
  * two things.
  *
- * `server/harness.ts` is the newest entry and the one with a seam already
+ * `server/endpoint.ts` is the one entry here that no single change earned. It
+ * was 371 lines on `main` and under the budget on all four branches that were
+ * open at once; it crossed at 416 only when they were integrated, gaining the
+ * target-aware authorization surface from one and the dashboard route from
+ * another. The seam is the second of those — the dashboard is a whole surface
+ * reached over the same port, and `server/dashboard.ts` already holds most of
+ * it. Cut there rather than by line count.
+ *
+ * `server/harness.ts` is the one with a seam already
  * visible: `startStdioHarness` and `StdioHarness` are 135 lines serving the
  * same profiles over a different transport, and only two tests import them.
  * It crossed the line by one, adding the target an endpoint runs as to the
@@ -259,6 +267,7 @@ const KNOWN_LONG = new Set([
   'deployments/adapters/gcp-secret-manager.ts',
   'providers/google/specs/vendor.ts',
   'providers/memory/provider.ts',
+  'server/endpoint.ts',
   'server/harness.ts',
 ]);
 

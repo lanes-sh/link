@@ -95,6 +95,9 @@ export const SELECTION: Record<string, Requires> = {
   status: 'profile+target',
   outputs: 'profile+target',
   tools: 'profile+target',
+  // It reads which target it is rendering for before it decides anything: a
+  // deployed one has no page to open, and the refusal has to name it.
+  dashboard: 'profile+target',
   attach: 'profile+target',
   start: 'profile+target',
   deploy: 'profile+target',

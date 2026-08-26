@@ -409,6 +409,34 @@ Credentials follow the target, because each target has its own credential store.
 copies and never deletes, and skips a reference the destination already holds unless you pass
 `--overwrite` — the deployed copy may be the newer one.
 
+## The dashboard
+
+Everything under *Inspection* below, on one page, for a local endpoint:
+
+```console
+$ lanes link dashboard              # opens a browser
+$ lanes link dashboard --print      # prints the URL instead
+```
+
+It shows the connections and their reconciled state, every provider nothing is connected to, the
+profiles this endpoint serves, and the targets the profile declares — with the one whose adapters
+are open marked, and the others shown as declared but not served here.
+
+**It renders commands; it does not run them.** A card for an unconnected provider carries the exact
+`lanes link connect …` line, spelled with `--profile` and `--target` so the shell you paste it into
+cannot resolve a different one than the page was describing. Connecting still happens in a terminal,
+because the browser consent belongs to whoever owns the browser and the callback listener is the
+CLI's ([ADR-005](adr/005-oauth-connection-flow.md)).
+
+**Local only.** A browser navigation carries no `Authorization` header, and Cloud Run's own gate
+admits only a Google-signed identity token that no browser will mint either — so a deployed instance
+has no door this page could sit behind, and the container entrypoint never mounts it
+([ADR-018](adr/018-the-gate-is-in-the-application.md)). Against a deployed target the command says
+so and points at `lanes link status --target <name>`.
+
+The link the command opens carries a one-time key, which the endpoint exchanges for a session cookie
+and drops from the URL — so the token is not left in the address bar, the history, or a Referer.
+
 ## Inspection
 
 ```console

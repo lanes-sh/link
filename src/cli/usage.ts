@@ -29,6 +29,7 @@ ${style.bold('Everyday')}
                                         from the credential store, or say what is missing
   ${PROGRAM} start [--only]             reconcile and serve every profile on one endpoint
   ${PROGRAM} outputs [--show] [--json]  the endpoint an agent needs
+  ${PROGRAM} dashboard [--print]        open the local endpoint's page in a browser
   ${PROGRAM} mcp add [claude|codex]     register this endpoint, and install the agent skill
   ${PROGRAM} mcp add --no-skill         register only, leaving the agent's own files alone
   ${PROGRAM} mcp list                   where it is registered, and whether the skill is current
