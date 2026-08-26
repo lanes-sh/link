@@ -143,6 +143,18 @@ function renderOne(plan: ProviderPlan, missing: ReadonlySet<string>): void {
       plan.steps.forEach((step, index) => print(`  ${index + 1}. ${step}`));
     }
   }
+
+  // The other alternative, and for the same reason it is down here: it is what
+  // to do when the line above is refused by somebody who is not the reader.
+  if (plan.tokenCommand && plan.pastedCredential) {
+    heading('Or paste a token you already hold');
+    print(`  ${plan.tokenCommand}`);
+    print(`  ${style.dim(`Asks for the ${plan.pastedCredential}.`)}`);
+    if (plan.steps.length > 0 && !plan.ownClientCommand) {
+      print();
+      plan.steps.forEach((step, index) => print(`  ${index + 1}. ${step}`));
+    }
+  }
   if (plan.browser) {
     print();
     print(

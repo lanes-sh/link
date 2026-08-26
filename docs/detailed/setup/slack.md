@@ -1,150 +1,98 @@
-# Connecting Slack
-
-Messages, threads, channels, files, and canvases, through the MCP server Slack
-runs.
-
-```
-lanes link connect slack
-```
-
-You are asked for one user token. Getting that token means creating a Slack app
-first, which is the one console visit left in this project — and unlike Google's,
-it cannot be removed from your side.
-
-## Why there is a console visit
-
-Every other route is closed, and each for a different reason:
-
-- **Dynamic Client Registration** — the mechanism that makes Notion and Linear
-  cost nothing to connect. Slack's documentation is explicit: *"We do not
-  support SSE-based connections or Dynamic Client Registration at this time."*
-- **An OAuth client of your own** — the fallback used for Google. Slack requires
-  redirect URIs to be **HTTPS**, and `connect` listens on `http://127.0.0.1` on
-  a port the kernel picks per run. There is no flag, tunnel, or proxy that makes
-  a loopback listener HTTPS.
-- **A broker** — a client somebody else runs and performs the exchange behind.
-  Refused at definition for an MCP provider, because the SDK owns that exchange
-  and there is no seam to route it through one.
-
-What is left is the arrangement Slack's own documentation describes for a client
-that cannot register: install an app, take the user token, send it as
-`Authorization: Bearer`. See
-[ADR-033](../adr/033-a-pasted-token-for-an-mcp-server.md).
-
-## Creating the app
-
-1. Open **[api.slack.com/apps](https://api.slack.com/apps)** → **Create New App**
-   → **From scratch**. Name it `Lanes Link` and pick your workspace.
-2. Open **OAuth & Permissions** and scroll to **Scopes**.
-3. Add the following under **User Token Scopes**. Not *Bot* Token Scopes — the
-   MCP server reads the user token, and scopes added to the wrong list produce
-   an app that installs cleanly and then refuses every call.
-
-   | | Scopes |
-   |---|---|
-   | Search | `search:read.public` `search:read.private` `search:read.im` `search:read.mpim` `search:read.users` `search:read.files` |
-   | Read messages | `channels:history` `groups:history` `im:history` `mpim:history` |
-   | Channels and people | `channels:read` `groups:read` `mpim:read` `users:read` |
-   | Send | `chat:write` |
-   | Files | `files:read` |
-
-   Optional, if you want those tools to work: `reactions:write` for reactions,
-   `canvases:read` and `canvases:write` for canvases, `emoji:read` for emoji
-   search, `channels:write` for creating channels. Slack lists every tool
-   regardless of scope and refuses at call time, so a missing scope looks like a
-   tool that exists and does not work.
-
-4. Scroll back up and choose **Install to Workspace**, then approve. A workspace
-   admin may have to approve it on your behalf.
-5. Copy the **User OAuth Token** from the same page. It begins with `xoxp-`.
-
-> The token beginning `xoxb-` on that page is the **bot** token. It is the more
-> prominent of the two and it will not work here — a bot is a different identity
-> with different visibility, and the MCP server expects yours.
-
-The token goes into the encrypted credential store at `slack/<username>`, never
-into config.
-
-## What a user token means
-
-It acts as **you**. Anything you can see in Slack — private channels you are in,
-your DMs, your group DMs — is reachable through this connection, bounded by the
-scopes above and by your Lanes Link policy, not by a separate permission model.
-That is the point of a user token rather than a bot token, and it is also the
-thing to be deliberate about.
-
-Two consequences worth stating:
-
-- **The token does not expire** unless you enable token rotation on the app.
-  There is no refresh, so nothing renews it and nothing revokes it on a
-  schedule. Revoking means uninstalling the app, or rotating it from
-  **OAuth & Permissions**.
-- **Narrowing is yours to do**, in two places. Fewer scopes at install time is
-  the coarse control. `lanes link policy deny slack.send_message slack.<you>` is
-  the fine one, and it is instant and local.
-
-After rotating or reinstalling — either mints a new token — run:
-
-```
-lanes link connect slack --replace
-```
-
-Without `--replace`, connect finds the old token already stored and reuses it.
-
-## Which account this is
-
-The connection is labelled with your Slack **username**, read from
-`auth.test`, rather than the workspace name. That matters if two people connect
-Slack on the same machine: labelled by workspace, the second connection would
-look like a reconnect of the first and overwrite their credential.
-
-A quirk to know when something goes wrong: Slack answers a bad token with HTTP
-`200` and `{"ok": false}` rather than a `401`, so a wrong token does not fail
-the identity probe cleanly — you are asked "which account is this?" instead, and
-the real error arrives a step later when discovery runs.
-
-## Non-interactive
+# Slack
 
 ```console
-$ printf %s "$SLACK_TOKEN" | lanes link secrets set slack/ada --profile personal
-$ lanes link connect slack --id ada --non-interactive --json --profile personal
+$ lanes link connect slack --profile personal --target local
 ```
 
-The credential goes in on stdin, never as a flag — an argument lands in shell
-history, in `ps` output, and in any transcript.
+A browser opens, you approve, and that is the whole of it. There is no Slack app to create, no
+scope list to transcribe, and no token to copy.
 
-## What is recorded
+## Why this used to cost a console visit
 
-Where a message went is kept; what it said is not. An audit entry for
-`send_message` records the channel, the thread, and whether it was broadcast,
-and reduces `message` to a type marker — the same line Gmail draws for mail,
-because it is the same object. `src/providers/slack/redact.ts` is the list, with
-the reasoning for each.
+Slack does not support Dynamic Client Registration, so nothing can register itself with Slack the
+way [Notion and Linear](../../connect.md) do. That is deliberate rather than missing: registering
+dynamically would let a client authenticate someone without an app existing, and on Enterprise Grid
+an admin approves each app before it can authenticate anyone.
 
-`create_canvas` keeps nothing at all, and that is deliberate rather than an
-omission: a canvas has no identifier until Slack answers with one, so its only
-arguments are the title and the document. There is nothing to keep that is not
-content.
+So a client has to be pre-registered, and the question is only whose. It used to be yours. Now it
+is one Lanes registered. What Lanes holds is the app's client secret; the browser still goes to
+Slack, the consent is between you and your workspace, and the token lands in your credential store.
 
-One caveat, the same as GitHub's. A proxied server's capabilities are discovered
-at connect time rather than declared here, so nothing in this repository can
-check those argument names — unlike an `http` provider, where
-`cli/tools.test.ts` does. They were read off the schemas Slack's server
-publishes rather than guessed, but a rename upstream fails silently, with the
-log reading exactly as it does when redaction is working. `lanes link doctor`
-reporting capability drift is the signal that the list wants re-reading.
+Slack also refuses to register a callback that is not HTTPS, and a command line cannot be HTTPS. So
+Slack returns you to `api.lanes.sh`, which immediately redirects you back down to the command
+waiting on your own machine. You will see it flicker past. Nothing is stored there — that hop
+carries the same authorization code the exchange sends a moment later anyway.
 
-## Troubleshooting
+The trade is written down in [`../security.md`](../security.md) under
+`credentials.exchange-is-local`, and it is the same one Google's connection makes — with one
+difference. A Google connection can opt out by registering your own client. A Slack one cannot: the
+hosted client is also the HTTPS address Slack returns you to, so `lanes link connect slack` needs
+it. Connections already made are unaffected if it is down, because Slack issues no refresh token and
+nothing goes back afterwards.
 
-**`Slack refused the token`** — nearly always one of three: a bot token
-(`xoxb-`) pasted where the user token (`xoxp-`) belongs, a scope added under Bot
-Token Scopes rather than User Token Scopes, or an app reinstalled since the
-token was copied. Reinstalling mints a new one.
+## What it will ask for
 
-**A tool exists but every call fails** — a missing scope. Slack lists its whole
-tool set regardless of what your token can do. Add the scope under User Token
-Scopes, reinstall, and reconnect with `--replace`.
+`connect` prints the scopes before the browser opens and stops if you do not agree to them. They
+are Slack **user-token** scopes: Slack's MCP server reads the user token, and a bot token is a
+different credential that does not work there at all.
 
-**The connection is labelled with something you typed** — the identity probe did
-not get a username back, which for Slack means the token was refused. See the
-quirk above.
+| Scope | What it means |
+| --- | --- |
+| `search:read.public`, `search:read.users`, `search:read.files` | Search public channels, people, files |
+| `search:read.private`, `search:read.im`, `search:read.mpim` | Search private channels and DMs |
+| `channels:history`, `channels:read` | Read and list public channels |
+| `groups:history`, `groups:read` | Read and list private channels |
+| `im:history`, `mpim:history`, `mpim:read` | Read direct and group direct messages |
+| `users:read` | Read people and profiles |
+| `files:read` | Read files and their contents |
+| `chat:write` | Send messages **as you** |
+| `reactions:write` | Add and remove reactions as you |
+| `canvases:read`, `canvases:write` | Read and edit canvases |
+| `channels:write` | Create and manage public channels |
+
+Seven of those are flagged broad and need an explicit yes: the four that reach private
+conversations, the two that search them, and `chat:write`. Slack draws no line between reading a
+conversation and reading a private one, so a scope that reads like routine access is usually the
+most sensitive thing in the workspace.
+
+Granting a scope is not the same as letting an agent use it. `connect` grants the read bundle and
+nothing else; `lanes link policy` is where the rest is turned on.
+
+## If your workspace has not approved the Lanes app
+
+An Enterprise Grid admin decides that, and you may not be able to change it. Use a token from an
+app your workspace already trusts:
+
+```console
+$ lanes link connect slack --profile personal --target local --auth pasted_token
+```
+
+1. Open <https://api.slack.com/apps> and choose **Create New App** → **From scratch**. Name it and
+   pick the workspace.
+2. Open **OAuth & Permissions** and add the scopes you need under **User Token Scopes** — not Bot
+   Token Scopes. The table above is the full set; a smaller set works, and the tools whose scope is
+   missing fail when they are called rather than being hidden.
+3. Choose **Install to Workspace** and approve. An admin may have to approve it for you.
+4. Copy the **User OAuth Token**. It starts with `xoxp-`. The bot token starts with `xoxb-` and
+   will not work here.
+
+The token does not expire unless you enable token rotation on the app. If you rotate or reinstall,
+the token changes:
+
+```console
+$ lanes link connect slack --profile personal --target local --auth pasted_token --replace
+```
+
+Two things are weaker on this path, and both are recorded in [`../security.md`](../security.md).
+The stored value is the credential itself rather than a means of obtaining one, so rotating it is
+manual. And there is no scope-disclosure gate: what the token can do was decided in your console
+and cannot be read back, so `connect` records what it asked for rather than what it got.
+
+## When it does not work
+
+**"Slack refused the token."** Usually a bot token (`xoxb-`) where the user token (`xoxp-`) belongs,
+a scope missing from **User Token Scopes**, or an app that has been reinstalled since — reinstalling
+mints a new token.
+
+**A tool is listed and fails when called.** Its scope was not granted. Re-run `lanes link connect
+slack` to consent again, or add the scope in your own app if you took the pasted-token route.

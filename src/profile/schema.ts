@@ -356,7 +356,7 @@ export const configSchema = z.object({
        *
        * A deployment only, and this cannot widen that: a loopback endpoint
        * refuses every cross-origin request and must keep doing so. Why the
-       * default is a wildcard is `src/server/cors.ts` and ADR-039.
+       * default is a wildcard is `src/server/cors.ts` and ADR-040.
        */
       allowed_origins: z.array(browserOrigin).optional(),
     })

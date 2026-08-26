@@ -1,5 +1,5 @@
 import type { ProviderManifest } from '#connectivity';
-import { setupRequirements, type SetupRequirement } from '#connectivity';
+import { hasOwnClientPath, setupRequirements, type SetupRequirement } from '#connectivity';
 
 /**
  * What connecting a provider involves, assembled from its manifest.
@@ -68,6 +68,10 @@ export interface ProviderPlan {
   readonly clientOperator?: string;
   /** The line that opts out of it and registers one of your own instead. */
   readonly ownClientCommand?: string;
+  /** What `--auth pasted_token` asks for, where that is a way in. */
+  readonly pastedCredential?: string;
+  /** The line that takes that way in. */
+  readonly tokenCommand?: string;
 }
 
 export interface PlanContext {
@@ -96,7 +100,7 @@ export function planFor(
   context: PlanContext,
   connectionId?: string,
 ): ProviderPlan {
-  const { requirements, needsId, brokered } = setupRequirements(
+  const { requirements, needsId, brokered, pastedCredential } = setupRequirements(
     manifest,
     connectionId,
     { profile: context.profile, target: context.target },
@@ -128,13 +132,22 @@ export function planFor(
     needsId,
     command,
     brokered,
+    ...(pastedCredential
+      ? { pastedCredential, tokenCommand: `${command} --auth pasted_token` }
+      : {}),
     ...(brokered && manifest.auth.kind === 'oauth' && manifest.auth.broker
       ? {
           clientOperator: manifest.auth.broker.operator,
           // The steps stay in `steps` either way. A renderer decides whether to
           // show a console walkthrough for a path nobody has asked for; the
           // plan's job is to say the path exists and what opens it.
-          ownClientCommand: `${command} --own-client`,
+          //
+          // Offered only where the manifest actually describes a client to
+          // register. Slack's does not — it asks for a token, never for a
+          // client id and secret — and `resolveOAuthClient` refuses the flag on
+          // exactly that ground, so printing it here would be handing somebody
+          // a command that answers back with "there is no such path".
+          ...(hasOwnClientPath(manifest) ? { ownClientCommand: `${command} --own-client` } : {}),
         }
       : {}),
   };

@@ -22,7 +22,9 @@ import { brokeredScopes, hostedClientRefusal, resolveOAuthClient } from './clien
 
 const BROKER = { url: 'https://api.example.com/v1/auth/link/vendor', operator: 'Someone' };
 
-const manifest = (broker: object | null = BROKER, withPrompts = true) =>
+const SHIPPED_ID = 'shipped-client';
+
+const manifest = (broker: object | null = BROKER, withPrompts = true, shipped?: string) =>
   defineProvider({
     id: 'vendor_mail',
     name: 'Vendor Mail',
@@ -35,6 +37,7 @@ const manifest = (broker: object | null = BROKER, withPrompts = true) =>
       authorize_url: 'https://accounts.example.com/o/oauth2/v2/auth',
       token_url: 'https://oauth2.example.com/token',
       ...(broker ? { broker } : {}),
+      ...(shipped ? { client_id: shipped } : {}),
     },
     ...(withPrompts
       ? {
@@ -302,6 +305,7 @@ describe('brokeredScopes', () => {
     notice: undefined,
     docsUrl: undefined,
     capacity: undefined,
+    redirectUri: undefined,
   };
 
   test('appends the identity scopes the broker asks for', () => {
@@ -425,5 +429,74 @@ describe('what a brokered connect says out loud', () => {
     });
 
     expect(err).not.toContain('LANES_LINK_BROKER_ORIGIN');
+  });
+});
+
+/**
+ * A broker that cannot serve, for a provider that has no other way in.
+ *
+ * There was briefly a fallback here — a client id shipped in the manifest,
+ * redeemed locally with PKCE. The relay removed it: Slack will not register a
+ * loopback redirect, so the browser has to land on the broker's own HTTPS
+ * origin, and a client with no broker behind it has nowhere for the redirect to
+ * go. A refusal is the honest answer and these hold it.
+ */
+describe('a broker that cannot serve', () => {
+  const unreachable = (async () => {
+    throw new Error('connect ECONNREFUSED');
+  }) as unknown as typeof globalThis.fetch;
+
+  test('is a refusal, not a silent downgrade', async () => {
+    await expect(resolveOAuthClient(await choice({ fetch: unreachable }))).rejects.toThrow(
+      /could not be authorised/,
+    );
+  });
+
+  test('and so is one that has closed its doors', async () => {
+    const closed = brokerAnswering({
+      success: true,
+      data: { client_id: 'hosted-client', status: 'closed', notice: 'Paused.' },
+    });
+
+    await expect(resolveOAuthClient(await choice({ fetch: closed }))).rejects.toThrow(/Paused\./);
+  });
+
+  test('a profile with its own client does not need it and is unaffected', async () => {
+    const client = await resolveOAuthClient(
+      await choice({
+        credentials: memoryStore({ 'vendor/client_id': 'mine', 'vendor/client_secret': 's' }),
+        fetch: unreachable,
+      }),
+    );
+
+    expect(client.kind).toBe('own');
+    if (client.kind === 'own') expect(client.clientId).toBe('mine');
+  });
+
+  test('the relay it publishes reaches the caller', async () => {
+    // The CLI never hardcodes this: which URL is right depends on which
+    // deployment answered, so the broker that owns it says what it is.
+    const withRelay = brokerAnswering({
+      success: true,
+      data: {
+        client_id: 'hosted-client',
+        scopes_supported: ['https://api.test/auth/mail.read'],
+        status: 'open',
+        redirect_uri: 'https://api.example.com/v1/auth/link/vendor/callback',
+      },
+    });
+
+    const client = await resolveOAuthClient(await choice({ fetch: withRelay }));
+
+    expect(client.kind).toBe('brokered');
+    if (client.kind === 'brokered') {
+      expect(client.config.redirectUri).toBe('https://api.example.com/v1/auth/link/vendor/callback');
+    }
+  });
+
+  test('a broker that publishes none leaves the listener to name itself', async () => {
+    const client = await resolveOAuthClient(await choice());
+    expect(client.kind).toBe('brokered');
+    if (client.kind === 'brokered') expect(client.config.redirectUri).toBeUndefined();
   });
 });

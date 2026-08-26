@@ -79,6 +79,7 @@ describe('setupRequirements', () => {
       requirements: [],
       needsId: false,
       brokered: false,
+      pastedCredential: undefined,
     });
   });
 

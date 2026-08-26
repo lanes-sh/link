@@ -1,6 +1,14 @@
 # ADR-033: Where a vendor will not register us as a client, the operator's own token is the credential
 
-**Status:** accepted · **Complements** [ADR-028](028-a-hosted-oauth-client-is-the-default.md)
+**Status:** accepted, **partly superseded by**
+[ADR-040](040-an-mcp-connector-may-use-a-pre-registered-client.md) · **Complements**
+[ADR-028](028-a-hosted-oauth-client-is-the-default.md)
+
+> ADR-040 revisited the middle section below and found one of its three claims false: an MCP
+> provider *can* be brokered, because the seam it says does not exist was already there. Slack
+> moved to a browser round trip. What survives here is the mechanism — a pasted token as an
+> `mcp` connector's credential — which is what GitHub uses and what Slack falls back to when a
+> workspace has not approved the Lanes app.
 
 ## Context
 
@@ -71,9 +79,9 @@ refresh token — a means of obtaining a credential, exchanged on every use, wit
 never leaving memory. Here the stored value is the credential itself. Rotation is manual:
 `connect --replace`, after revoking upstream.
 
-There is no scope-disclosure gate. `confirmScopes` shows an operator what is about to be granted and
-refuses to proceed when the set has widened without being agreed. Nothing equivalent is possible
-for a pasted token: what it can do is chosen in the vendor's console, and this endpoint has no way
+There is no scope-disclosure gate — for GitHub, and for Slack only on the pasted-token route.
+`confirmScopes` shows an operator what is about to be granted and refuses to proceed when the set
+has widened without being agreed. Nothing equivalent is possible for a pasted token: what it can do is chosen in the vendor's console, and this endpoint has no way
 to read it back. The policy layer still bounds what an agent may call; the credential's own reach is
 the operator's to bound, at the vendor, when they generate it. Both setup pages say so at the point
 the token is created.
@@ -86,10 +94,14 @@ upstream fails the way that test exists to prevent: silently, with the value wit
 reading exactly as it does when redaction is working. `doctor`'s capability drift report is the
 signal to re-read them.
 
-**Slack costs a console visit and always will.** Creating a Slack app is the only way to obtain a
-user token, so `docs/connect.md` no longer claims no provider asks you to register anything. This is
-the first time that sentence has needed an exception, and pretending otherwise would be worse than
-the exception.
+**Slack costs a console visit and always will.** ~~Creating a Slack app is the only way to obtain a
+user token, so `docs/connect.md` no longer claims no provider asks you to register anything.~~
+**Wrong, and corrected by [ADR-040](040-an-mcp-connector-may-use-a-pre-registered-client.md).** It
+is the only way to obtain a user token *of your own*; it is not the only way to obtain one. Lanes
+registered an app, and Slack accepts an `http://localhost:<port>` redirect registered against it —
+which this ADR asserts it does not, on the strength of Slack's documentation rather than its
+behaviour. Left standing rather than edited, because the shape of the mistake is the useful part:
+every individual claim here was checked, and the conclusion still did not follow.
 
 **What this is not.** It is not a retreat from ADR-028. A hosted client remains the default wherever
 one can be used, and if either vendor ships DCR the change is one field in one manifest —

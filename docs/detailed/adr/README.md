@@ -47,6 +47,7 @@ Nothing in the codebase depends on it.
 | [037](037-a-command-names-what-it-acts-on.md) | A command names its profile and target as flags, or it does not run; the environment variables and config defaults are parsed and no longer read |
 | [038](038-a-key-is-the-second-way-into-an-account.md) | A service account key is a second way into a Google account, for the consent nobody can give a background job |
 | [039](039-cross-origin-access-is-a-deployment-only-grant.md) | Cross-origin access is granted only by a deployment, and a preflight is answered ahead of the credential check |
+| [040](040-an-mcp-connector-may-use-a-pre-registered-client.md) | An `mcp` connector that names its own endpoints may be brokered, and a vendor that refuses a loopback redirect gets one bounced through the broker — so Slack costs a browser round trip rather than a console visit |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 

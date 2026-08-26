@@ -46,15 +46,24 @@ app-specific password covers all three. iCloud Drive is separate — it holds no
 reading your sync folder through the filesystem. Full walkthrough:
 [`detailed/setup/icloud.md`](detailed/setup/icloud.md).
 
-**Only Slack asks you to register anything.** Google authorises against the client Lanes operates,
-Notion and Linear register themselves, iCloud takes an app-specific password you generate at
-appleid.apple.com, and GitHub takes a personal access token —
+**Only GitHub asks you to register anything.** Google and Slack authorise against the client Lanes
+operates, Notion and Linear register themselves, and iCloud takes an app-specific password you
+generate at appleid.apple.com. GitHub takes a personal access token you create once —
 [`detailed/setup/github.md`](detailed/setup/github.md).
 
-Slack is the exception, and not for want of trying. Slack's MCP server does not register clients
-automatically, and a client of your own needs an HTTPS callback, which a CLI listening on localhost
-cannot be. So Slack means creating a Slack app once, installing it to your workspace, and pasting
-the user token it mints: [`detailed/setup/slack.md`](detailed/setup/slack.md).
+Slack used to be on that list and no longer is. Slack does not register clients automatically and
+is not going to — it would let a client authenticate someone without an app existing, and on
+Enterprise Grid an admin approves each app first. What changed is whose app it is: Lanes registered
+one, so `lanes link connect slack` is a browser round trip like the rest.
+
+If your workspace has not approved that app — which an admin decides, not you — paste a token from
+one it already trusts instead:
+
+```console
+$ lanes link connect slack --profile personal --target local --auth pasted_token
+```
+
+[`detailed/setup/slack.md`](detailed/setup/slack.md) covers both.
 
 For Google you can still register your own, and some people have to — an organisation that forbids
 third-party clients, a Workspace app that must be "Internal", or a hosted client that has reached

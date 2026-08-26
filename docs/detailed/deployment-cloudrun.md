@@ -466,7 +466,7 @@ decided by `policy`, per call, exactly as for every other client. And it does no
 `lanes link start` — a loopback endpoint refuses every cross-origin request and must keep doing so,
 because a page you happen to be visiting can otherwise reach `127.0.0.1`, including the consent form
 that asks you for your token. The field is read and discarded there. See
-[ADR-039](adr/039-cross-origin-access-is-a-deployment-only-grant.md).
+[ADR-040](adr/039-cross-origin-access-is-a-deployment-only-grant.md).
 
 ### Using an identity provider you already run
 

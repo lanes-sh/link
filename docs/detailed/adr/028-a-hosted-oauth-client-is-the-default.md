@@ -91,6 +91,9 @@ existing connections onto it — they keep refreshing where they were issued, an
 `connect` moves them. The alternative, reading the current config, would turn an unrelated-looking
 config edit into `invalid_grant` on every connection at once.
 
-**An MCP provider cannot be brokered.** The SDK owns that exchange and there is no seam to route
-it without reimplementing its auth path. `defineProvider` refuses the combination at definition
-rather than letting it fail after the operator has already approved a consent screen.
+**An MCP provider cannot be brokered.** ~~The SDK owns that exchange and there is no seam to route
+it without reimplementing its auth path.~~ **Struck by
+[ADR-040](040-an-mcp-connector-may-use-a-pre-registered-client.md):** the seam is a manifest naming
+its own `authorize_url` and `token_url`, which takes the provider off the SDK's flow and onto the
+direct one entirely. `defineProvider` now refuses only the half-declared case, where the SDK would
+run the flow and then redeem the code with a client it does not hold.

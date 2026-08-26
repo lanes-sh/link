@@ -1,7 +1,20 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { completionPage } from './callback-page.ts';
 import { OAuthError } from './oauth-error.ts';
-import { directExchange, type ExchangeCode, type OAuthTokens } from './oauth-exchange.ts';
+import {
+  captureOAuthCallback,
+  connectedPage,
+  failedPage,
+  shutdown,
+  stateMatches,
+  withTimeout,
+  type CallbackCapture,
+} from './oauth-callback.ts';
+import {
+  directExchange,
+  type ExchangeCode,
+  type OAuthTokens,
+  type RefreshTokenPolicy,
+} from './oauth-exchange.ts';
 
 /**
  * The OAuth authorization-code exchange, run entirely from the CLI.
@@ -36,7 +49,23 @@ export interface OAuthFlowOptions {
    * state check, and the browser cannot drift apart between the two paths.
    */
   readonly exchange?: ExchangeCode;
+  /** What a response carrying no refresh token means for this vendor. */
+  readonly refreshToken: RefreshTokenPolicy;
   readonly authorizeParams?: Readonly<Record<string, string>>;
+  /**
+   * An HTTPS URL to name as the redirect, for a vendor that will take no other.
+   *
+   * Absent for every vendor that accepts a loopback callback, which is all of
+   * them but Slack — there the listener names itself and this is the whole of
+   * it. Present where the vendor's redirect must be HTTPS: the browser then
+   * lands on that URL, which bounces it down to the listener opened here, and
+   * the port it needs to bounce to travels in `state`.
+   *
+   * The listener is unchanged either way. It still binds loopback on a port the
+   * kernel picked, still serves exactly one callback, and still checks `state`
+   * on the way back. What changes is only the address the vendor is told.
+   */
+  readonly relayRedirect?: string;
   /** What the completion page names as connected. A provider's display name. */
   readonly connectionLabel?: string;
   /** How long to wait for the operator to finish in the browser. */
@@ -49,7 +78,12 @@ export interface OAuthFlowOptions {
 // Re-exported so the flow stays one import for its callers even though the
 // exchange half now lives next door.
 export { OAuthError };
-export type { ExchangeCode, OAuthTokens };
+export type { ExchangeCode, OAuthTokens, RefreshTokenPolicy };
+
+// Re-exported so a caller wanting a loopback callback still has one import to
+// reach for. Which file it lives in is this module's business, not theirs.
+export { captureOAuthCallback };
+export type { CallbackCapture };
 
 const base64url = (input: Buffer): string => input.toString('base64url');
 
@@ -58,13 +92,6 @@ export function createPkcePair(): { verifier: string; challenge: string } {
   const verifier = base64url(randomBytes(32));
   const challenge = base64url(createHash('sha256').update(verifier).digest());
   return { verifier, challenge };
-}
-
-/** Compare the returned state in constant time — it is a CSRF defence. */
-function stateMatches(expected: string, received: string): boolean {
-  const a = createHash('sha256').update(expected).digest();
-  const b = createHash('sha256').update(received).digest();
-  return timingSafeEqual(a, b);
 }
 
 export function defaultOpenBrowser(url: string): void {
@@ -86,24 +113,6 @@ export function defaultOpenBrowser(url: string): void {
 }
 
 /**
- * What the browser is left looking at, in the two shapes it comes in.
- *
- * The label is what the caller knows and this file cannot: which provider the
- * grant was for. Given one, the page names it under "Connected" the way the
- * invite page names the workspace; without one it says only that the flow
- * finished, which is what every path said before.
- */
-const connectedPage = (label?: string): Response =>
-  completionPage({
-    ...(label ? { label: 'Connected', heading: label } : { heading: 'Connected' }),
-    detail: 'You can close this tab and return to the terminal.',
-    ok: true,
-  });
-
-const failedPage = (detail: string): Response =>
-  completionPage({ heading: 'Authorization failed', detail, ok: false });
-
-/**
  * Run the flow and return the tokens.
  *
  * The listener binds to 127.0.0.1 on a port the OS picks, serves exactly one
@@ -112,7 +121,6 @@ const failedPage = (detail: string): Response =>
  */
 export async function runOAuthFlow(options: OAuthFlowOptions): Promise<OAuthTokens> {
   const { verifier, challenge } = createPkcePair();
-  const state = base64url(randomBytes(24));
   const timeoutMs = options.timeoutMs ?? 5 * 60_000;
 
   let resolveCode: (code: string) => void;
@@ -124,7 +132,7 @@ export async function runOAuthFlow(options: OAuthFlowOptions): Promise<OAuthToke
 
   const server = Bun.serve({
     hostname: '127.0.0.1',
-    port: 0, // let the OS choose; Google's Desktop client type accepts any loopback port
+    port: 0, // let the OS choose; nothing outside this machine names this port
     fetch(request) {
       const url = new URL(request.url);
       if (url.pathname !== '/callback') return new Response('Not found', { status: 404 });
@@ -143,8 +151,9 @@ export async function runOAuthFlow(options: OAuthFlowOptions): Promise<OAuthToke
 
       const returnedState = url.searchParams.get('state');
       if (!returnedState || !stateMatches(state, returnedState)) {
-        // A mismatched state means this callback did not come from the request
-        // we started. Refuse it rather than redeeming whatever code it carries.
+        // A mismatched state means this callback did not come from the
+        // request we started. Refuse it rather than redeeming whatever code
+        // it carries.
         rejectCode(new OAuthError('State mismatch — ignoring an unexpected callback.'));
         return failedPage('Unexpected callback.');
       }
@@ -160,7 +169,25 @@ export async function runOAuthFlow(options: OAuthFlowOptions): Promise<OAuthToke
     },
   });
 
-  const redirectUri = `http://127.0.0.1:${server.port}/callback`;
+  // Where the vendor is told to send the browser. The relay bounces it back
+  // here; without one it comes here directly, which is every other provider.
+  const redirectUri = options.relayRedirect ?? `http://127.0.0.1:${server.port}/callback`;
+
+  /**
+   * The CSRF binding, and — behind a relay — the only way home.
+   *
+   * Built after the listener because half of it is the port the kernel just
+   * chose. The relay has nowhere else to learn that from: `state` is opaque to
+   * the vendor, round-trips untouched, and is already checked on the way back,
+   * so carrying the port in it costs no extra parameter and no state held
+   * anywhere. Without a relay it stays what it always was.
+   *
+   * Safe to declare after the handler that reads it: `Bun.serve` returns
+   * synchronously and nothing can be served until this frame yields.
+   */
+  const state = options.relayRedirect
+    ? `${base64url(randomBytes(24))}.${server.port}`
+    : base64url(randomBytes(24));
 
   try {
     const authorizeUrl = new URL(options.authorizeUrl);
@@ -196,159 +223,22 @@ export async function runOAuthFlow(options: OAuthFlowOptions): Promise<OAuthToke
   }
 }
 
-/**
- * Close the listener without cutting off the response in flight.
- *
- * Forcing the socket shut the instant the code is read leaves the operator
- * looking at a connection error on a flow that in fact succeeded. So: stop
- * gracefully, wait for the in-flight callback to drain, and force only if
- * graceful genuinely did not finish — a keep-alive connection must not be able
- * to hold the CLI open forever either.
- */
-async function shutdown(server: { stop(force?: boolean): Promise<void> }): Promise<void> {
-  let drained = false;
-  const graceful = server.stop().then(() => {
-    drained = true;
-  });
-
-  await withTimeout(graceful, 2_000).catch(() => {});
-  if (!drained) await server.stop(true);
-}
-
-/**
- * Race a promise against a deadline, and **clear the timer either way**.
- *
- * A bare `Promise.race` with `setTimeout` leaks: when the real promise wins,
- * the timer is still pending, and a pending timer keeps the event loop alive
- * for its full duration. With a five-minute OAuth deadline that turns a
- * finished `connect` into a terminal that prints "Next: lanes link start" and
- * then sits there for five minutes — which is exactly what it did.
- *
- * Rejects with `OAuthError(message)` if given one, otherwise resolves to
- * undefined at the deadline, which is what the shutdown path wants.
- */
-async function withTimeout<T>(promise: Promise<T>, ms: number, message?: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<T>((resolve, reject) => {
-        timer = setTimeout(
-          () => (message ? reject(new OAuthError(message)) : resolve(undefined as T)),
-          ms,
-        );
-      }),
-    ]);
-  } finally {
-    if (timer) clearTimeout(timer);
-  }
-}
-
 function defaultExchange(options: OAuthFlowOptions): ExchangeCode {
-  if (!options.tokenUrl || !options.clientSecret) {
+  // The secret is no longer part of this condition. A public client has none —
+  // its id ships in the manifest and PKCE is what protects the exchange — so
+  // requiring one here refused the shipped-client path before it sent anything.
+  if (!options.tokenUrl) {
     throw new OAuthError(
-      'runOAuthFlow needs either a tokenUrl and clientSecret to redeem the code with, or an exchange to redeem it through.',
+      'runOAuthFlow needs a tokenUrl to redeem the code at, or an exchange to redeem it through.',
     );
   }
   return directExchange({
     tokenUrl: options.tokenUrl,
     clientId: options.clientId,
-    clientSecret: options.clientSecret,
+    refreshToken: options.refreshToken,
+    ...(options.clientSecret ? { clientSecret: options.clientSecret } : {}),
     ...(options.fetch ? { fetch: options.fetch } : {}),
   });
 }
 
 
-/**
- * Capture exactly one OAuth callback on loopback.
- *
- * Split out from `runOAuthFlow` so the SDK can drive the protocol — discovery,
- * registration, PKCE, exchange — while we supply only the redirect target. The
- * listener exists for the duration of one consent and no longer.
- */
-export interface CallbackCapture {
-  readonly redirectUri: string;
-  /**
-   * The `state` this listener will accept, for the provider to put on the
-   * authorization URL. The SDK asks its provider for one and sends whatever it
-   * gets; nothing generates it for us.
-   */
-  readonly state: string;
-  wait(timeoutMs?: number): Promise<{ code: string; iss?: string }>;
-  close(): Promise<void>;
-}
-
-export function captureOAuthCallback(options: { label?: string } = {}): CallbackCapture {
-  const state = base64url(randomBytes(24));
-  let resolveCode: (value: { code: string; iss?: string }) => void;
-  let rejectCode: (error: Error) => void;
-
-  const received = new Promise<{ code: string; iss?: string }>((resolve, reject) => {
-    resolveCode = resolve;
-    rejectCode = reject;
-  });
-
-  const server = Bun.serve({
-    hostname: '127.0.0.1',
-    port: 0,
-    fetch(request) {
-      const url = new URL(request.url);
-      if (url.pathname !== '/callback') return new Response('Not found', { status: 404 });
-
-      const error = url.searchParams.get('error');
-      if (error) {
-        rejectCode(
-          new OAuthError(
-            error === 'access_denied'
-              ? 'Authorization was declined in the browser.'
-              : `Authorization failed: ${error}`,
-          ),
-        );
-        return failedPage('You can close this tab.');
-      }
-
-      const code = url.searchParams.get('code');
-      if (!code) {
-        rejectCode(new OAuthError('The callback carried no authorization code.'));
-        return failedPage('No code returned.');
-      }
-
-      // Checked here because nothing else checks it. The SDK's own docs say it
-      // does not validate `state`, and it only sends one if the provider hands
-      // it over — so this listener mints the value, `CredentialOAuthProvider`
-      // returns it from `state()`, and the two are compared on the way back.
-      //
-      // Without it this resolves on the first `/callback?code=` to reach the
-      // port, whoever sent it: any local process, or a page the operator has
-      // open, can sweep loopback during the five-minute window. PKCE usually
-      // turns that into a failed exchange, but a manifest is free to name an
-      // authorization server that does not enforce it, and there the code
-      // would be redeemed and the connection bound to someone else's account.
-      const returnedState = url.searchParams.get('state');
-      if (!returnedState || !stateMatches(state, returnedState)) {
-        rejectCode(new OAuthError('State mismatch — ignoring an unexpected callback.'));
-        return failedPage('Unexpected callback.');
-      }
-
-      const iss = url.searchParams.get('iss');
-      resolveCode({ code, ...(iss ? { iss } : {}) });
-      return connectedPage(options.label);
-    },
-  });
-
-  return {
-    redirectUri: `http://127.0.0.1:${server.port}/callback`,
-    state,
-
-    async wait(timeoutMs = 5 * 60_000) {
-      return withTimeout(
-        received,
-        timeoutMs,
-        `Timed out after ${Math.round(timeoutMs / 1000)}s waiting for the browser.`,
-      );
-    },
-
-    close: () => shutdown(server),
-  };
-}

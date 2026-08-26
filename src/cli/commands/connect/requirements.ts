@@ -86,7 +86,7 @@ export async function preflight(input: {
    * `connect --auth <key method>` would be turned away by a message describing
    * a step it does not perform.
    */
-  readonly method?: 'oauth' | 'assertion';
+  readonly method?: 'oauth' | 'assertion' | 'pasted';
 }): Promise<Blocked | null> {
   const { manifest, connectionId, profile, target, spec } = input;
   const method = input.method ?? 'oauth';
@@ -108,7 +108,10 @@ export async function preflight(input: {
         then: `${rerun} --auth ${assertion.method}`,
       };
     }
-  } else if (manifest.auth.kind === 'oauth') {
+  } else if (manifest.auth.kind === 'oauth' && method !== 'pasted') {
+    // `pasted` opens no browser, so the refusal below does not describe it. It
+    // needs a value instead, which *can* be placed ahead of time — so it falls
+    // through to the requirement check and gets the `secrets set` line.
     return {
       reason: 'needs_browser',
       message:
@@ -146,6 +149,7 @@ export async function preflight(input: {
     needs: missing,
     then:
       `${rerun}${connectionId ? ` --id ${connectionId}` : ''}` +
-      `${method === 'assertion' && assertion ? ` --auth ${assertion.method}` : ''} --non-interactive`,
+      `${method === 'assertion' && assertion ? ` --auth ${assertion.method}` : ''}` +
+      `${method === 'pasted' ? ' --auth pasted_token' : ''} --non-interactive`,
   };
 }
