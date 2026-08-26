@@ -8,7 +8,7 @@ import { discoverCapabilities } from './discover.ts';
 import { connectFamily, familyMembers } from './family.ts';
 import { authoriseWithKey } from './assertion.ts';
 import { authorise } from './authorise.ts';
-import { chooseAuthMethod, currentAuthMethod } from './method.ts';
+import { chooseAuthMethod } from './method.ts';
 import { preflight } from './requirements.ts';
 import { ALREADY, NOTHING, renderOutcome, where, type ConnectOutcome } from './outcome.ts';
 import { nextAfterEdit, publishRuntimeEdit } from '#cli/publish.ts';
@@ -179,7 +179,6 @@ async function runConnect(
       manifest,
       requested: options.auth,
       ownClient: options.ownClient === true,
-      current: await currentAuthMethod(manifest, provisionalId, runtime.credentials),
       prompter,
     });
 
@@ -307,7 +306,11 @@ async function runConnect(
         document.setIn(['connections', existingIndex, 'account'], account);
         changes.push(`connections.${connectionKey}.account = ${account}`);
       }
-      changes.push(`re-authorised ${connectionKey}`);
+      // Named where the provider offered a choice, because this is the line an
+      // operator reads to see that a re-connect swapped the route rather than
+      // refreshed it — and `--auth` reaches here having asked nothing. Unnamed
+      // for a provider with one way in, whose output is unchanged.
+      changes.push(`re-authorised ${connectionKey}${method.id ? ` with ${method.id}` : ''}`);
     }
 
     // 5. Grant it.

@@ -1,6 +1,4 @@
-import { credentialRefForConnection, type AuthAssertion, type ProviderManifest } from '#connectivity';
-import { BROKERED, storedAssertionFor } from '#connectivity/auth/index.ts';
-import type { SecretStore } from '#secrets';
+import type { AuthAssertion, ProviderManifest } from '#connectivity';
 import { progress, style } from '../../output.ts';
 import { terminalPrompter, type Prompter } from '../../prompt.ts';
 
@@ -15,11 +13,16 @@ import { terminalPrompter, type Prompter } from '../../prompt.ts';
  * Most providers offer exactly one route and this file is inert for them:
  * `options` returns a single entry, nothing is printed, and nothing is asked.
  * That is the property worth protecting — adding routes to Google must not put
- * a question in front of somebody connecting GitHub.
+ * a question, or a warning, in front of somebody connecting GitHub.
  */
 
 export type ChosenMethod =
-  | { readonly kind: 'assertion'; readonly assertion: AuthAssertion }
+  | {
+      readonly kind: 'assertion';
+      /** How `--auth` spells this route, for reporting what the connection became. */
+      readonly id: string;
+      readonly assertion: AuthAssertion;
+    }
   /**
    * The browser, and which client the exchange runs through.
    *
@@ -27,11 +30,12 @@ export type ChosenMethod =
    * precedence `resolveOAuthClient` has always applied: a declared `oauth_apps`
    * entry wins, otherwise the broker. It is what a provider with only one
    * browser route resolves to, so nothing about those changes.
+   *
+   * `id` is unset for exactly those synthesised cases — `--auth oauth`,
+   * `--own-client`, and a provider with one route — because there was no choice
+   * to report. A provider that never offered two reads as it always did.
    */
-  | { readonly kind: 'oauth'; readonly client: 'own' | 'hosted' | undefined };
-
-/** What this connection authenticates with today, at the granularity the prompt offers. */
-export type CurrentMethod = 'assertion' | 'own' | 'hosted';
+  | { readonly kind: 'oauth'; readonly id?: string; readonly client: 'own' | 'hosted' | undefined };
 
 interface Option {
   /** What `--auth` accepts, and how a chosen route is named back. */
@@ -39,7 +43,6 @@ interface Option {
   readonly label: string;
   readonly detail: string;
   readonly chosen: ChosenMethod;
-  readonly matches: CurrentMethod | undefined;
 }
 
 /**
@@ -73,8 +76,7 @@ export function options(manifest: ProviderManifest): readonly Option[] {
       id: assertion.method,
       label: assertion.label,
       detail: assertion.reach,
-      chosen: { kind: 'assertion', assertion },
-      matches: 'assertion',
+      chosen: { kind: 'assertion', id: assertion.method, assertion },
     });
   }
 
@@ -85,8 +87,7 @@ export function options(manifest: ProviderManifest): readonly Option[] {
       detail:
         'nothing to register and no client secret on this machine. The exchange is performed by ' +
         `${broker.operator}, and the connection is re-authorised whenever its token expires.`,
-      chosen: { kind: 'oauth', client: 'hosted' },
-      matches: 'hosted',
+      chosen: { kind: 'oauth', id: 'hosted_client', client: 'hosted' },
     });
   }
 
@@ -98,11 +99,10 @@ export function options(manifest: ProviderManifest): readonly Option[] {
         ? 'a console walkthrough once per profile, after which nothing leaves this machine but ' +
           'the browser. What an organisation that forbids third-party clients needs.'
         : 'the whole account, and the connection is re-authorised whenever its token expires.',
-      // Undefined rather than 'own' where it is the only browser route: there
-      // is nothing to override, and forcing it would write an `oauth_apps`
+      // Undefined `client` rather than 'own' where it is the only browser route:
+      // there is nothing to override, and forcing it would write an `oauth_apps`
       // entry for a provider whose manifest already says it is the only way.
-      chosen: { kind: 'oauth', client: broker ? 'own' : undefined },
-      matches: 'own',
+      chosen: { kind: 'oauth', id: 'own_client', client: broker ? 'own' : undefined },
     });
   }
 
@@ -115,47 +115,21 @@ export function methodsFor(manifest: ProviderManifest): readonly string[] {
 }
 
 /**
- * What this connection authenticates with today, or nothing if it is new.
+ * Choose, from the flag or from the operator — and from nothing else.
  *
- * Read from the credential rather than from config, because the credential is
- * where the answer lives: the routes share one ref and are told apart by what
- * is in it. Asking config instead would be a second record of the same fact,
- * free to disagree with the one that actually routes.
+ * Nothing is inferred from what this account authenticates with today, which is
+ * a decision rather than an omission. A connection authenticates one way at a
+ * time: whichever route this run picks replaces the credential the account has
+ * now, and re-running `connect` is how somebody switches. Defaulting to the
+ * stored route would mean reading a credential to answer a question that is the
+ * operator's on every run, and would hide the replacement behind a default that
+ * reads as a no-op.
  *
- * `authorized_via` is stamped at connect for the same reason it is read at
- * refresh — a refresh token minted by one client is refused by another, so
- * which client issued this is a property of the token and not of the profile.
- */
-export async function currentAuthMethod(
-  manifest: ProviderManifest,
-  connectionId: string,
-  credentials: SecretStore,
-): Promise<CurrentMethod | undefined> {
-  const ref = credentialRefForConnection(manifest, connectionId);
-  if (!ref) return undefined;
-
-  const raw = await credentials.get(ref);
-  if (!raw) return undefined;
-
-  if (await storedAssertionFor(manifest, connectionId, credentials)) return 'assertion';
-
-  try {
-    return (JSON.parse(raw) as { authorized_via?: string }).authorized_via === BROKERED
-      ? 'hosted'
-      : 'own';
-  } catch {
-    return 'own';
-  }
-}
-
-/**
- * Choose, from the flag, the operator, or the status quo — in that order.
- *
- * `current` is the default rather than a mere hint. Re-running `connect` on an
- * existing account is a repair nine times in ten, and a prompt whose default
- * silently swapped the route would turn a stale-token fix into a
- * re-authorisation nobody asked for — with the old credential overwritten by
- * the time they noticed.
+ * It used to try. The route was read from the *provisional* connection id,
+ * which is `pending` until identity is settled — so it found nothing every
+ * time, fell back to the browser, and performed the silent swap it existed to
+ * prevent on anyone who pressed Enter. Saying what the choice does is the part
+ * that was actually missing.
  */
 export async function chooseAuthMethod(input: {
   readonly manifest: ProviderManifest;
@@ -163,8 +137,6 @@ export async function chooseAuthMethod(input: {
   readonly requested: string | undefined;
   /** `--own-client`, which is the older spelling of one of these. */
   readonly ownClient?: boolean;
-  /** What this connection authenticates with today, where it already exists. */
-  readonly current: CurrentMethod | undefined;
   readonly prompter?: Prompter;
 }): Promise<ChosenMethod> {
   const { manifest, requested } = input;
@@ -192,22 +164,17 @@ export async function chooseAuthMethod(input: {
   if (available.length < 2) return { kind: 'oauth', client: undefined };
 
   // Nobody to ask. The flag above is the non-interactive answer, deliberately —
-  // guessing picks which credential gets overwritten.
-  if (!prompter.interactive) {
-    const held = available.find((option) => option.matches === input.current);
-    return held ? held.chosen : { kind: 'oauth', client: undefined };
-  }
+  // guessing picks which credential gets overwritten (ADR-038).
+  if (!prompter.interactive) return { kind: 'oauth', client: undefined };
 
-  return ask(manifest, available, input.current, prompter);
+  return ask(manifest, available, prompter);
 }
 
 async function ask(
   manifest: ProviderManifest,
   available: readonly Option[],
-  current: CurrentMethod | undefined,
   prompter: Prompter,
 ): Promise<ChosenMethod> {
-  const held = available.findIndex((option) => option.matches === current);
   // "As it works today" for anyone who has not chosen otherwise: the hosted
   // client where there is one, and otherwise the browser. Never the key — it is
   // listed first because it is the one worth knowing about, and defaulting to
@@ -216,7 +183,7 @@ async function ask(
   const hosted = available.findIndex((option) => option.id === 'hosted_client');
   const fallback =
     hosted !== -1 ? hosted : Math.max(available.findIndex((option) => option.chosen.kind === 'oauth'), 0);
-  const preferred = String((held === -1 ? fallback : held) + 1);
+  const preferred = String(fallback + 1);
 
   progress();
   progress(style.bold(`${manifest.name} can authenticate ${count(available.length)} ways`));
@@ -225,10 +192,14 @@ async function ask(
     progress(`  ${index + 1}. ${option.label}`);
     progress(style.dim(`     ${option.detail}`));
   }
-  if (held !== -1) {
-    progress();
-    progress(style.dim(`  This connection uses ${held + 1} today.`));
-  }
+  progress();
+  // Printed whether or not this account is already connected, because it is a
+  // statement about what the command does rather than a reading of what is
+  // stored — and on a first connect it is true with nothing to replace.
+  progress(style.dim('  Whichever you pick becomes the only way in for this account. It replaces'));
+  progress(
+    style.dim('  whatever is stored for it now — a connection authenticates one way at a time.'),
+  );
   progress();
 
   const answer = await prompter.ask(`  Which ${style.dim(`[${preferred}]`)}`);
