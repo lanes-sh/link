@@ -101,7 +101,15 @@ export function renderOutcome(outcome: ConnectOutcome): void {
  */
 function renderBlocked(outcome: ConnectOutcome): void {
   progress();
-  print(fail(outcome.reason === 'needs_browser' ? 'a browser is needed' : 'more is needed first'));
+  print(
+    fail(
+      outcome.reason === 'needs_browser'
+        ? 'a browser is needed'
+        : outcome.reason === 'needs_terminal'
+          ? 'a terminal is needed'
+          : 'more is needed first',
+    ),
+  );
 
   for (const line of (outcome.message ?? '').split('\n')) print(`      ${line}`);
 

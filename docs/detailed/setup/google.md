@@ -51,7 +51,11 @@ Everything below is that path.
 
 ---
 
-## Two ways in, and the default is the one that works
+## Two providers per product, and the default is the one that works
+
+This is a different question from which credential you use, below: it is which *API* you talk to.
+`gmail` and `gmail_mcp` are separate providers with separate tool lists and separate policy rules,
+and you connect one or the other by name.
 
 | | `gmail` / `drive` | `gmail_mcp` / `drive_mcp` |
 |---|---|---|
@@ -89,27 +93,47 @@ providers are simply unavailable to you — use `gmail` and `drive`, which have 
 
 ## Choose the right path first
 
-For a client of your own, this is the decision that determines everything else, and getting it
-wrong is what sends people into Google's verification centre. None of it applies to the hosted
-client, which is published and carries no seven-day expiry.
+`lanes link connect <provider>` asks which route you want, and prints what each one reaches before
+you pick. There are up to three:
 
-| Your accounts | User type | Verification | Refresh tokens |
+| Route | Console work | Re-authorised weekly? | Reaches |
 |---|---|---|---|
-| **A mix of personal Gmail and Workspace** | **External** | not needed, stay in Testing | **expire every 7 days** |
-| Only accounts on one Workspace domain | Internal | never needed | never expire |
+| The hosted client (default) | none | **while its verification is pending, yes** | the whole account |
+| A client of your own | ~20 minutes, once per profile | **no, if you publish it** — see below | the whole account |
+| A service account key | ~10 minutes, once per profile | **never** | see [Service account](#connecting-with-a-service-account-key) |
 
-**If you have a mix — which is the common case — choose External.** "Internal" sounds like the
-private option, but it only admits accounts on your own Workspace domain, so a personal `@gmail.com`
-account simply cannot authorise against it.
+**The seven-day expiry is a property of publishing status, not of verification.** These are two
+different settings and confusing them is what sends people into the verification centre for a
+problem a checkbox solves. A client whose publishing status is **Testing** has every refresh token
+it issues expired after exactly seven days. A client set to **In production** does not — review
+pending, review never started, it makes no difference.
 
-**Do not publish an External app.** Gmail and Drive use *restricted* scopes, and publishing those
-requires Google verification including a CASA Tier 2 security assessment — the process that asks for
-a demo video, a homepage, and scope justifications, and takes months. Staying in **Testing** needs no
-verification at all.
+That is why the middle row above beats the first one today: the hosted client is under review, and
+a client under review has whatever status it has. Registering your own and publishing it is the
+shortest path to connections that survive the week.
 
-The price of Testing is real and worth knowing up front: **Google expires refresh tokens after seven
-days**, so you will re-authorise roughly weekly. That is a Google policy setting, not a defect here,
-and `lanes link doctor` tells you which connections have gone stale.
+### If you register your own
+
+**Choose External if you have a mix of personal Gmail and Workspace accounts**, which is the common
+case. "Internal" sounds like the private option, but it only admits accounts on your own Workspace
+domain, so a personal `@gmail.com` account simply cannot authorise against it. An Internal app needs
+no verification and has no expiry, so if *every* account is on one domain it is the better choice.
+
+**Then publish it.** Publishing an unverified app is allowed and is not the same as being verified.
+What it costs:
+
+- everyone you connect sees a **"Google hasn't verified this app"** screen and has to click through
+  **Advanced → Go to \<app name\> (unsafe)**;
+- the project gains a cap of **100 new users** granted these scopes, **for the lifetime of the
+  project**, and it cannot be reset.
+
+For a client only you use, both are nothing. For a client you intend to hand out, the cap is a real
+asset to spend, and the calculation is different.
+
+**Verification itself is the other path and a much longer one.** Gmail and Drive use *restricted*
+scopes, so the review includes a CASA Tier 2 security assessment — a demo video, a homepage, scope
+justifications, and months. Worth starting, not worth waiting on: publishing removes the weekly
+re-authorisation today.
 
 ---
 
@@ -172,7 +196,10 @@ App name and a support email. Nothing here is seen by anyone but you.
 Add every Google account you intend to connect under **Test users** (up to 100), personal and
 Workspace alike. An account not listed here cannot authorise.
 
-**Leave the publishing status as "Testing".**
+**Then publish the app** — the same page, under **Publishing status → Publish app**. This is the
+setting that decides whether your connections survive the week; leaving it in Testing is what
+expires them after seven days. See [Choose the right path first](#choose-the-right-path-first) for
+what publishing unverified costs.
 
 ### 4. Data access
 
@@ -346,13 +373,78 @@ instead of the hosted client.
 
 ---
 
+## Connecting with a service account key
+
+The one route where nothing expires, because nothing consented. Pick it at the prompt, or:
+
+```console
+$ lanes link connect drive --auth service_account
+```
+
+A service account is an identity in its own right. It has a Drive and a calendar; it has no mailbox,
+no contacts and no task lists. That single fact decides everything else about this route.
+
+| Provider | Works with a key alone | Needs domain-wide delegation |
+|---|---|---|
+| `drive`, `sheets`, `docs`, `calendar` | **yes** — reaches what you share with it | only to reach the whole account |
+| `gmail`, `contacts`, `tasks` | no — there is nothing there to reach | **yes**, and Workspace only |
+| `gmail_mcp`, `drive_mcp` | not offered — Google's MCP servers take a client, not an assertion | — |
+
+### The key
+
+One key covers every Google provider on a profile, so this is done once. In the Cloud console:
+**IAM & Admin → Service Accounts → Create**, then **Keys → Add key → Create new key → JSON**. Grant
+it no project roles — that page governs Google Cloud resources, and nothing here is one.
+
+`connect` asks for the **path** to the downloaded file. It reads it once and stores the contents, so
+the file itself is not needed afterwards and can be deleted. Pasting the contents works too.
+
+### Sharing, for Drive, Sheets, Docs and Calendar
+
+The key's address ends in `.iam.gserviceaccount.com` and is printed when it is stored. Share what
+you want reachable with it, exactly as you would with a colleague — a Drive folder, one spreadsheet,
+a calendar.
+
+**Nothing else in the account is reachable, including files the same person owns.** That is the
+point of this route and it is also the answer when something appears to be missing: it has not been
+shared yet. Leave the "account to act as" prompt blank and the key acts as itself.
+
+### Delegation, for Gmail, Contacts and Tasks
+
+These need a Google Workspace administrator, and a personal Google account cannot do it at all.
+
+Copy the service account's numeric **Unique ID** from its Details tab — the client ID, not the email
+address. Then, in the Workspace Admin console: **Security → Access and data control → API controls →
+Domain-wide delegation → Add new**. Paste that ID, and paste the provider's full scope list into the
+scopes field, comma-separated, in one go.
+
+`connect` prints the exact list to paste. Paste all of it: a partial list is refused identically to a
+missing one, and the refusal does not say which scope was short. Delegation can take a few minutes to
+take effect — if the first attempt is refused with `unauthorized_client`, wait and run it again.
+Nothing was stored.
+
+Then answer the "account to act as" prompt with the address whose mail, contacts or tasks you want.
+It is required here: a key acting as nobody authenticates perfectly and then reads every mailbox as
+empty, which is a wrong answer that looks like a right one.
+
+### What it costs
+
+A key does not expire, which is the feature and also the whole of the risk: there is no consent to
+withdraw and no token to age out, so a leaked key is good until somebody deletes it in the console.
+Treat it as you would a password, and prefer sharing over delegation where sharing will do — one
+shared folder is a much smaller grant than the right to act as you.
+
+---
+
 ## The weekly re-authorisation
 
-This is a property of **your own** External app while it is in Testing. Connections made against
-the hosted client do not expire weekly, and `doctor` does not warn about their age.
+This is a property of the OAuth client's **publishing status**, and of nothing else. A client in
+Testing has every refresh token it issues expired after seven days; a client in production does
+not. It applies to a client of your own and to the hosted one identically — the hosted client is
+under review, and a client under review has whatever status it has, so connections made against it
+expire weekly too until that lands.
 
-With an External app in Testing, refresh tokens die after seven days. When one does, a call fails
-with a message naming the cause and the fix:
+When one dies, a call fails with a message naming the cause and the fix:
 
 ```
 The refresh token for gmail.work has expired or been revoked.
@@ -366,21 +458,24 @@ $ lanes link doctor
 warn  gmail.personal credential is 8 days old — Testing-status apps expire at 7. Run: lanes link connect gmail.personal
 ```
 
-If the weekly cycle becomes annoying, the escapes are:
+The escapes, cheapest first:
 
-- **Use the hosted client** — drop `--own-client`, remove the `oauth_apps` entry *and* the stored
-  `google/client_id` and `google/client_secret` (both, for the reason above), then run
-  `lanes link connect` again for each account. That client is published, so its refresh tokens do
-  not expire weekly.
+- **Register a client of your own and publish it.** `lanes link connect <provider>` and pick the
+  "OAuth client you register" route, or `--auth own_client`. Publishing is a setting, not a review;
+  it costs an unverified-app screen and a lifetime cap of 100 new users on that project. This is
+  the one most people want.
+- **Connect with a service account key instead** — `--auth service_account`. Nothing expires,
+  because nothing consented. It reaches less, and how much less depends on the product; see
+  [Service account](#connecting-with-a-service-account-key).
 - **Move those accounts to a Workspace domain** and use an Internal app — no expiry, no warning
-  screen, no verification.
+  screen, no verification, and no personal `@gmail.com` accounts either.
 - **Complete Google's verification** for your External app — weeks to months, and for restricted
   scopes it includes a paid third-party security assessment. What the review asks for, scope by
   scope, is in [`../google-verification.md`](../google-verification.md); it is written for the
   hosted client but the questions are the same for yours.
 
-There is no fourth. Anything claiming otherwise is either using non-restricted scopes or is about
-to stop working.
+Anything else claiming to avoid this is either using non-restricted scopes or is about to stop
+working.
 
 ---
 
@@ -388,7 +483,10 @@ to stop working.
 
 | Symptom | Cause |
 |---|---|
-| `invalid_grant`, roughly weekly | Expected in Testing. Re-run `lanes link connect <connection>`. |
+| `invalid_grant`, roughly weekly | The client is in Testing. Publish it, or use a key — see [The weekly re-authorisation](#the-weekly-re-authorisation). |
+| `unauthorized_client` on a service account | Domain-wide delegation is missing, or was granted with a scope list that does not match exactly. The error names the scopes to paste. |
+| `invalid_grant` on a service account | The key was deleted or disabled, or this machine's clock is off by more than a few minutes. |
+| A service account connects but everything is empty | Nothing has been shared with the key's address yet. That is the design, not a fault. |
 | `invalid_grant` immediately | The account is not in **Test users**, or the grant was revoked at <https://myaccount.google.com/permissions>. |
 | 403 "Insufficient Permission" | The API is not enabled, or the consent did not include the scope. |
 | Tools list fine but every call says **"The caller does not have permission"** | You are on `gmail_mcp` / `drive_mcp` without [Workspace Developer Preview](https://developers.google.com/workspace/preview) enrolment. Not a scope problem. Switch to `gmail` / `drive`, which use the REST API and have no gate. |

@@ -24,6 +24,7 @@ ${style.bold('Everyday')}
   ${PROGRAM} connect <provider>         add an account (run once per account)
   ${PROGRAM} connect <provider>.<id>    re-authorise one existing account
   ${PROGRAM} connect <...> --replace    ask for the stored password or key again
+  ${PROGRAM} connect <...> --auth <method>  pick how, where there is a choice
   ${PROGRAM} connect <...> --non-interactive [--json]
                                         answer nothing from a terminal: take every value
                                         from the credential store, or say what is missing
@@ -107,6 +108,9 @@ ${style.bold('Global flags')}
   --accept-broad-scopes          agree in advance to scopes broader than a provider needs
   --own-client                   register your own OAuth client instead of using the
                                  one this project operates (connect only)
+  --auth <method>                which way in, where a provider offers two (connect
+                                 only). "oauth" is the browser; the other is named
+                                 in the choice connect prints
   --port <n>                     override the configured port (start only)
 
 Every command prints the resolved profile and target before acting.

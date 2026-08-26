@@ -88,3 +88,8 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
   for logging a connector out; this one removes the reason a client had for not refreshing. Both
   were needed and neither was sufficient, which is the shape worth remembering: the endpoint was
   correct and the client was correct, and the session still ended at a consent screen.
+
+- **ADR-037** follows from ADR-028 rather than amending it: the hosted client stays the default and
+  the browser stays the ordinary route. What it corrects is a claim ADR-028's implementation made
+  and could not keep — that a hosted client escapes the seven-day refresh-token expiry — and what
+  it adds is the only arrangement that genuinely does, which is a credential nobody consented to.

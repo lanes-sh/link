@@ -80,6 +80,37 @@ function placeholderFor(prompts: readonly SetupPrompt[]): string {
   return '<value>';
 }
 
+/**
+ * What the key route needs, which is the key and nothing else.
+ *
+ * Never `needsId`, and that is the substantive difference from the block below:
+ * the key is shared across every connection of a vendor, so its ref does not
+ * derive from a connection id and nothing has to be named before it can be
+ * stored. The subject does derive per connection — but it is not a requirement
+ * because it cannot be placed ahead of time: it lives inside the pointer that
+ * `connect` itself writes, and there is no `secrets set` that would put it
+ * there.
+ */
+function assertionRequirements(
+  assertion: NonNullable<Extract<ProviderManifest['auth'], { kind: 'oauth' }>['assertion']>,
+  profile: string,
+): SetupNeeds {
+  const shared = assertion.setup.prompts.filter((prompt) => prompt.scope === 'shared');
+
+  return {
+    requirements: shared.map((prompt) => ({
+      ref: assertion.key_ref,
+      label: prompt.label,
+      secret: prompt.secret,
+      scope: 'shared' as const,
+      prompts: [prompt.key],
+      command: storeCommand(assertion.key_ref, '<value>', profile),
+    })),
+    needsId: false,
+    brokered: false,
+  };
+}
+
 export function setupRequirements(
   manifest: ProviderManifest,
   connectionId: string | undefined,
@@ -87,8 +118,24 @@ export function setupRequirements(
   options: {
     /** `oauth_apps` entries this profile declares — the clients that are its own. */
     readonly ownClients?: readonly string[];
+    /**
+     * Which way in, for a provider offering two.
+     *
+     * Defaults to the browser flow, which is every provider's only route until
+     * one declares `auth.assertion` — so an omitted value reports exactly what
+     * it always reported. Passed by `connect` once the operator has chosen,
+     * because the two methods need different things and reporting the union
+     * would tell someone to store a client they are not going to use.
+     */
+    readonly method?: 'oauth' | 'assertion';
   } = {},
 ): SetupNeeds {
+  const assertion = manifest.auth.kind === 'oauth' ? manifest.auth.assertion : undefined;
+
+  if (options.method === 'assertion' && assertion) {
+    return assertionRequirements(assertion, profile);
+  }
+
   const prompts = manifest.setup?.prompts ?? [];
 
   // A shared prompt exists to collect a client the operator registers. When a

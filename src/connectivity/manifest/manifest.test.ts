@@ -180,3 +180,100 @@ describe('a broker as the other answer to "where does the client come from"', ()
     expect(credentialRefForConnection(gmailish, 'main')).toBe('vendor_mail/main');
   });
 });
+
+/**
+ * A second way in, declared on the block that already describes the first.
+ *
+ * `auth.assertion` is not a `kind`, which is the whole reason it needs its own
+ * guards: nothing about the discriminated union stops a manifest declaring one
+ * somewhere it cannot possibly work, so `defineProvider` has to. Each of these
+ * would otherwise be discovered by an operator, after choosing the method, with
+ * a credential already stored.
+ */
+describe('an assertion alternative', () => {
+  const assertion = {
+    method: 'service_account',
+    label: 'Service account key',
+    key_ref: 'vendor/key',
+    reach: 'only what is shared with it',
+    subject_label: 'Account to act as',
+    setup: {
+      prompts: [
+        { key: 'key', label: 'Key', secret: true, scope: 'shared', credential_ref: 'vendor/key' },
+      ],
+    },
+  };
+
+  const withAssertion = (overrides: Record<string, unknown> = {}) => ({
+    kind: 'oauth',
+    registration: 'manual',
+    app: 'vendor',
+    scopes: ['https://api.test/auth/read'],
+    authorize_url: 'https://accounts.example.com/o/oauth2/v2/auth',
+    token_url: 'https://oauth2.example.com/token',
+    setup: { prompts: [{ key: 'client_id', label: 'Id', credential_ref: 'vendor/client_id' }] },
+    assertion: { ...assertion, ...overrides },
+  });
+
+  test('is accepted beside the browser flow, and changes where nothing lands', () => {
+    const manifest = defineProvider({
+      id: 'vendor_mail',
+      name: 'Vendor Mail',
+      connector: http,
+      auth: withAssertion(),
+      setup: { prompts: [{ key: 'client_id', label: 'Id', credential_ref: 'vendor/client_id' }] },
+    });
+
+    // Still per provider, and still where the OAuth path already looks: both
+    // methods write here, and only the shape of what is stored tells them apart.
+    expect(credentialRefForConnection(manifest, 'main')).toBe('vendor_mail/main');
+  });
+
+  test('defaults to standing on its own, rather than borrowing an identity', () => {
+    const manifest = defineProvider({
+      id: 'vendor_mail',
+      name: 'Vendor Mail',
+      connector: http,
+      auth: withAssertion(),
+      setup: { prompts: [{ key: 'client_id', label: 'Id', credential_ref: 'vendor/client_id' }] },
+    });
+
+    expect(manifest.auth.kind === 'oauth' && manifest.auth.assertion?.delegation).toBe('optional');
+  });
+
+  test('is refused on an mcp connector, where there is nowhere to present it', () => {
+    expect(() =>
+      defineProvider({
+        id: 'vendor_mcp',
+        name: 'Vendor',
+        connector: { kind: 'mcp', endpoint: 'https://mcp.example.com/sse' },
+        auth: withAssertion(),
+        setup: { prompts: [{ key: 'client_id', label: 'Id', credential_ref: 'vendor/client_id' }] },
+      }),
+    ).toThrow(/cannot present a signed assertion/);
+  });
+
+  test('is refused with no scopes, because the token would be permitted nothing', () => {
+    expect(() =>
+      defineProvider({
+        id: 'vendor_mail',
+        name: 'Vendor Mail',
+        connector: http,
+        auth: { ...withAssertion(), scopes: [], broker: undefined },
+        setup: { prompts: [{ key: 'client_id', label: 'Id', credential_ref: 'vendor/client_id' }] },
+      }),
+    ).toThrow(/nothing to grant/);
+  });
+
+  test('is refused with no prompt, because there is no key to ask for', () => {
+    expect(() =>
+      defineProvider({
+        id: 'vendor_mail',
+        name: 'Vendor Mail',
+        connector: http,
+        auth: withAssertion({ setup: { prompts: [] } }),
+        setup: { prompts: [{ key: 'client_id', label: 'Id', credential_ref: 'vendor/client_id' }] },
+      }),
+    ).toThrow(/no way to learn what key to ask for/);
+  });
+});

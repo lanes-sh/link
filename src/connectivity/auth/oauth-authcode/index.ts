@@ -1,6 +1,7 @@
 import { auth } from '@modelcontextprotocol/client';
 import type { ProviderManifest } from '#connectivity';
 import type { SecretStore } from '#secrets';
+import { resolveAssertionToken, storedAssertionFor } from '../oauth-jwt/index.ts';
 import { CredentialOAuthProvider, upstreamAccessToken } from './provider.ts';
 import { refreshDirectly } from './refresh.ts';
 
@@ -12,8 +13,11 @@ import { refreshDirectly } from './refresh.ts';
  * trip at connect time, a refresh on every use, and two different ways to run
  * that refresh depending on whether the provider has a metadata document.
  *
- * The other flows the credential-type list names — JWT bearer, client
- * credentials — are sibling folders that do not exist yet. See ../README.md.
+ * The other flows the credential-type list names — client credentials, SigV4 —
+ * are sibling folders that do not exist yet. See ../README.md. JWT bearer now
+ * does exist, in `../oauth-jwt/`, and is reached from here rather than from
+ * `resolve.ts`: a provider offering both declares one `auth.kind`, so the fork
+ * belongs at the point where the stored credential is first read.
  */
 
 export async function resolveUpstreamToken(
@@ -22,6 +26,16 @@ export async function resolveUpstreamToken(
   credentials: SecretStore,
 ): Promise<string | null> {
   if (manifest.auth.kind !== 'oauth') return null;
+
+  // Before anything is built, because the two arrangements share a ref and only
+  // what is stored there tells them apart. A `CredentialOAuthProvider` over an
+  // assertion pointer would find no `access_token`, conclude the connection was
+  // never authorised, and advise a browser flow the operator deliberately
+  // declined.
+  const assertion = await storedAssertionFor(manifest, connectionId, credentials);
+  if (assertion) {
+    return resolveAssertionToken({ manifest, connectionId, stored: assertion, credentials });
+  }
 
   const provider = new CredentialOAuthProvider({
     manifest,

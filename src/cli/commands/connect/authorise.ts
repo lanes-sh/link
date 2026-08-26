@@ -65,8 +65,8 @@ export async function authorise(input: {
   /** How the operator spelled the target, so a refusal names a command they typed. */
   target?: string;
   profile: string;
-  /** `--own-client`: register a client rather than using the one a broker runs. */
-  ownClient?: boolean;
+  /** Which OAuth client, when the operator chose one. `undefined` keeps today's precedence. */
+  client?: 'own' | 'hosted' | undefined;
   prompter?: Prompter;
   /** The operator has already said yes to scopes broader than the provider needs. */
   acceptBroadScopes?: boolean;
@@ -187,7 +187,7 @@ async function authoriseDirect(input: {
   firstForProvider: boolean;
   target?: string;
   profile: string;
-  ownClient?: boolean;
+  client?: 'own' | 'hosted' | undefined;
   prompter?: Prompter;
   acceptBroadScopes?: boolean;
   fetch?: typeof globalThis.fetch;
@@ -210,7 +210,7 @@ async function authoriseDirect(input: {
     document: input.document,
     changes: input.changes,
     firstForProvider: input.firstForProvider,
-    ownClient: input.ownClient === true,
+    client: input.client,
     target: input.target ?? manifest.id,
     profile: input.profile,
     ...(input.prompter ? { prompter: input.prompter } : {}),

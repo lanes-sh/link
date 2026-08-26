@@ -1,5 +1,6 @@
 import { defineProvider } from '#connectivity';
 import { CALENDAR_IDENTITY, GOOGLE_APP, GOOGLE_OAUTH, specPath } from '../shared/oauth.ts';
+import { googleServiceAccount } from '../shared/service-account.ts';
 import { googleSetup } from '../shared/setup.ts';
 import { CALENDAR_REDACT } from './redact.ts';
 
@@ -53,6 +54,7 @@ export const calendar = defineProvider({
     app: GOOGLE_APP,
     scopes: CALENDAR_SCOPES,
     ...GOOGLE_OAUTH,
+    assertion: googleServiceAccount('Calendar', CALENDAR_SCOPES, 'optional', ['calendar-json.googleapis.com']),
   },
   identity: CALENDAR_IDENTITY,
   setup: googleSetup('Calendar', CALENDAR_SCOPES, {

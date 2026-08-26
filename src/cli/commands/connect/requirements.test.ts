@@ -184,3 +184,122 @@ describe('preflight', () => {
     ).toBeNull();
   });
 });
+
+/**
+ * The same question, asked of a provider that has two answers.
+ *
+ * The OAuth refusal is about a *browser*, and the key route opens none — so
+ * without the method in hand, a scripted `connect --auth service_account` would
+ * be turned away by a message describing a step it does not perform, naming a
+ * command that would fail the same way.
+ */
+describe('a provider offering a key as well as a browser', () => {
+  const never = { has: async () => false };
+  const always = { has: async () => true };
+
+  const withDelegation = (delegation: 'optional' | 'required') =>
+    defineProvider({
+      id: 'vendor_mail',
+      name: 'Vendor Mail',
+      connector: { kind: 'http', base_url: 'https://api.test', openapi: './t.json' },
+      auth: {
+        kind: 'oauth',
+        registration: 'manual',
+        app: 'vendor',
+        scopes: ['https://api.test/auth/read'],
+        authorize_url: 'https://accounts.example.com/o/oauth2/v2/auth',
+        token_url: 'https://oauth2.example.com/token',
+        assertion: {
+          method: 'service_account',
+          label: 'Service account key',
+          delegation,
+          key_ref: 'vendor/key',
+          reach: 'only what is shared with it',
+          subject_label: 'Account to act as',
+          setup: {
+            prompts: [
+              { key: 'key', label: 'Key', secret: true, scope: 'shared', credential_ref: 'vendor/key' },
+            ],
+          },
+        },
+      },
+      setup: {
+        prompts: [{ key: 'client_id', label: 'Id', credential_ref: 'vendor/client_id' }],
+      },
+    });
+
+  test('still needs a browser when the browser is what was chosen', async () => {
+    const blocked = await preflight({
+      manifest: withDelegation('optional'),
+      connectionId: 'main',
+      profile: 'personal',
+      credentials: never,
+      target: 'vendor_mail',
+      method: 'oauth',
+    });
+
+    expect(blocked?.reason).toBe('needs_browser');
+  });
+
+  test('asks for the key instead, and names it in the command to paste', async () => {
+    const blocked = await preflight({
+      manifest: withDelegation('optional'),
+      connectionId: 'main',
+      profile: 'personal',
+      credentials: never,
+      target: 'vendor_mail',
+      method: 'assertion',
+    });
+
+    expect(blocked?.reason).toBe('missing_credentials');
+    expect(blocked?.needs.map((need) => need.ref)).toEqual(['vendor/key']);
+    // Without this the operator stores the key, re-runs the suggested command,
+    // and lands back in the browser flow they were avoiding.
+    expect(blocked?.then).toContain('--auth service_account');
+  });
+
+  test('is not blocked at all once the key is stored', async () => {
+    expect(
+      await preflight({
+        manifest: withDelegation('optional'),
+        connectionId: 'main',
+        profile: 'personal',
+        credentials: always,
+        target: 'vendor_mail',
+        method: 'assertion',
+      }),
+    ).toBeNull();
+  });
+
+  test('needs a terminal where the key can only act as someone', async () => {
+    // The key is placeable ahead of time and who it acts as is not: that value
+    // lives inside the pointer `connect` writes, so there is no `secrets set`
+    // that would put it there.
+    const blocked = await preflight({
+      manifest: withDelegation('required'),
+      connectionId: 'main',
+      profile: 'personal',
+      credentials: always,
+      target: 'vendor_mail',
+      method: 'assertion',
+    });
+
+    expect(blocked?.reason).toBe('needs_terminal');
+    expect(blocked?.needs).toEqual([]);
+    expect(blocked?.then).toContain('--auth service_account');
+  });
+
+  test('reports the key rather than the client, so nobody stores one they will not use', () => {
+    const { requirements, needsId } = setupRequirements(
+      withDelegation('optional'),
+      undefined,
+      'personal',
+      { method: 'assertion' },
+    );
+
+    expect(requirements.map((requirement) => requirement.ref)).toEqual(['vendor/key']);
+    // The key is shared across every connection of the vendor, so no name has
+    // to be settled before it can be stored.
+    expect(needsId).toBe(false);
+  });
+});
