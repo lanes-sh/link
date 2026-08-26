@@ -240,6 +240,11 @@ export async function openRuntime(flags: GlobalFlags): Promise<Runtime> {
       ownClients: Object.keys(config.oauth_apps),
       reachable,
     },
+    // Straight off the config: unlike `reachable`, nothing has to be filtered
+    // through policy first. Whether the surface is reachable at all is still
+    // policy's answer, given once by `mergeCapabilities` — this only decides
+    // what it says when it is.
+    identity: { profile: config.instance.profile, target, entries: config.identity },
   });
   // Seeded from the build that just happened, so the first refresh compares
   // against what is registered rather than rebuilding once to find out.

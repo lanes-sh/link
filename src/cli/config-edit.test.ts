@@ -4,7 +4,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ConfigDocument, ensureSetupConnection, newProfileTemplate, repairLines } from './config-edit.ts';
+import { ConfigDocument, newProfileTemplate } from './config-edit.ts';
+import { ensureSetupConnection, repairLines } from './config-repair.ts';
 
 /**
  * The config file is the source of truth, and an operator is meant to be able

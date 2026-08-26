@@ -326,6 +326,49 @@ $ lanes link start --profile personal --target local                            
 That is deliberate — a write cannot hand itself a read, so granting access to a new secret is
 something you do between two runs rather than something an agent does mid-session.
 
+## Who you are
+
+Names, addresses and handles to write as you, per profile. Optional — nothing needs them until
+something writes as you and gets it wrong.
+
+```console
+$ lanes link identity add name "A. Lovelace" --note "use on anything published" --profile personal --target local
+$ lanes link identity add name Ada --note "use for open-source work" --profile personal --target local
+$ lanes link identity add email ada.lovelace@example.com --profile personal --target local
+$ lanes link identity add github octocat --profile personal --target local
+$ lanes link identity list --profile personal
+$ lanes link identity remove name Ada --profile personal --target local
+```
+
+`identity list` takes no `--target`, for the reason `policy list` does not: the block is declared
+once in the YAML and applies to every target the profile has. `add` and `remove` publish the edit,
+so they name both.
+
+`kind` is the first argument and is yours to choose: `name`, `email` and `github` are conventions,
+not a list this project ships, so `linkedin`, `phone` or `pronouns` work with no code change. The
+note is what makes several of a kind usable — it is read by whatever is deciding which one to use.
+Order is the ranking, so the first of a kind is the default.
+
+Unlike memory, skills and the vault, there is no `lanes link connect identity` to run: the first
+`identity add` writes the connection row and the `identity.*` grant for you, and says so.
+
+```console
+$ lanes link identity add name "A. Lovelace" --profile personal --target local
+ok    name A. Lovelace
+      connections += identity.main
+      policy.allow += identity.*
+      an agent can now read this profile’s identity
+```
+
+Both of those are needed before anything can read the block — a provider with no connection row is
+filtered out before policy is consulted — so `identity list` warns when a hand-edited profile has
+the entries and not the grant. Editing is CLI-only, deliberately: an agent able to change this
+could change the one fact that stops it signing as the wrong person. What it gets is one read-only
+tool, `identity_list`, and an instruction to call it rather than infer.
+
+Nothing here belongs to a connection. An entry says *when* it applies in prose rather than naming
+an account, so renaming a mailbox cannot break a profile.
+
 ## Gate order
 
 Failures surface in the cheapest place first:

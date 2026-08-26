@@ -87,6 +87,23 @@ const SETUP = `**What is set up is answerable.** Before saying something cannot 
 that an account must be added, call \`setup_overview\` — then \`setup_provider\`
 for the exact command. Running it is the owner's to do; inventing it is not.`;
 
+/**
+ * The one about not signing as the wrong person.
+ *
+ * It carries no names, and that is deliberate rather than thrift. Inlining the
+ * declaration would put a per-profile list into a string with a fixed ceiling —
+ * so the workspace with the most identities to keep straight is exactly the one
+ * whose list would be summarised away first. A pointer costs the same for one
+ * profile as for twenty, and `identity_list` has room to say when each applies,
+ * which is the half that actually prevents the mistake.
+ *
+ * Conditional like the rest: a profile that declares nothing has no `identity`
+ * connection, so the capability is unreachable and this paragraph is unspent.
+ */
+const IDENTITY = `**Identity is declared, not inferred.** Where a name, address or handle of the
+owner's is needed, call \`identity_list\`: a profile may hold several, each with a
+note on when it applies.`;
+
 const FILES = `**Files are named, not carried.** Where a tool takes attachments, give a path, an
 HTTPS URL, or an attachment already on another message; the endpoint reads the
 bytes. Never encode a file into a call — that is the thing this replaces.`;
@@ -122,6 +139,7 @@ const OWNER_HABITS: Record<string, string> = {
   skills: SKILLS,
   vault: VAULT,
   setup: SETUP,
+  identity: IDENTITY,
 };
 
 /**
@@ -137,6 +155,15 @@ const OWNER_HABITS: Record<string, string> = {
  * precisely the one that holds no skills directory, so the skill is not a place
  * it can go. Only an endpoint serving remote clients spends it.
  *
+ * Raised a second time, to 2500, for `IDENTITY`, and the same answer for the
+ * same reason: an agent signing as the wrong person has already sent the
+ * message, and a skill loaded only when relevant is not loaded at the moment
+ * that happens. The measured worst case — twenty profiles, twenty connections
+ * each, every owner provider reachable, remote clients — is 2474, so this is
+ * the measurement plus a little, not a round number picked first. Two things
+ * hold it there: the paragraph names no identity, and it is spent only by a
+ * profile that declared one.
+ *
  * Exported because the test asserted `2000` as a literal while the code
  * reserved room against a second, differently-derived number — so the two could
  * disagree, and did. There is no separate listing allowance any more: `spent`
@@ -144,7 +171,7 @@ const OWNER_HABITS: Record<string, string> = {
  * exactly the final length, because `join` adds the same two characters the
  * reduce already counted.
  */
-export const MAX_INSTRUCTIONS = 2300;
+export const MAX_INSTRUCTIONS = 2500;
 
 /** Which of the owner-layer providers this principal can actually reach. */
 function ownerProviders(merged: ReadonlyMap<string, MergedCapability>): string[] {

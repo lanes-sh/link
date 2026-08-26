@@ -84,6 +84,10 @@ export const SELECTION: Record<string, Requires> = {
   'target show': 'profile',
   'secrets push': 'profile',
   'profile remove': 'profile',
+  // Target-independent for the same reason `policy list` is: the block is
+  // declared once in the YAML and applies to every target the profile has.
+  identity: 'profile',
+  'identity list': 'profile',
 
   connect: 'profile+target',
   setup: 'profile+target',
@@ -103,6 +107,11 @@ export const SELECTION: Record<string, Requires> = {
   deploy: 'profile+target',
   'policy allow': 'profile+target',
   'policy deny': 'profile+target',
+  // Both, unlike `identity list`, and for the same reason the policy edits are:
+  // each publishes the edit, which opens the target's credential store and
+  // reaches that target's endpoint.
+  'identity add': 'profile+target',
+  'identity remove': 'profile+target',
   'token show': 'profile+target',
   'token rotate': 'profile+target',
   'audit tail': 'profile+target',
@@ -130,6 +139,7 @@ const SUBCOMMANDS: Record<string, readonly string[]> = {
   profile: ['add', 'list', 'default', 'remove'],
   target: ['list', 'use', 'show'],
   policy: ['list', 'allow', 'deny'],
+  identity: ['add', 'list', 'remove'],
   token: ['show', 'rotate'],
   audit: ['tail', 'verify'],
   config: ['show'],
@@ -261,6 +271,7 @@ const ACCEPTS: Record<string, readonly string[]> = {
   deploy: ['dry-run', 'iam', 'access', 'service-account', 'tag', 'yes', 'non-interactive'],
   'secrets push': ['from', 'to', 'overwrite', 'dry-run'],
   update: ['check'],
+  'identity add': ['note'],
   memory: ['connection', 'title', 'description', 'file'],
   skills: ['connection', 'title', 'description', 'file'],
   vault: ['connection'],

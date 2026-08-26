@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { capabilityPattern, credentialRef, identifier } from './primitives.ts';
 import { authorizationSchema } from './authorization.ts';
+import { identitySchema } from './identity.ts';
 
 /**
  * Configuration is declarative desired state. This file is the source of truth
@@ -368,6 +369,13 @@ export const configSchema = z.object({
    */
   connections: z.array(connectionSchema).default([]),
   policy: policySchema.default({ allow: [], deny: [] }),
+
+  /**
+   * Who the owner is, for anything written as them. Optional and additive, so
+   * every profile written before it keeps loading unchanged — the same reasoning
+   * as `auth.authorization` above, and the reason `contract` does not move.
+   */
+  identity: identitySchema.default([]),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -376,7 +384,8 @@ export type PolicyRuleConfig = z.infer<typeof policyRuleSchema>;
 export type TargetConfig = z.infer<typeof targetSchema>;
 export type DeployConfig = z.infer<typeof deployTargetSchema>;
 export type AuthorizationConfig = z.infer<typeof authorizationSchema>;
-export { authorizationSchema };
+export { authorizationSchema, identitySchema };
+export type { IdentityEntry } from './identity.ts';
 
 /** The workspace file: `lanes-link.yaml`, alongside a `profiles/` directory. */
 export const workspaceSchema = z.object({

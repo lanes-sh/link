@@ -111,6 +111,21 @@ export async function waiting<T>(label: string, work: () => Promise<T>): Promise
  * so the parenthetical would say `(flag)` twice on every line forever — which
  * `target.ts` already argues is how a line stops being read.
  */
+/**
+ * The same line for a command that opens no target.
+ *
+ * `identity list` reads a block declared once in the YAML, so it takes no
+ * `--target` (ADR-037) and there is none to name. Printing `target undefined`
+ * or omitting the line entirely were the alternatives; the first is a lie and
+ * the second loses the guard that this line exists to be.
+ */
+export function announceProfile(selection: {
+  readonly profile: string;
+  readonly workspaceRoot: string;
+}): void {
+  print(style.dim(`profile ${style.bold(selection.profile)}  ${selection.workspaceRoot}`));
+}
+
 export function announce(resolution: Resolution): void {
   print(
     style.dim(
