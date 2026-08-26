@@ -188,7 +188,7 @@ export async function prepareSecrets(input: PrepareInput): Promise<PrepareResult
     if (!ref || (await credentials.has(ref))) continue;
     warnings.push(
       `${connection.provider}.${connection.id} is not authorised yet — no credential at "${ref}"\n` +
-        `    lanes link connect ${connection.provider} --target ${target} --id ${connection.id}`,
+        `    lanes link connect ${connection.provider} --profile ${input.config.instance.profile} --target ${target} --id ${connection.id}`,
     );
   }
 
@@ -252,6 +252,6 @@ async function seedProfileToken(input: {
   }
 
   const { created } = await ensureProfileToken(input.credentials, ref);
-  if (created) print(ok(`minted an endpoint token at "${ref}" — read it with: lanes link token show`));
+  if (created) print(ok(`minted an endpoint token at "${ref}" — read it with lanes link token show`));
 }
 

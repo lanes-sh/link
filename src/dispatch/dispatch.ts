@@ -241,7 +241,7 @@ export class Dispatcher {
         return (outcome = deny(
           'denied_connection_unauthorized',
           record.status === 'unauthorized'
-            ? `Connection ${request.connectionKey} has no valid credential. Run: lanes link connect ${request.connectionKey}`
+            ? `Connection ${request.connectionKey} has no valid credential. Connecting it again for this profile and target would store one.`
             : `Connection ${request.connectionKey} is disabled.`,
         ));
       }

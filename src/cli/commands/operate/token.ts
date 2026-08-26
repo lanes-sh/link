@@ -63,7 +63,7 @@ export async function tokenRotate(
     // than the command, so nothing re-reads this on its own.
     print(warn('every agent configured with the old token must be re-registered'));
     print(style.dim('  A harness stores the token it was given, not the command that produced it.'));
-    print(style.dim('  Run: lanes link outputs   for the command to re-run.'));
+    print(style.dim('  Run: lanes link outputs with this profile and target for the command to re-run.'));
   } finally {
     await runtime.close();
   }

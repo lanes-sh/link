@@ -176,8 +176,9 @@ export async function deploy(flags: DeployFlags): Promise<void> {
     for (const problem of prepared.blocking) print(fail(problem));
     throw new ConfigError(
       'The deployed instance cannot start without these. Store them with ' +
-        `lanes link secrets set <ref> --target ${target}, or copy a local setup with ` +
-        `lanes link secrets push --from local --to ${target}.`,
+        `lanes link secrets set <ref> --profile ${resolution.profile} --target ${target}, or ` +
+        `copy a local setup with lanes link secrets push --profile ${resolution.profile} ` +
+        `--from local --to ${target}.`,
     );
   }
 
@@ -235,7 +236,7 @@ export async function deploy(flags: DeployFlags): Promise<void> {
   if (!url) {
     print(
       warn(
-        `deployed, but the platform reported no URL yet — run: lanes link outputs --target ${target}`,
+        `deployed, but the platform reported no URL yet — run: lanes link outputs --profile ${resolution.profile} --target ${target}`,
       ),
     );
     return;
@@ -245,9 +246,9 @@ export async function deploy(flags: DeployFlags): Promise<void> {
   print(`  ${url}/mcp`);
   print(await healthLine(url));
   print('');
-  print(registerLine(target));
+  print(registerLine(resolution.profile, target));
 
-  reportUnauthorised(prepared.warnings, target);
+  reportUnauthorised(prepared.warnings, resolution.profile, target);
 }
 
 /**
@@ -269,9 +270,10 @@ export async function deploy(flags: DeployFlags): Promise<void> {
  * appeared only on a later re-deploy, by which point the connector is usually
  * registered and the ordering is no longer available to get right.
  */
-function registerLine(target: string): string {
+function registerLine(profile: string, target: string): string {
   return style.dim(
-    `  Connect your accounts first, then register with: lanes link outputs --target ${target}\n` +
+    `  Connect your accounts first, then register with:\n` +
+      `    lanes link outputs --profile ${profile} --target ${target}\n` +
       '  A client keeps the tool list it fetched when it connected, so one registered\n' +
       '  before the accounts holds a surface without them until it is re-added.',
   );
@@ -291,7 +293,7 @@ function registerLine(target: string): string {
  * refusing it, naming the connection rather than the staleness. Reconcile now
  * runs again on every reload, and `connect` asks for one (ADR-029).
  */
-function reportUnauthorised(warnings: readonly string[], target: string): void {
+function reportUnauthorised(warnings: readonly string[], profile: string, target: string): void {
   if (warnings.length === 0) return;
 
   heading('Not authorised yet');
@@ -300,7 +302,7 @@ function reportUnauthorised(warnings: readonly string[], target: string): void {
   print(
     style.dim(
       '  A browser consent per account is the one step this cannot take for you:\n' +
-        `    lanes link connect <provider> --target ${target}\n` +
+        `    lanes link connect <provider> --profile ${profile} --target ${target}\n` +
         '  Each is served as soon as it is authorised. There is no second deploy —\n' +
         '  deploying is how code gets here, and authorising an account changes none.',
     ),
@@ -340,7 +342,7 @@ async function healthLine(url: string): Promise<string> {
     return ok(
       body.profiles
         ? `healthy — serving ${body.profiles.join(', ')}`
-        : 'healthy — run `lanes link outputs` for what it serves',
+        : 'healthy — run `lanes link outputs` with this profile and target for what it serves',
     );
   } catch {
     // A cold start plus a database connect can outrun a short probe, and

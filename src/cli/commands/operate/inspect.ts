@@ -53,11 +53,11 @@ export interface DoctorFlags extends GlobalFlags {
 /**
  * One thing doctor found: what is wrong, and the command that fixes it.
  *
- * `fix` carries `--profile` while the printed line does not. A person reading
- * the terminal just resolved a profile to get here and their next command
- * resolves the same one; something parsing this JSON has no shell context at
- * all, so leaving it off would hand an agent a command that acts on whichever
- * profile happens to be the default.
+ * `fix` carries both flags. That used to be an argument about JSON callers —
+ * a person reading the terminal had just resolved a profile and their next
+ * command would resolve the same one, while a parser had no shell context. The
+ * argument is moot now: nothing resolves on its own (ADR-037), so a command
+ * without them refuses whoever runs it. What survives is the shape.
  */
 export interface DoctorFinding {
   readonly kind: string;
@@ -75,8 +75,8 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
   const problems: DoctorFinding[] = [];
 
   try {
-    const forProfile = (command: string) =>
-      `${command} --profile ${runtime.resolution.profile}`;
+    const forSelection = (command: string) =>
+      `${command} --profile ${runtime.resolution.profile} --target ${runtime.resolution.target}`;
 
     checks.push('config is valid');
     checks.push('state store is reachable');
@@ -90,7 +90,7 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
       warnings.push({
         kind: 'no_profile_token',
         message: 'no profile token yet — lanes link start will mint one, or run: lanes link token rotate',
-        fix: forProfile('lanes link token rotate'),
+        fix: forSelection('lanes link token rotate'),
       });
     }
 
@@ -120,7 +120,7 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
             message:
               `${key} credential is ${staleness.days} days old — a Google app in "Testing" expires at 7. ` +
               `Run: lanes link connect ${key}`,
-            fix: forProfile(`lanes link connect ${key}`),
+            fix: forSelection(`lanes link connect ${key}`),
           });
         } else {
           const age = staleness
@@ -133,7 +133,7 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
           kind: 'missing_credential',
           key,
           message: `${key} has no stored credential — run: lanes link connect ${key}`,
-          fix: forProfile(`lanes link connect ${key}`),
+          fix: forSelection(`lanes link connect ${key}`),
         });
       }
     }
@@ -174,7 +174,7 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
         message:
           `this profile ${hasSetupRow ? 'does not grant "setup.*"' : 'has no "setup" connection'}` +
           ', so an agent cannot see what is configured — run: lanes link connect setup',
-        fix: forProfile('lanes link connect setup'),
+        fix: forSelection('lanes link connect setup'),
       });
     }
 
@@ -205,7 +205,7 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
       warnings.push({
         kind: 'reconcile_drift',
         message: 'runtime state differs from config — run: lanes link plan',
-        fix: forProfile('lanes link plan'),
+        fix: forSelection('lanes link plan'),
       });
     }
 

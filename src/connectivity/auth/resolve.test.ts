@@ -238,13 +238,16 @@ describe('bearerToken', () => {
     expect(await bearerToken(manifest, 'main', createMemoryCredentials({}))).toBeNull();
   });
 
-  test('a missing credential raises, naming the ref and the command', async () => {
+  test('a missing credential raises, naming the ref and what would store one', async () => {
     // The regression this whole helper exists for. `null` here is a request
     // sent with no Authorization header at all: no error, an empty tool list,
     // and nothing to read that says why.
     const promise = bearerToken(mcpProvider({ kind: 'bearer' }), 'main', createMemoryCredentials({}));
 
-    expect(promise).rejects.toThrow(/No credential stored at acme3\/main.*lanes link connect acme3/s);
+    // The provider, not a command: this is raised inside a running endpoint,
+    // which knows the profile and never the target, so a printed `lanes link
+    // connect` would be a paste that writes into the wrong store or refuses.
+    expect(promise).rejects.toThrow(/No credential stored at acme3\/main.*acme3/s);
   });
 
   test('a credential that cannot be a bearer token says which kind it is', async () => {

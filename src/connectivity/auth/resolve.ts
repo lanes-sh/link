@@ -42,7 +42,7 @@ export function credentialResolver(
     const ref = credentialRefForConnection(manifest, connectionId)!;
     const value = await secrets.get(ref);
     if (!value) {
-      throw new Error(`No credential stored at ${ref}. Run: lanes link connect ${providerId}`);
+      throw new Error(`No credential stored at ${ref}. Connecting "${providerId}" again for this profile and target would store one.`);
     }
 
     switch (auth.kind) {

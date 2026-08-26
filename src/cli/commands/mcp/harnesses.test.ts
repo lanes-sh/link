@@ -22,6 +22,8 @@ const INPUT = {
   token: 'llk_secret',
   tokenEnv: 'LANES_LINK_TOKEN',
   scope: 'user',
+  profile: 'personal',
+  target: 'local',
 };
 
 describe('claude', () => {
