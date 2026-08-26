@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * The three string shapes the config contract is built out of.
+ * The four string shapes the config contract is built out of.
  *
  * Their own file because more than one schema module needs them, and the
  * alternative was either a circular import or a second copy of a regex that
@@ -43,3 +43,26 @@ export const capabilityPattern = z
     /^(?:\*|[a-z][a-z0-9_]*\.(?:\*|[A-Za-z0-9][A-Za-z0-9_-]*(?:\.[A-Za-z0-9][A-Za-z0-9_-]*)*(?:\.\*)?))$/,
     'must be "*", "gmail.*", "gmail.users.*", or "gmail.users.drafts.send"',
   );
+
+/**
+ * A browser origin, exactly — scheme, host, and port, with nothing after it. Or
+ * `*`, which is what an absent list means anyway and is accepted so that saying
+ * it explicitly is not an error.
+ *
+ * Checked by round trip rather than by a regex, because `URL` already knows what
+ * an origin is and the failure this catches is a trailing slash or a path that
+ * looks harmless and matches nothing: a browser sends `Origin: https://x.example`
+ * and a configured `https://x.example/` would compare unequal, silently refusing
+ * the origin its owner believed they had allowed.
+ */
+export const browserOrigin = z.string().refine(
+  (value) => {
+    if (value === '*') return true;
+    try {
+      return new URL(value).origin === value;
+    } catch {
+      return false;
+    }
+  },
+  'must be "*" or an origin with no trailing slash or path, e.g. "https://chat.example"',
+);

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { capabilityPattern, credentialRef, identifier } from './primitives.ts';
+import { browserOrigin, capabilityPattern, credentialRef, identifier } from './primitives.ts';
 import { authorizationSchema } from './authorization.ts';
 
 /**
@@ -349,6 +349,15 @@ export const configSchema = z.object({
        * get one. Omitting it leaves every existing profile behaving identically.
        */
       authorization: authorizationSchema.optional(),
+      /**
+       * Browser origins that may call a *deployment's* MCP endpoint. Absent
+       * means `*`, so naming any is a narrowing and nothing needs setting.
+       *
+       * A deployment only, and this cannot widen that: a loopback endpoint
+       * refuses every cross-origin request and must keep doing so. Why the
+       * default is a wildcard is `src/server/cors.ts` and ADR-039.
+       */
+      allowed_origins: z.array(browserOrigin).optional(),
     })
     .default({ mode: 'bearer', token_ref: 'profile/token' }),
 
