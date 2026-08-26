@@ -40,8 +40,9 @@ import {
   vaultRemove,
   vaultSet,
 } from './commands/owner.ts';
+import { knowledgeShow, knowledgeUse } from './commands/knowledge.ts';
 import { update } from './commands/update.ts';
-import { all, globalFlags, ownerFlags, parseArgv, text } from './argv.ts';
+import { all, globalFlags, knowledgeFlags, ownerFlags, parseArgv, text } from './argv.ts';
 import { assertKnownFlags, requireSelection } from './selection.ts';
 import { PROGRAM, USAGE } from './usage.ts';
 import { version } from './version.ts';
@@ -262,6 +263,19 @@ export async function run(argv: readonly string[]): Promise<void> {
           return skillsRemove(rest[0], owner);
         default:
           throw new Error(`Unknown: ${PROGRAM} skills ${second}`);
+      }
+
+    // Beside `memory` and `skills` because it is the question they raise next:
+    // those two say what is stored, and this says where it is kept.
+    case 'knowledge':
+      switch (second) {
+        case 'show':
+        case undefined:
+          return knowledgeShow(knowledgeFlags(flags));
+        case 'use':
+          return knowledgeUse(rest[0], knowledgeFlags(flags));
+        default:
+          throw new Error(`Unknown: ${PROGRAM} knowledge ${second}`);
       }
 
     case 'vault':

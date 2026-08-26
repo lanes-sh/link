@@ -48,6 +48,7 @@ Nothing in the codebase depends on it.
 | [038](038-a-key-is-the-second-way-into-an-account.md) | A service account key is a second way into a Google account, for the consent nobody can give a background job |
 | [039](039-cross-origin-access-is-a-deployment-only-grant.md) | Cross-origin access is granted only by a deployment, and a preflight is answered ahead of the credential check |
 | [040](040-an-mcp-connector-may-use-a-pre-registered-client.md) | An `mcp` connector that names its own endpoints may be brokered, and a vendor that refuses a loopback redirect gets one bounced through the broker — so Slack costs a browser round trip rather than a console visit |
+| [041](041-memory-and-skills-in-a-repository.md) | Memory and skills may be kept in a GitHub repository; the vault, the credential store, state and the log may not |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 
@@ -103,3 +104,10 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
   the browser stays the ordinary route. What it corrects is a claim ADR-028's implementation made
   and could not keep — that a hosted client escapes the seven-day refresh-token expiry — and what
   it adds is the only arrangement that genuinely does, which is a credential nobody consented to.
+
+- **ADR-041** narrows ADR-013 rather than reopening it. That decision says one cloud host supplies
+  both stores and that adapters are named for the protocol; this leaves both standing and adds a
+  second, *smaller* choice beside the target's `storage:` block — where two directories of documents
+  the owner wrote are kept. What it may hold is fixed by having no field for anything else: the
+  credential store and the vault cannot be named by it, by a flag, or by an example somebody copies.
+  It also settles the one cost ADR-030 wrote down and declined to pay.

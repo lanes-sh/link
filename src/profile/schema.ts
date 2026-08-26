@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { browserOrigin, capabilityPattern, credentialRef, identifier } from './primitives.ts';
 import { authorizationSchema } from './authorization.ts';
 import { identitySchema } from './identity.ts';
+import { knowledgeTargetSchema } from './knowledge.ts';
 
 /**
  * Configuration is declarative desired state. This file is the source of truth
@@ -215,6 +216,15 @@ export const targetSchema = z
     audit: auditTargetSchema.optional(),
     storage: storageTargetSchema,
     vault: vaultTargetSchema.optional(),
+    /**
+     * Memory and skills, somewhere other than `storage` above.
+     *
+     * Optional and absent by default, so every profile written before it keeps
+     * storing both exactly where it did. See `knowledge.ts` for why these two
+     * are separable from the rest and why the credential store and the vault
+     * are not.
+     */
+    knowledge: knowledgeTargetSchema.optional(),
     deploy: deployTargetSchema.optional(),
     /** @deprecated Write `deploy` with `platform: cloudrun`. */
     cloudrun: legacyCloudRunSchema.optional(),

@@ -74,6 +74,14 @@ ${style.bold('Your own context')}
   ${PROGRAM} skills add <name> [--file f]             document on stdin
   ${PROGRAM} skills remove <name>
 
+  ${PROGRAM} knowledge show            where memory and skills are kept, and how many
+  ${PROGRAM} knowledge use github --repo <owner/name> [--branch b] [--path p]
+                                 keep both in a private repository, over the GitHub API
+                                 [--migrate] moves what is already stored, in one commit
+                                 [--no-migrate] switches and leaves it where it is
+                                 [--keep] moves it, and leaves the local copies unread
+  ${PROGRAM} knowledge use local [--migrate]        bring them back onto this target
+
   ${PROGRAM} vault list                 names only, never values
   ${PROGRAM} vault get <id> [--show|--raw]
   ${PROGRAM} vault set <id> [--description d]         value on stdin

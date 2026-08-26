@@ -1,5 +1,6 @@
 import type { GlobalFlags } from './runtime.ts';
 import type { OwnerFlags } from './commands/owner.ts';
+import type { KnowledgeFlags } from './commands/knowledge.ts';
 
 /**
  * Turning argv into a command path and a flag bag.
@@ -116,5 +117,28 @@ export function ownerFlags(flags: Flags): OwnerFlags {
     description: text(flags, 'description'),
     file: text(flags, 'file'),
     yes: flags['yes'] === true,
+  };
+}
+
+/**
+ * `lanes link knowledge`'s flags.
+ *
+ * Here for the reason `ownerFlags` is: the kebab-case spellings belong in the
+ * one place that parses argv, so `--allow-public` is written once rather than
+ * once per reader.
+ */
+export function knowledgeFlags(flags: Flags): KnowledgeFlags {
+  return {
+    ...globalFlags(flags),
+    repo: text(flags, 'repo'),
+    branch: text(flags, 'branch'),
+    path: text(flags, 'path'),
+    // `--migrate`, `--no-migrate`, or neither — see `KnowledgeFlags.migrate`.
+    migrate: flags['migrate'] === true ? true : flags['no-migrate'] === true ? false : undefined,
+    keep: flags['keep'] === true,
+    allowPublic: flags['allow-public'] === true,
+    replace: flags['replace'] === true,
+    yes: flags['yes'] === true,
+    json: flags['json'] === true,
   };
 }

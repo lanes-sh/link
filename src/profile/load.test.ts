@@ -388,3 +388,92 @@ describe('malformed input', () => {
     expect(message).toContain('instance.profile');
   });
 });
+
+describe('the knowledge block', () => {
+  /** Insert a `knowledge:` block under the `local` target. */
+  const withKnowledge = (block: string): string =>
+    VALID.replace(
+      '    storage: { adapter: filesystem, path: ./data/personal/files }',
+      `    storage: { adapter: filesystem, path: ./data/personal/files }\n${block}`,
+    );
+
+  test('is absent by default, which is what every existing profile relies on', () => {
+    const { config } = parseConfig(VALID);
+    expect(config.targets['local']?.knowledge).toBeUndefined();
+  });
+
+  test('takes a repository and defaults the ref', () => {
+    const { config } = parseConfig(
+      withKnowledge('    knowledge: { adapter: github, repo: my-org/my-notes }'),
+    );
+
+    expect(config.targets['local']?.knowledge).toEqual({
+      adapter: 'github',
+      repo: 'my-org/my-notes',
+      token_ref: 'knowledge/token',
+    });
+  });
+
+  test('keeps a branch and a path when given', () => {
+    const { config } = parseConfig(
+      withKnowledge(
+        '    knowledge: { adapter: github, repo: my-org/my-notes, branch: trunk, path: context }',
+      ),
+    );
+
+    expect(config.targets['local']?.knowledge?.branch).toBe('trunk');
+    expect(config.targets['local']?.knowledge?.path).toBe('context');
+  });
+
+  test('normalises a path so one prefix has one spelling', () => {
+    const { config } = parseConfig(
+      withKnowledge('    knowledge: { adapter: github, repo: my-org/my-notes, path: "/context/" }'),
+    );
+
+    expect(config.targets['local']?.knowledge?.path).toBe('context');
+  });
+
+  test('refuses a URL where "owner/name" belongs', () => {
+    expect(() =>
+      parseConfig(
+        withKnowledge(
+          '    knowledge: { adapter: github, repo: "https://github.com/my-org/my-notes" }',
+        ),
+      ),
+    ).toThrow(/owner\/name/);
+  });
+
+  test('refuses a path that walks out of the repository', () => {
+    expect(() =>
+      parseConfig(
+        withKnowledge('    knowledge: { adapter: github, repo: my-org/my-notes, path: "../.." }'),
+      ),
+    ).toThrow(/\.\./);
+  });
+
+  test('refuses a token written inline instead of referenced', () => {
+    // `secret-detection.ts` already knows the fine-grained prefix; this asserts
+    // it covers the one field somebody would most plausibly paste one into.
+    expect(() =>
+      validateConfig(
+        withKnowledge(
+          '    knowledge: { adapter: github, repo: my-org/my-notes, token_ref: github_pat_11ABCDE0Y0abcdefghijkl_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmno }',
+        ),
+      ),
+    ).toThrow();
+  });
+
+  test('cannot name the credential store or the vault', () => {
+    // Structural, not defaulted off: there is no field to set. Both keys are
+    // stripped by zod rather than honoured, so the block still parses and still
+    // means only what it can mean.
+    const { config } = parseConfig(
+      withKnowledge(
+        '    knowledge: { adapter: github, repo: my-org/my-notes, credentials: file, vault: blob }',
+      ),
+    );
+
+    expect(config.targets['local']?.knowledge).not.toHaveProperty('credentials');
+    expect(config.targets['local']?.knowledge).not.toHaveProperty('vault');
+  });
+});

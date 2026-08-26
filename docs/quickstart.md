@@ -54,6 +54,9 @@ $ lanes link connect vault --profile personal --target local
 `connect` takes one provider at a time. Connecting grants that provider's whole namespace, write
 half included — `lanes link policy deny memory.write` narrows it.
 
+Both are stored on this machine. `lanes link knowledge use github --repo <owner/name> --migrate`
+keeps them in a private repository instead, so they have a history and follow you between machines.
+
 All three belong to the profile you ran them under. A second profile starts empty and stays that
 way: nothing you store in one is visible from another.
 

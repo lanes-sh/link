@@ -95,6 +95,24 @@ export class ConfigDocument {
   }
 
   /**
+   * Remove a key, leaving everything around it untouched.
+   *
+   * The counterpart to `setIn`, and it exists because a block a command wrote
+   * has to be a block that command can take back. `lanes link knowledge use
+   * local` moves memory and skills off a repository, and a `knowledge:` block
+   * left behind afterwards would point the profile at the repository it just
+   * stopped using — a config that is not merely untidy but wrong.
+   *
+   * Absent is not an error: removing what is not there is what the caller
+   * wanted, and a profile whose targets do not all have the key is the ordinary
+   * case rather than a broken one.
+   */
+  removeIn(path: readonly (string | number)[]): void {
+    if (this.#document.getIn(path as (string | number)[]) === undefined) return;
+    this.#document.deleteIn(path as (string | number)[]);
+  }
+
+  /**
    * Append to a sequence, creating it if absent.
    *
    * `inline` renders the appended item on one line. Policy rules are far
