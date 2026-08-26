@@ -431,11 +431,15 @@ container filesystem that the next revision discarded.
 [ADR-030](adr/030-a-profile-owns-its-skills-and-manifests.md). Skills were workspace-wide until
 then, which made them the one owner-layer store a second profile could read.
 
-| | Local | Cloud |
-|---|---|---|
-| skills | `<workspace>/data/<profile>/skills.d/<name>.md` | the same key, in the bucket |
-| memory | `<storage>/memory/<connection>/entry/<id>.md` | the same key, in the bucket |
-| vault | `<workspace>/data/<profile>/vault.enc` | one object, `targets.<t>.vault.adapter: blob` |
+| | Local | Cloud | With a `knowledge:` block |
+|---|---|---|---|
+| skills | `<workspace>/data/<profile>/skills.d/<name>.md` | the same key, in the bucket | `skills/<name>/SKILL.md` in the repository |
+| memory | `<storage>/memory/<connection>/entry/<id>.md` | the same key, in the bucket | `memory/<connection>/<id>.md` in the repository |
+| vault | `<workspace>/data/<profile>/vault.enc` | one object, `targets.<t>.vault.adapter: blob` | unchanged — a vault is never a repository |
+
+The last column is [ADR-041](adr/041-memory-and-skills-in-a-repository.md), and it moves those two
+and only those two. `lanes link knowledge use github --repo <owner/name>` writes it;
+`configuration.md` has the block and what it costs.
 
 ### `memory`
 

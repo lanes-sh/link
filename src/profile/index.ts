@@ -26,6 +26,15 @@ export {
 } from './schema.ts';
 
 export {
+  KNOWLEDGE_LAYOUT,
+  knowledgeRoot,
+  knowledgeTargetSchema,
+  parseRepository,
+  type KnowledgeArea,
+  type KnowledgeConfig,
+} from './knowledge.ts';
+
+export {
   ConfigError,
   loadConfigFile,
   parseConfig,

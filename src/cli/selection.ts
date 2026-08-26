@@ -123,6 +123,10 @@ export const SELECTION: Record<string, Requires> = {
   memory: 'profile+target',
   skills: 'profile+target',
   vault: 'profile+target',
+  // Both halves open the target's adapters — `show` counts what is in the
+  // stores, and `use` migrates between them — and both edit the profile's
+  // config. Neither can be answered without being told which.
+  knowledge: 'profile+target',
 };
 
 /**
@@ -149,6 +153,7 @@ const SUBCOMMANDS: Record<string, readonly string[]> = {
   vault: ['list', 'get', 'set', 'remove', 'key'],
   mcp: ['skill', 'add', 'stdio', 'list'],
   secrets: ['push', 'set', 'list'],
+  knowledge: ['show', 'use'],
 };
 
 /**
@@ -275,6 +280,10 @@ const ACCEPTS: Record<string, readonly string[]> = {
   memory: ['connection', 'title', 'description', 'file'],
   skills: ['connection', 'title', 'description', 'file'],
   vault: ['connection'],
+  // `no-migrate` is listed beside `migrate` because they are three states
+  // rather than two: neither one asks, and a run with no terminal has to be
+  // able to say which it meant (ADR-041).
+  knowledge: ['repo', 'branch', 'path', 'migrate', 'no-migrate', 'keep', 'allow-public', 'replace', 'yes'],
 };
 
 /**

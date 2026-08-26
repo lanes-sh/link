@@ -1,0 +1,390 @@
+import {
+  ConfigError,
+  KNOWLEDGE_LAYOUT,
+  knowledgeTargetSchema,
+  layout,
+  parseRepository,
+  type Config,
+  type KnowledgeConfig,
+} from '#profile';
+import { describeKnowledge, type FetchLike } from '#deployments/knowledge.ts';
+import { ConfigDocument } from '../../config-edit.ts';
+import { announce, heading, ok, print, style, table } from '../../output.ts';
+import { confirm, isInteractive } from '../../prompt.ts';
+import type { BlobStore } from '#stores/blobs';
+import { openRuntime, openSecretStoreFor, type GlobalFlags, type Runtime } from '../../runtime.ts';
+import { probe, repositoryFor, resolveToken } from './setup.ts';
+import {
+  collisions,
+  localContents,
+  moveIn,
+  moveOut,
+  printMovable,
+  removeLocal,
+  summarise,
+} from './migrate.ts';
+
+/**
+ * `lanes link knowledge` — where this profile's memory and skills are kept.
+ *
+ * Control plane, like every other command here: it writes a credential and
+ * edits config, both of which authorise future agent behaviour, so it
+ * originates outside the agent and has no MCP surface (ADR-007).
+ *
+ * The block it writes goes into **every** target the profile declares. A
+ * profile's memory is one thing wherever the profile happens to be running, and
+ * a `local` that reads a repository beside a `cloud` that reads a disk is two
+ * divergent sets of entries with nothing saying which is current. Each target
+ * still needs the token in its *own* credential store, which is what
+ * `lanes link secrets push` is for, and the command says so.
+ *
+ * ADR-041.
+ */
+
+export interface KnowledgeFlags extends GlobalFlags {
+  readonly repo?: string | undefined;
+  readonly branch?: string | undefined;
+  readonly path?: string | undefined;
+  /**
+   * Move what is already stored, rather than leaving it behind.
+   *
+   * Three states, not two. `undefined` means nobody said, which is a question
+   * worth asking rather than an answer worth guessing — so `--migrate` and
+   * `--no-migrate` are both flags, and a run with neither and nothing to move
+   * proceeds silently.
+   */
+  readonly migrate?: boolean | undefined;
+  /** Copy rather than move: verify the repository, then leave the local copy. */
+  readonly keep?: boolean | undefined;
+  readonly allowPublic?: boolean | undefined;
+  /** Ask for the token again even though one is stored. */
+  readonly replace?: boolean | undefined;
+  readonly yes?: boolean | undefined;
+  readonly json?: boolean | undefined;
+  /** Injected for tests. The repository is the only thing this command reaches. */
+  readonly fetch?: FetchLike | undefined;
+}
+
+export async function knowledgeShow(flags: KnowledgeFlags): Promise<void> {
+  const runtime = await openRuntime(flags, { fetch: flags.fetch });
+  try {
+    if (!flags.json) announce(runtime.resolution);
+
+    const profile = runtime.config.instance.profile;
+    const selection = ` --profile ${runtime.resolution.profile} --target ${runtime.target}`;
+    const skills = (await runtime.skills.list()).length;
+    const memory = (await runtime.storage.list(`${KNOWLEDGE_LAYOUT.memory}/`)).length;
+    const where = runtime.knowledge?.describe;
+
+    if (flags.json) {
+      print(JSON.stringify({ target: runtime.target, where: where ?? 'local', memory, skills }, null, 2));
+      return;
+    }
+
+    heading('Knowledge');
+    table([
+      // The memory *directory*, not the blob root it sits in. `layout.blobs`
+      // is `data/<profile>`, which is where every provider's namespace lives —
+      // printing it here would name a directory that is mostly not memory.
+      [
+        '  memory',
+        where ? `${where}/${KNOWLEDGE_LAYOUT.memory}` : `${layout.blobs(profile)}/${KNOWLEDGE_LAYOUT.memory}`,
+        style.dim(`${memory} file${memory === 1 ? '' : 's'}`),
+      ],
+      [
+        '  skills',
+        where ? `${where}/${KNOWLEDGE_LAYOUT.skills}` : layout.skills(profile),
+        style.dim(`${skills} file${skills === 1 ? '' : 's'}`),
+      ],
+    ]);
+
+    print('');
+    print(
+      style.dim(
+        `  The vault, the credential store, runtime state and the audit log stay in target "${runtime.target}".`,
+      ),
+    );
+    // Complete commands, not shapes. Every one of these is pasted, and with
+    // nothing left to fall back on (ADR-037) a line missing either flag is a
+    // line that refuses — `emitted.test.ts` states the rule for the templates
+    // reachable without a runtime, and this is the same rule where there is one.
+    print(
+      style.dim(
+        where
+          ? `  Bring them back with: lanes link knowledge use local --migrate${selection}`
+          : `  Keep them in a repository with: lanes link knowledge use github --repo <owner/name>${selection}`,
+      ),
+    );
+  } finally {
+    await runtime.close();
+  }
+}
+
+export async function knowledgeUse(where: string | undefined, flags: KnowledgeFlags): Promise<void> {
+  if (where === 'local') return useLocal(flags);
+  if (where === 'github') return useGithub(flags);
+
+  throw new ConfigError(
+    'Usage: lanes link knowledge use github --repo <owner/name> [--branch b] [--path p] [--migrate]\n' +
+      '       lanes link knowledge use local [--migrate]',
+  );
+}
+
+async function useGithub(flags: KnowledgeFlags): Promise<void> {
+  if (!flags.repo) {
+    throw new ConfigError(
+      'Which repository? lanes link knowledge use github --repo <owner/name>\n' +
+        '  Make it private — memory entries are your own notes, and a skill names the accounts it operates on.',
+    );
+  }
+
+  const repo = parseRepository(flags.repo);
+  if (!repo) {
+    throw new ConfigError(
+      `"${flags.repo}" is not a repository. Give it as owner/name, or paste the URL of one.`,
+    );
+  }
+
+  const knowledge = knowledgeTargetSchema.parse({
+    adapter: 'github',
+    repo,
+    ...(flags.branch ? { branch: flags.branch } : {}),
+    ...(flags.path ? { path: flags.path } : {}),
+  });
+
+  const runtime = await openRuntime(flags, { fetch: flags.fetch });
+  try {
+    announce(runtime.resolution);
+    const selection = ` --profile ${runtime.resolution.profile} --target ${runtime.target}`;
+
+    if (runtime.knowledge) {
+      print(style.dim(`  This profile already reads ${runtime.knowledge.describe}.`));
+      print(
+        style.dim(
+          '  Bring it back first: lanes link knowledge use local --migrate' +
+            ` --profile ${runtime.resolution.profile} --target ${runtime.target}`,
+        ),
+      );
+      throw new ConfigError('Already storing knowledge in a repository.');
+    }
+
+    // Nothing is written until this returns: the token is asked for, the
+    // repository is probed, and either can refuse while the profile is intact.
+    const secrets = await openSecretStoreFor(
+      runtime.config,
+      runtime.resolution.workspaceRoot,
+      runtime.target,
+    );
+    const token = await resolveToken(secrets, knowledge.token_ref, knowledge.repo, selection, {
+      replace: flags.replace,
+    });
+
+    const repository = repositoryFor(knowledge, token, flags.fetch);
+    const { facts, viewer } = await probe(repository, { allowPublic: flags.allowPublic });
+
+    heading(describeKnowledge(knowledge));
+    table([
+      ['  repository', facts.fullName, style.dim(facts.private ? 'private' : style.yellow('public'))],
+      ['  branch', knowledge.branch ?? facts.defaultBranch, style.dim(facts.empty ? 'no commits yet' : '')],
+      ['  token', viewer, style.dim('can write')],
+    ]);
+
+    const movable = await localContents(runtime.storage, runtime.skills, knowledge);
+    const moving = await decideMigration(movable.length > 0, flags);
+
+    if (moving) {
+      const overlap = await collisions(repository, movable);
+      if (overlap.length > 0 && !(await agreedTo(flags, `${overlap.length} file(s) already in ${facts.fullName} would be replaced. Continue?`))) {
+        return;
+      }
+
+      print('');
+      print(`  Moving ${summarise(movable)} into ${facts.fullName}:`);
+      printMovable(movable);
+
+      await moveIn(repository, movable, `Store this profile's memory and skills`);
+      print(ok(`committed ${movable.length} file${movable.length === 1 ? '' : 's'}, and read them back`));
+
+      if (flags.keep) {
+        print(style.dim('  --keep: the local copies are still there, and are no longer read.'));
+      } else {
+        await removeLocal(runtime.storage, runtime.skills, movable);
+        print(ok('removed the local copies'));
+      }
+    } else if (movable.length > 0) {
+      print('');
+      print(
+        style.dim(
+          `  ${summarise(movable)} stay on disk and stop being read. Move them with --migrate.`,
+        ),
+      );
+    }
+
+    // Last, deliberately, and in this order. Everything above can fail and leave
+    // a profile that still works; from here the config points at the repository.
+    // The token goes in first because the failure directions are not symmetric:
+    // a stored token nothing references is inert, and a config referencing a
+    // token that was never stored is a profile that cannot read its own memory.
+    await secrets.set(knowledge.token_ref, token);
+    await writeBlock(runtime.config, runtime.resolution.workspaceRoot, knowledge);
+
+    print('');
+    print(ok(`memory and skills are now kept in ${facts.fullName}`));
+    reportOtherTargets(runtime.config, runtime.target, knowledge.token_ref);
+  } finally {
+    await runtime.close();
+  }
+}
+
+async function useLocal(flags: KnowledgeFlags): Promise<void> {
+  const runtime = await openRuntime(flags, { fetch: flags.fetch });
+  try {
+    announce(runtime.resolution);
+    const selection = ` --profile ${runtime.resolution.profile} --target ${runtime.target}`;
+
+    const knowledge = runtime.config.targets[runtime.target]?.knowledge;
+    if (!knowledge) {
+      print(style.dim('  This profile already keeps memory and skills on its own storage.'));
+      return;
+    }
+
+    const local = await openLocalStores(runtime);
+
+    // Built here rather than taken from `runtime.knowledge`, so both directions
+    // of this command reach the repository through one constructor.
+    const secrets = await openSecretStoreFor(
+      runtime.config,
+      runtime.resolution.workspaceRoot,
+      runtime.target,
+    );
+    const token = await resolveToken(secrets, knowledge.token_ref, knowledge.repo, selection);
+    const repository = repositoryFor(knowledge, token, flags.fetch);
+
+    if (
+      flags.migrate ??
+      (await agreedTo(flags, `Copy everything in ${knowledge.repo} back onto this target's storage?`))
+    ) {
+      const moved = await moveOut(repository, knowledge, local.storage, local.skills);
+      print(
+        ok(
+          `wrote back ${moved.memory} memory entr${moved.memory === 1 ? 'y' : 'ies'} and ` +
+            `${moved.skills} skill file${moved.skills === 1 ? '' : 's'}`,
+        ),
+      );
+    }
+
+    await writeBlock(runtime.config, runtime.resolution.workspaceRoot, undefined);
+
+    print('');
+    print(ok('memory and skills are back on this target\'s own storage'));
+    print(
+      style.dim(
+        `  ${knowledge.repo} still holds everything — it is version control, so nothing was removed from it.`,
+      ),
+    );
+    print(style.dim(`  The token at "${knowledge.token_ref}" is no longer used; remove it if you like.`));
+  } finally {
+    await runtime.close();
+  }
+}
+
+/**
+ * The profile's own stores, opened past whatever routing the runtime applied.
+ *
+ * `runtime.storage` and `runtime.skills` point at the repository once the block
+ * is declared, which is exactly wrong for a command whose job is to write the
+ * other way. This reaches the target's declared storage directly.
+ */
+async function openLocalStores(
+  runtime: Runtime,
+): Promise<{ storage: BlobStore; skills: BlobStore }> {
+  const { openStorage } = await import('#deployments/target.ts');
+  const declared = runtime.config.targets[runtime.target];
+  if (!declared) throw new ConfigError(`Target "${runtime.target}" is not declared`);
+
+  const factory = await openStorage(
+    {
+      declared,
+      config: runtime.config,
+      root: runtime.resolution.workspaceRoot,
+      target: runtime.target,
+    },
+    runtime.credentials,
+  );
+  return { storage: factory(), skills: factory(layout.skills(runtime.config.instance.profile)) };
+}
+
+/** Write, or remove, the block on every target this profile declares. */
+async function writeBlock(
+  config: Config,
+  root: string,
+  knowledge: KnowledgeConfig | undefined,
+): Promise<void> {
+  const document = await ConfigDocument.open(root, config.instance.profile);
+
+  for (const target of Object.keys(config.targets)) {
+    if (knowledge === undefined) {
+      document.removeIn(['targets', target, 'knowledge']);
+      continue;
+    }
+    document.setIn(['targets', target, 'knowledge'], {
+      adapter: knowledge.adapter,
+      repo: knowledge.repo,
+      ...(knowledge.branch ? { branch: knowledge.branch } : {}),
+      ...(knowledge.path ? { path: knowledge.path } : {}),
+      token_ref: knowledge.token_ref,
+    });
+  }
+
+  await document.save();
+}
+
+/**
+ * The other targets need the same token in their own credential stores.
+ *
+ * Not written for them: a second target's store is Secret Manager, which needs
+ * cloud credentials this command has no business assuming. `secrets push` is
+ * the command that already does exactly this, so this points at it.
+ */
+function reportOtherTargets(config: Config, current: string, ref: string): void {
+  const others = Object.keys(config.targets).filter((target) => target !== current);
+  if (others.length === 0) return;
+
+  const profile = config.instance.profile;
+
+  print(
+    style.dim(
+      `  Written into every target (${others.join(', ')} as well). Each reads "${ref}" from its own credential store:`,
+    ),
+  );
+  for (const target of others) {
+    print(style.dim(`    lanes link secrets push --from ${current} --to ${target} --profile ${profile}`));
+  }
+}
+
+async function decideMigration(hasContent: boolean, flags: KnowledgeFlags): Promise<boolean> {
+  if (flags.migrate !== undefined) return flags.migrate;
+  if (!hasContent) return false;
+  return agreedTo(flags, 'Move what is already stored into the repository?');
+}
+
+/**
+ * Ask, unless `--yes` already answered or there is nobody to ask.
+ *
+ * Refuses rather than assuming when there is no terminal: every question here
+ * precedes something that writes, and guessing at one of them is how a
+ * scripted run migrates a profile nobody asked it to.
+ */
+async function agreedTo(flags: KnowledgeFlags, question: string): Promise<boolean> {
+  if (flags.yes) return true;
+  if (!isInteractive()) {
+    throw new ConfigError(
+      `${question} — stdin is not a terminal, so there is nobody to ask.\n` +
+        '  Pass --migrate to move what is stored, --no-migrate to leave it, or --yes to accept every question.',
+    );
+  }
+
+  const yes = await confirm(question, true);
+  if (!yes) print(style.dim('  cancelled'));
+  return yes;
+}

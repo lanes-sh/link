@@ -7,6 +7,7 @@ import type { AnyConnector, ProviderManifest } from '#connectivity';
 import { RateLimiter, allowedConnections } from '#policy';
 import {
   ConfigError,
+  KNOWLEDGE_LAYOUT,
   layout,
   listProfiles,
   workspacePath,
@@ -16,12 +17,7 @@ import {
 import { ProviderRegistry, toPolicyDocument } from '#registry';
 import { Dispatcher, createConsoleLogger } from '#dispatch';
 import { PROVIDER_MANIFESTS } from '#providers/index.ts';
-import {
-  createBlobVaultStore,
-  createFileVaultStore,
-  createSecretVaultStore,
-  type VaultStore,
-} from '#providers/owner.ts';
+import type { VaultStore } from '#providers/owner.ts';
 import {
   openAuditSinks,
   openState,
@@ -30,11 +26,14 @@ import {
   type StorageFactory,
   type TargetInput,
 } from '#deployments/target.ts';
+import { openKnowledge, type FetchLike, type KnowledgeStores } from '#deployments/knowledge.ts';
+import { routeBlobStore } from '#stores/blobs/route.ts';
 import { connectorFactory } from '#connectivity/transports';
 import { requestAuthorizer } from '#connectivity/auth/index.ts';
 import { resolveProfile, type GlobalFlags } from './select.ts';
-import { buildRegistryWithWorkspace, reloadSkills, skillFingerprint } from './registry.ts';
+import { buildRegistryWithWorkspace, readSkillsForStart, reloadSkills } from './registry.ts';
 import { discoveryProbe } from './discovery.ts';
+import { openVault } from './vault.ts';
 
 /**
  * Assembling a profile's runtime from its declared target.
@@ -56,6 +55,16 @@ export interface Runtime {
   readonly storage: BlobStore;
   /** Where skills are kept — `data/<profile>/skills.d/` locally. */
   readonly skills: BlobStore;
+  /**
+   * Present only when this target keeps memory and skills in a repository.
+   *
+   * Nothing on the dispatch path reads it: `storage` and `skills` above are
+   * already pointed at the right bytes, which is the whole design. It is here
+   * so `target show` and `doctor` can say where those bytes are without
+   * re-reading the config, and so the migration can reach the repository it is
+   * committing to.
+   */
+  readonly knowledge?: KnowledgeStores | undefined;
   /** The vault's own store, so `lanes link vault` reaches the same bytes MCP does. */
   readonly vault: VaultStore;
   readonly registry: ProviderRegistry;
@@ -99,47 +108,21 @@ function skillStore(storage: StorageFactory, profile: string): BlobStore {
 }
 
 /**
- * The vault's encrypted document, wherever this target keeps it.
+ * What a caller may hand the runtime that is not a flag somebody typed.
  *
- * Defaults to `file`, so a profile written before ADR-014 needs no change and a
- * local run needs no vault configuration at all. `blob` exists because the file
- * adapter was unconditional before: a deployed instance wrote its vault to a
- * container filesystem, and every item in it was discarded by the next
- * revision without an error to say so.
+ * One field, and it exists for the same reason `connect`'s does: the only thing
+ * a runtime reaches over the network at open time is a knowledge repository,
+ * and a test that could not replace it would either hit github.com or not run.
  */
-function openVault(
-  input: TargetInput,
-  storage: StorageFactory,
-  credentials: SecretStore,
-): VaultStore {
-  const { declared, config, root } = input;
-  const vault = declared.vault ?? { adapter: 'file' as const };
-
-  switch (vault.adapter) {
-    case 'file':
-      return createFileVaultStore({
-        path: workspacePath(root, vault.path ?? layout.vault(config.instance.profile)),
-      });
-
-    case 'secret':
-      // The document is sealed under LANES_LINK_VAULT_KEY before it gets here,
-      // so the credential store holds ciphertext it cannot read. Separate
-      // document, separate key, separate environment variable — the backend
-      // was never what kept the two stores apart. ADR-022.
-      return createSecretVaultStore({
-        store: credentials,
-        ...(vault.ref !== undefined ? { ref: vault.ref } : {}),
-      });
-
-    case 'blob':
-      return createBlobVaultStore({
-        store: storage(),
-        ...(vault.path !== undefined ? { key: vault.path } : {}),
-      });
-  }
+export interface OpenOptions {
+  /** Injected for tests. */
+  readonly fetch?: FetchLike | undefined;
 }
 
-export async function openRuntime(flags: GlobalFlags): Promise<Runtime> {
+export async function openRuntime(
+  flags: GlobalFlags,
+  options: OpenOptions = {},
+): Promise<Runtime> {
   const { resolution, config, target } = await resolveProfile(flags);
   const declared = config.targets[target];
   if (!declared) throw new ConfigError(`Target "${target}" is not declared`);
@@ -154,7 +137,23 @@ export async function openRuntime(flags: GlobalFlags): Promise<Runtime> {
   // no schema left to migrate.
   const credentials = await openSecrets(adapters);
   const storageFor = await openStorage(adapters, credentials);
-  const storage = storageFor();
+
+  // Memory and skills, where a profile keeps them somewhere else (ADR-041).
+  //
+  // The redirection happens *here*, on the store every consumer was already
+  // handed, and that is deliberate. Memory is not addressed by a name anything
+  // declares: `buildProviderContext` scopes the profile's blob root to
+  // `memory/<connection>`, and `lanes link memory` reaches the same bytes by
+  // calling the same two functions. So the dispatcher, the provider, and the
+  // CLI need no knowledge of this and cannot disagree about where an entry
+  // went — the one thing they are handed already points at the repository.
+  //
+  // The audit log, `state.kv`, the credential store and the vault keep their
+  // own roots on the target's own storage and are untouched.
+  const knowledge = await openKnowledge(adapters, credentials, options.fetch);
+  const storage = knowledge
+    ? routeBlobStore(storageFor(), [{ prefix: `${KNOWLEDGE_LAYOUT.memory}/`, store: knowledge.memory }])
+    : storageFor();
   const state = openState(storageFor, config.instance.profile);
 
   // The durable log, plus any copies the target declares. `sink` is what
@@ -168,7 +167,7 @@ export async function openRuntime(flags: GlobalFlags): Promise<Runtime> {
     (message) => logger.warn(message),
   );
 
-  const skills = skillStore(storageFor, config.instance.profile);
+  const skills = knowledge?.skills ?? skillStore(storageFor, config.instance.profile);
 
   // The vault's own store, beside the credential store and never it: a separate
   // document, a separate key, and a separate environment variable
@@ -228,8 +227,20 @@ export async function openRuntime(flags: GlobalFlags): Promise<Runtime> {
         account: connection.account,
       }));
 
+  // Read before the registry is built, so a store that cannot be reached is a
+  // warning rather than the end of the process — see `readSkillsForStart`. Only
+  // tolerated when the store is a repository: a local directory that will not
+  // read is a real fault worth failing on, exactly as it always was.
+  const loaded = await readSkillsForStart(
+    skills,
+    knowledge !== undefined,
+    (message) => logger.warn(message),
+    ` --profile ${config.instance.profile} --target ${target}`,
+  );
+
   registry = await buildRegistryWithWorkspace(root, config.instance.profile, {
     skillStore: skills,
+    skills: loaded.skills,
     onSkillsChanged: refreshSkills,
     vault: { store: vaultStore, items: await vaultStore.ids() },
     setup: {
@@ -246,9 +257,9 @@ export async function openRuntime(flags: GlobalFlags): Promise<Runtime> {
     // what it says when it is.
     identity: { profile: config.instance.profile, target, entries: config.identity },
   });
-  // Seeded from the build that just happened, so the first refresh compares
-  // against what is registered rather than rebuilding once to find out.
-  fingerprint = await skillFingerprint(skills);
+  // Seeded from the read above, so the first refresh compares against what is
+  // registered rather than rebuilding once to find out.
+  fingerprint = loaded.fingerprint;
 
   // Discovered capabilities never come from a live call on the dispatch path —
   // that is what keeps the server stateless. But "not live" is not the same as
@@ -318,6 +329,7 @@ export async function openRuntime(flags: GlobalFlags): Promise<Runtime> {
     credentials,
     storage,
     skills,
+    ...(knowledge ? { knowledge } : {}),
     vault: vaultStore,
     registry,
     refreshSkills,

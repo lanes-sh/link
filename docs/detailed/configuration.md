@@ -370,6 +370,57 @@ because it writes one to a sibling `<path>.key` at mode 0600 that outlives the p
 has no equivalent, and a key generated per revision would make every stored item permanently
 unreadable while appearing to work. Mint one with `lanes link vault key generate`.
 
+### The knowledge block
+
+Optional, and absent by default. It moves **memory entries and skills** into a GitHub repository,
+reached over the API, and it can move nothing else — runtime state, the audit log, the credential
+store and the vault stay wherever `storage:` and `credentials:` put them.
+
+```yaml
+targets:
+  local:
+    knowledge:
+      adapter: github
+      repo: my-org/my-notes       # owner/name, not a URL
+      branch: main                # optional; the repository's default branch otherwise
+      path: context               # optional prefix, for a repository holding other things
+      token_ref: knowledge/token  # a reference, never the token
+```
+
+The repository then holds two directories — `memory/<connection>/<id>.md` and
+`skills/<name>/SKILL.md`, under `path` if one is given.
+
+You do not write this by hand:
+
+```console
+$ lanes link knowledge use github --repo my-org/my-notes --migrate
+$ lanes link knowledge show
+$ lanes link knowledge use local --migrate     # the same thing backwards
+```
+
+That command asks for the token, refuses a repository the token cannot write, **refuses a public
+one** unless `--allow-public` says otherwise, moves what is already stored in a single commit,
+reads it back before deleting anything, and writes the block into every target the profile
+declares. Each target reads the token from its own credential store, so a second one needs
+`lanes link secrets push --from local --to cloud`.
+
+The token is its own credential and deliberately not the one `lanes link connect github` holds:
+that one needs Contents **read**, this one needs Contents **write**, and revoking either should
+not affect the other.
+
+**What it costs**, in one place, because none of it is a fault:
+
+| | |
+|---|---|
+| Offline | Nothing works. There is no local cache, because a second copy can disagree with the repository. |
+| `memory.search` | Reads every entry by design. The first search after a change fetches what changed; after that they come from a cache keyed by content sha. |
+| Rate limit | GitHub's 5,000/hour becomes one of this endpoint's own failure modes. The branch is polled conditionally and a `304` costs no quota, so an idle endpoint costs nothing. |
+| History | Every write is a commit. That is the feature, and it means deleting an entry does not remove it from the history. |
+| `profile remove` | Does not touch the repository. It plans against the target's declared storage, so memory and skills survive removing the profile — the plan says so before you confirm. |
+
+[ADR-041](adr/041-memory-and-skills-in-a-repository.md) has the reasoning, including why this is
+the API rather than a clone.
+
 ## Environment variables
 
 | | |

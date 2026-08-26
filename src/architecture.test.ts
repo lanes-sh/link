@@ -281,7 +281,31 @@ const MAX_LINES = 400;
  * something that is not a schema appearing beside them; that is the thing to
  * watch for, and it is visible in a diff.
  */
+/**
+ * `cli/main.ts` is the same case as `profile/schema.ts` above, and is exempt for
+ * the same reason rather than as a deferral.
+ *
+ * It is one `switch` and nothing else — its own docstring says so: "the grammar
+ * and nothing else: which word maps to which function". Its length is a count of
+ * *commands*, which is a count of what this tool does, not of what this file is
+ * responsible for. That is the argument this budget already accepts for a test
+ * file two tests down: length that is cases rather than responsibilities, where
+ * splitting scatters a subject.
+ *
+ * And splitting really would. Half a grammar means a reader asking "what does
+ * `lanes link vault set` run" has two files to check and no rule saying which.
+ * Every candidate cut — the owner-layer nouns, the deploy-side ones — is a
+ * grouping this file deliberately does not make, because argv does not make it
+ * either.
+ *
+ * What would earn a split is the thing that is not grammar appearing here: a
+ * command implemented inline rather than dispatched to, or flag handling that
+ * outgrows `argv.ts`. Both are visible in a diff. It crossed the line adding
+ * `knowledge`, which is fourteen lines of the same shape as the twenty-seven
+ * cases around it.
+ */
 const KNOWN_LONG = new Set([
+  'cli/main.ts',
   'connectivity/transports/dav/ical.ts',
   'deployments/adapters/gcp-secret-manager.ts',
   'profile/schema.ts',

@@ -78,6 +78,17 @@ calendar are the next step. **[Full quickstart →](docs/quickstart.md)**
 Memory and skills are plain Markdown files, so a text editor and an agent reach the same bytes. All
 four belong to one profile: what you add under `work` is invisible under `personal`.
 
+Keep those two in a private GitHub repository instead of on this machine, and get history, diffs,
+and the same notes from anywhere you run this:
+
+```console
+$ lanes link knowledge use github --repo <owner/name> --migrate
+```
+
+It moves what you have already stored, in one commit, and `lanes link knowledge use local
+--migrate` brings it back. Nothing else moves — your credentials and your vault stay where they
+are, and there is no setting that would put them in a repository.
+
 ## Connect an account
 
 One command per account. Run it again to add a second mailbox, a second calendar, a second anything.

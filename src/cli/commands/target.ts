@@ -1,3 +1,4 @@
+import { describeKnowledge } from '#deployments/knowledge.ts';
 import {
   loadProfileConfig,
   resolveSelection,
@@ -37,6 +38,15 @@ export interface TargetSummary {
   readonly credentials: string;
   readonly storage: string;
   readonly vault: string;
+  /**
+   * Where memory and skills are kept, when that is not `storage` above.
+   *
+   * Null is the ordinary answer. It is here because a `knowledge:` block moves
+   * two of the four things this target holds, and the config file would
+   * otherwise be the only witness — a `storage: filesystem` row that is true of
+   * the log and the state and false of the owner's own notes.
+   */
+  readonly knowledge: string | null;
   /** Whether a deployment is declared. Free, and always present. */
   readonly deployed: boolean;
   readonly deployment: DeploymentIdentity | null;
@@ -99,6 +109,7 @@ async function survey(
       credentials: declared.credentials.adapter,
       storage: declared.storage.adapter,
       vault: declared.vault?.adapter ?? 'file',
+      knowledge: declared.knowledge ? describeKnowledge(declared.knowledge) : null,
       deployed: declared.deploy !== undefined,
       deployment: deploymentIdentity(declared.deploy),
     };
@@ -258,6 +269,9 @@ export async function targetShow(name: string | undefined, flags: TargetFlags): 
       ['  credentials', summary.credentials],
       ['  storage', summary.storage],
       ['  vault', summary.vault],
+      ...(summary.knowledge
+        ? [['  knowledge', summary.knowledge, style.dim('memory and skills')]]
+        : []),
     ]);
 
     if (!summary.deployment) {

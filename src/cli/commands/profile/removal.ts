@@ -119,6 +119,23 @@ export async function removalPlan(
       continue;
     }
 
+    // A repository this profile keeps memory and skills in is not this
+    // command's to empty, and it is not reachable from here either: the routing
+    // that points memory at a repository is applied by `openRuntime`, and this
+    // plan is built on `openBlobStoreFor`, which opens the target's own declared
+    // storage. That is the right answer — deleting a profile must not delete
+    // somebody's repository — and it is a surprising one, because
+    // `rm -r data/<profile>` used to be the whole of "what could this profile
+    // reach". So it is said before the operator confirms rather than discovered
+    // afterwards.
+    if (declared.knowledge) {
+      warnings.push(
+        `Target "${name}" keeps this profile's memory and skills in ${declared.knowledge.repo}. ` +
+          'Nothing here touches a repository, so they survive this removal — delete them there ' +
+          'if you want them gone.',
+      );
+    }
+
     // Secrets first, and this ordering is load-bearing rather than tidy:
     // `layout.credentials(p)` is `data/<p>/credentials.enc`, *inside* the blob
     // root `data/<p>`. For the file adapter the credential store is itself a
