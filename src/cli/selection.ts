@@ -124,7 +124,7 @@ export const SELECTION: Record<string, Requires> = {
   dashboard: 'profile+target',
   attach: 'profile+target',
   start: 'profile+target',
-  deploy: 'profile+target',
+  deploy: 'target',
   // Both spellings: `sync` alone is `sync targets`, which is the only thing
   // there is to sync, and naming it leaves room for the next one.
   sync: 'target',

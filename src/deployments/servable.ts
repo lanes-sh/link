@@ -42,13 +42,14 @@ export interface Unservable {
  */
 export async function unservableProfiles(input: {
   readonly workspaceRoot: string;
-  readonly profile: string | undefined;
+  readonly profiles: readonly string[] | undefined;
   readonly target: string;
 }): Promise<Unservable[]> {
   const found: Unservable[] = [];
+  const wanted = input.profiles === undefined ? undefined : new Set(input.profiles);
 
   for (const name of await listProfiles(input.workspaceRoot)) {
-    if (input.profile !== undefined && name !== input.profile) continue;
+    if (wanted !== undefined && !wanted.has(name)) continue;
 
     let declared: string[];
     try {

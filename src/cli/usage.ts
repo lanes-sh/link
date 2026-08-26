@@ -94,10 +94,13 @@ ${style.bold('Your own context')}
   ${PROGRAM} vault key generate         a fresh LANES_LINK_VAULT_KEY, printed once
 
 ${style.bold('Deploying')}
-  ${PROGRAM} deploy [--dry-run]         set up, build, and roll a revision
+  ${PROGRAM} deploy --target t [--dry-run]
+                                 set up, build, and roll one revision serving
+                                 every profile that declares the target
+  ${PROGRAM} deploy --target t --profile a --profile b
+                                 only these; the first owns the endpoint token
   ${PROGRAM} deploy --non-interactive   take the stored answers, never prompt
   ${PROGRAM} deploy --access iam|public who gets past the platform's own door
-  ${PROGRAM} deploy --target <name>     deploy a second one, under its own name
   ${PROGRAM} secrets list               credential references in this target
   ${PROGRAM} secrets set <ref>          store one value, read from stdin
   ${PROGRAM} secrets push --from local --to cloud

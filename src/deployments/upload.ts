@@ -64,17 +64,21 @@ export function deployedWorkspace(declared: TargetConfig): string | undefined {
  * prefix: `data/personal/skills.detour/` is not `skills.d`, and the difference
  * between matching it and not is a credential in a bucket.
  */
-export function isWorkspaceConfig(key: string, profile?: string | undefined): boolean {
+export function isWorkspaceConfig(key: string, profiles?: readonly string[]): boolean {
   if (key === WORKSPACE_FILE) return true;
 
-  // One profile when the deploy names one, so a workspace holding personal and
-  // work does not push both into a bucket only one of them is for. The same
-  // question for both shapes, asked once.
+  // A set rather than one name, because a deploy now sends every profile that
+  // declares the target rather than the single one it was told. `undefined`
+  // still means the whole workspace, and an *empty* set means nothing — which
+  // is a distinction a bare string could not make.
+  const wanted = profiles === undefined ? undefined : new Set(profiles);
+
   const owner = authoredAreaOwner(key);
-  if (owner !== null) return profile === undefined || owner === profile;
+  if (owner !== null) return wanted === undefined || wanted.has(owner);
 
   if (!key.startsWith('profiles/') || !key.endsWith('.yaml')) return false;
-  return profile === undefined || key === `profiles/${profile}.yaml`;
+  const name = key.slice('profiles/'.length, -'.yaml'.length);
+  return wanted === undefined || wanted.has(name);
 }
 
 /**
@@ -120,10 +124,12 @@ function authoredAreaOwner(key: string): string | null {
  */
 export async function repairSetupSurface(
   workspaceRoot: string,
-  profile: string | undefined,
+  profiles: readonly string[] | undefined,
 ): Promise<void> {
+  const wanted = profiles === undefined ? undefined : new Set(profiles);
+
   for (const name of await listProfiles(workspaceRoot)) {
-    if (profile !== undefined && name !== profile) continue;
+    if (wanted !== undefined && !wanted.has(name)) continue;
 
     try {
       const document = await ConfigDocument.open(workspaceRoot, name);
@@ -151,14 +157,14 @@ export async function repairSetupSurface(
 export async function uploadWorkspace(
   root: string,
   destination: string,
-  profile: string | undefined,
+  profiles: readonly string[] | undefined,
 ): Promise<void> {
   const local = workspaceFiles(root);
   const remote = workspaceFiles(destination);
 
   let copied = 0;
   for (const entry of await local.list('')) {
-    if (!isWorkspaceConfig(entry.key, profile)) continue;
+    if (!isWorkspaceConfig(entry.key, profiles)) continue;
 
     const bytes = await local.get(entry.key);
     if (bytes === null) continue;
@@ -203,6 +209,6 @@ export async function publishWorkspace(input: {
   const destination = deployedWorkspace(declared);
   if (!destination) return null;
 
-  await uploadWorkspace(input.workspaceRoot, destination, input.profile);
+  await uploadWorkspace(input.workspaceRoot, destination, [input.profile]);
   return destination;
 }

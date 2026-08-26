@@ -311,6 +311,10 @@ export async function run(argv: readonly string[]): Promise<void> {
     case 'deploy':
       return deploy({
         ...global,
+        // Repeatable, like `profile add --target`: a deploy sends every profile
+        // that declares the target, and this narrows that set rather than
+        // selecting from it. The first named is the primary (ADR-040).
+        profiles: all(argv, 'profile'),
         dryRun: flags['dry-run'] === true,
         // `--iam` was a boolean that meant "add the platform's own check on top".
         // It is now one of two values of a declared field, because the opposite
