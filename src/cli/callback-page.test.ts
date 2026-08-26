@@ -63,48 +63,123 @@ describe('the page a browser is handed', () => {
 });
 
 describe('light and dark', () => {
-  test('the page takes the browser colours in both schemes', async () => {
-    // Not a palette assertion: `color-scheme` is what makes the transparent
-    // background render dark on a dark machine, and losing it is how this page
-    // silently became light-only.
+  test('both schemes are defined, and the page paints them', async () => {
+    // This used to assert `background: transparent` — the page left its canvas
+    // to the browser, which is how it survived a year of being dark-only. The
+    // design system names a background per mode instead, so the contract is now
+    // that both are declared and the body actually uses one. `color-scheme`
+    // stays either way: form controls and scrollbars still read it.
     const body = await html(completionPage({ heading: 'Connected', detail: '.', ok: true }));
 
     expect(body).toContain('color-scheme: light dark');
-    expect(body).toContain('background: transparent');
+    expect(body).toContain('--background: #EBEAE7');
+    expect(body).toContain('prefers-color-scheme: dark');
+    expect(body).toContain('--background: #171717');
+    expect(body).toContain('background: var(--background)');
   });
 
-  test('the failure colour is legible against either canvas', async () => {
+  test('the failure colour is the destructive token, which is one value', async () => {
+    // It was `#A06060` lightened to `#C08080` on a dark canvas. The token is a
+    // single value for both, so the second is gone — and a reintroduced pair
+    // would be this page drifting from the system again, which is the whole
+    // failure this file exists to catch.
     const body = await html(completionPage({ heading: 'Failed', detail: '.', ok: false }));
 
-    expect(body).toContain('#A06060'); // on light
-    expect(body).toContain('prefers-color-scheme: dark');
-    expect(body).toContain('#C08080'); // on dark
+    expect(body).toContain('--destructive: #A06060');
+    expect(body).toContain('color: var(--destructive)');
+    expect(body).not.toContain('#C08080');
   });
 
-  test('the success mark is legible against either canvas', async () => {
-    // "Earn your color" — the heading used to be green, which said nothing the
-    // word "Connected" did not, and it is still not green. The check is a
-    // status glyph rather than emphasis, and it needs the same two-value
-    // treatment the failure colour gets: the darker emerald disappears on a
-    // dark canvas.
+  test('the success mark is gold, because gold is the only accent', async () => {
+    // The check used to be emerald, matching the tick the Lanes app puts against
+    // a connected integration. The design system is explicit — "gold for
+    // positive, neutral tokens otherwise" — so the green was the odd one out
+    // rather than the match it was meant to be.
     const body = await html(completionPage({ heading: 'Connected', detail: '.', ok: true }));
 
     expect(body).toContain('class="icon"');
-    expect(body).toContain('#059669'); // on light
-    expect(body).toContain('#34D399'); // on dark
-    expect(body).not.toContain('class="card err"');
+    expect(body).toContain('--accent-gold: #A1845A');
+    expect(body).toContain('.icon { display: block; margin: 0 auto 18px; color: var(--accent-gold); }');
+    expect(body).not.toContain('#059669');
+    expect(body).not.toContain('#34D399');
   });
 
   test('a failure is never marked as a success', async () => {
-    // The check and the red heading are the only two things that distinguish
-    // the outcomes at a glance, so a failure carrying both would be worse than
-    // a failure carrying neither.
+    // The check and the destructive heading are the only two things that
+    // distinguish the outcomes at a glance, so a failure carrying both would be
+    // worse than a failure carrying neither.
     const body = await html(
       completionPage({ heading: 'Authorization failed', detail: '.', ok: false }),
     );
 
-    expect(body).toContain('class="card err"');
+    expect(body).toContain('err');
     expect(body).not.toContain('class="icon"');
+  });
+
+  test('a success carries no error styling', async () => {
+    const body = await html(completionPage({ heading: 'Connected', detail: '.', ok: true }));
+
+    expect(body).toContain('class="card surface"');
+    expect(body).not.toContain('card surface err');
+  });
+});
+
+describe('approving', () => {
+  const page = () =>
+    approvalPage({
+      client: 'Claude',
+      redirectHost: 'claude.ai',
+      fields: {},
+      action: '/authorize',
+      retry: false,
+      target: 'local',
+    });
+
+  test('names the command and nothing around it', async () => {
+    // No lead-in and no full stop: the line is there to be selected and run,
+    // and a trailing period is a character that gets copied with it.
+    const body = await html(page());
+
+    expect(body).toContain('<code>lanes link outputs --show --target local</code>');
+    expect(body).not.toContain('Printed by');
+    expect(body).not.toContain('--target local</code>.');
+  });
+
+  test('the button becomes busy, and stops accepting clicks', async () => {
+    // Approving is a round trip. Until it returns the page looks untouched,
+    // which reads as "nothing happened" — and the second click is the one that
+    // sends a duplicate. Disabling is the half that matters; the spinner says why.
+    const body = await html(page());
+
+    expect(body).toContain("addEventListener('submit'");
+    expect(body).toContain("classList.add('busy')");
+    expect(body).toContain('button.disabled = true');
+    expect(body).toContain('.go.busy::after');
+    expect(body).toContain('animation: spin');
+  });
+
+  test('the spinner is monochrome, because a request in flight is not a verdict', async () => {
+    const body = await html(page());
+
+    expect(body).toContain('border-top-color: var(--foreground)');
+    expect(body).not.toContain('border-top-color: var(--accent-gold)');
+  });
+
+  test('a page with script says so in its policy, and one without does not', () => {
+    // The consent screen is the page that asks for the endpoint token, so the
+    // inline listener it now carries is the one place this widening is spent.
+    const withScript = approvalPage({
+      client: 'C',
+      redirectHost: 'example.com',
+      fields: {},
+      action: '/authorize',
+      retry: false,
+      target: 'local',
+    });
+    const without = completionPage({ heading: 'Connected', detail: '.', ok: true });
+
+    expect(withScript.headers.get('content-security-policy')).toContain("script-src 'unsafe-inline'");
+    expect(without.headers.get('content-security-policy')).not.toContain('script-src');
   });
 });
 

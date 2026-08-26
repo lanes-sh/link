@@ -1,7 +1,7 @@
 import { PROVIDER_MANIFESTS } from '#providers/index.ts';
 import { planAll, type ProviderPlan } from '#providers/setup/plan.ts';
 import { PROVIDER_MARKS } from './provider-marks.ts';
-import { escapeHtml } from './callback-page.ts';
+import { escapeHtml } from './brand.ts';
 import { shell } from './dashboard-shell.ts';
 
 /**
@@ -73,7 +73,7 @@ function commandLine(line: string): string {
   const text = escapeHtml(line);
   return (
     `<div class="cmd"><code>${text}</code>` +
-    `<button class="copy" type="button" data-copy="${text}" aria-label="Copy command">copy</button></div>`
+    `<button class="btn copy" type="button" data-copy="${text}" aria-label="Copy command">copy</button></div>`
   );
 }
 
@@ -90,7 +90,7 @@ function commandLine(line: string): string {
 function copyButton(line: string, label: string): string {
   const text = escapeHtml(line);
   return (
-    `<button class="copy" type="button" data-copy="${text}" title="${text}" ` +
+    `<button class="btn copy" type="button" data-copy="${text}" title="${text}" ` +
     `aria-label="Copy the command that connects ${escapeHtml(label)}">copy</button>`
   );
 }
@@ -120,9 +120,17 @@ function mark(id: string): string {
   return `<span class="glyph letters" aria-hidden="true">${escapeHtml(letters.toUpperCase())}</span>`;
 }
 
-/** `active` is the only good outcome, so it is the only green one. */
+/**
+ * The state, as one of the design system's badge variants.
+ *
+ * "Gold for positive, neutral tokens otherwise" — so `active` is the only gold
+ * one, and `unauthorized` is *neutral* rather than red. It is not an error: the
+ * credential is absent from this target's store, which is a thing to do, and
+ * `--destructive` is reserved for something having gone wrong. `disabled` is
+ * quieter still, being a row that config no longer declares.
+ */
 function statusPill(state: string): string {
-  const kind = state === 'active' ? 'ok' : state === 'disabled' ? 'off' : 'warn';
+  const kind = state === 'active' ? 'positive' : state === 'disabled' ? 'quiet' : 'neutral';
   return `<span class="pill ${kind}">${escapeHtml(state)}</span>`;
 }
 
@@ -227,8 +235,8 @@ function switcher(view: DashboardView): string {
 
   return (
     '<div class="switch">' +
-    `<div class="group"><span class="glabel">profile</span>${profiles}</div>` +
-    `<div class="group"><span class="glabel">target</span>${targets}</div>` +
+    `<div class="group"><span class="eyebrow">profile</span>${profiles}</div>` +
+    `<div class="group"><span class="eyebrow">target</span>${targets}</div>` +
     '</div>'
   );
 }
@@ -238,10 +246,10 @@ export function dashboardPage(view: DashboardView): Response {
 
   const body =
     `<h1>Lanes Link</h1>${switcher(view)}` +
-    `<h2>Connections</h2>${connectionsSection(view)}` +
-    (available ? `<h2>Available</h2><div class="rows">${available}</div>` : '') +
-    (another ? `<h2>Connect another account</h2><div class="rows">${another}</div>` : '') +
-    '<h2>Elsewhere</h2>' +
+    `<h2 class="eyebrow">Connections</h2>${connectionsSection(view)}` +
+    (available ? `<h2 class="eyebrow">Available</h2><div class="rows">${available}</div>` : '') +
+    (another ? `<h2 class="eyebrow">Connect another account</h2><div class="rows">${another}</div>` : '') +
+    '<h2 class="eyebrow">Elsewhere</h2>' +
     '<p class="empty">What is reachable, and what is wrong with it:</p>' +
     commandLine(command(view, 'status')) +
     commandLine(command(view, 'doctor'));
