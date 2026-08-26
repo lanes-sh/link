@@ -110,3 +110,56 @@ export function undeclaredTarget(target: string, config: Config, profile?: strin
 
   return new ConfigError(`Target "${target}" is not declared by ${whose} (have: ${have})`);
 }
+
+/**
+ * The refusal for a target-scoped command that named no target.
+ *
+ * The twin of `noTargetNamed`, for the commands whose subject is the target
+ * rather than one profile's view of it (ADR-040). It lists the target names the
+ * *workspace* declares and who declares each, because the question those
+ * commands are asking is "which endpoint", and a target only one profile knows
+ * about is the answer to a different question than one they all share.
+ *
+ * Naming the profiles is not decoration. A target declared by one profile and
+ * not its sibling is precisely the state that reads as a deployment having
+ * disappeared, and it is invisible from inside either profile alone.
+ */
+export function noTargetInWorkspace(
+  declared: ReadonlyMap<string, readonly string[]>,
+  workspaceRoot: string,
+  env: Record<string, string | undefined> = process.env as Record<string, string | undefined>,
+): ConfigError {
+  if (declared.size === 0) {
+    return new ConfigError(
+      `--target is required, and no profile in ${workspaceRoot} declares one.\n` +
+        '  Create a profile with: lanes link profile add <name> --target local',
+    );
+  }
+
+  const total = new Set(
+    [...declared.values()].flatMap((profiles) => profiles as readonly string[]),
+  ).size;
+
+  const rows = [...declared.entries()]
+    .map(([name, profiles]) => {
+      // "every profile" rather than the list once it is all of them: the list is
+      // there to show a gap, and a complete one shows none.
+      const whose = profiles.length === total ? 'every profile' : profiles.join(', ');
+      return `    ${name}    ${whose}`;
+    })
+    .join('\n');
+
+  const first = [...declared.keys()][0]!;
+  const stale = env[LEGACY_TARGET_ENV];
+
+  return new ConfigError(
+    '--target is required. This command acts on a target, and every profile\n' +
+      'that declares it.\n\n' +
+      `  Targets in ${workspaceRoot}\n${rows}\n` +
+      `\n  e.g. lanes link status --target ${first}` +
+      (stale
+        ? `\n\n  ${LEGACY_TARGET_ENV}=${stale} is set in this shell and is no longer read.\n` +
+          '  Unset it, or pass --target.'
+        : ''),
+  );
+}

@@ -69,9 +69,30 @@ const nowhere = { LANES_LINK_HOME: '/nonexistent-workspace-for-a-test' };
 describe('requiring a selection', () => {
 
   test('refuses a command that names no profile', async () => {
-    await expect(requireSelection('status', undefined, {}, nowhere)).rejects.toThrow(
+    // `connect` acts on one account, so the profile is the subject and there is
+    // nothing to fall back to. `status` used to stand here and no longer can:
+    // its subject is the target (ADR-040).
+    await expect(requireSelection('connect', undefined, {}, nowhere)).rejects.toThrow(
       '--profile is required',
     );
+  });
+
+  test('asks a target-scoped command for a target, and not for a profile', async () => {
+    await expect(requireSelection('status', undefined, {}, nowhere)).rejects.toThrow(
+      '--target is required',
+    );
+    await expect(
+      requireSelection('status', undefined, { target: 'cloud' }, nowhere),
+    ).resolves.toBeUndefined();
+  });
+
+  test('and still accepts --profile there, as a filter', async () => {
+    await expect(
+      requireSelection('status', undefined, { target: 'cloud', profile: 'work' }, nowhere),
+    ).resolves.toBeUndefined();
+    expect(() =>
+      assertKnownFlags('status', undefined, { target: 'cloud', profile: 'work' }),
+    ).not.toThrow();
   });
 
   test('asks target-independent commands for a profile only', async () => {

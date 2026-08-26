@@ -247,3 +247,76 @@ export function workspacePath(workspaceRoot: string, path: string): string {
   }
   return isAbsolute(path) ? path : resolve(workspaceRoot, path);
 }
+
+/**
+ * One profile, loaded, for the commands whose subject is the whole workspace.
+ *
+ * `profilePath` rather than a bare name because a caller reporting on several
+ * profiles at once has nowhere to recompute it from without knowing whether the
+ * root is a bucket.
+ */
+export interface LoadedProfile {
+  readonly profile: string;
+  readonly profilePath: string;
+  readonly config: Config;
+}
+
+/**
+ * Every profile in the workspace, and the ones that would not open.
+ *
+ * **Skipping rather than failing** is the same rule `openReconciled` follows for
+ * a deployed endpoint: a workspace holding one broken profile still has a true
+ * answer to give about the others, and a listing that dies on the first bad file
+ * is one that stops working exactly when it is needed. What it must not do is
+ * skip *silently* — `unreadable` is the half a caller has to print, and the
+ * reason it carries the message rather than the error is that a caller rendering
+ * a table has no use for a stack.
+ */
+export interface WorkspaceProfiles {
+  readonly workspaceRoot: string;
+  readonly loaded: readonly LoadedProfile[];
+  readonly unreadable: readonly { readonly profile: string; readonly reason: string }[];
+}
+
+export async function loadWorkspaceProfiles(workspaceRoot: string): Promise<WorkspaceProfiles> {
+  const loaded: LoadedProfile[] = [];
+  const unreadable: { profile: string; reason: string }[] = [];
+
+  for (const profile of await listProfiles(workspaceRoot)) {
+    try {
+      const { config } = await loadProfileConfig(workspaceRoot, profile);
+      loaded.push({ profile, profilePath: profilePath(workspaceRoot, profile), config });
+    } catch (error) {
+      // First line only: a `ConfigError` from the loader carries every schema
+      // issue on its own line, and a row in a table has room for none of them.
+      const message = error instanceof Error ? error.message : String(error);
+      unreadable.push({ profile, reason: message.split('\n')[0] ?? 'could not be read' });
+    }
+  }
+
+  return { workspaceRoot, loaded, unreadable };
+}
+
+/**
+ * Which profiles declare each target name, across the whole workspace.
+ *
+ * A target is declared per profile and the endpoint serves every profile in the
+ * workspace (ADR-009), so "who has `cloud`" is a question with a list for an
+ * answer rather than a yes or no. The disagreement — one profile declaring it
+ * and its sibling not — is the state that reads as a target having vanished.
+ */
+export function targetsByName(
+  workspace: WorkspaceProfiles,
+): ReadonlyMap<string, readonly string[]> {
+  const byName = new Map<string, string[]>();
+
+  for (const { profile, config } of workspace.loaded) {
+    for (const target of Object.keys(config.targets)) {
+      const profiles = byName.get(target);
+      if (profiles) profiles.push(profile);
+      else byName.set(target, [profile]);
+    }
+  }
+
+  return byName;
+}

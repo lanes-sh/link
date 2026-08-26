@@ -2,9 +2,12 @@ import {
   ConfigError,
   listProfiles,
   loadProfileConfig,
+  loadWorkspaceProfiles,
   noProfileNamed,
+  noTargetInWorkspace,
   noTargetNamed,
   resolveWorkspaceRoot,
+  targetsByName,
 } from '#profile';
 import type { Flags } from './argv.ts';
 
@@ -30,8 +33,15 @@ import type { Flags } from './argv.ts';
  * default to requiring nothing.
  */
 
-/** What a command must be told before it can act. */
-export type Requires = 'none' | 'profile' | 'profile+target';
+/**
+ * What a command must be told before it can act.
+ *
+ * `target` is not a weaker `profile+target`. It says the command's subject *is*
+ * the target, and that the profiles behind it are every profile declaring it
+ * rather than one the operator picks (ADR-040). `--profile` stays accepted
+ * there, as a filter.
+ */
+export type Requires = 'none' | 'profile' | 'target' | 'profile+target';
 
 /**
  * The rule, per command path.
@@ -53,6 +63,13 @@ export type Requires = 'none' | 'profile' | 'profile+target';
  * oversight: it is the command you run to find out what to pass. Requiring the
  * answer as input is circular, and it has to keep working in the state every
  * other command fails in.
+ *
+ * `status`, `deploy` and `sync targets` take `target` rather than
+ * `profile+target`. One deployed endpoint serves every profile in the workspace
+ * (ADR-009), so the profile set behind a target is enumerable from the config
+ * and naming one of them describes a slice, not the subject. That is not the
+ * inference ADR-037 removed: there is nothing to guess at, and nothing is
+ * silently chosen.
  *
  * `profile add` and `profile remove` **reject** `--profile`. Both name their
  * profile positionally, so a flag naming a second one could only disagree with
@@ -98,7 +115,8 @@ export const SELECTION: Record<string, Requires> = {
   secrets: 'profile+target',
   plan: 'profile+target',
   doctor: 'profile+target',
-  status: 'profile+target',
+  // Target-scoped: see the note above. `--profile` narrows each to one profile.
+  status: 'target',
   outputs: 'profile+target',
   tools: 'profile+target',
   // It reads which target it is rendering for before it decides anything: a
@@ -210,6 +228,15 @@ export async function requireSelection(
   const needs = requirementFor(first, second);
   if (needs === 'none') return;
 
+  // Asked before the profile requirement, because for these there is none. The
+  // refusal has to describe the workspace rather than one profile's targets,
+  // since the command was never going to act on only one.
+  if (needs === 'target') {
+    if (typeof flags['target'] === 'string') return;
+    const root = resolveWorkspaceRoot(env ? { env } : {});
+    throw noTargetInWorkspace(targetsByName(await loadWorkspaceProfiles(root)), root, env);
+  }
+
   const profile = flags['profile'];
   if (typeof profile !== 'string') {
     const root = resolveWorkspaceRoot(env ? { env } : {});
@@ -310,8 +337,10 @@ export function assertKnownFlags(first: string, second: string | undefined, flag
   const allowed = new Set<string>([
     ...UNIVERSAL,
     ...(ACCEPTS[key] ?? []),
-    ...(needs === 'profile' || needs === 'profile+target' ? ['profile'] : []),
-    ...(needs === 'profile+target' ? ['target'] : []),
+    // `target` accepts both: the target is what it acts on, and `--profile`
+    // narrows it to one of the profiles behind it.
+    ...(needs !== 'none' ? ['profile'] : []),
+    ...(needs === 'target' || needs === 'profile+target' ? ['target'] : []),
   ]);
 
   const named = [first, second].filter(Boolean).join(' ');

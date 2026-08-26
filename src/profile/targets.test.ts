@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { parseConfig } from './load.ts';
-import { noTargetNamed, requireTarget } from './targets.ts';
+import { noTargetInWorkspace, noTargetNamed, requireTarget } from './targets.ts';
 
 /**
  * Which target a command acts on.
@@ -119,5 +119,58 @@ targets:
     // structurally, on the one command that creates cloud resources.
     expect(requireTarget(twoDeployable, 'staging')).toBe('staging');
     expect(() => requireTarget(twoDeployable, undefined)).toThrow('--target is required');
+  });
+});
+
+/**
+ * The refusal for a target-scoped command, which describes the workspace.
+ *
+ * `noTargetNamed` lists one profile's targets with their adapters, because a
+ * command acting on one profile wants to know which of *its* places to run in.
+ * A target-scoped command is asking something else — which endpoint — and the
+ * useful column there is who declares it (ADR-040).
+ */
+describe('refusing a target-scoped command that named no target', () => {
+  const byName = (entries: Record<string, string[]>): ReadonlyMap<string, readonly string[]> =>
+    new Map(Object.entries(entries));
+
+  test('lists the targets the workspace declares', () => {
+    const message = noTargetInWorkspace(
+      byName({ local: ['personal', 'work'], cloud: ['personal'] }),
+      '/ws',
+      {},
+    ).message;
+
+    expect(message).toContain('--target is required');
+    expect(message).toContain('Targets in /ws');
+    expect(message).toContain('e.g. lanes link status --target local');
+  });
+
+  test('names the profiles only where they are not all of them', () => {
+    // The list is there to show a gap. Printing it when there is none turns the
+    // signal into noise on every well-configured workspace.
+    const message = noTargetInWorkspace(
+      byName({ local: ['personal', 'work'], cloud: ['personal'] }),
+      '/ws',
+      {},
+    ).message;
+
+    expect(message).toContain('local    every profile');
+    expect(message).toContain('cloud    personal');
+  });
+
+  test('says so plainly when no profile declares anything', () => {
+    const message = noTargetInWorkspace(byName({}), '/ws', {}).message;
+
+    expect(message).toContain('no profile in /ws declares one');
+    expect(message).toContain('profile add <name> --target local');
+  });
+
+  test('names a stale LANES_LINK_TARGET, which is no longer read', () => {
+    const message = noTargetInWorkspace(byName({ local: ['personal'] }), '/ws', {
+      LANES_LINK_TARGET: 'cloud',
+    }).message;
+
+    expect(message).toContain('LANES_LINK_TARGET=cloud is set in this shell');
   });
 });
