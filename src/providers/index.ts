@@ -6,6 +6,7 @@ import { github } from './github/index.ts';
 import { drive } from './google/drive/index.ts';
 import { driveMcp } from './google/drive-mcp/index.ts';
 import { gmail } from './google/gmail/index.ts';
+import { gmailImap } from './google/gmail-imap/index.ts';
 import { gmailMcp } from './google/gmail-mcp/index.ts';
 import { sheets } from './google/sheets/index.ts';
 import { tasks } from './google/tasks/index.ts';
@@ -59,6 +60,7 @@ export const PROVIDERS: readonly (ProviderManifest | ProviderDefinition)[] = [
   calendar,
   tasks,
   contacts,
+  gmailImap,
   gmailMcp,
   driveMcp,
   icloudMail,
@@ -87,6 +89,7 @@ export {
   drive,
   driveMcp,
   gmail,
+  gmailImap,
   gmailMcp,
   sheets,
   tasks,

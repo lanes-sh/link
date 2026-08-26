@@ -99,13 +99,15 @@ One command per account. Run it again to add a second mailbox, a second calendar
 | Linear | `lanes link connect linear` |
 | GitHub | `lanes link connect github` |
 | Slack | `lanes link connect slack` |
+| Gmail (IMAP, app password) | `lanes link connect gmail_imap` |
 | Gmail (Google MCP) | `lanes link connect gmail_mcp` |
 | Drive (Google MCP) | `lanes link connect drive_mcp` |
 
 Three things worth knowing up front. `lanes link connect icloud` sets up Mail, Calendar, and
 Contacts together, because one app-specific password covers all three. Google needs no OAuth client
 of your own: `lanes link connect gmail` authorises against the one Lanes operates, so there is no
-Cloud console to visit — add `--own-client` if you would rather register your own. And GitHub and
+Cloud console to visit — and where you would rather nothing expired, it also offers a service
+account key, or an app password over IMAP for a personal account. And GitHub and
 Slack take a token you paste rather than a browser sign-in, because neither will register a client
 for us; for Slack that means creating a Slack app once, which is the one console visit left here.
 

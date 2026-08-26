@@ -86,7 +86,7 @@ const manifest = defineProvider({
     app: GOOGLE_APP,
     scopes: GMAIL_SCOPES,
     ...GOOGLE_OAUTH,
-    assertion: googleServiceAccount('Gmail', GMAIL_SCOPES, 'required', ['gmail.googleapis.com']),
+    assertion: googleServiceAccount('Gmail', GMAIL_SCOPES, 'required', ['gmail.googleapis.com'], 'gmail_imap'),
   },
   // The REST API rather than the MCP server: it answers with the address under
   // scopes we already hold, so labelling a connection costs no extra consent.
