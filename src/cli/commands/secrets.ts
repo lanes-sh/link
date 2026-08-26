@@ -1,7 +1,7 @@
 import { ConfigError } from '#profile';
 import { assertValidSecretRef } from '#secrets';
-import { announce, heading, ok, print, style } from '../output.ts';
-import { openSecretStoreFor, resolveProfile, type GlobalFlags } from '../runtime.ts';
+import { announce, announceProfile, heading, ok, print, style } from '../output.ts';
+import { openSecretStoreFor, resolveProfile, resolveProfileOnly, type GlobalFlags } from '../runtime.ts';
 
 /**
  * `lanes link secrets` — moving credential values between a profile's targets.
@@ -35,11 +35,11 @@ export async function secretsPush(flags: SecretsFlags): Promise<void> {
     throw new ConfigError(`--from and --to are both "${flags.from}"; there is nothing to copy.`);
   }
 
-  const { resolution, config } = await resolveProfile(flags);
-  announce(resolution);
+  const { selection, config } = await resolveProfileOnly(flags);
+  announceProfile(selection);
 
-  const source = await openSecretStoreFor(config, resolution.workspaceRoot, flags.from);
-  const destination = await openSecretStoreFor(config, resolution.workspaceRoot, flags.to);
+  const source = await openSecretStoreFor(config, selection.workspaceRoot, flags.from);
+  const destination = await openSecretStoreFor(config, selection.workspaceRoot, flags.to);
 
   const refs = await source.list();
   if (refs.length === 0) {

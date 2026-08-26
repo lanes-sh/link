@@ -61,11 +61,12 @@ describe('every dispatched command declares what it needs', () => {
   });
 });
 
+// A workspace that does not exist: these assert *which* refusal is reached, and
+// the listings inside it are `#profile`'s to get right — `workspace.test` and
+// `targets.test` cover the wording.
+const nowhere = { LANES_LINK_HOME: '/nonexistent-workspace-for-a-test' };
+
 describe('requiring a selection', () => {
-  // A workspace that does not exist: these assert *which* refusal is reached,
-  // and the listings inside it are `#profile`'s to get right — `workspace.test`
-  // and `targets.test` cover the wording.
-  const nowhere = { LANES_LINK_HOME: '/nonexistent-workspace-for-a-test' };
 
   test('refuses a command that names no profile', async () => {
     await expect(requireSelection('status', undefined, {}, nowhere)).rejects.toThrow(
@@ -163,5 +164,69 @@ describe('refusing a flag the command does not read', () => {
 
   test('but not another command’s', () => {
     expect(() => assertKnownFlags('status', undefined, { 'dry-run': true })).toThrow('Unknown flag');
+  });
+});
+
+/**
+ * That a command the table calls target-independent can actually be run.
+ *
+ * The table said `profile` for five commands and their handlers called
+ * `resolveProfile`, which requires a target — while `assertKnownFlags` refused
+ * `--target` because the table said they did not take one. Every one of them was
+ * unrunnable in both spellings at once:
+ *
+ *     $ lanes link check --profile personal
+ *     error  --target is required.
+ *     $ lanes link check --profile personal --target local
+ *     error  Unknown flag "--target" for "lanes link check".
+ *
+ * A requirement and an allowlist that disagree cannot be caught by testing
+ * either one, which is why this asserts the pair.
+ */
+describe('a target-independent command is runnable in the spelling it demands', () => {
+  const targetIndependent = [
+    ['check', undefined],
+    ['config', 'show'],
+    ['policy', 'list'],
+    ['secrets', 'push'],
+    ['identity', 'list'],
+  ] as const;
+
+  test('the requirement is satisfied by --profile alone', async () => {
+    for (const [first, second] of targetIndependent) {
+      await expect(
+        requireSelection(first, second, { profile: 'work' }, nowhere),
+      ).resolves.toBeUndefined();
+    }
+  });
+
+  test('and --target is refused, rather than being both required and unknown', () => {
+    for (const [first, second] of targetIndependent) {
+      expect(() => assertKnownFlags(first, second, { profile: 'work', target: 'local' })).toThrow(
+        'Unknown flag',
+      );
+    }
+  });
+
+  test('profile remove names its profile positionally, like profile add', async () => {
+    // Both take the name as an argument, so a `--profile` flag could only name a
+    // second one and disagree with it.
+    await expect(requireSelection('profile', 'remove', {}, nowhere)).resolves.toBeUndefined();
+    expect(() => assertKnownFlags('profile', 'remove', { profile: 'work' })).toThrow('Unknown flag');
+  });
+
+  test('profile remove keeps the --target that decommissions one target’s stores', () => {
+    // Documented in `usage.ts` and read by `removalPlan`; it was refused here,
+    // so the flag existed everywhere except where it could be typed.
+    expect(() =>
+      assertKnownFlags('profile', 'remove', { target: 'cloud', 'dry-run': true }),
+    ).not.toThrow();
+  });
+
+  test('the flags a command reads are flags it accepts', () => {
+    // Both were read by the parser and absent from the allowlist, so passing
+    // either was refused on a command documented as taking it.
+    expect(() => assertKnownFlags('memory', 'list', { tag: 'x' })).not.toThrow();
+    expect(() => assertKnownFlags('mcp', 'list', { name: 'x', scope: 'user' })).not.toThrow();
   });
 });

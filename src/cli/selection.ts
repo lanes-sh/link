@@ -54,8 +54,10 @@ export type Requires = 'none' | 'profile' | 'profile+target';
  * answer as input is circular, and it has to keep working in the state every
  * other command fails in.
  *
- * `profile add` **rejects** both. The name is positional, and there is no
- * profile to select before it exists.
+ * `profile add` and `profile remove` **reject** `--profile`. Both name their
+ * profile positionally, so a flag naming a second one could only disagree with
+ * it. `add` has no profile to select before it exists; `remove` takes an
+ * optional `--target` to decommission one target's stores and keep the file.
  */
 export const SELECTION: Record<string, Requires> = {
   help: 'none',
@@ -83,7 +85,7 @@ export const SELECTION: Record<string, Requires> = {
   'target list': 'profile',
   'target show': 'profile',
   'secrets push': 'profile',
-  'profile remove': 'profile',
+  'profile remove': 'none',
   // Target-independent for the same reason `policy list` is: the block is
   // declared once in the YAML and applies to every target the profile has.
   identity: 'profile',
@@ -258,7 +260,11 @@ const ACCEPTS: Record<string, readonly string[]> = {
   ],
   setup: ['id'],
   'profile add': ['target', 'non-interactive'],
-  'profile remove': ['dry-run', 'yes'],
+  // `--target` decommissions one target's stores and leaves the profile file in
+  // place (`removal.ts`). It is documented in `usage.ts` and read by
+  // `removalPlan`, and was refused here — the flag existed everywhere except in
+  // the list that decides whether it may be typed.
+  'profile remove': ['dry-run', 'yes', 'target'],
   'target list': ['urls', 'target'],
   'target show': ['target'],
   'token show': ['show', 'raw'],
@@ -271,13 +277,14 @@ const ACCEPTS: Record<string, readonly string[]> = {
   'mcp stdio': ['only'],
   'mcp add': ['name', 'scope', 'token-env', 'dry-run', 'force', 'no-skill'],
   'mcp skill': ['print', 'force'],
+  'mcp list': ['name', 'scope'],
   dashboard: ['print'],
   skill: ['print', 'force'],
   deploy: ['dry-run', 'iam', 'access', 'service-account', 'tag', 'yes', 'non-interactive'],
   'secrets push': ['from', 'to', 'overwrite', 'dry-run'],
   update: ['check'],
   'identity add': ['note'],
-  memory: ['connection', 'title', 'description', 'file'],
+  memory: ['connection', 'title', 'description', 'file', 'tag'],
   skills: ['connection', 'title', 'description', 'file'],
   vault: ['connection'],
   // `no-migrate` is listed beside `migrate` because they are three states
