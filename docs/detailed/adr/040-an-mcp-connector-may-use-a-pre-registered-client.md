@@ -128,6 +128,17 @@ the kernel then splits connections between the listeners. Recorded rather than g
 relay removed the fixed port and with it the only way two `connect` runs could land on the same
 number. It is a live hazard for anything here that ever pins a port again.
 
+**Three things about Slack that no documentation states, all found by running it.** The Redirect URL
+field refuses a non-HTTPS value, which is what the relay exists for. An app must be separately
+enabled for MCP server access at `/apps/<id>/app-assistant`, or every call fails after a
+*successful* authorisation — the worst place for a switch, because the credential is real and the
+connection looks half-made. And `auth.test`'s `user` is a workspace-scoped handle, which is what
+`identity.qualifier` answers.
+
+The flow in this ADR is verified end to end against real Slack and the deployed broker: consent,
+the relay bounce to a loopback port carried in `state`, the brokered exchange, a workspace-qualified
+account (`ja (QAVE)`), and fifteen capabilities discovered and reachable.
+
 **What this is not.** It is not a claim that DCR is unnecessary. `registration: dynamic` remains the
 best case and the one that costs nothing; this is what to do when a vendor has decided against it.
 Nor does it retire the pasted token: ADR-033's mechanism is what GitHub still uses and what Slack

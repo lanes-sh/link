@@ -90,6 +90,12 @@ and cannot be read back, so `connect` records what it asked for rather than what
 
 ## When it does not work
 
+**"App is not enabled for Slack MCP server access."** Connecting succeeds, a token is stored, and
+then discovery fails with this. It is a per-app switch, separate from scopes and separate from
+distribution, at `https://api.slack.com/apps/<APP_ID>/app-assistant` — the error names the URL.
+Only the owner of the app sees this: on the browser path the app is Lanes' and it is already on.
+Re-run `connect` afterwards; it settles to the same connection and nothing is orphaned.
+
 **"Slack refused the token."** Usually a bot token (`xoxb-`) where the user token (`xoxp-`) belongs,
 a scope missing from **User Token Scopes**, or an app that has been reinstalled since — reinstalling
 mints a new token.
