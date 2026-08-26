@@ -3,6 +3,7 @@ import type { Logger } from '#connectivity';
 import { capabilityIdForToolName } from '#server/mcp';
 import { ATTACHMENTS_PATH, stageAttachment } from './attachments.ts';
 import { allowedHostnamesFor, rebindingRefusal } from './rebinding.ts';
+import { ANY_ORIGIN, corsAware, type CorsPolicy } from './cors.ts';
 import {
   DASHBOARD_PATH,
   dashboardSessions,
@@ -366,17 +367,24 @@ export function serve(options: ServeOptions): RunningServer {
 
   const loopback = isLoopback(host);
   const allowedHostnames = options.allowedHostnames ?? allowedHostnamesFor(host, loopback);
+
+  // Cross-origin access, and its absence, are decided here for the same reason
+  // `allowedHostnames` and `dashboard` are: they are all properties of what this
+  // is bound to. The two are mutually exclusive and the exclusion is the
+  // decision — see `./cors.ts`, and ADR-039.
+  const cors: CorsPolicy | undefined = loopback
+    ? undefined
+    : { allowedOrigins: primary.config.auth.allowed_origins ?? [ANY_ORIGIN] };
   const handler = createRequestHandler({
     ...options,
     dashboard: servesDashboard(options.dashboard, loopback),
     ...(allowedHostnames ? { allowedHostnames } : {}),
   });
 
-  const server = Bun.serve({
-    hostname: host,
-    port,
-    fetch: (request: Request) => handler.fetch(request),
-  });
+  const route = (request: Request): Promise<Response> => handler.fetch(request);
+  const fetch = cors ? corsAware(route, [MCP_PATH, ATTACHMENTS_PATH], cors) : route;
+
+  const server = Bun.serve({ hostname: host, port, fetch });
 
   return {
     url: `http://${host}:${port}${MCP_PATH}`,

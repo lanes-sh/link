@@ -438,6 +438,36 @@ $ curl -s https://…run.app/.well-known/oauth-protected-resource | jq
 $ curl -s https://…run.app/.well-known/oauth-authorization-server | jq
 ```
 
+### Calling it from a browser
+
+Nothing to configure. A deployment answers a cross-origin request from any page, because there is
+nothing for an allowlist to defend: the endpoint is already reachable by anyone, the credential is an
+`Authorization` header a page must already hold rather than a cookie a browser attaches on its own,
+and `Access-Control-Allow-Credentials` is never sent.
+
+To narrow it anyway — an enterprise deployment might — name the origins:
+
+```yaml
+auth:
+  mode: bearer
+  token_ref: profile/token
+  allowed_origins:
+    - https://app.example
+```
+
+An origin exactly: scheme, host, and port, with no trailing slash and no path. A browser sends
+`Origin: https://app.example`, and a configured `https://app.example/` compares unequal and would
+refuse the origin you believed you had allowed — so the config refuses it up front rather than at
+request time. The discovery documents are never narrowed by this; a client that cannot read them
+cannot find out that it needs a token.
+
+Two things it does not do. It grants no capability: what a caller may do once it holds a credential is
+decided by `policy`, per call, exactly as for every other client. And it does nothing at all for
+`lanes link start` — a loopback endpoint refuses every cross-origin request and must keep doing so,
+because a page you happen to be visiting can otherwise reach `127.0.0.1`, including the consent form
+that asks you for your token. The field is read and discarded there. See
+[ADR-039](adr/039-cross-origin-access-is-a-deployment-only-grant.md).
+
 ### Using an identity provider you already run
 
 `mode: oidc` points the same handshake at somebody else's authorization server and reduces this

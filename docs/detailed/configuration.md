@@ -58,6 +58,10 @@ targets:
 auth:
   mode: bearer
   token_ref: profile/token
+  # Browser origins allowed to call /mcp. Absent means "*", so this is only
+  # worth setting to narrow it. Deployment only — a loopback endpoint refuses
+  # every cross-origin request, and this cannot widen that. ADR-039.
+  allowed_origins: ['*']
 
 limits:
   requests_per_minute: 120        # per profile
