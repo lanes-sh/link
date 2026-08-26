@@ -20,7 +20,7 @@ import { buildRegistryWithWorkspace } from '#cli/runtime.ts';
  * The set is derived rather than guessed: it is every profile declaring the
  * target, which is exactly the set the endpoint will try to open. `--profile`
  * narrows it, and naming one is still how a first deploy works, because a
- * target nothing declares has no set to derive (ADR-040).
+ * target nothing declares has no set to derive (ADR-043).
  */
 
 export interface Serving {

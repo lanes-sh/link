@@ -366,7 +366,7 @@ export const configSchema = z.object({
        *
        * A deployment only, and this cannot widen that: a loopback endpoint
        * refuses every cross-origin request and must keep doing so. Why the
-       * default is a wildcard is `src/server/cors.ts` and ADR-040.
+       * default is a wildcard is `src/server/cors.ts` and ADR-039.
        */
       allowed_origins: z.array(browserOrigin).optional(),
     })
@@ -419,7 +419,7 @@ export type { IdentityEntry } from './identity.ts';
  * It lives in `lanes-link.yaml`, outside any profile, for exactly that reason:
  * a record kept inside the thing it describes cannot survive the thing being
  * lost. `lanes link sync targets` reads it, and reads it *only* to know where
- * to look (ADR-041).
+ * to look (ADR-044).
  *
  * Written by `deploy`, after an upload has succeeded — so it never names a
  * workspace nothing was ever put in.

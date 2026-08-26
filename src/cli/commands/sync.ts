@@ -33,7 +33,7 @@ import type { GlobalFlags } from '../runtime.ts';
  * cloud target, `auth.authorization`, and six connections, while the bucket
  * still held every one of them and the service went on answering.
  *
- * Union, and refuse where a union is impossible (ADR-041). Nothing here
+ * Union, and refuse where a union is impossible (ADR-044). Nothing here
  * overwrites a value that exists on both sides — that is `--prefer`, asked for
  * explicitly, because silently choosing one copy over the other is the failure
  * this command was written in response to.

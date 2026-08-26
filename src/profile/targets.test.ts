@@ -128,7 +128,7 @@ targets:
  * `noTargetNamed` lists one profile's targets with their adapters, because a
  * command acting on one profile wants to know which of *its* places to run in.
  * A target-scoped command is asking something else — which endpoint — and the
- * useful column there is who declares it (ADR-040).
+ * useful column there is who declares it (ADR-043).
  */
 describe('refusing a target-scoped command that named no target', () => {
   const byName = (entries: Record<string, string[]>): ReadonlyMap<string, readonly string[]> =>

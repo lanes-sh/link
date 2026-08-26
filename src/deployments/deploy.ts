@@ -48,7 +48,7 @@ export interface DeployFlags extends GlobalFlags {
    * Which profiles to send, narrowing the set the target implies.
    *
    * Repeatable, and absent means every profile declaring the target — the set
-   * the endpoint is going to open either way (ADR-040). The first one named is
+   * the endpoint is going to open either way (ADR-043). The first one named is
    * the primary.
    */
   readonly profiles?: readonly string[] | undefined;
@@ -263,7 +263,7 @@ export async function deploy(flags: DeployFlags): Promise<void> {
     await uploadWorkspace(resolution.workspaceRoot, workspace, serving);
 
     // Recorded once the bucket is known to hold this target's config. It is an
-    // index, not configuration (ADR-041) — the next recovery reads it instead
+    // index, not configuration (ADR-044) — the next recovery reads it instead
     // of asking the platform.
     await recordDeployment(resolution.workspaceRoot, {
       target,

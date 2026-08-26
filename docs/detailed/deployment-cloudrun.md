@@ -122,8 +122,8 @@ policy:
 
 ```console
 $ lanes link deploy --profile personal --target cloud                        # everything, from nothing
-$ lanes link connect gmail --profile personal --target cloud --target cloud  # a browser consent per account
-$ lanes link outputs --profile personal --target cloud --target cloud        # the URL an agent needs
+$ lanes link connect gmail --profile personal --target cloud  # a browser consent per account
+$ lanes link outputs --profile personal --target cloud        # the URL an agent needs
 ```
 
 `connect` publishes the config to the bucket the revision reads and asks the revision to re-read
@@ -135,10 +135,10 @@ it, so it takes effect without a second deploy. Deploy again when the *code* cha
 creates it, and everything downstream takes the same flag:
 
 ```console
-$ lanes link deploy --profile personal --target cloud --target staging       # surveys, writes targets.staging, rolls a revision
+$ lanes link deploy --profile personal --target staging       # surveys, writes targets.staging, rolls a revision
 $ lanes link target list --profile personal                   # what this profile declares, and which is in play
 $ lanes link secrets push --profile personal --from cloud --to staging
-$ lanes link outputs --profile personal --target cloud --target staging
+$ lanes link outputs --profile personal --target staging
 ```
 
 The revision carries its own name — the rollout sets `LANES_LINK_TARGET=<target>` on the service, so
@@ -146,19 +146,20 @@ a `staging` container opens `staging`'s adapters. Give each its own project and 
 intend them to share a credential store; the survey proposes fresh names, so pressing return through
 it is the safe answer.
 
-Once two targets declare a `deploy` block, a bare `lanes link deploy` refuses and asks which you
-meant. Rolling a revision to whichever came first in a YAML mapping is the one answer that cannot be
-right on purpose.
+**`deploy` always names its `--target`** (ADR-037). It used to infer one — the target declaring a
+`deploy` block, inventing `cloud` when there were none — and that inference was a defence against
+`instance.default_target`, which is `local` and by definition not deployed. With the fallback gone
+the defence has nothing to defend against, and what was left was three behaviours from one command
+line on the command that creates cloud resources and rolls a public URL.
 
-**`deploy` needs no `--target` when there is one deployment to mean.** It deploys the target that
-declares one; none means a first run and creates `cloud`; several is a real question it asks rather
-than guesses. It used to be *required*, and the reason was an accident: an absent flag fell back to
-`instance.default_target`, which is `local` — a target that is by definition not deployed.
+**What it does not name is a profile.** A deploy sends every profile declaring the target, in one
+revision, because that is the set the endpoint will open (ADR-009, ADR-041). `--profile` narrows it.
+A first deploy is the exception: a target nothing declares yet has no set to derive, so name the
+profile it belongs to.
 
-You still name one to deploy a second — see [More than one deployment](#more-than-one-deployment).
-`deploy` is also the only command that may name a target which does not exist yet, since creating it
-is what a first deploy is for; that is why it does not read `LANES_LINK_TARGET`, where a typo would
-be surveyed and rolled out rather than refused.
+`deploy` is the only command that may name a target which does not exist yet, since creating it is
+what a first deploy is for — that is also why it does not read `LANES_LINK_TARGET`, where a typo
+would be surveyed and rolled out rather than refused.
 
 `lanes link deploy` runs `check`, asks for anything the config does not say yet and writes the
 answers into your profile, creates the project-level resources on a first run, gets the credential
@@ -242,7 +243,7 @@ in the store is left alone.
 If you would rather do it up front, or copy a setup you already built locally:
 
 ```console
-$ lanes link token rotate --profile personal --target cloud --target cloud            # mints the profile bearer token
+$ lanes link token rotate --profile personal --target cloud            # mints the profile bearer token
 $ lanes link secrets push --profile personal --from local --to cloud   # or copy a setup you built locally
 ```
 
@@ -466,7 +467,7 @@ decided by `policy`, per call, exactly as for every other client. And it does no
 `lanes link start` — a loopback endpoint refuses every cross-origin request and must keep doing so,
 because a page you happen to be visiting can otherwise reach `127.0.0.1`, including the consent form
 that asks you for your token. The field is read and discarded there. See
-[ADR-040](adr/039-cross-origin-access-is-a-deployment-only-grant.md).
+[ADR-039](adr/039-cross-origin-access-is-a-deployment-only-grant.md).
 
 ### Using an identity provider you already run
 

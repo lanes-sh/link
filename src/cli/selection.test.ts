@@ -79,7 +79,7 @@ describe('requiring a selection', () => {
   test('refuses a command that names no profile', async () => {
     // `connect` acts on one account, so the profile is the subject and there is
     // nothing to fall back to. `status` used to stand here and no longer can:
-    // its subject is the target (ADR-040).
+    // its subject is the target (ADR-043).
     await expect(requireSelection('connect', undefined, {}, nowhere)).rejects.toThrow(
       '--profile is required',
     );

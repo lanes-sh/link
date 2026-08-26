@@ -115,7 +115,7 @@ export function undeclaredTarget(target: string, config: Config, profile?: strin
  * The refusal for a target-scoped command that named no target.
  *
  * The twin of `noTargetNamed`, for the commands whose subject is the target
- * rather than one profile's view of it (ADR-040). It lists the target names the
+ * rather than one profile's view of it (ADR-043). It lists the target names the
  * *workspace* declares and who declares each, because the question those
  * commands are asking is "which endpoint", and a target only one profile knows
  * about is the answer to a different question than one they all share.

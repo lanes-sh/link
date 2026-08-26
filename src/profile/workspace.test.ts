@@ -116,7 +116,7 @@ describe('profile listing', () => {
  * Reading the whole workspace, for the commands whose subject is the target.
  *
  * A target is declared per profile and the endpoint serves every profile
- * (ADR-009, ADR-040), so "which profiles have `cloud`" is the question these
+ * (ADR-009, ADR-043), so "which profiles have `cloud`" is the question these
  * answer — and the interesting answer is "not all of them", which is what a
  * deployment looks like after the only file naming it was rewritten.
  */

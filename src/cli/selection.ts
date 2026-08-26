@@ -38,7 +38,7 @@ import type { Flags } from './argv.ts';
  *
  * `target` is not a weaker `profile+target`. It says the command's subject *is*
  * the target, and that the profiles behind it are every profile declaring it
- * rather than one the operator picks (ADR-040). `--profile` stays accepted
+ * rather than one the operator picks (ADR-043). `--profile` stays accepted
  * there, as a filter.
  */
 export type Requires = 'none' | 'profile' | 'target' | 'profile+target';

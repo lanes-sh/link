@@ -371,7 +371,7 @@ export function serve(options: ServeOptions): RunningServer {
   // Cross-origin access, and its absence, are decided here for the same reason
   // `allowedHostnames` and `dashboard` are: they are all properties of what this
   // is bound to. The two are mutually exclusive and the exclusion is the
-  // decision — see `./cors.ts`, and ADR-040.
+  // decision — see `./cors.ts`, and ADR-039.
   const cors: CorsPolicy | undefined = loopback
     ? undefined
     : { allowedOrigins: primary.config.auth.allowed_origins ?? [ANY_ORIGIN] };

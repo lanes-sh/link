@@ -138,7 +138,7 @@ export async function status(flags: StatusFlags): Promise<void> {
  * `lanes link status --target <t>` — the whole workspace at one target.
  *
  * The default, because the subject of this command is the endpoint and one
- * endpoint serves every profile in the workspace (ADR-009, ADR-040). Naming a
+ * endpoint serves every profile in the workspace (ADR-009, ADR-043). Naming a
  * profile narrows it to the detailed view above; naming none is not a missing
  * answer, it is the wider one.
  *

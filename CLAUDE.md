@@ -25,8 +25,9 @@ attributable.
 `resolveWorkspaceRoot` (`src/profile/workspace.ts`) checks `LANES_LINK_HOME`, then
 walks ancestors for `lanes-link.yaml`, then falls back to `~/.lanes-link`. A worktree has neither
 of the first two — so a verification command run from one writes into the operator's real
-workspace, which holds their live profiles, credentials, state, and audit log. `lanes link profile add
---default` will silently repoint every other command they run.
+workspace, which holds their live profiles, credentials, state, and audit log. Worse than reading
+it: `lanes link deploy` and `lanes link sync targets` both *write* there — one uploads config to a
+bucket and records the deployment, the other merges a remote copy into their profiles.
 
 ```console
 $ export LANES_LINK_HOME=/tmp/lanes-link-scratch
@@ -69,6 +70,12 @@ One package, one `src/`, thirteen components. Cross-component imports go through
 package.json `imports` map: `#policy`, `#stores/state`, `#providers/google/gmail`. There
 are no workspace packages and no `apps/` or `packages/` — see the layout table in
 [`docs/detailed/architecture.md`](docs/detailed/architecture.md).
+
+A command whose subject is the *endpoint* — `status`, `deploy`, `sync targets` — names a
+`--target` and acts on every profile declaring it; `--profile` narrows that set rather than
+selecting it (ADR-043). Everything acting on one account still names both. The table in
+`src/cli/selection.ts` is the whole rule, and `selection.test.ts` reads the dispatch files to
+check a new command cannot be added without appearing in it.
 
 `src/architecture.test.ts` asserts the four rules the layout expresses: dependency
 direction between components, no vendor name in the code a request passes through, a

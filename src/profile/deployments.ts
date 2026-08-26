@@ -17,7 +17,7 @@ import { WORKSPACE_FILE, readWorkspace } from './workspace.ts';
  * `lanes-link.yaml`. `sync targets` reads it to know which bucket to open, and
  * nothing else reads it at all — an index that starts being resolved from is a
  * second source of truth, which is the failure ADR-037 spent a release
- * removing (ADR-041).
+ * removing (ADR-044).
  */
 
 /** Every deployment the workspace has recorded. Empty for a workspace with none. */
