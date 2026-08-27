@@ -55,7 +55,11 @@ function promptsFor(answers: CustomAnswers): Record<string, unknown>[] {
     return [{ key: 'token', label: `${name} API token`, secret: true, ...PER_ACCOUNT }];
   }
 
-  if (auth === 'api-key' || auth === 'header') {
+  if (auth === 'api-key' || auth === 'header' || auth === 'strategy') {
+    // A strategy negotiates rather than just attaching, but what it starts from
+    // is still one secret the operator holds — bunq's handshake begins with an
+    // API key pasted from the app. If a strategy needs something else, the
+    // manifest is a file and this is one line of it.
     return [{ key: 'api_key', label: `${name} API key`, secret: true, ...PER_ACCOUNT }];
   }
 

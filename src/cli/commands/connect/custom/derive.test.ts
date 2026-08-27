@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { parseManifest } from '#providers/custom/index.ts';
+import { strategyFor } from '#connectivity';
+import { buildRegistry } from '../../../runtime/registry.ts';
 import { deriveDeclaration, deriveManifest, parseAuthMethod, parseConnectorKind } from './derive.ts';
 import { renderManifest } from './write.ts';
 import {
@@ -34,6 +36,7 @@ const REQUIRED: Record<ConnectorKind, Record<string, string | readonly string[]>
 const AUTH_REQUIRED: Partial<Record<AuthMethod, Record<string, string | readonly string[]>>> = {
   header: { 'auth-header': 'X-Api-Key' },
   oauth: { scopes: ['read'] },
+  strategy: { strategy: 'handshake' },
 };
 
 function answers(
@@ -61,6 +64,7 @@ const LEGAL: ReadonlyArray<[ConnectorKind, AuthMethod]> = [
   ['http', 'header'],
   ['http', 'basic'],
   ['http', 'oauth'],
+  ['http', 'strategy'],
   ['imap', 'basic'],
   ['dav', 'basic'],
   ['fs', 'none'],
@@ -141,18 +145,93 @@ describe('a pairing the transport cannot carry', () => {
   });
 });
 
-describe('the two union members an operator cannot use', () => {
+describe('the one union member an operator cannot use', () => {
   test('local is ours, and says so', () => {
     expect(() => parseConnectorKind('local')).toThrow(/compiled into this build/);
-  });
-
-  test('strategy would authorise and then fail on every call', () => {
-    expect(() => parseAuthMethod('strategy')).toThrow(/fail on every call/);
   });
 
   test('and an unknown name lists what there is', () => {
     expect(() => parseConnectorKind('graphql')).toThrow(/mcp, http, imap, dav, fs/);
     expect(() => parseAuthMethod('sigv4')).toThrow(/none, bearer, api-key, header, basic, oauth/);
+  });
+});
+
+describe('an auth strategy', () => {
+  /**
+   * A strategy names code that travels on a provider's definition, so a
+   * declaration-only manifest reaches one by name — which is the only way to
+   * point a connection at a vendor's sandbox, since a built-in manifest's
+   * `options` are not the operator's to edit (ADR-046).
+   */
+  test('is named, and its options are passed through untouched', () => {
+    const manifest = deriveManifest(
+      answers('http', 'strategy', { 'strategy-option': ['environment=sandbox', 'retries=2'] }),
+    );
+
+    expect(manifest.auth).toMatchObject({
+      kind: 'strategy',
+      strategy: 'handshake',
+      options: { environment: 'sandbox', retries: '2' },
+    });
+  });
+
+  test('whether the name resolves is the registry\'s answer, not this file\'s', () => {
+    // Deliberately not validated here. `strategyFor` looks at this manifest's own
+    // definition and then at every registered provider's, and `refuseStrategy`
+    // is what says a name reaches nothing — this file has no registry to ask.
+    expect(() => deriveManifest(answers('http', 'strategy', { strategy: 'nothing_supplies_this' })))
+      .not.toThrow();
+  });
+
+  test('still asks for the secret the handshake starts from', () => {
+    // `ensureStaticCredential` throws for any credential that is asked for and
+    // finds no per-connection prompt, and a strategy is asked for.
+    const prompts = deriveManifest(answers('http', 'strategy')).setup?.prompts ?? [];
+
+    expect(prompts.map((p) => [p.key, p.secret, p.scope])).toEqual([['api_key', true, 'connection']]);
+  });
+
+  test('and it only works over a connector that makes a request to sign', () => {
+    for (const connector of ['mcp', 'imap', 'dav', 'fs'] as const) {
+      expect(() => deriveManifest(answers(connector, 'strategy'))).toThrow();
+    }
+  });
+
+  test('an option that is not one says what one looks like', () => {
+    expect(() =>
+      deriveManifest(answers('http', 'strategy', { 'strategy-option': ['nonsense'] })),
+    ).toThrow(/Write it as "key=value"/);
+  });
+
+  /**
+   * That a manifest this command writes actually reaches the code it names.
+   *
+   * Deriving `auth: { kind: strategy, strategy: x }` is worth nothing if the
+   * declaration-only path cannot resolve `x` — and that path exists precisely
+   * for a workspace YAML, which has no `ProviderDefinition` of its own. Asserted
+   * against the real `strategyFor` and a real registry rather than against the
+   * shape of the auth block.
+   */
+  test('and the manifest reaches a strategy a built-in supplies', () => {
+    const registry = buildRegistry();
+    const supplied = registry
+      .list()
+      .map((entry) => entry.definition?.authStrategy?.id)
+      .find((id): id is string => typeof id === 'string');
+
+    // If nothing in this build carries one, there is nothing to borrow and the
+    // rest of this test would assert its own premise.
+    expect(supplied).toBeString();
+
+    const manifest = deriveManifest(answers('http', 'strategy', { strategy: supplied! }));
+
+    expect(strategyFor(manifest, registry).id).toBe(supplied!);
+  });
+
+  test('while a name nothing supplies is refused by the registry, not by the schema', () => {
+    const manifest = deriveManifest(answers('http', 'strategy', { strategy: 'nothing_supplies_this' }));
+
+    expect(() => strategyFor(manifest, buildRegistry())).toThrow(/not registered/);
   });
 });
 
@@ -290,6 +369,28 @@ describe('what the manifest carries without being asked', () => {
     );
 
     expect(manifest.setup?.steps.join(' ')).toMatch(/--redirect-uri/);
+  });
+
+  test('extra authorization parameters are passed through', () => {
+    // The difference between a connection that refreshes and one that works for
+    // an hour: Google needs `access_type=offline`, and nothing but a vendor's own
+    // docs says whether they do too.
+    const manifest = deriveManifest(
+      answers('http', 'oauth', {
+        ...endpoints,
+        'authorize-param': ['access_type=offline', 'prompt=consent'],
+      }),
+    );
+
+    expect(manifest.auth).toMatchObject({
+      authorize_params: { access_type: 'offline', prompt: 'consent' },
+    });
+  });
+
+  test('and one that is not a parameter names the flag it came from', () => {
+    expect(() =>
+      deriveManifest(answers('http', 'oauth', { ...endpoints, 'authorize-param': ['nope'] })),
+    ).toThrow(/--authorize-param "nope"/);
   });
 
   test('a fixed redirect is written when it is given', () => {

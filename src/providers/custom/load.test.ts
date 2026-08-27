@@ -87,29 +87,29 @@ setup:
   });
 
   /**
-   * This used to assert that a strategy manifest *parses*, which it did — and
-   * that turned out to be the wrong bar. Nothing is registered behind a
-   * strategy, so the manifest validated, the connection authorised, the
-   * capabilities were discovered and granted, and then every call threw. Being
-   * expressible in YAML is worth nothing if the thing expressed cannot run;
-   * `defineProvider` refuses it now, where every other unusable pairing is
-   * refused. The day a strategy is implemented, this asserts the opposite.
+   * A strategy names code, and a declaration-only manifest is the case
+   * `strategyFor` added the borrowing path for: a YAML file has no definition of
+   * its own, so it reaches a registered provider's strategy by name. Which is
+   * also the only way to point a connection at a vendor's sandbox, since a
+   * built-in manifest's `options` are not the operator's to edit.
+   *
+   * Whether the name resolves is not a question this schema can answer — the
+   * registry knows, and `refuseStrategy` is what says so.
    */
-  test('a pluggable auth strategy is refused until one is implemented', () => {
-    const manifest = `
-id: thing
-name: Thing
+  test('a pluggable auth strategy is expressible in YAML', () => {
+    const manifest = parseManifest(`
+id: thing_sandbox
+name: Thing Sandbox
 connector:
   kind: http
-  base_url: https://api.example.com/v1
+  base_url: https://public-api.sandbox.example.com/v1
   openapi: ./thing.json
 auth:
   kind: strategy
-  strategy: handshake
-  credential_ref: thing/api_key
-`;
+  strategy: thing
+`);
 
-    expect(() => parseManifest(manifest)).toThrow(/strategy "handshake" is not registered/);
+    expect(manifest.auth).toMatchObject({ kind: 'strategy', strategy: 'thing' });
   });
 });
 

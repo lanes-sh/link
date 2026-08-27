@@ -8,11 +8,16 @@
  * decides anything — `derive.ts` builds the manifest and `defineProvider` has
  * the final word, exactly as it does for a hand-written file.
  *
- * Two members of each union are deliberately absent. `local` means the
- * capability code is *ours*, compiled into this build, so there is nothing for a
- * manifest to point at. `strategy` is per-vendor code and none is registered.
- * Both are refused by name below rather than omitted in silence, because an
- * operator reading the schema will find them and ask.
+ * One member is deliberately absent. `local` means the capability code is
+ * *ours*, compiled into this build, so there is nothing for a manifest to point
+ * at — refused by name rather than omitted in silence, because an operator
+ * reading the schema will find it and ask.
+ *
+ * `strategy` *is* offered, and naming one is a large part of what a declaration
+ * is for. A strategy travels on a provider's definition rather than in a global
+ * registry, so a YAML manifest reaches one by name — which is the only way to
+ * point a connection at a vendor's sandbox, since a built-in manifest's
+ * `options` are not the operator's to edit. See ADR-046.
  */
 
 /** Reachable by declaring one. `local` is ours; see the note above. */
@@ -26,7 +31,15 @@ export type ConnectorKind = (typeof CONNECTOR_KINDS)[number];
  * it `api-key` because every other flag in this CLI is kebab-case. One place
  * knows both.
  */
-export const AUTH_METHODS = ['none', 'bearer', 'api-key', 'header', 'basic', 'oauth'] as const;
+export const AUTH_METHODS = [
+  'none',
+  'bearer',
+  'api-key',
+  'header',
+  'basic',
+  'oauth',
+  'strategy',
+] as const;
 export type AuthMethod = (typeof AUTH_METHODS)[number];
 
 export const AUTH_KIND: Record<AuthMethod, string> = {
@@ -36,6 +49,7 @@ export const AUTH_KIND: Record<AuthMethod, string> = {
   header: 'header',
   basic: 'basic',
   oauth: 'oauth',
+  strategy: 'strategy',
 };
 
 /**
@@ -157,12 +171,32 @@ export const AUTH_FIELDS: Record<AuthMethod, readonly FieldSpec[]> = {
     { flag: 'auth-header', label: 'Header name', required: true, hint: 'The header the value is sent in, verbatim' },
   ],
   basic: [],
+  strategy: [
+    {
+      flag: 'strategy',
+      label: 'Strategy name',
+      required: true,
+      hint: 'The name a provider in this build supplies, e.g. bunq',
+    },
+    {
+      flag: 'strategy-option',
+      label: 'Strategy option',
+      required: false,
+      hint: 'key=value, repeatable. Read by the strategy itself',
+    },
+  ],
   oauth: [
     { flag: 'scopes', label: 'Scopes', required: true, hint: 'What to ask the authorization server for' },
     { flag: 'authorize-url', label: 'Authorize URL', required: false, hint: 'Required for an http connector; discovered for mcp' },
     { flag: 'token-url', label: 'Token URL', required: false, hint: 'Declared with authorize-url or not at all' },
     { flag: 'client-app', label: 'OAuth app name', required: false, hint: 'Which oauth_apps entry holds the client. Defaults to the provider id' },
     { flag: 'registration', label: 'Registration', required: false, choices: ['dynamic', 'manual'] },
+    {
+      flag: 'authorize-param',
+      label: 'Extra authorization parameter',
+      required: false,
+      hint: 'key=value, repeatable. Some vendors need one to issue a refresh token at all',
+    },
     {
       flag: 'redirect-uri',
       label: 'Redirect URI',
@@ -224,6 +258,9 @@ export interface CustomFlags {
   readonly clientApp?: string | undefined;
   readonly registration?: string | undefined;
   readonly redirectUri?: string | undefined;
+  readonly authorizeParam?: readonly string[] | undefined;
+  readonly strategy?: string | undefined;
+  readonly strategyOption?: readonly string[] | undefined;
   readonly identityUrl?: string | undefined;
   readonly identityField?: string | undefined;
   readonly setupDocs?: string | undefined;

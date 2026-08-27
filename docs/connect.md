@@ -187,7 +187,7 @@ $ lanes link connect custom thing --connector http --auth api-key --auth-header 
 ```
 
 `--connector` is `mcp`, `http`, `imap`, `dav` or `fs`; `--auth` is `none`, `bearer`, `api-key`,
-`header`, `basic` or `oauth`. Leave out a value it needs and it asks. What it writes is a
+`header`, `basic`, `oauth` or `strategy`. Leave out a value it needs and it asks. What it writes is a
 fifteen-line YAML manifest in `~/.lanes-link/data/<profile>/providers.d/` — the same declaration a
 built-in is, and yours to edit from there.
 

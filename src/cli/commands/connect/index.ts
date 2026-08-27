@@ -4,7 +4,8 @@ import { ensureSetupConnection, repaired } from '../../config-repair.ts';
 import { emit, print } from '../../output.ts';
 import { nonInteractivePrompter, terminalPrompter, type Prompter } from '../../prompt.ts';
 import { openRuntime, type GlobalFlags } from '../../runtime.ts';
-import { matchesRule, moveCredential, siblingAccountId } from './accounts.ts';
+import { moveCredential, siblingAccountId } from './accounts.ts';
+import { grantProvider } from './grant.ts';
 import { discoverCapabilities } from './discover.ts';
 import { connectFamily, familyMembers } from './family.ts';
 import { authoriseWithKey } from './assertion.ts';
@@ -330,20 +331,8 @@ export async function runConnect(
       changes.push(`re-authorised ${connectionKey}${method.id ? ` with ${method.id}` : ''}`);
     }
 
-    // 5. Grant it.
-    //
-    //    One rule per provider, not one per capability. The pinned-per-tool
-    //    form this replaced was 85 lines for four providers and unreadable, and
-    //    what it bought — a vendor cannot widen your policy by shipping a new
-    //    tool — is preserved instead by `doctor`, which reports capabilities
-    //    that appeared after you connected.
-    const granted: string[] = [];
-    const rule = `${providerId}.*`;
-
-    if (!runtime.config.policy.allow.some((existing) => matchesRule(existing.capability, rule))) {
-      document.addTo(['policy', 'allow'], rule, { inline: true });
-      granted.push(rule);
-    }
+    // 5. Grant it — one rule per provider; `grant.ts` says why not per capability.
+    const granted = grantProvider(document, runtime.config.policy.allow, providerId);
 
     // 6. Repair the setup surface if this profile predates it.
     //

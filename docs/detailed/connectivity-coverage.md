@@ -19,7 +19,7 @@ Four states, not two:
 |---|---|
 | **works** | Expressible in a manifest today. **Proven by** names a built-in that exercises it; blank means legal and unexercised — nothing refuses it, and the first operator to declare it is the test. |
 | **closed** | `defineProvider` refuses it, on purpose. The rule is in [Why a cell is closed](#why-a-cell-is-closed). |
-| **not built** | Nothing refuses it in principle. No code exists. |
+| **not built** | Nothing refuses it in principle. No code exists. No cell is in this state today — it is what the gaps in the second half are. |
 | **n/a** | Not a combination to build. |
 
 One thing the union's shape hides: **`auth.assertion` is not a `kind`.** RFC 7523 — sign a JWT with
@@ -34,24 +34,26 @@ So it is a column here, not a row. Which arrangement a connection actually uses 
 
 ## The matrix
 
-| connector | none | oauth | bearer | api_key | header | basic | oauth + assertion |
-|---|---|---|---|---|---|---|---|
-| **mcp** | works | works — `notion`, `linear`, `slack`, `gmail_mcp`, `drive_mcp` | works — `github` | closed **R7** | closed **R7** | closed **R7** | closed **R4** |
-| **http** | works | works — `gmail`, `drive`, `sheets`, `docs`, `calendar`, `tasks`, `contacts`, `reddit` | works | works | works | works | works — the seven Google providers, via a service-account key |
-| **imap** | closed **R5** | closed **R5** | closed **R5** | closed **R5** | closed **R5** | works — `icloud_mail`, `gmail_imap` | n/a |
-| **dav** | closed **R5** | closed **R5** | closed **R5** | closed **R5** | closed **R5** | works — `icloud_calendar`, `icloud_contacts` | n/a |
-| **fs** | works — `icloud_drive` | closed **R6** | closed **R6** | closed **R6** | closed **R6** | closed **R6** | n/a |
-| **local** | works — the owner layer, `example` | closed **R6** | closed **R6** | closed **R6** | closed **R6** | closed **R6** | n/a |
+| connector | none | oauth | bearer | api_key | header | basic | strategy | oauth + assertion |
+|---|---|---|---|---|---|---|---|---|
+| **mcp** | works | works — `notion`, `linear`, `slack`, `gmail_mcp`, `drive_mcp` | works — `github` | closed **R7** | closed **R7** | closed **R7** | closed **R7** | closed **R4** |
+| **http** | works | works — `gmail`, `drive`, `sheets`, `docs`, `calendar`, `tasks`, `contacts`, `reddit` | works | works | works — `discord` | works | works — `bunq` | works — the seven Google providers, via a service-account key |
+| **imap** | closed **R5** | closed **R5** | closed **R5** | closed **R5** | closed **R5** | works — `icloud_mail`, `gmail_imap` | closed **R5** | n/a |
+| **dav** | closed **R5** | closed **R5** | closed **R5** | closed **R5** | closed **R5** | works — `icloud_calendar`, `icloud_contacts` | closed **R5** | n/a |
+| **fs** | works — `icloud_drive` | closed **R6** | closed **R6** | closed **R6** | closed **R6** | closed **R6** | closed **R6** | n/a |
+| **local** | works — the owner layer, `example` | closed **R6** | closed **R6** | closed **R6** | closed **R6** | closed **R6** | closed **R6** | n/a |
 
-`strategy` has a column of its own in the schema and none here: it is refused for every connector
-(**R1**), because nothing implements one.
+Three readings worth stating plainly.
 
-Two readings worth stating plainly.
+**`http` is the row where the open cells are.** All eight of them are open, and it is where every
+custom provider that is not an MCP server or a mailbox will land. Four are unexercised, which is a
+gap in *evidence* rather than in the schema — and the one `connect custom` starts closing, which is
+why the round-trip test over every legal pair matters more than it looks.
 
-**`http` is the only row with open cells that nothing proves.** Six of its seven are legal and
-unexercised, and it is where every custom provider that is not an MCP server or a mailbox will land.
-That is a gap in *evidence*, not in the schema, and it is the one `connect custom` starts closing —
-which is also why the round-trip test over all twelve legal pairs matters more than it looks.
+**`strategy` is only open on `http`, and that follows from what a strategy is.** It signs or
+negotiates an HTTP request, so it needs a request to sign: `mcp` sends exactly one header and
+permits only three credential types (R7), `imap` and `dav` authenticate with a password (R5), and
+`fs` makes no request at all (R6). `connect custom` refuses the other four by name.
 
 **R5 is the only closure with an expiry date.** Its stated reason is that OAuth for mail and DAV is
 partner-gated with no published scopes. That is a fact about 2025, not about IMAP. When a vendor
@@ -67,7 +69,6 @@ because the alternative validates and then does not work.
 
 | | Rule | What it closes |
 |---|---|---|
-| **R1** | `strategy` is refused while none is registered | the whole `strategy` column. `refuseStrategy` throws, but at *dispatch* — so the manifest validated, the connection authorised, the capabilities were discovered and granted, and every call failed. Moved to where the other unusable pairings are caught. |
 | **R2** | `oauth` + `registration: manual` needs an `app`, and needs either a `broker` or setup prompts | a manual client with nowhere to come from. "Otherwise there is no way to learn what to provide." |
 | **R3** | a `broker` needs `manual`, an `app`, and an `authorize_url` — plus a `token_url` on `mcp`, and never a `redirect_uri` | an exchange with nowhere to route. On `mcp` the SDK owns the flow and "has nowhere to route an exchange somebody else performs" (ADR-040). |
 | **R4** | `mcp` + `assertion` is refused | the assertion column for `mcp`. "The SDK owns an mcp provider's exchange and takes a client, not a signed assertion — so the choice would be offered, accepted, and then have nowhere to go." |
@@ -78,6 +79,15 @@ because the alternative validates and then does not work.
 | **R9** | a token credential may not declare both `app` and `credential_ref` | one secret per account across a vendor versus one across every account. "Pick the one that is true." |
 | **R10** | a `shared` prompt must name a ref; a `connection` prompt must not | a ref that "would name a connection that does not exist yet". |
 | **R11** | `basic` needs exactly one `username` prompt and one `password` | `basic` stores `username:password` and cannot be assembled from anything else. |
+
+There is no rule refusing `strategy` itself, and there was briefly one here that should not have
+been. A strategy names code, and whether a name reaches any is the *registry's* question rather than
+the schema's — `strategyFor` looks at the manifest's own definition and then at every other
+registered provider's, and `refuseStrategy` is what says a name reaches nothing. That indirection is
+the point: it is what lets a declaration-only manifest in `providers.d/` borrow a registered
+strategy by name, which is the only way to point a connection at a vendor's sandbox, since a
+built-in manifest's `options` are not the operator's to edit
+([ADR-046](adr/046-an-auth-strategy-belongs-to-its-provider.md)).
 
 `connect custom` refuses R4–R7 in its own words before writing anything, naming the alternative
 rather than the rule. The rule fires regardless a moment later; the sentence is the part somebody
@@ -106,6 +116,14 @@ rather than to the manifest", because IMAP describes its extensions and never it
 Each gap ends with a cost, in one of four sizes: **schema only** · **a folder, a schema member and a
 resolve case** (the unit `connectivity/auth/README.md` claims for itself) · **a change to a
 transport or to dispatch** · **a whole transport**.
+
+One thing to read the auth gaps against first. Now that the strategy seam is real, several of them
+have a *second* answer that costs nothing here: a folder under `providers/` and a line in that
+provider's index. `sigv4` is the clearest case — request signing over a keypair the operator holds is
+exactly the shape `providers/bunq/strategy/` already is. A strategy is the right home when the
+arrangement belongs to *one vendor*, and a `kind` is the right home when it is a standard several
+vendors implement the same way, because only then does a shared implementation have anything to
+share. Client credentials below is a standard; SigV4 is one vendor's.
 
 ### OAuth 2.0 client credentials
 

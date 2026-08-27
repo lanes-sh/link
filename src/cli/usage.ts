@@ -143,7 +143,7 @@ ${style.bold('Other flags')}
                                  only). "oauth" is the browser; the other is named
                                  in the choice connect prints. On connect custom it
                                  names the credential type instead: none, bearer,
-                                 api-key, header, basic, oauth
+                                 api-key, header, basic, oauth, strategy
   --replace-manifest             rewrite a declaration that already exists and differs
                                  (connect custom only — --replace is about the credential)
   --port <n>                     override the configured port (start only)

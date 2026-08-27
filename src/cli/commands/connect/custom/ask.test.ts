@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Prompter } from '../../../prompt.ts';
 import { collect } from './ask.ts';
-import type { CustomFlags } from './spec.ts';
+import { AUTH_METHODS, CONNECTOR_KINDS, type CustomFlags } from './spec.ts';
 
 /**
  * That every value has a flag *and* a question, and that a run with nobody to
@@ -58,8 +58,10 @@ describe('what the flags did not say is asked for', () => {
     const result = await gather({}, prompter);
 
     expect('missing' in result).toBe(false);
-    expect(prompter.asked[0]).toMatch(/Choose 1-5/);
-    expect(prompter.asked[1]).toMatch(/Choose 1-6/);
+    // Counted from the lists rather than written down: a member landing in
+    // either union is not a reason for this test to fail.
+    expect(prompter.asked[0]).toBe(`Choose 1-${CONNECTOR_KINDS.length}:`);
+    expect(prompter.asked[1]).toBe(`Choose 1-${AUTH_METHODS.length}:`);
     expect(prompter.asked.slice(2, 4)).toEqual(['Base URL:', 'OpenAPI document:']);
   });
 

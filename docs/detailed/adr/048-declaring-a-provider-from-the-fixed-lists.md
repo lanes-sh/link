@@ -34,11 +34,21 @@ reachable.
 composing the two closed unions a provider is made of, writes the manifest, and connects it.**
 
 Those unions are the whole surface: five connectivity types an operator can declare (`mcp`,
-`http`, `imap`, `dav`, `fs`) and six credential types (`none`, `bearer`, `api_key`, `header`,
-`basic`, `oauth`). Twelve of the thirty pairs are legal; `defineProvider` closes the rest, each for
-a stated reason. Nothing is bolted on here for a service that fits no pair — that is a member
-missing from one of the lists, which is a folder and a schema entry away, and
+`http`, `imap`, `dav`, `fs`) and seven credential types (`none`, `bearer`, `api_key`, `header`,
+`basic`, `oauth`, `strategy`). Thirteen of the thirty-five pairs are legal; `defineProvider` closes
+the rest, each for a stated reason. Nothing is bolted on here for a service that fits no pair — that
+is a member missing from one of the lists, which is a folder and a schema entry away, and
 [`connectivity-coverage.md`](../connectivity-coverage.md) is the standing account of which.
+
+`strategy` is offered rather than withheld, and it is the one that most needed deciding. A strategy
+names code that travels on a provider's definition rather than in a global registry
+([ADR-046](046-an-auth-strategy-belongs-to-its-provider.md)), so a declaration-only manifest reaches
+one *by name* — and doing that is the only way to point a connection at a vendor's sandbox, because
+a built-in manifest's `options` are not the operator's to edit. Whether the name resolves is the
+registry's question and not this command's: it has no registry to ask, `strategyFor` looks at the
+manifest's own definition and then at every registered provider's, and `refuseStrategy` is what says
+a name reaches nothing. So `--strategy <name>` is passed through and the answer arrives from the
+place that has it.
 
 Four things follow from it, and each is the decision rather than an implementation detail.
 
@@ -59,8 +69,10 @@ any transcript of the session. The consequence here is better than a rule: the c
 write a manifest whose prompts declare what to ask for, and the existing connect path asks. So it
 handles no secrets, and there is no second implementation of anything about them.
 
-**A combination that validates and cannot run is refused before the write.** Three of these are
-invisible to the schema: an `http` connector with dynamic registration (a REST API publishes no
+**A combination that validates and cannot run is refused before the write.** Four of these are
+invisible to the schema. A `strategy` on anything but an `http` connector — it signs or negotiates an
+HTTP request and the other four connectors make none it could sign, which no rule in `defineProvider`
+states because each of them already refuses `strategy` for its own reason. And three about OAuth: an `http` connector with dynamic registration (a REST API publishes no
 registration endpoint, so there is no client to authorise with), half a pair of OAuth endpoint URLs
 (`authorise` takes the direct path only when both are present, so one alone is ignored on `mcp` and
 fatal on `http`), and dynamic registration alongside both URLs (declaring them takes an `mcp`

@@ -72,7 +72,7 @@ instead, with the command to re-run.
 | | |
 |---|---|
 | `--connector <kind>` | `mcp`, `http`, `imap`, `dav`, `fs` |
-| `--auth <method>` | `none`, `bearer`, `api-key`, `header`, `basic`, `oauth` |
+| `--auth <method>` | `none`, `bearer`, `api-key`, `header`, `basic`, `oauth`, `strategy` |
 | `--name <text>`, `--description <text>` | how the provider is labelled; the name defaults to the id read as words |
 | `--endpoint <url>` | `mcp`: the URL the server speaks Streamable HTTP on |
 | `--base-url <url>` | `http` and `dav` |
@@ -89,7 +89,10 @@ instead, with the command to re-run.
 | `--authorize-url`, `--token-url` | `oauth`: together or not at all; required on `http` |
 | `--client-app <name>` | which `oauth_apps` entry holds the client; defaults to the id |
 | `--registration <kind>` | `dynamic` or `manual`; `mcp` defaults to `dynamic`, everything else to `manual` |
+| `--authorize-param k=v` | `oauth`: extra parameters on the authorization request, repeatable. Some vendors issue no refresh token without one |
 | `--redirect-uri <url>` | only for a vendor that matches the whole redirect URL (ADR-045) |
+| `--strategy <name>` | `strategy`: the name a provider in this build supplies, e.g. `bunq`. `http` only |
+| `--strategy-option k=v` | `strategy`: repeatable, read by the strategy itself — a sandbox host, say |
 | `--identity-url`, `--identity-field` | `http`: one GET that names the account, and which field to read |
 | `--setup-docs <url\|text>` | where the credential comes from. A URL becomes a link, a sentence a step |
 | `--replace-manifest` | rewrite a declaration that exists and differs. `--replace` is about the credential |
@@ -110,7 +113,11 @@ $ lanes link connect custom mailbox --connector imap --auth basic \
     --profile personal --target local
 ```
 
-Twelve of the thirty possible pairs are legal, and the rest are refused with the alternative named —
+`--auth strategy` names code a provider in this build carries, which a manifest of your own can
+borrow — the only way to point a connection at a vendor's sandbox, since a built-in manifest's
+`options` are not yours to edit ([ADR-046](adr/046-an-auth-strategy-belongs-to-its-provider.md)).
+
+Thirteen of the thirty-five possible pairs are legal, and the rest are refused with the alternative named —
 an `mcp` connector has nowhere to put an API key, an `imap` one authenticates with a password, an
 `fs` one holds no account at all.
 [`connectivity-coverage.md`](connectivity-coverage.md) is the whole matrix, including what no pair

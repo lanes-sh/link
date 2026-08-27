@@ -1,6 +1,5 @@
 import { defineProvider, type ProviderManifest } from '#connectivity';
 import {
-  AUTH_KIND,
   AUTH_METHODS,
   CONNECTOR_KINDS,
   type AuthMethod,
@@ -8,6 +7,8 @@ import {
   type CustomAnswers,
 } from './spec.ts';
 import { identityBlock, setupBlock } from './prompts.ts';
+import { authBlock } from './credential.ts';
+import { many, one, port } from './values.ts';
 
 /**
  * Turning what the operator said into a manifest.
@@ -43,15 +44,6 @@ export function parseConnectorKind(value: string): ConnectorKind {
 export function parseAuthMethod(value: string): AuthMethod {
   if ((AUTH_METHODS as readonly string[]).includes(value)) return value as AuthMethod;
 
-  if (value === 'strategy') {
-    throw new Error(
-      '"strategy" is the escape hatch for authentication no declarative form should try to express — ' +
-        'a keypair handshake, a signature over every request. It is per-vendor code in this ' +
-        'repository and none is registered, so a manifest declaring one would authorise and then ' +
-        'fail on every call. See docs/detailed/creating-a-provider.md.',
-    );
-  }
-
   throw new Error(`Unknown credential type "${value}". Pick one of: ${AUTH_METHODS.join(', ')}.`);
 }
 
@@ -79,6 +71,13 @@ export function refuseIllegalPair(connector: ConnectorKind, auth: AuthMethod): v
         'that matters issues an app password and expects it over Basic; OAuth for these exists but is ' +
         'partner-gated with no published scopes, so declaring it would validate and then fail to ' +
         'authenticate.\n  Use --auth basic.',
+    );
+  }
+
+  if (auth === 'strategy' && connector !== 'http') {
+    throw new Error(
+      `A strategy signs or negotiates an HTTP request, and a ${connector} connector does not make ` +
+        'one it could sign.\n  Use --connector http.',
     );
   }
 
@@ -128,16 +127,6 @@ export function deriveManifest(answers: CustomAnswers): ProviderManifest {
   return defineProvider(deriveDeclaration(answers));
 }
 
-const one = (answers: CustomAnswers, flag: string): string | undefined => {
-  const value = answers.values[flag];
-  return typeof value === 'string' && value.length > 0 ? value : undefined;
-};
-
-const many = (answers: CustomAnswers, flag: string): readonly string[] => {
-  const value = answers.values[flag];
-  return Array.isArray(value) ? value.filter((entry) => entry.length > 0) : [];
-};
-
 /**
  * `--header 'Name: value'`, repeated.
  *
@@ -169,16 +158,6 @@ function headers(answers: CustomAnswers): Record<string, string> | undefined {
     parsed[name] = entry.slice(split + 1).trim();
   }
 
-  return parsed;
-}
-
-function port(value: string | undefined, flag: string): number | undefined {
-  if (value === undefined) return undefined;
-
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
-    throw new Error(`--${flag} must be a port between 1 and 65535, not "${value}".`);
-  }
   return parsed;
 }
 
@@ -246,112 +225,5 @@ function connectorBlock(answers: CustomAnswers): Record<string, unknown> {
     kind,
     root: one(answers, 'root'),
     ...(exclude.length > 0 ? { exclude } : {}),
-  };
-}
-
-function authBlock(answers: CustomAnswers): Record<string, unknown> {
-  const method = answers.auth;
-  const kind = AUTH_KIND[method];
-  const header = one(answers, 'auth-header');
-  const query = one(answers, 'auth-query');
-
-  if (method === 'none' || method === 'basic') return { kind };
-
-  if (method === 'bearer') {
-    if (header && answers.connector === 'mcp') {
-      throw new Error(
-        'An mcp connector always sends its token as "Authorization: Bearer", so --auth-header ' +
-          `("${header}") could not be honoured — the transport never reads the resolved credential, ` +
-          'only the token, and the header would be dropped in silence.\n' +
-          '  Drop the flag, or reach this service with --connector http.',
-      );
-    }
-    return { kind, ...(header ? { header } : {}) };
-  }
-
-  if (method === 'header') {
-    if (query) {
-      throw new Error(
-        '--auth-query is only meaningful for --auth api-key, which may put its key in the query ' +
-          'string. A "header" credential is sent in a header of its own and nothing forwards a query ' +
-          'parameter, so this would be dropped in silence.',
-      );
-    }
-    return { kind, header };
-  }
-
-  if (method === 'api-key') {
-    if (header && query) {
-      throw new Error(
-        '--auth-header and --auth-query contradict: a key goes in a header or in the query string, ' +
-          'and declaring both leaves which one is sent up to whichever the transport reads last.',
-      );
-    }
-    return { kind, ...(header ? { header } : {}), ...(query ? { query } : {}) };
-  }
-
-  return oauthBlock(answers);
-}
-
-/**
- * The one credential type with rules the schema does not carry.
- *
- * Each of these produces a manifest `defineProvider` accepts and `authorise`
- * cannot run, which is worse than an invalid one: the operator finds out after
- * approving a consent screen, or not until the first call.
- */
-function oauthBlock(answers: CustomAnswers): Record<string, unknown> {
-  const scopes = many(answers, 'scopes');
-  const authorizeUrl = one(answers, 'authorize-url');
-  const tokenUrl = one(answers, 'token-url');
-  const app = one(answers, 'client-app');
-  const declared = one(answers, 'registration');
-  const redirect = one(answers, 'redirect-uri');
-
-  if (Boolean(authorizeUrl) !== Boolean(tokenUrl)) {
-    throw new Error(
-      'OAuth endpoints are declared together or not at all. `authorise` takes the direct path only ' +
-        'when both are present, so half a pair is ignored on an mcp connector and fatal on an http ' +
-        'one.\n  Add the missing one of --authorize-url / --token-url, or drop both.',
-    );
-  }
-
-  // A REST API has no MCP metadata document to discover from, so a client has
-  // to come from somewhere the manifest names.
-  const registration =
-    declared ?? (answers.connector === 'mcp' && !authorizeUrl && !app ? 'dynamic' : 'manual');
-
-  if (registration === 'dynamic' && answers.connector === 'http') {
-    throw new Error(
-      'Dynamic client registration is something an authorization server offers, and a REST API ' +
-        'publishes no registration endpoint — there would be no client to authorise with.\n' +
-        '  Register a client with the vendor and drop --registration, which then defaults to manual.',
-    );
-  }
-
-  if (registration === 'dynamic' && authorizeUrl) {
-    throw new Error(
-      'Declaring both endpoints is what takes an mcp connector off the SDK\'s own OAuth path and onto ' +
-        'ours, and ours needs a client to present (ADR-040). Registration cannot be dynamic there.\n' +
-        '  Drop --registration dynamic, or drop the two endpoint URLs and let the SDK register.',
-    );
-  }
-
-  if (registration === 'manual' && answers.connector === 'http' && !authorizeUrl) {
-    throw new Error(
-      'An http connector has no metadata document to discover an authorization server from: a REST ' +
-        'API is a base URL, and where consent happens is not something it announces.\n' +
-        '  Add --authorize-url and --token-url.',
-    );
-  }
-
-  return {
-    kind: 'oauth',
-    registration,
-    ...(registration === 'manual' ? { app: app ?? answers.id } : {}),
-    scopes,
-    ...(authorizeUrl ? { authorize_url: authorizeUrl } : {}),
-    ...(tokenUrl ? { token_url: tokenUrl } : {}),
-    ...(redirect ? { redirect_uri: redirect } : {}),
   };
 }
