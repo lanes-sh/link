@@ -18,12 +18,27 @@ that true, and it is the step most easily forgotten.
 
 | | |
 |---|---|
-| `main` | What `npm install @lanes-sh/link` gets. Protected: pull request, passing `ci`, no force-push. The only bypass is an organisation admin. |
-| `develop` | The integration branch. Unprotected, so a push works — but work still arrives by pull request, because the reasoning in the commit message is the review. |
+| `main` | What `npm install @lanes-sh/link` gets. A push here is what publishes. |
+| `develop` | The integration branch, and this repository's **default** branch. |
 | feature branches | One per change, in its own worktree. See [CLAUDE.md](../../CLAUDE.md). |
 
-Nothing is ever pushed to `main` by CI. It cannot be: the ruleset requires a pull request and the
-built-in `GITHUB_TOKEN` cannot be added to its bypass list. Doing it anyway would mean storing an
+`main` and `develop` carry the same ruleset: pull request with one approval, code-owner review,
+resolved review threads, a passing `ci`, no force-push, no deletion. The only bypass is an
+organisation admin, which is how a solo release merges its own pull request.
+
+**The ruleset names both branches literally, and that is deliberate.** It used to name
+`~DEFAULT_BRANCH` — one rule for "whichever branch is default". When the default was changed to
+`develop`, every rule moved with it and `main` was left with none at all, while the ruleset was
+still called "main" and `CONTRIBUTING.md` still said `main` required a pull request. For a branch
+whose pushes publish to npm, that gap is worth more than the convenience of a symbolic name.
+
+Because both branches require a pull request, the two direct pushes a release performs — the
+version bump onto `develop`, and the fast-forward at the end — land only under that admin bypass.
+Without it, both are pull requests, and the fast-forward becomes an ordinary merge of `main` into
+`develop` that leaves one commit between them.
+
+Nothing is ever pushed to `main` by CI. It cannot be: the ruleset requires a pull request there and
+the built-in `GITHUB_TOKEN` cannot be added to its bypass list. Doing it anyway would mean storing an
 App key or a personal access token with write access to `main` — a larger credential than the npm
 token this project deliberately does not have.
 
