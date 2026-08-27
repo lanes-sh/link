@@ -1,4 +1,8 @@
 import {
+  assetsAdd,
+  assetsGet,
+  assetsList,
+  assetsRemove,
   memoryForget,
   memoryGet,
   memoryList,
@@ -11,18 +15,23 @@ import {
   vaultKeyGenerate,
   vaultList,
   vaultRemove,
+  tasksAdd,
+  tasksGet,
+  tasksList,
+  tasksRemove,
+  tasksUpdate,
   vaultSet,
   type OwnerFlags,
 } from './commands/owner.ts';
 
 /**
- * The three commands over the owner's own data: memory, skills, and the vault.
+ * The commands over the owner's own data: memory, tasks, assets, skills, vault.
  *
  * Split out of `main.ts` for the reason the budget in `src/architecture.test.ts`
- * exists to find, rather than to satisfy a line count. These three are one
- * subject — what the owner put here themselves, as against what a provider
- * holds on their behalf — they already live together in `commands/owner/`, and
- * they are the only commands in the grammar sharing a flag shape of their own.
+ * exists to find, rather than to satisfy a line count. These are one subject —
+ * what the owner put here themselves, as against what a provider holds on their
+ * behalf — they already live together in `commands/owner/`, and they are the
+ * only commands in the grammar sharing a flag shape of their own.
  *
  * `main.ts` keeps the grammar. This keeps one branch of it.
  */
@@ -47,6 +56,38 @@ export function dispatchOwner(
           return memoryForget(rest[0], owner);
         default:
           throw new Error(`Unknown: ${program} memory ${second}`);
+      }
+
+    case 'tasks':
+      switch (second) {
+        case 'list':
+        case undefined:
+          return tasksList(owner);
+        case 'get':
+          return tasksGet(rest[0], owner);
+        case 'add':
+          return tasksAdd(rest[0], owner);
+        case 'update':
+          return tasksUpdate(rest[0], owner);
+        case 'remove':
+          return tasksRemove(rest[0], owner);
+        default:
+          throw new Error(`Unknown: ${program} tasks ${second}`);
+      }
+
+    case 'assets':
+      switch (second) {
+        case 'list':
+        case undefined:
+          return assetsList(owner);
+        case 'get':
+          return assetsGet(rest[0], owner);
+        case 'add':
+          return assetsAdd(rest[0], owner);
+        case 'remove':
+          return assetsRemove(rest[0], owner);
+        default:
+          throw new Error(`Unknown: ${program} assets ${second}`);
       }
 
     case 'skills':
@@ -85,9 +126,9 @@ export function dispatchOwner(
       }
 
     default:
-      // Unreachable: `main.ts` narrows to the three above before calling. Kept
-      // so that adding a fourth case there and forgetting it here is a thrown
-      // error rather than a command that silently does nothing.
+      // Unreachable: `main.ts` narrows to the nouns above before calling. Kept
+      // so that adding one there and forgetting it here is a thrown error rather
+      // than a command that silently does nothing.
       throw new Error(`Unknown: ${program} ${first}`);
   }
 }

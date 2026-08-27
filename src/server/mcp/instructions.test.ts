@@ -292,6 +292,8 @@ describe('the habits it teaches', () => {
       new Map([
         ['x.y', { reachable, capability: undefined, discovered: undefined }],
         ['memory.search', reaching({ [first]: ['memory.owner'] })],
+        ['tasks.list', reaching({ [first]: ['tasks.owner'] })],
+        ['assets.list', reaching({ [first]: ['assets.owner'] })],
         ['skills.manage.list', reaching({ [first]: ['skills.owner'] })],
         ['vault.put', reaching({ [first]: ['vault.owner'] })],
         ['setup.overview', reaching({ [first]: ['setup.main'] })],
@@ -306,12 +308,115 @@ describe('the habits it teaches', () => {
     expect(worst).toContain('20 profiles');
   });
 
+  /**
+   * The widest case is the one that looks narrower — memory reachable, tasks not.
+   *
+   * `MEMORY_AND_TASKS` replaces `MEMORY` rather than joining it, and is a little
+   * shorter than the two apart, so a profile that *denied* tasks spends more
+   * than one that has both. The test above would happily certify a ceiling this
+   * case exceeds, which is the same mistake its own comment records being made
+   * twice already — so the maximum is asserted against both branches.
+   */
+  test('the unpaired branch is the real maximum, and it fits too', () => {
+    const profiles = Array.from({ length: 20 }, (_, i) => `a-fairly-long-profile-name-${i}`);
+    const reachable = new Map(
+      profiles.map((profile) => [
+        profile,
+        Array.from({ length: 20 }, (_, i) => `provider${i}.account_${profile}_${i}`),
+      ]),
+    );
+    const first = profiles[0] as string;
+
+    const owners = (ids: readonly string[]) =>
+      new Map([
+        ['x.y', { reachable, capability: undefined, discovered: undefined }],
+        ...ids.map(
+          (id) =>
+            [`${id}.list`, reaching({ [first]: [`${id}.owner`] })] as [
+              string,
+              ReturnType<typeof reaching>,
+            ],
+        ),
+      ]);
+
+    const everything = ['memory', 'tasks', 'assets', 'skills', 'vault', 'setup', 'identity'];
+    const withoutTasks = everything.filter((id) => id !== 'tasks');
+
+    const paired = serverInstructions(profiles, owners(everything), true);
+    const unpaired = serverInstructions(profiles, owners(withoutTasks), true);
+
+    expect(unpaired.length).toBeGreaterThan(paired.length);
+    expect(unpaired.length).toBeLessThan(MAX_INSTRUCTIONS);
+  });
+
   test('stays inside its budget', () => {
     // This is in the system prompt of every session against this endpoint, so
     // the cost is paid per request forever. The number is arbitrary; needing to
     // raise it is the prompt to ask whether the paragraph belongs in the skill
     // instead, where it is loaded only when relevant.
     expect(text.length).toBeLessThan(MAX_INSTRUCTIONS);
+  });
+
+  /**
+   * The routing rule, which is the reason `tasks` exists at all.
+   *
+   * A client told only that memory is worth consulting files "remember to chase
+   * the invoice" as a memory entry, where nothing can ever close it. The rule has
+   * to be in *this* channel rather than only in the bundled skill, because the
+   * client that most needs it is the one holding no skills directory.
+   */
+  describe('memory and tasks are distinguished, and only when both are there', () => {
+    const owners = (ids: readonly string[]) =>
+      new Map(
+        ids.map(
+          (id) =>
+            [`${id}.list`, reaching({ personal: [`${id}.owner`] })] as [
+              string,
+              ReturnType<typeof reaching>,
+            ],
+        ),
+      );
+
+    test('both reachable gives one paragraph naming the difference', () => {
+      const both = serverInstructions(['personal'], owners(['memory', 'tasks']));
+
+      expect(both).toContain('Memory and tasks are different stores');
+      expect(both).toContain('is a task');
+      // Not the two singles as well — the pair replaces them.
+      expect(both).not.toContain('Memory is worth consulting');
+      expect(both).not.toContain('Tasks are what the owner has to do');
+    });
+
+    test('memory alone still describes memory, and does not mention tasks', () => {
+      const only = serverInstructions(['personal'], owners(['memory']));
+
+      expect(only).toContain('Memory is worth consulting');
+      expect(only).not.toContain('different stores');
+      // Prose promising a tool the list does not carry is worse than none.
+      expect(only).not.toContain('goes in tasks');
+    });
+
+    test('tasks alone describes tasks, and does not mention memory', () => {
+      const only = serverInstructions(['personal'], owners(['tasks']));
+
+      expect(only).toContain('Tasks are what the owner has to do');
+      expect(only).not.toContain('different stores');
+      expect(only).not.toContain('Search memory');
+    });
+
+    test('assets brings its own paragraph', () => {
+      const only = serverInstructions(['personal'], owners(['assets']));
+
+      expect(only).toContain("Assets are the owner's own files");
+    });
+
+    test('neither reachable spends nothing on either', () => {
+      const none = serverInstructions(['personal'], owners(['setup']));
+
+      expect(none).not.toContain('different stores');
+      expect(none).not.toContain('Memory');
+      expect(none).not.toContain('tasks');
+    });
   });
 
   /**

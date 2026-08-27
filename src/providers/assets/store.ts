@@ -40,6 +40,18 @@ import type { BlobStore } from '#connectivity';
 const MAX_NAME = 200;
 const CONTROL = /[\x00-\x1F\x7F]/;
 
+/**
+ * Suffixes a blob adapter treats as its own bookkeeping.
+ *
+ * The filesystem adapter writes `<key>.meta` beside a blob whose content type its
+ * extension cannot express, `<key>.tmp` while a write is in flight, and skips
+ * both in `list()`. So an asset called `report.meta` would be stored, would
+ * never appear in a listing, and would read back only if you already knew the
+ * name — silent, and shaped like data loss. Memory never met this because every
+ * key it writes ends `.md`; an asset's key is whatever the file was called.
+ */
+const ADAPTER_SUFFIXES = ['.meta', '.tmp'];
+
 export function assertAssetName(name: string): void {
   const why = nameProblem(name);
   if (why) throw new Error(`Asset name ${JSON.stringify(name)} ${why}`);
@@ -53,6 +65,12 @@ function nameProblem(name: string): string | null {
   }
   if (name.startsWith('.')) return 'must not start with a dot.';
   if (CONTROL.test(name)) return 'must not contain control characters.';
+
+  const reserved = ADAPTER_SUFFIXES.find((suffix) => name.endsWith(suffix));
+  if (reserved) {
+    return `must not end in "${reserved}" — a blob store keeps its own bookkeeping under that suffix and would hide the file.`;
+  }
+
   return null;
 }
 
