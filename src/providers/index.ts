@@ -16,6 +16,7 @@ import { icloudDrive } from './icloud/drive/index.ts';
 import { icloudMail } from './icloud/mail/index.ts';
 import { linear } from './linear/index.ts';
 import { notion } from './notion/index.ts';
+import { reddit } from './reddit/index.ts';
 import { slack } from './slack/index.ts';
 
 /**
@@ -53,6 +54,7 @@ export const PROVIDERS: readonly (ProviderManifest | ProviderDefinition)[] = [
   linear,
   github,
   slack,
+  reddit,
   gmail,
   drive,
   sheets,
@@ -98,5 +100,6 @@ export { icloudCalendar, icloudContacts, icloudDrive, icloudMail } from './iclou
 export { github } from './github/index.ts';
 export { linear } from './linear/index.ts';
 export { notion } from './notion/index.ts';
+export { reddit } from './reddit/index.ts';
 export { slack } from './slack/index.ts';
 export { SCOPE_MEANINGS, type ScopeMeaning } from './scopes.ts';

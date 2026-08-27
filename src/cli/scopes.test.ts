@@ -182,7 +182,7 @@ describe('the Google manifests stay at the documented minimum', () => {
     );
   });
 
-  test('the broad scopes are exactly the thirteen that were argued for', () => {
+  test('the broad scopes are exactly the sixteen that were argued for', () => {
     const broad = PROVIDERS.flatMap((manifest) => {
       const scopes = manifest.auth.kind === 'oauth' ? manifest.auth.scopes : [];
       return describeScopes(scopes)
@@ -227,6 +227,21 @@ describe('the Google manifests stay at the documented minimum', () => {
         'slack im:history',
         'slack mpim:history',
         'slack chat:write',
+        // Reddit's three, and all three for one reason: they act publicly under
+        // the person's username. Everything above is broad for how much it
+        // reaches inside a private space; these are broad for being visible
+        // outside one, which is the other way a grant can be more than it
+        // sounds.
+        //
+        // They are also the only writes here that cannot be taken back.
+        // Deleting a post leaves the deletion behind, and anything quoted,
+        // cached, or replied to in the meantime stays — so "post as you" is
+        // nearer to publishing than to writing. `read` is deliberately not on
+        // this list: it reaches only what the account can already see, and what
+        // Reddit makes readable is public to begin with.
+        'reddit submit',
+        'reddit edit',
+        'reddit vote',
       ].sort(),
     );
   });

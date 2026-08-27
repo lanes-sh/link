@@ -1,0 +1,700 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Reddit",
+    "version": "1.0.0",
+    "description": "The subset of the Reddit API this provider exposes. Hand-authored: Reddit publishes no OpenAPI document."
+  },
+  "servers": [
+    {
+      "url": "https://oauth.reddit.com"
+    }
+  ],
+  "paths": {
+    "/r/{subreddit}/{sort}": {
+      "get": {
+        "operationId": "list_posts",
+        "summary": "List posts in a subreddit",
+        "description": "Posts from one subreddit in a given order. Returns a Listing envelope: {kind, data:{after, children:[{kind, data}]}}.",
+        "tags": [
+          "read"
+        ],
+        "parameters": [
+          {
+            "name": "subreddit",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Subreddit name without the \"r/\" prefix."
+            }
+          },
+          {
+            "name": "sort",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "hot",
+                "new",
+                "top",
+                "rising"
+              ],
+              "description": "Ordering."
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "description": "How many to return, up to 100."
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "Fullname to page after, from a previous \"after\"."
+            }
+          },
+          {
+            "name": "t",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "hour",
+                "day",
+                "week",
+                "month",
+                "year",
+                "all"
+              ],
+              "description": "Time window. Only meaningful when sort is \"top\"."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/comments/{article}": {
+      "get": {
+        "operationId": "get_post",
+        "summary": "Read a post and its comments",
+        "description": "One post with its comment tree. `article` is the base36 id WITHOUT the t3_ prefix. Returns a two-element array: the post, then the comments.",
+        "tags": [
+          "read"
+        ],
+        "parameters": [
+          {
+            "name": "article",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Post id in base36, no t3_ prefix."
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "confidence",
+                "top",
+                "new",
+                "controversial",
+                "old",
+                "qa"
+              ],
+              "description": "Comment ordering."
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "description": "How many comments to return."
+            }
+          },
+          {
+            "name": "depth",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "description": "How many levels of replies to descend."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/r/{subreddit}/search": {
+      "get": {
+        "operationId": "search",
+        "summary": "Search within a subreddit",
+        "description": "Full-text search. Returns a Listing envelope: {kind, data:{after, children:[{kind, data}]}}.",
+        "tags": [
+          "read"
+        ],
+        "parameters": [
+          {
+            "name": "subreddit",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Subreddit name."
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Search query."
+            }
+          },
+          {
+            "name": "restrict_sr",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "description": "True to search only this subreddit rather than all of Reddit."
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "relevance",
+                "hot",
+                "top",
+                "new",
+                "comments"
+              ],
+              "description": "Ordering."
+            }
+          },
+          {
+            "name": "t",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "hour",
+                "day",
+                "week",
+                "month",
+                "year",
+                "all"
+              ],
+              "description": "Time window."
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "description": "How many to return, up to 100."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/r/{subreddit}/about": {
+      "get": {
+        "operationId": "get_subreddit",
+        "summary": "Read a subreddit profile",
+        "description": "Description, subscriber count, and whether posting requires a flair (`link_flair_enabled`, `submission_type`).",
+        "tags": [
+          "read"
+        ],
+        "parameters": [
+          {
+            "name": "subreddit",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Subreddit name."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/r/{subreddit}/about/rules": {
+      "get": {
+        "operationId": "get_rules",
+        "summary": "Read a subreddit’s posting rules",
+        "description": "The rules a submission must satisfy. Worth reading before posting to an unfamiliar subreddit — most removals are rule violations, not API errors.",
+        "tags": [
+          "read"
+        ],
+        "parameters": [
+          {
+            "name": "subreddit",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Subreddit name."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/{subreddit}/link_flair_v2": {
+      "get": {
+        "operationId": "list_flairs",
+        "summary": "List a subreddit’s post flairs",
+        "description": "Available post flairs and their ids. Many subreddits reject a submission with no flair_id, so call this first when submitting somewhere new.",
+        "tags": [
+          "read"
+        ],
+        "parameters": [
+          {
+            "name": "subreddit",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Subreddit name."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/v1/me": {
+      "get": {
+        "operationId": "whoami",
+        "summary": "Read the authenticated account",
+        "description": "Username, karma, and account age for the connected account.",
+        "tags": [
+          "read"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/subreddits/mine/subscriber": {
+      "get": {
+        "operationId": "list_my_subreddits",
+        "summary": "List subscribed subreddits",
+        "description": "Subreddits the connected account subscribes to. Returns a Listing envelope: {kind, data:{after, children:[{kind, data}]}}.",
+        "tags": [
+          "read"
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "description": "How many to return."
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "description": "Fullname to page after."
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/submit": {
+      "post": {
+        "operationId": "submit_post",
+        "summary": "Submit a post to a subreddit",
+        "description": "Create a text or link post. kind=\"self\" needs `text`; kind=\"link\" needs `url`. Check list_flairs first — many subreddits reject a post with no flair_id.",
+        "tags": [
+          "write"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "sr": {
+                    "type": "string",
+                    "description": "Subreddit name without the \"r/\" prefix."
+                  },
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "self",
+                      "link"
+                    ],
+                    "description": "\"self\" for a text post, \"link\" for a URL post."
+                  },
+                  "title": {
+                    "type": "string",
+                    "description": "Post title, up to 300 characters."
+                  },
+                  "text": {
+                    "type": "string",
+                    "description": "Body, as markdown. Only for kind=\"self\"."
+                  },
+                  "url": {
+                    "type": "string",
+                    "description": "Target URL. Only for kind=\"link\"."
+                  },
+                  "flair_id": {
+                    "type": "string",
+                    "description": "Flair template id from list_flairs."
+                  },
+                  "nsfw": {
+                    "type": "boolean",
+                    "description": "Mark as not safe for work."
+                  },
+                  "spoiler": {
+                    "type": "boolean",
+                    "description": "Mark as a spoiler."
+                  },
+                  "sendreplies": {
+                    "type": "boolean",
+                    "description": "Send reply notifications to the account inbox."
+                  },
+                  "api_type": {
+                    "type": "string",
+                    "enum": [
+                      "json"
+                    ],
+                    "default": "json",
+                    "description": "Always \"json\". Without it the response is not JSON and errors are unreadable."
+                  }
+                },
+                "required": [
+                  "sr",
+                  "kind",
+                  "title",
+                  "api_type"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/comment": {
+      "post": {
+        "operationId": "add_comment",
+        "summary": "Comment on a post or reply to a comment",
+        "description": "thing_id is a FULLNAME, not a bare id: t3_<id> for a post, t1_<id> for a comment. A bare id is silently rejected.",
+        "tags": [
+          "write"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "thing_id": {
+                    "type": "string",
+                    "description": "Fullname of the parent: t3_<id> for a post, t1_<id> for a comment."
+                  },
+                  "text": {
+                    "type": "string",
+                    "description": "Comment body, as markdown."
+                  },
+                  "api_type": {
+                    "type": "string",
+                    "enum": [
+                      "json"
+                    ],
+                    "default": "json",
+                    "description": "Always \"json\". Without it the response is not JSON and errors are unreadable."
+                  }
+                },
+                "required": [
+                  "thing_id",
+                  "text",
+                  "api_type"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/editusertext": {
+      "post": {
+        "operationId": "edit_text",
+        "summary": "Edit your own post or comment",
+        "description": "Replaces the body of something this account authored. Only works on a text post or a comment.",
+        "tags": [
+          "write"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "thing_id": {
+                    "type": "string",
+                    "description": "Fullname of the item to edit: t3_<id> or t1_<id>."
+                  },
+                  "text": {
+                    "type": "string",
+                    "description": "Replacement body, as markdown."
+                  },
+                  "api_type": {
+                    "type": "string",
+                    "enum": [
+                      "json"
+                    ],
+                    "default": "json",
+                    "description": "Always \"json\". Without it the response is not JSON and errors are unreadable."
+                  }
+                },
+                "required": [
+                  "thing_id",
+                  "text",
+                  "api_type"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/vote": {
+      "post": {
+        "operationId": "vote",
+        "summary": "Vote on a post or comment",
+        "description": "dir is 1 to upvote, -1 to downvote, 0 to clear an existing vote.",
+        "tags": [
+          "write"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "Fullname of the target: t3_<id> or t1_<id>."
+                  },
+                  "dir": {
+                    "type": "integer",
+                    "enum": [
+                      1,
+                      0,
+                      -1
+                    ],
+                    "description": "1 upvote, 0 clear, -1 downvote."
+                  }
+                },
+                "required": [
+                  "id",
+                  "dir"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/del": {
+      "post": {
+        "operationId": "delete_thing",
+        "summary": "Delete your own post or comment",
+        "description": "Permanent. Reddit has no trash for this — a deleted item cannot be restored through the API.",
+        "tags": [
+          "write"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "Fullname to delete: t3_<id> or t1_<id>."
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/save": {
+      "post": {
+        "operationId": "save_thing",
+        "summary": "Save a post or comment",
+        "description": "Adds to the account’s saved items.",
+        "tags": [
+          "write"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "Fullname to save: t3_<id> or t1_<id>."
+                  },
+                  "category": {
+                    "type": "string",
+                    "description": "Optional saved-items category name."
+                  }
+                },
+                "required": [
+                  "id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/selectflair": {
+      "post": {
+        "operationId": "set_flair",
+        "summary": "Set the flair on your own post",
+        "description": "Applies a flair template from list_flairs to a post this account authored.",
+        "tags": [
+          "write"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "sr": {
+                    "type": "string",
+                    "description": "Subreddit name without the \"r/\" prefix."
+                  },
+                  "link": {
+                    "type": "string",
+                    "description": "Fullname of the post: t3_<id>."
+                  },
+                  "flair_template_id": {
+                    "type": "string",
+                    "description": "Flair template id from list_flairs."
+                  },
+                  "api_type": {
+                    "type": "string",
+                    "enum": [
+                      "json"
+                    ],
+                    "default": "json",
+                    "description": "Always \"json\". Without it the response is not JSON and errors are unreadable."
+                  }
+                },
+                "required": [
+                  "sr",
+                  "link",
+                  "flair_template_id",
+                  "api_type"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    }
+  }
+}
