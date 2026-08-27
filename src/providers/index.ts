@@ -1,6 +1,7 @@
 import type { ProviderDefinition, ProviderManifest } from '#connectivity';
 import { bunq } from './bunq/index.ts';
 import { calendar } from './google/calendar/index.ts';
+import { discord } from './discord/index.ts';
 import { contacts } from './google/contacts/index.ts';
 import { docs } from './google/docs/index.ts';
 import { github } from './github/index.ts';
@@ -56,6 +57,7 @@ export const PROVIDERS: readonly (ProviderManifest | ProviderDefinition)[] = [
   github,
   slack,
   reddit,
+  discord,
   gmail,
   drive,
   sheets,
@@ -100,6 +102,7 @@ export {
 } from './google/index.ts';
 export { icloudCalendar, icloudContacts, icloudDrive, icloudMail } from './icloud/index.ts';
 export { bunq } from './bunq/index.ts';
+export { discord } from './discord/index.ts';
 export { github } from './github/index.ts';
 export { linear } from './linear/index.ts';
 export { notion } from './notion/index.ts';

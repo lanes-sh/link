@@ -14,10 +14,12 @@
  * through `RequestInquiry` and `RequestResponse`. Copying seventy lines into a
  * second script is how the two come to disagree about what a cycle is.
  *
- * Deliberately not moved: `makeOpaque`. It writes a sentence into the schema it
- * replaces, and that sentence points at the vendor's own reference
- * documentation — which makes it a Google function that happens to look
- * generic.
+ * `makeOpaque` was held back at first for a good reason: it writes a sentence
+ * into the schema it replaces, and that sentence points at the vendor's own
+ * reference documentation, which made it a Google function that happened to look
+ * generic. Taking the sentence as a parameter is what actually settles that —
+ * the surgery is generic, only the pointer was not — so it lives here now, with
+ * each caller passing its own note. Discord is the third vendor to need it.
  */
 
 /** The shape both vendoring scripts read and write. Generic OpenAPI 3.x. */
@@ -106,4 +108,48 @@ export function cutCycles(schemas: Record<string, unknown>): number {
 
   for (const [name, schema] of Object.entries(schemas)) walk(schema, new Set([name]));
   return cuts;
+}
+
+/**
+ * Replace a named schema with an open object.
+ *
+ * Same device as `cutCycles` and a different disease. That one cuts recursion;
+ * this one cuts *fan-out*. Because `$ref`s are inlined, a union of eighty
+ * variants — each with its own nested grid, filter, and chart schemas, sharing
+ * sub-schemas that inlining duplicates per occurrence — costs orders of
+ * magnitude more generated than it does on disk.
+ *
+ * Measured on the worst case in the repository: one spreadsheet operation
+ * generated a 2,469KB input schema against 45KB for a whole other API. That is
+ * unusable — it would be sent on every `tools/list` — and it was also the only
+ * operation that could add a tab, freeze a header, or format a cell, so
+ * dropping it was no better.
+ *
+ * Opaque keeps the operation for a few KB. The agent fills the field in from the
+ * API it already knows, which is the same bet `raw` makes for a mail draft: a
+ * well-known wire format is cheaper described than schematised. `note` carries
+ * the pointer to the vendor's reference, because that is the only thing lost.
+ *
+ * Apply before `referenced`, so the schemas that were reachable only through the
+ * replaced one leave the document entirely rather than lingering unused.
+ */
+export function makeOpaque(
+  schemas: Record<string, unknown>,
+  names: readonly string[],
+  note: string,
+): number {
+  let replaced = 0;
+
+  for (const name of names) {
+    if (!(name in schemas)) continue;
+    const original = schemas[name] as { description?: string };
+    schemas[name] = {
+      type: 'object',
+      additionalProperties: true,
+      description: `${original.description ?? `A ${name}.`} ${note}`,
+    };
+    replaced++;
+  }
+
+  return replaced;
 }

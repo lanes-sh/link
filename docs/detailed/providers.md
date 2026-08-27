@@ -297,6 +297,89 @@ the body is often empty, so keeping it would defeat withholding the body. For a 
 `url` is the submission, so that is withheld too. What survives is where it went and how it was
 marked: `sr`, `flair_id`, `nsfw`, `spoiler`.
 
+## `discord`
+
+Twenty operations against Discord's v10 REST API. Setup:
+[`setup/discord.md`](setup/discord.md) — an application you create, whose bot token you paste, and
+which you invite to each server you want reachable.
+
+The spec at `src/providers/discord/specs/discord.v10.json` is vendored by
+`src/providers/discord/specs/vendor.ts` from the OpenAPI document Discord publishes. Vendoring
+matters more here than for Google: upstream is a public preview Discord says may change without
+notice, so the committed copy is what stops a breaking change upstream becoming a provider that
+stops working.
+
+**Discord has no API for acting as your own account.** Automating a user token is self-botting,
+which their terms forbid, and the OAuth2 user scopes cover neither posting nor reading channel
+history. So every message here is sent by an *application* and carries an `APP` badge that no
+setting removes. The name and avatar are controllable — per message, through a webhook — which is
+why the three webhook operations are vendored. ADR-047 has the whole argument.
+
+| Capability | Kind | Bundle | Why |
+|---|---|---|---|
+| `discord.get_my_user` | tool | read | Which application this token is. The cheap call that proves the `Bot ` prefix landed. |
+| `discord.list_my_guilds` | tool | read | The servers the bot was added to — not the ones you are in. An empty list means the invite was missed. |
+| `discord.get_guild` | tool | read | One server, with optional member counts. |
+| `discord.list_guild_channels` | tool | read | How a channel *name* becomes the id every other call needs. `type` says whether it can take messages. |
+| `discord.get_channel` | tool | read | One channel — name, type, topic, category. |
+| `discord.list_messages` | tool | read | The triage read, and the only one: Discord offers applications no message search. Pages on `before`/`after`. |
+| `discord.get_message` | tool | read | One message in full, with reactions and embeds. |
+| `discord.list_pins` | tool | read | What has been marked. The current endpoint, not the deprecated one. |
+| `discord.list_message_reactions_by_emoji` | tool | read | Who reacted with one emoji — a lightweight vote, read back. |
+| `discord.get_active_guild_threads` | tool | read | Every open thread in a server at once, cheaper than walking channels. |
+| `discord.create_message` | tool | write | Post as the application. `embeds` rather than `content` is what makes an announcement. |
+| `discord.update_message` | tool | write | Edit its own message. The typo fix; Discord shows an "edited" marker regardless. |
+| `discord.delete_message` | tool | write | The retraction. One message by id — there is deliberately no bulk delete. |
+| `discord.crosspost_message` | tool | write | Publish an announcement-channel post to the servers that follow it. `type: 5` channels only. |
+| `discord.add_my_message_reaction` | tool | write | Mark a message seen or triaged. Notifies nobody. |
+| `discord.create_pin` | tool | write | The heavier mark. Needs Manage Messages; 50 per channel. |
+| `discord.create_thread_from_message` | tool | write | Turn a post into a discussion without cluttering the channel. |
+| `discord.list_channel_webhooks` | tool | read | Find an existing webhook before making another. Returns tokens — see below. |
+| `discord.create_webhook` | tool | write | One per channel, once. Returns a token — see below. |
+| `discord.execute_webhook` | tool | write | Post with `username` and `avatar_url` set per message. How an announcement reads as you. |
+
+**The vendored list is the security boundary, not a convenience.** `connect` writes one rule,
+`discord.*`, and policy has nothing between a whole provider and one exact name — so twenty of
+Discord's 242 operations is the whole of what an agent can reach. `bulk_delete_messages` is
+excluded although it sits beside `delete_message`; so is every moderation, role, invite and
+guild-settings endpoint. `discord.test.ts` asserts the list is exactly those twenty, so a spec
+refresh that picks one up fails and gets read rather than merging quietly.
+
+**Two operations return a credential.** `create_webhook` and `list_channel_webhooks` include the
+webhook's token in their response, and a webhook token is standalone — anybody holding it posts to
+that channel with no other authentication. It therefore reaches the model. Recorded as
+`provider.response-may-carry-a-credential` in [`security.md`](security.md) rather than glossed
+over, and accepted because the alternative is not the same capability made safe but no posting
+under the operator's own name at all.
+
+**No scopes**, because there is no OAuth. What the token can do is chosen by the permission bits on
+the invite URL, in Discord's own console, and this endpoint cannot read them back — the same
+narrower guarantee every pasted-token provider has. The setup page prints an invite URL carrying
+exactly the bits the twenty operations need and nothing else.
+
+**Reading needs the Message Content intent**, a toggle in the developer portal that is free for an
+application under 10,000 users. Without it `list_messages` returns `200` with every `content`
+empty, and nothing in the response says why. It is called out in the walkthrough, in
+`troubleshooting`, and in the `list_messages` hint.
+
+**Every operation carries a hint**, which is unusual and not decoration: Discord describes 17 of
+its 242 operations and none of the twenty here, so `mcp-from-openapi` synthesises
+`POST /channels/{channel_id}/messages` and the hint is the entire rest of what an agent reads.
+Hinting all twenty also turns `cli/tools.test.ts` into a completeness check, since it resolves each
+hint against a generated capability by name.
+
+**Redaction** keeps ids and cursors and withholds message bodies, with two deliberate exceptions.
+`allowed_mentions` is kept everywhere something posts: it is not content but blast radius, and
+whether a post could ping `@everyone` is unrecoverable once the message is edited. `username` is
+kept on `execute_webhook`, because the post is deliberately wearing a name that is not the
+application's and *posted as "Ops" in channel 123* is the entry's whole point. `webhook_token`
+beside it is withheld, and a test asserts no capability keeps it.
+
+**Attachments are unavailable.** Discord takes files as `multipart/form-data`; the connector
+encodes JSON and form-urlencoded (ADR-045) and the multipart branches are dropped during vendoring,
+because their fields are named `files[0]` and one illegal property name rejects the entire tools
+list for every provider on the endpoint.
+
 ## iCloud — `icloud_mail`, `icloud_calendar`, `icloud_contacts`
 
 One Apple Account, three providers, one app-specific password

@@ -1,0 +1,2333 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Discord HTTP API (Preview)",
+    "description": "Preview of the Discord v10 HTTP API specification. See https://discord.com/developers/docs for more details.",
+    "termsOfService": "https://discord.com/developers/docs/policies-and-agreements/developer-terms-of-service",
+    "license": {
+      "name": "MIT",
+      "identifier": "MIT"
+    },
+    "version": "10",
+    "x-vendored-from": "https://raw.githubusercontent.com/discord/discord-api-spec/main/specs/openapi.json",
+    "x-vendored-note": "Trimmed by src/providers/discord/specs/vendor.ts. Committed deliberately: upstream is a public preview that may change without notice, and a spec decides which paths are called with the operator bot token — so it must be reviewable rather than fetched at connect time."
+  },
+  "servers": [
+    {
+      "url": "https://discord.com/api/v10"
+    }
+  ],
+  "paths": {
+    "/channels/{channel_id}": {
+      "get": {
+        "operationId": "get_channel",
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "BotToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "required": true
+          }
+        ]
+      }
+    },
+    "/channels/{channel_id}/messages": {
+      "get": {
+        "operationId": "list_messages",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "required": true
+          },
+          {
+            "name": "around",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "BotToken": []
+          }
+        ]
+      },
+      "post": {
+        "operationId": "create_message",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "BotToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "required": true
+          }
+        ]
+      }
+    },
+    "/channels/{channel_id}/messages/pins": {
+      "get": {
+        "operationId": "list_pins",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "required": true
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "BotToken": []
+          }
+        ]
+      }
+    },
+    "/channels/{channel_id}/messages/pins/{message_id}": {
+      "put": {
+        "operationId": "create_pin",
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "BotToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "required": true
+          },
+          {
+            "name": "message_id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "required": true
+          }
+        ]
+      }
+    },
+    "/channels/{channel_id}/messages/{message_id}": {
+      "get": {
+        "operationId": "get_message",
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "BotToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "required": true
+          },
+          {
+            "name": "message_id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "required": true
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "delete_message",
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "BotToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "required": true
+          },
+          {
+            "name": "message_id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "required": true
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "update_message",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MessageEditRequestPartial"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "BotToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "required": true
+          },
+          {
+            "name": "message_id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "required": true
+          }
+        ]
+      }
+    },
+    "/channels/{channel_id}/messages/{message_id}/crosspost": {
+      "post": {
+        "operationId": "crosspost_message",
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "BotToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "required": true
+          },
+          {
+            "name": "message_id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "required": true
+          }
+        ]
+      }
+    },
+    "/channels/{channel_id}/messages/{message_id}/reactions/{emoji_name}": {
+      "get": {
+        "operationId": "list_message_reactions_by_emoji",
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "required": true
+          },
+          {
+            "name": "message_id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "required": true
+          },
+          {
+            "name": "emoji_name",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 152133
+            },
+            "required": true
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/ReactionTypes"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "BotToken": []
+          }
+        ]
+      }
+    },
+    "/channels/{channel_id}/messages/{message_id}/reactions/{emoji_name}/@me": {
+      "put": {
+        "operationId": "add_my_message_reaction",
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "BotToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "required": true
+          },
+          {
+            "name": "message_id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "required": true
+          },
+          {
+            "name": "emoji_name",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 152133
+            },
+            "required": true
+          }
+        ]
+      }
+    },
+    "/channels/{channel_id}/messages/{message_id}/threads": {
+      "post": {
+        "operationId": "create_thread_from_message",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateTextThreadWithMessageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "BotToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "required": true
+          },
+          {
+            "name": "message_id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "required": true
+          }
+        ]
+      }
+    },
+    "/channels/{channel_id}/webhooks": {
+      "get": {
+        "operationId": "list_channel_webhooks",
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "BotToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "required": true
+          }
+        ]
+      },
+      "post": {
+        "operationId": "create_webhook",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "avatar": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "contentEncoding": "base64"
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "BotToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "required": true
+          }
+        ]
+      }
+    },
+    "/guilds/{guild_id}": {
+      "get": {
+        "operationId": "get_guild",
+        "parameters": [
+          {
+            "name": "guild_id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "required": true
+          },
+          {
+            "name": "with_counts",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "BotToken": []
+          }
+        ]
+      }
+    },
+    "/guilds/{guild_id}/channels": {
+      "get": {
+        "operationId": "list_guild_channels",
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "BotToken": []
+          },
+          {
+            "OAuth2": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "guild_id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "required": true
+          }
+        ]
+      }
+    },
+    "/guilds/{guild_id}/threads/active": {
+      "get": {
+        "operationId": "get_active_guild_threads",
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "BotToken": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "guild_id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "required": true
+          }
+        ]
+      }
+    },
+    "/users/@me": {
+      "get": {
+        "operationId": "get_my_user",
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "BotToken": []
+          },
+          {
+            "OAuth2": [
+              "identify"
+            ]
+          }
+        ]
+      }
+    },
+    "/users/@me/guilds": {
+      "get": {
+        "operationId": "list_my_guilds",
+        "parameters": [
+          {
+            "name": "before",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "with_counts",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {
+            "BotToken": []
+          },
+          {
+            "OAuth2": [
+              "guilds"
+            ]
+          }
+        ]
+      }
+    },
+    "/webhooks/{webhook_id}/{webhook_token}": {
+      "post": {
+        "operationId": "execute_webhook",
+        "parameters": [
+          {
+            "name": "webhook_id",
+            "in": "path",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "required": true
+          },
+          {
+            "name": "webhook_token",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "maxLength": 152133
+            },
+            "required": true
+          },
+          {
+            "name": "wait",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "thread_id",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            }
+          },
+          {
+            "name": "with_components",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IncomingWebhookRequestPartial"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "security": [
+          {},
+          {
+            "BotToken": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ActionRowComponentForMessageRequest": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "A ActionRowComponentForMessageRequest. Structure omitted: this union inlines to hundreds of kilobytes. Pass the object as documented at https://discord.com/developers/docs/components/reference."
+      },
+      "AllowedMentionTypes": {
+        "type": "string",
+        "oneOf": [
+          {
+            "title": "USERS",
+            "description": "Controls role mentions",
+            "const": "users"
+          },
+          {
+            "title": "ROLES",
+            "description": "Controls user mentions",
+            "const": "roles"
+          },
+          {
+            "title": "EVERYONE",
+            "description": "Controls @everyone and @here mentions",
+            "const": "everyone"
+          }
+        ]
+      },
+      "ContainerComponentForMessageRequest": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "A ContainerComponentForMessageRequest. Structure omitted: this union inlines to hundreds of kilobytes. Pass the object as documented at https://discord.com/developers/docs/components/reference."
+      },
+      "CreateTextThreadWithMessageRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "auto_archive_duration": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ThreadAutoArchiveDuration"
+              }
+            ]
+          },
+          "rate_limit_per_user": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 21600,
+            "format": "int32"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "CustomClientThemeShareRequest": {
+        "type": "object",
+        "properties": {
+          "colors": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 6,
+              "maxLength": 6
+            },
+            "minItems": 1,
+            "maxItems": 5
+          },
+          "gradient_angle": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 360,
+            "format": "int32"
+          },
+          "base_mix": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "format": "int32"
+          },
+          "base_theme": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MessageShareCustomUserThemeBaseTheme"
+              }
+            ]
+          }
+        },
+        "required": [
+          "colors",
+          "gradient_angle",
+          "base_mix"
+        ]
+      },
+      "FileComponentForMessageRequest": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "A FileComponentForMessageRequest. Structure omitted: this union inlines to hundreds of kilobytes. Pass the object as documented at https://discord.com/developers/docs/components/reference."
+      },
+      "IncomingWebhookRequestPartial": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2000
+          },
+          "embeds": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/RichEmbed"
+            },
+            "maxItems": 10
+          },
+          "allowed_mentions": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MessageAllowedMentionsRequest"
+              }
+            ]
+          },
+          "components": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ActionRowComponentForMessageRequest"
+                },
+                {
+                  "$ref": "#/components/schemas/ContainerComponentForMessageRequest"
+                },
+                {
+                  "$ref": "#/components/schemas/FileComponentForMessageRequest"
+                },
+                {
+                  "$ref": "#/components/schemas/MediaGalleryComponentForMessageRequest"
+                },
+                {
+                  "$ref": "#/components/schemas/SectionComponentForMessageRequest"
+                },
+                {
+                  "$ref": "#/components/schemas/SeparatorComponentForMessageRequest"
+                },
+                {
+                  "$ref": "#/components/schemas/TextDisplayComponentForMessageRequest"
+                }
+              ]
+            },
+            "maxItems": 40
+          },
+          "attachments": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/MessageAttachmentRequest"
+            },
+            "maxItems": 10
+          },
+          "poll": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PollCreateRequest"
+              }
+            ]
+          },
+          "tts": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "flags": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "avatar_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048,
+            "format": "uri"
+          },
+          "thread_name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 0,
+            "maxLength": 100
+          },
+          "applied_tags": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "maxItems": 5
+          }
+        }
+      },
+      "MediaGalleryComponentForMessageRequest": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "A MediaGalleryComponentForMessageRequest. Structure omitted: this union inlines to hundreds of kilobytes. Pass the object as documented at https://discord.com/developers/docs/components/reference."
+      },
+      "MessageAllowedMentionsRequest": {
+        "type": "object",
+        "properties": {
+          "parse": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/AllowedMentionTypes"
+                }
+              ]
+            },
+            "maxItems": 1521,
+            "uniqueItems": true
+          },
+          "users": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/SnowflakeType"
+                }
+              ]
+            },
+            "maxItems": 100,
+            "uniqueItems": true
+          },
+          "roles": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/components/schemas/SnowflakeType"
+                }
+              ]
+            },
+            "maxItems": 100,
+            "uniqueItems": true
+          },
+          "replied_user": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      },
+      "MessageAttachmentRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/SnowflakeType"
+          },
+          "filename": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 1024
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1024
+          },
+          "duration_secs": {
+            "type": [
+              "number",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 2147483647,
+            "format": "double"
+          },
+          "waveform": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 400
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1024
+          },
+          "is_spoiler": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "is_remix": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "MessageCreateRequest": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4000
+          },
+          "embeds": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/RichEmbed"
+            },
+            "maxItems": 10
+          },
+          "allowed_mentions": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MessageAllowedMentionsRequest"
+              }
+            ]
+          },
+          "sticker_ids": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "maxItems": 3
+          },
+          "components": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ActionRowComponentForMessageRequest"
+                },
+                {
+                  "$ref": "#/components/schemas/ContainerComponentForMessageRequest"
+                },
+                {
+                  "$ref": "#/components/schemas/FileComponentForMessageRequest"
+                },
+                {
+                  "$ref": "#/components/schemas/MediaGalleryComponentForMessageRequest"
+                },
+                {
+                  "$ref": "#/components/schemas/SectionComponentForMessageRequest"
+                },
+                {
+                  "$ref": "#/components/schemas/SeparatorComponentForMessageRequest"
+                },
+                {
+                  "$ref": "#/components/schemas/TextDisplayComponentForMessageRequest"
+                }
+              ]
+            },
+            "maxItems": 40
+          },
+          "flags": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "attachments": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/MessageAttachmentRequest"
+            },
+            "maxItems": 10
+          },
+          "poll": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PollCreateRequest"
+              }
+            ]
+          },
+          "shared_client_theme": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CustomClientThemeShareRequest"
+              }
+            ]
+          },
+          "message_reference": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MessageReferenceRequest"
+              }
+            ]
+          },
+          "nonce": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": -9223372036854776000,
+                "maximum": 9223372036854776000,
+                "format": "int64"
+              },
+              {
+                "type": "string",
+                "maxLength": 25,
+                "format": "nonce"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "enforce_nonce": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "tts": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        }
+      },
+      "MessageEditRequestPartial": {
+        "type": "object",
+        "properties": {
+          "content": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4000
+          },
+          "embeds": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/RichEmbed"
+            },
+            "maxItems": 10
+          },
+          "flags": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "allowed_mentions": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MessageAllowedMentionsRequest"
+              }
+            ]
+          },
+          "sticker_ids": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SnowflakeType"
+            },
+            "maxItems": 1521
+          },
+          "components": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/ActionRowComponentForMessageRequest"
+                },
+                {
+                  "$ref": "#/components/schemas/ContainerComponentForMessageRequest"
+                },
+                {
+                  "$ref": "#/components/schemas/FileComponentForMessageRequest"
+                },
+                {
+                  "$ref": "#/components/schemas/MediaGalleryComponentForMessageRequest"
+                },
+                {
+                  "$ref": "#/components/schemas/SectionComponentForMessageRequest"
+                },
+                {
+                  "$ref": "#/components/schemas/SeparatorComponentForMessageRequest"
+                },
+                {
+                  "$ref": "#/components/schemas/TextDisplayComponentForMessageRequest"
+                }
+              ]
+            },
+            "maxItems": 40
+          },
+          "attachments": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/MessageAttachmentRequest"
+            },
+            "maxItems": 10
+          }
+        }
+      },
+      "MessageReferenceRequest": {
+        "type": "object",
+        "properties": {
+          "guild_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SnowflakeType"
+              }
+            ]
+          },
+          "channel_id": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SnowflakeType"
+              }
+            ]
+          },
+          "message_id": {
+            "$ref": "#/components/schemas/SnowflakeType"
+          },
+          "fail_if_not_exists": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "type": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MessageReferenceType"
+              }
+            ]
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "MessageReferenceType": {
+        "type": "integer",
+        "oneOf": [
+          {
+            "title": "DEFAULT",
+            "description": "Reference to a message",
+            "const": 0
+          }
+        ],
+        "format": "int32"
+      },
+      "MessageShareCustomUserThemeBaseTheme": {
+        "type": "integer",
+        "oneOf": [
+          {
+            "title": "UNSET",
+            "description": "No base theme",
+            "const": 0
+          },
+          {
+            "title": "DARK",
+            "description": "Dark base theme",
+            "const": 1
+          },
+          {
+            "title": "LIGHT",
+            "description": "Light base theme",
+            "const": 2
+          },
+          {
+            "title": "DARKER",
+            "description": "Darker base theme",
+            "const": 3
+          },
+          {
+            "title": "MIDNIGHT",
+            "description": "Midnight base theme",
+            "const": 4
+          }
+        ],
+        "format": "int32"
+      },
+      "PollAnswerCreateRequest": {
+        "type": "object",
+        "properties": {
+          "poll_media": {
+            "$ref": "#/components/schemas/PollMediaCreateRequest",
+            "description": "The data of the answer"
+          }
+        },
+        "required": [
+          "poll_media"
+        ]
+      },
+      "PollCreateRequest": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "$ref": "#/components/schemas/PollMedia",
+            "description": "The question of the poll. Only `text` is supported."
+          },
+          "answers": {
+            "type": "array",
+            "description": "Each of the answers available in the poll, up to 10",
+            "items": {
+              "$ref": "#/components/schemas/PollAnswerCreateRequest"
+            },
+            "minItems": 1,
+            "maxItems": 10
+          },
+          "allow_multiselect": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether a user can select multiple answers"
+          },
+          "layout_type": {
+            "description": "The layout type of the poll. Defaults to... DEFAULT!",
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PollLayoutTypes"
+              }
+            ]
+          },
+          "duration": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Number of hours the poll should be open for, up to 32 days. Defaults to 24",
+            "minimum": 1,
+            "maximum": 768,
+            "format": "int32"
+          }
+        },
+        "required": [
+          "question",
+          "answers"
+        ]
+      },
+      "PollEmoji": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "The ID of the custom emoji",
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SnowflakeType"
+              }
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The name of the emoji, or the unicode emoji character",
+            "maxLength": 32
+          },
+          "animated": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether the emoji is animated"
+          }
+        }
+      },
+      "PollEmojiCreateRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "The ID of the custom emoji",
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SnowflakeType"
+              }
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The name of the emoji, or the unicode emoji character",
+            "maxLength": 32
+          },
+          "animated": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "Whether the emoji is animated"
+          }
+        }
+      },
+      "PollLayoutTypes": {
+        "type": "integer",
+        "oneOf": [
+          {
+            "title": "DEFAULT",
+            "description": "The, uhm, default layout type.",
+            "const": 1
+          }
+        ],
+        "format": "int32"
+      },
+      "PollMedia": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The text of the field",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "emoji": {
+            "description": "The emoji of the field",
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PollEmoji"
+              }
+            ]
+          }
+        }
+      },
+      "PollMediaCreateRequest": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The text of the field",
+            "minLength": 1,
+            "maxLength": 300
+          },
+          "emoji": {
+            "description": "The emoji of the field",
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PollEmojiCreateRequest"
+              }
+            ]
+          }
+        }
+      },
+      "ReactionTypes": {
+        "type": "integer",
+        "oneOf": [
+          {
+            "title": "NORMAL",
+            "description": "Normal reaction type",
+            "const": 0
+          },
+          {
+            "title": "BURST",
+            "description": "Burst reaction type",
+            "const": 1
+          }
+        ],
+        "format": "int32"
+      },
+      "RichEmbed": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 152133
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048,
+            "format": "uri"
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 256
+          },
+          "color": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 16777215
+          },
+          "timestamp": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4096
+          },
+          "author": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RichEmbedAuthor"
+              }
+            ]
+          },
+          "image": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RichEmbedImage"
+              }
+            ]
+          },
+          "thumbnail": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RichEmbedThumbnail"
+              }
+            ]
+          },
+          "footer": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RichEmbedFooter"
+              }
+            ]
+          },
+          "fields": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/RichEmbedField"
+            },
+            "maxItems": 25
+          },
+          "provider": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RichEmbedProvider"
+              }
+            ]
+          },
+          "video": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RichEmbedVideo"
+              }
+            ]
+          }
+        }
+      },
+      "RichEmbedAuthor": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 256
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048,
+            "format": "uri"
+          },
+          "icon_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048,
+            "format": "uri"
+          }
+        }
+      },
+      "RichEmbedField": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 256
+          },
+          "value": {
+            "type": "string",
+            "maxLength": 1024
+          },
+          "inline": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "value"
+        ]
+      },
+      "RichEmbedFooter": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048
+          },
+          "icon_url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048,
+            "format": "uri"
+          }
+        }
+      },
+      "RichEmbedImage": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048,
+            "format": "uri"
+          },
+          "width": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "height": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "placeholder": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "placeholder_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "is_animated": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4096
+          }
+        }
+      },
+      "RichEmbedProvider": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 256
+          },
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048,
+            "format": "uri"
+          }
+        }
+      },
+      "RichEmbedThumbnail": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048,
+            "format": "uri"
+          },
+          "width": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "height": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "placeholder": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "placeholder_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "is_animated": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4096
+          }
+        }
+      },
+      "RichEmbedVideo": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 2048,
+            "format": "uri"
+          },
+          "width": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "height": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "placeholder": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64
+          },
+          "placeholder_version": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 2147483647
+          },
+          "is_animated": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 4096
+          }
+        }
+      },
+      "SectionComponentForMessageRequest": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "A SectionComponentForMessageRequest. Structure omitted: this union inlines to hundreds of kilobytes. Pass the object as documented at https://discord.com/developers/docs/components/reference."
+      },
+      "SeparatorComponentForMessageRequest": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "A SeparatorComponentForMessageRequest. Structure omitted: this union inlines to hundreds of kilobytes. Pass the object as documented at https://discord.com/developers/docs/components/reference."
+      },
+      "SnowflakeType": {
+        "type": "string",
+        "pattern": "^(0|[1-9][0-9]*)$",
+        "format": "snowflake"
+      },
+      "TextDisplayComponentForMessageRequest": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "A TextDisplayComponentForMessageRequest. Structure omitted: this union inlines to hundreds of kilobytes. Pass the object as documented at https://discord.com/developers/docs/components/reference."
+      },
+      "ThreadAutoArchiveDuration": {
+        "type": "integer",
+        "oneOf": [
+          {
+            "title": "ONE_HOUR",
+            "description": "One hour",
+            "const": 60
+          },
+          {
+            "title": "ONE_DAY",
+            "description": "One day",
+            "const": 1440
+          },
+          {
+            "title": "THREE_DAY",
+            "description": "Three days",
+            "const": 4320
+          },
+          {
+            "title": "SEVEN_DAY",
+            "description": "Seven days",
+            "const": 10080
+          }
+        ],
+        "format": "int32"
+      }
+    },
+    "securitySchemes": {
+      "BotToken": {
+        "type": "apiKey",
+        "description": "Discord bot token",
+        "name": "Authorization",
+        "in": "header"
+      },
+      "OAuth2": {
+        "type": "oauth2",
+        "flows": {
+          "implicit": {
+            "authorizationUrl": "https://discord.com/api/oauth2/authorize",
+            "refreshUrl": "https://discord.com/api/oauth2/token",
+            "scopes": {
+              "activities.invites.write": "allows your app to send activity invites - requires Discord approval (NOT REQUIRED FOR GAMESDK ACTIVITY MANAGER)",
+              "activities.read": "allows your app to fetch data from a user's \"Now Playing/Recently Played\" list - requires Discord approval",
+              "activities.write": "allows your app to update a user's activity - requires Discord approval (NOT REQUIRED FOR GAMESDK ACTIVITY MANAGER)",
+              "applications.builds.read": "allows your app to read build data for a user's applications",
+              "applications.builds.upload": "allows your app to upload/update builds for a user's applications - requires Discord approval",
+              "applications.commands": "allows your app to use commands in a guild",
+              "applications.commands.permissions.update": "allows your app to update permissions for its commands in a guild a user has permissions to",
+              "applications.entitlements": "allows your app to read entitlements for a user's applications",
+              "applications.store.update": "allows your app to read and update store data (SKUs, store listings, achievements, etc.) for a user's applications",
+              "bot": "for oauth2 bots, this puts the bot in the user's selected guild by default",
+              "connections": "allows /users/@me/connections to return linked third-party accounts",
+              "dm_channels.read": "allows your app to see information about the user's DMs and group DMs - requires Discord approval",
+              "email": "enables /users/@me to return an email",
+              "gdm.join": "allows your app to join users to a group dm",
+              "guilds": "allows /users/@me/guilds to return basic information about all of a user's guilds",
+              "guilds.join": "allows /guilds/{guild.id}/members/{user.id} to be used for joining users to a guild",
+              "guilds.members.read": "allows /users/@me/guilds/{guild.id}/member to return a user's member information in a guild",
+              "identify": "allows /users/@me without email",
+              "messages.read": "for local rpc server api access, this allows you to read messages from all client channels (otherwise restricted to channels/guilds your app creates)",
+              "openid": "for OpenID Connect, this allows your app to receive user id and basic profile information",
+              "relationships.read": "allows your app to know a user's friends and implicit relationships - requires Discord approval",
+              "rpc": "for local rpc server access, this allows you to control a user's local Discord client - requires Discord approval",
+              "rpc.activities.write": "for local rpc server access, this allows you to update a user's activity - requires Discord approval",
+              "rpc.notifications.read": "for local rpc server access, this allows you to receive notifications pushed out to the user - requires Discord approval",
+              "rpc.screenshare.read": "for local rpc server access, this allows you to read a user's screenshare status- requires Discord approval",
+              "rpc.screenshare.write": "for local rpc server access, this allows you to update a user's screenshare settings- requires Discord approval",
+              "rpc.video.read": "for local rpc server access, this allows you to read a user's video status - requires Discord approval",
+              "rpc.video.write": "for local rpc server access, this allows you to update a user's video settings - requires Discord approval",
+              "rpc.voice.read": "for local rpc server access, this allows you to read a user's voice settings and listen for voice events - requires Discord approval",
+              "rpc.voice.write": "for local rpc server access, this allows you to update a user's voice settings - requires Discord approval",
+              "voice": "allows your app to connect to voice on user's behalf and see all the voice members - requires Discord approval",
+              "webhook.incoming": "this generates a webhook that is returned in the oauth token response for authorization code grants"
+            }
+          },
+          "clientCredentials": {
+            "tokenUrl": "https://discord.com/api/oauth2/token",
+            "refreshUrl": "https://discord.com/api/oauth2/token",
+            "scopes": {
+              "activities.invites.write": "allows your app to send activity invites - requires Discord approval (NOT REQUIRED FOR GAMESDK ACTIVITY MANAGER)",
+              "activities.read": "allows your app to fetch data from a user's \"Now Playing/Recently Played\" list - requires Discord approval",
+              "activities.write": "allows your app to update a user's activity - requires Discord approval (NOT REQUIRED FOR GAMESDK ACTIVITY MANAGER)",
+              "applications.builds.read": "allows your app to read build data for a user's applications",
+              "applications.builds.upload": "allows your app to upload/update builds for a user's applications - requires Discord approval",
+              "applications.commands": "allows your app to use commands in a guild",
+              "applications.commands.permissions.update": "allows your app to update permissions for its commands in a guild a user has permissions to",
+              "applications.commands.update": "allows your app to update its commands using a Bearer token - client credentials grant only",
+              "applications.entitlements": "allows your app to read entitlements for a user's applications",
+              "applications.store.update": "allows your app to read and update store data (SKUs, store listings, achievements, etc.) for a user's applications",
+              "bot": "for oauth2 bots, this puts the bot in the user's selected guild by default",
+              "connections": "allows /users/@me/connections to return linked third-party accounts",
+              "dm_channels.read": "allows your app to see information about the user's DMs and group DMs - requires Discord approval",
+              "email": "enables /users/@me to return an email",
+              "gdm.join": "allows your app to join users to a group dm",
+              "guilds": "allows /users/@me/guilds to return basic information about all of a user's guilds",
+              "guilds.join": "allows /guilds/{guild.id}/members/{user.id} to be used for joining users to a guild",
+              "guilds.members.read": "allows /users/@me/guilds/{guild.id}/member to return a user's member information in a guild",
+              "identify": "allows /users/@me without email",
+              "messages.read": "for local rpc server api access, this allows you to read messages from all client channels (otherwise restricted to channels/guilds your app creates)",
+              "openid": "for OpenID Connect, this allows your app to receive user id and basic profile information",
+              "relationships.read": "allows your app to know a user's friends and implicit relationships - requires Discord approval",
+              "rpc": "for local rpc server access, this allows you to control a user's local Discord client - requires Discord approval",
+              "rpc.activities.write": "for local rpc server access, this allows you to update a user's activity - requires Discord approval",
+              "rpc.notifications.read": "for local rpc server access, this allows you to receive notifications pushed out to the user - requires Discord approval",
+              "rpc.screenshare.read": "for local rpc server access, this allows you to read a user's screenshare status- requires Discord approval",
+              "rpc.screenshare.write": "for local rpc server access, this allows you to update a user's screenshare settings- requires Discord approval",
+              "rpc.video.read": "for local rpc server access, this allows you to read a user's video status - requires Discord approval",
+              "rpc.video.write": "for local rpc server access, this allows you to update a user's video settings - requires Discord approval",
+              "rpc.voice.read": "for local rpc server access, this allows you to read a user's voice settings and listen for voice events - requires Discord approval",
+              "rpc.voice.write": "for local rpc server access, this allows you to update a user's voice settings - requires Discord approval",
+              "voice": "allows your app to connect to voice on user's behalf and see all the voice members - requires Discord approval",
+              "webhook.incoming": "this generates a webhook that is returned in the oauth token response for authorization code grants"
+            }
+          },
+          "authorizationCode": {
+            "authorizationUrl": "https://discord.com/api/oauth2/authorize",
+            "tokenUrl": "https://discord.com/api/oauth2/token",
+            "refreshUrl": "https://discord.com/api/oauth2/token",
+            "scopes": {
+              "activities.invites.write": "allows your app to send activity invites - requires Discord approval (NOT REQUIRED FOR GAMESDK ACTIVITY MANAGER)",
+              "activities.read": "allows your app to fetch data from a user's \"Now Playing/Recently Played\" list - requires Discord approval",
+              "activities.write": "allows your app to update a user's activity - requires Discord approval (NOT REQUIRED FOR GAMESDK ACTIVITY MANAGER)",
+              "applications.builds.read": "allows your app to read build data for a user's applications",
+              "applications.builds.upload": "allows your app to upload/update builds for a user's applications - requires Discord approval",
+              "applications.commands": "allows your app to use commands in a guild",
+              "applications.commands.permissions.update": "allows your app to update permissions for its commands in a guild a user has permissions to",
+              "applications.entitlements": "allows your app to read entitlements for a user's applications",
+              "applications.store.update": "allows your app to read and update store data (SKUs, store listings, achievements, etc.) for a user's applications",
+              "bot": "for oauth2 bots, this puts the bot in the user's selected guild by default",
+              "connections": "allows /users/@me/connections to return linked third-party accounts",
+              "dm_channels.read": "allows your app to see information about the user's DMs and group DMs - requires Discord approval",
+              "email": "enables /users/@me to return an email",
+              "gdm.join": "allows your app to join users to a group dm",
+              "guilds": "allows /users/@me/guilds to return basic information about all of a user's guilds",
+              "guilds.join": "allows /guilds/{guild.id}/members/{user.id} to be used for joining users to a guild",
+              "guilds.members.read": "allows /users/@me/guilds/{guild.id}/member to return a user's member information in a guild",
+              "identify": "allows /users/@me without email",
+              "messages.read": "for local rpc server api access, this allows you to read messages from all client channels (otherwise restricted to channels/guilds your app creates)",
+              "openid": "for OpenID Connect, this allows your app to receive user id and basic profile information",
+              "relationships.read": "allows your app to know a user's friends and implicit relationships - requires Discord approval",
+              "role_connections.write": "allows your app to update a user's connection and metadata for the app",
+              "rpc": "for local rpc server access, this allows you to control a user's local Discord client - requires Discord approval",
+              "rpc.activities.write": "for local rpc server access, this allows you to update a user's activity - requires Discord approval",
+              "rpc.notifications.read": "for local rpc server access, this allows you to receive notifications pushed out to the user - requires Discord approval",
+              "rpc.screenshare.read": "for local rpc server access, this allows you to read a user's screenshare status- requires Discord approval",
+              "rpc.screenshare.write": "for local rpc server access, this allows you to update a user's screenshare settings- requires Discord approval",
+              "rpc.video.read": "for local rpc server access, this allows you to read a user's video status - requires Discord approval",
+              "rpc.video.write": "for local rpc server access, this allows you to update a user's video settings - requires Discord approval",
+              "rpc.voice.read": "for local rpc server access, this allows you to read a user's voice settings and listen for voice events - requires Discord approval",
+              "rpc.voice.write": "for local rpc server access, this allows you to update a user's voice settings - requires Discord approval",
+              "voice": "allows your app to connect to voice on user's behalf and see all the voice members - requires Discord approval",
+              "webhook.incoming": "this generates a webhook that is returned in the oauth token response for authorization code grants"
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "ClientErrorResponse": {
+        "description": "Client error response",
+        "headers": {
+          "X-RateLimit-Limit": {
+            "$ref": "#/components/headers/X-RateLimit-Limit"
+          },
+          "X-RateLimit-Remaining": {
+            "$ref": "#/components/headers/X-RateLimit-Remaining"
+          },
+          "X-RateLimit-Reset": {
+            "$ref": "#/components/headers/X-RateLimit-Reset"
+          },
+          "X-RateLimit-Reset-After": {
+            "$ref": "#/components/headers/X-RateLimit-Reset-After"
+          },
+          "X-RateLimit-Bucket": {
+            "$ref": "#/components/headers/X-RateLimit-Bucket"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      },
+      "ClientRatelimitedResponse": {
+        "description": "Client ratelimited response",
+        "headers": {
+          "X-RateLimit-Limit": {
+            "$ref": "#/components/headers/X-RateLimit-Limit"
+          },
+          "X-RateLimit-Remaining": {
+            "$ref": "#/components/headers/X-RateLimit-Remaining"
+          },
+          "X-RateLimit-Reset": {
+            "$ref": "#/components/headers/X-RateLimit-Reset"
+          },
+          "X-RateLimit-Reset-After": {
+            "$ref": "#/components/headers/X-RateLimit-Reset-After"
+          },
+          "X-RateLimit-Bucket": {
+            "$ref": "#/components/headers/X-RateLimit-Bucket"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/RatelimitedResponse"
+            }
+          }
+        }
+      }
+    },
+    "headers": {
+      "X-RateLimit-Limit": {
+        "schema": {
+          "type": "integer"
+        },
+        "description": "The maximum number of requests that can be made in the current ratelimit window"
+      },
+      "X-RateLimit-Remaining": {
+        "schema": {
+          "type": "integer"
+        },
+        "description": "The number of requests remaining in the current ratelimit window"
+      },
+      "X-RateLimit-Reset": {
+        "schema": {
+          "type": "number"
+        },
+        "description": "A unix timestamp in seconds at which the current ratelimit window resets"
+      },
+      "X-RateLimit-Reset-After": {
+        "schema": {
+          "type": "number"
+        },
+        "description": "The duration in seconds until the current ratelimit window resets"
+      },
+      "X-RateLimit-Bucket": {
+        "schema": {
+          "type": "string"
+        },
+        "description": "The bucket that the request belongs to"
+      }
+    }
+  }
+}

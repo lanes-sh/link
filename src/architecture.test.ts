@@ -138,7 +138,7 @@ describe('dependency direction', () => {
  * worse. What must not appear is a vendor name the code *branches on* or
  * *prints*.
  */
-const VENDORS = /\b(gmail|icloud|notion|linear|apple|google|dropbox|fastmail|reddit|bunq)\b/i;
+const VENDORS = /\b(gmail|icloud|notion|linear|apple|google|dropbox|fastmail|reddit|bunq|discord)\b/i;
 
 /**
  * Where the rule bites: the machinery a request passes through.
@@ -309,7 +309,6 @@ const KNOWN_LONG = new Set([
   'connectivity/transports/dav/ical.ts',
   'deployments/adapters/gcp-secret-manager.ts',
   'profile/schema.ts',
-  'providers/google/specs/vendor.ts',
   'providers/memory/provider.ts',
   'server/endpoint.ts',
   'server/harness.ts',
