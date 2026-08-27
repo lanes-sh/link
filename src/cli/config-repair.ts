@@ -1,4 +1,6 @@
-import type { ConfigDocument } from './config-edit.ts';
+import { listProfiles } from '#profile';
+import { ConfigDocument } from './config-edit.ts';
+import { ok, print, style, warn } from './output.ts';
 
 /**
  * Giving a profile a reserved provider it is missing, without undoing a choice.
@@ -9,21 +11,48 @@ import type { ConfigDocument } from './config-edit.ts';
  * was already there: that file knows how to *edit* YAML safely, and this one
  * knows what a reserved provider needs to be reachable at all.
  *
- * Two providers hold no account and are therefore invisible without a
- * connection row nobody would think to write: `setup`, which describes what is
- * connected, and `identity`, which says who the owner is. Both are repaired the
+ * The owner layer holds no account and is therefore invisible without a
+ * connection row nobody would think to write. Every one of them is repaired the
  * same way and the rules below are subtle enough that a second copy would drift
  * — which is the whole reason this is one function taking a provider id rather
- * than two that look alike.
+ * than several that look alike.
  */
 
 /** The reserved provider ids that hold no account, and the label each row carries. */
 const RESERVED_SURFACES = {
+  memory: 'Memory',
+  tasks: 'Tasks',
+  assets: 'Assets',
+  skills: 'Skills',
+  vault: 'Vault',
   setup: 'Setup',
   identity: 'Identity',
 } as const;
 
 type ReservedSurface = keyof typeof RESERVED_SURFACES;
+
+/**
+ * The ones a profile gets whether it asked or not.
+ *
+ * `identity` is the exception and stays off this list, for the reason
+ * `ensureIdentityConnection` gives: a profile with no identity block has nothing
+ * for the surface to report, so registering a tool that answers "nothing
+ * declared" would spend instructions budget to say so. Everything else here
+ * reaches the owner's own material and is empty until they put something in it,
+ * which is ADR-050's whole argument — so a profile written before those existed
+ * gets them on the next command rather than needing five of its own.
+ *
+ * Ordered as `RESERVED_PROVIDER_IDS` is, so a repair reports in the order the
+ * template writes and a diff between the two reads as a diff.
+ */
+export const DEFAULT_SURFACES: readonly ReservedSurface[] = [
+  'memory',
+  'tasks',
+  'assets',
+  'skills',
+  'vault',
+  'setup',
+];
 
 /**
  * What a repair did, split by what a caller does with each half.
@@ -162,14 +191,28 @@ function patternsIn(rules: unknown, now = Date.now()): string[] {
 }
 
 /**
- * The `setup` surface, which every profile is expected to have.
+ * The owner layer, which every profile is expected to have.
  *
- * A named wrapper rather than a call site passing `'setup'`, because three
- * callers say it and reading `ensureReservedConnection(document, 'setup')` at
- * each of them says less than the name did.
+ * Was `ensureSetupConnection`, and grew rather than gained siblings: the callers
+ * are the same three, and what changed is how many surfaces "a profile should be
+ * able to reach its own material" covers. Repairs are accumulated so a caller
+ * reports one list — five separate calls would print five near-identical blocks
+ * on the one upgrade where any of them fire.
+ *
+ * Each surface is still decided independently, so a profile that denied exactly
+ * one of them keeps that decision while the rest are repaired.
  */
-export function ensureSetupConnection(document: ConfigDocument): SurfaceRepair {
-  return ensureReservedConnection(document, 'setup');
+export function ensureOwnerLayer(document: ConfigDocument): SurfaceRepair {
+  const changes: string[] = [];
+  const granted: string[] = [];
+
+  for (const provider of DEFAULT_SURFACES) {
+    const repair = ensureReservedConnection(document, provider);
+    changes.push(...repair.changes);
+    granted.push(...repair.granted);
+  }
+
+  return { changes, granted };
 }
 
 /**
@@ -183,4 +226,65 @@ export function ensureSetupConnection(document: ConfigDocument): SurfaceRepair {
  */
 export function ensureIdentityConnection(document: ConfigDocument): SurfaceRepair {
   return ensureReservedConnection(document, 'identity');
+}
+
+/**
+ * Apply that repair across a workspace, saving and reporting what changed.
+ *
+ * Here rather than in `#deployments`, where it was, because `start` needs it as
+ * much as `deploy` does — more, in fact: `start` is the one command an existing
+ * install runs without being asked to, so it is the path by which a profile
+ * written before ADR-050 gets the layer at all. Two copies of a function that
+ * widens a policy is not a thing to have.
+ *
+ * **The caller scopes it**, and for `deploy` that is exactly the set being
+ * uploaded: a profile it sends is a profile the endpoint will serve, so
+ * repairing a narrower set would leave a served profile without the surfaces.
+ * Note what a `--profile` flag does not mean — it is the flag alone, so a
+ * profile resolved from the environment leaves it undefined and that reads as
+ * the whole workspace.
+ *
+ * *Which files are profiles* comes from `listProfiles`, never from an allowlist
+ * of what is safe to copy: that would happily hand over a committed
+ * `personal.example.yaml` or a nested `profiles/archive/old.yaml`, and this
+ * opens and validates what it is given — which once turned a template into a
+ * `ConfigError` aborting a deploy after provisioning had made cloud resources.
+ *
+ * A profile that cannot be read is warned about rather than fatal: the repair is
+ * a courtesy on the way past, and the caller's real work should still happen.
+ * Not silent, though — nothing else widens a policy without being asked.
+ *
+ * CLI-side by construction, like everything else in this file: a deployed
+ * revision holds `objectViewer` on `profiles/` (ADR-023) and could not write
+ * this even if the code let it.
+ */
+export async function repairOwnerLayer(
+  workspaceRoot: string,
+  profiles: readonly string[] | undefined,
+): Promise<void> {
+  const wanted = profiles === undefined ? undefined : new Set(profiles);
+
+  for (const name of await listProfiles(workspaceRoot)) {
+    if (wanted !== undefined && !wanted.has(name)) continue;
+
+    try {
+      const document = await ConfigDocument.open(workspaceRoot, name);
+      const repair = ensureOwnerLayer(document);
+      if (!repaired(repair)) continue;
+
+      await document.save();
+
+      print(ok(`gave ${style.bold(name)} its own owner layer`));
+      for (const change of repairLines(repair)) print(`      ${style.dim(change)}`);
+      print(
+        `      ${style.dim('memory, tasks, assets, skills, vault and setup — your own material, no account behind any of them')}`,
+      );
+    } catch (error) {
+      print(
+        warn(
+          `could not give ${name} its owner layer: ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`,
+        ),
+      );
+    }
+  }
 }

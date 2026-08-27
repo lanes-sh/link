@@ -46,7 +46,7 @@ export interface PrepareResult {
  * path derives from the manifest and has never read config for. Sharing one list
  * would silently pick one answer for both.
  *
- * **Scoped exactly as the upload is**, for the reason `repairSetupSurface`
+ * **Scoped exactly as the upload is**, for the reason `repairOwnerLayer`
  * states and one more: a profile this deploy sends is a profile the endpoint may
  * serve, and a connection whose secret nobody bound fails an hour after the
  * revision reports healthy. The asymmetry decides it — an extra binding is a

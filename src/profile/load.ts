@@ -107,6 +107,37 @@ function formatZodIssues(error: z.ZodError): string {
  * left to resolve silently it grants nothing, which looks identical to a
  * working rule until the day someone relies on it.
  */
+/**
+ * A connection naming a provider whose id has moved out from under it.
+ *
+ * There is exactly one, and it is the reason this function exists: `tasks` was
+ * Google Tasks until the built-in task list took the plain noun (ADR-051). A row
+ * left saying `provider: tasks` does not fail — it resolves to the *built-in*,
+ * `reconcile` marks it active because a provider needing no credential is
+ * authorized by construction, and the operator is left with their Google Tasks
+ * tools gone, a task list labelled with their email address, and nothing
+ * anywhere saying why. Refusing is the only outcome that names the fix.
+ *
+ * **The tell is the account.** A built-in row is written in exactly one spelling
+ * by `newProfileTemplate` and by `ensureReservedConnection` — `account: Tasks` —
+ * while `connect tasks` recorded the address the operator typed, because Google
+ * Tasks publishes no identity to read one from. So an `@` in the account of a
+ * `tasks` row means a mailbox, and a mailbox means the vendor surface.
+ *
+ * Not a check on the connection *id*: several task lists in one profile is a
+ * legitimate thing to want (`tasks.work`, `tasks.personal`), exactly as several
+ * memory connections are, so keying on `id !== 'main'` would refuse a valid
+ * profile forever to catch a one-release migration.
+ */
+function renamedProvider(connection: { provider: string; account: string }): string | null {
+  if (connection.provider !== 'tasks' || !connection.account.includes('@')) return null;
+
+  return (
+    `"tasks" is the built-in task list, and this row names an account — so it was Google Tasks, ` +
+    'which is now "google_tasks". Change provider to google_tasks here and in any "tasks.*" policy rule.'
+  );
+}
+
 function assertReferentialIntegrity(config: Config, source: string): void {
   const problems: string[] = [];
 
@@ -142,6 +173,9 @@ function assertReferentialIntegrity(config: Config, source: string): void {
       problems.push(`connections[${index}]: duplicate connection "${key}"`);
     }
     connectionKeys.add(key);
+
+    const renamed = renamedProvider(connection);
+    if (renamed) problems.push(`connections[${index}]: ${renamed}`);
   });
 
   // Same reason as a duplicate connection: two entries with the same kind and

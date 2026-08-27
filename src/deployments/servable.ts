@@ -30,7 +30,7 @@ export interface Unservable {
 /**
  * The profiles this deploy would send that the revision could not open.
  *
- * Scoped exactly as `uploadWorkspace` and `repairSetupSurface` are — by the
+ * Scoped exactly as `uploadWorkspace` and `repairOwnerLayer` are — by the
  * `--profile` flag, absent meaning the whole workspace — because the set that
  * gets uploaded is the set that gets served, and checking a different one would
  * be checking the wrong question.

@@ -5,7 +5,12 @@ import { readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ConfigDocument, newProfileTemplate } from './config-edit.ts';
-import { ensureSetupConnection, repairLines } from './config-repair.ts';
+import {
+  ensureOwnerLayer,
+  ensureReservedConnection,
+  repairLines,
+  type SurfaceRepair,
+} from './config-repair.ts';
 
 /**
  * The config file is the source of truth, and an operator is meant to be able
@@ -225,6 +230,17 @@ describe('idempotence', () => {
  * missing one — either half alone is inert.
  */
 describe('repairing a profile that predates the setup surface', () => {
+  /**
+   * One surface at a time, which is what these tests are about.
+   *
+   * `ensureOwnerLayer` runs this over six of them and accumulates; the rules
+   * that are subtle — a deny that survives, an expiry that counts, a blanket
+   * allow that already covers — are per surface, so they are checked here and
+   * the layer's own behaviour is checked in the block below.
+   */
+  const ensureSetup = (document: ConfigDocument): SurfaceRepair =>
+    ensureReservedConnection(document, 'setup');
+
   /** A profile as it was written before the surface, and as this operator's is. */
   const OLD = `contract: 1
 instance:
@@ -249,7 +265,7 @@ policy:
     const { root } = await profileFile(OLD);
 
     const document = await ConfigDocument.open(root, 'personal');
-    const added = repairLines(ensureSetupConnection(document));
+    const added = repairLines(ensureSetup(document));
     await document.save();
 
     expect(added).toEqual(['connections += setup.main', 'policy.allow += setup.*']);
@@ -266,7 +282,7 @@ policy:
     const { root } = await profileFile(OLD);
 
     const document = await ConfigDocument.open(root, 'personal');
-    ensureSetupConnection(document);
+    ensureSetup(document);
 
     const config = document.toJSON() as {
       connections: { id: string; provider: string; account: string }[];
@@ -284,12 +300,12 @@ policy:
     const { root, path } = await profileFile(OLD);
 
     const first = await ConfigDocument.open(root, 'personal');
-    ensureSetupConnection(first);
+    ensureSetup(first);
     await first.save();
     const afterFirst = await readFile(path, 'utf8');
 
     const second = await ConfigDocument.open(root, 'personal');
-    expect(repairLines(ensureSetupConnection(second))).toEqual([]);
+    expect(repairLines(ensureSetup(second))).toEqual([]);
     await second.save();
 
     expect(await readFile(path, 'utf8')).toBe(afterFirst);
@@ -302,7 +318,7 @@ policy:
 
     // The template already writes both. If this ever fails, the template and
     // its repair have drifted and one of them is writing a second spelling.
-    expect(repairLines(ensureSetupConnection(document))).toEqual([]);
+    expect(repairLines(ensureSetup(document))).toEqual([]);
   });
 
   test('the row alone is repaired when only the grant is there', async () => {
@@ -310,7 +326,7 @@ policy:
 
     const document = await ConfigDocument.open(root, 'personal');
 
-    expect(repairLines(ensureSetupConnection(document))).toEqual(['connections += setup.main']);
+    expect(repairLines(ensureSetup(document))).toEqual(['connections += setup.main']);
   });
 
   test('the grant alone is repaired when only the row is there', async () => {
@@ -323,7 +339,7 @@ policy:
 
     const document = await ConfigDocument.open(root, 'personal');
 
-    expect(repairLines(ensureSetupConnection(document))).toEqual(['policy.allow += setup.*']);
+    expect(repairLines(ensureSetup(document))).toEqual(['policy.allow += setup.*']);
   });
 
   test('a blanket allow already covers it, so no rule is added', async () => {
@@ -331,7 +347,7 @@ policy:
 
     const document = await ConfigDocument.open(root, 'personal');
 
-    expect(repairLines(ensureSetupConnection(document))).toEqual(['connections += setup.main']);
+    expect(repairLines(ensureSetup(document))).toEqual(['connections += setup.main']);
   });
 
   test('a rule written with an expiry is recognised, not duplicated', async () => {
@@ -343,7 +359,7 @@ policy:
 
     const document = await ConfigDocument.open(root, 'personal');
 
-    expect(repairLines(ensureSetupConnection(document))).toEqual(['connections += setup.main']);
+    expect(repairLines(ensureSetup(document))).toEqual(['connections += setup.main']);
   });
 
   /**
@@ -364,7 +380,7 @@ policy:
       // Reading it as live wrote the row, skipped the rule, and reported "an
       // agent can now see what is connected here" — the inert half-state this
       // whole function exists to make impossible.
-      expect(repairLines(ensureSetupConnection(document))).toEqual([
+      expect(repairLines(ensureSetup(document))).toEqual([
         'connections += setup.main',
         'policy.allow += setup.*',
       ]);
@@ -383,7 +399,7 @@ policy:
       // Reading it as live meant a deny that stopped denying years ago blocked
       // the repair for good — and printed nothing, because returning nothing to
       // add is exactly how "already had it" looks.
-      expect(repairLines(ensureSetupConnection(document))).toEqual([
+      expect(repairLines(ensureSetup(document))).toEqual([
         'connections += setup.main',
         'policy.allow += setup.*',
       ]);
@@ -399,7 +415,7 @@ policy:
 
       const document = await ConfigDocument.open(root, 'personal');
 
-      expect(repairLines(ensureSetupConnection(document))).toEqual([]);
+      expect(repairLines(ensureSetup(document))).toEqual([]);
     });
   });
 
@@ -407,7 +423,7 @@ policy:
     const { root, path } = await profileFile(`# my own note about this profile\n${OLD}`);
 
     const document = await ConfigDocument.open(root, 'personal');
-    ensureSetupConnection(document);
+    ensureSetup(document);
     await document.save();
 
     expect(await readFile(path, 'utf8')).toContain('# my own note about this profile');
@@ -417,7 +433,7 @@ policy:
     const { root } = await profileFile(OLD);
 
     const document = await ConfigDocument.open(root, 'personal');
-    ensureSetupConnection(document);
+    ensureSetup(document);
 
     // `save` validates the rendered text before writing, so this throwing is
     // the assertion — a repair that produced an invalid file would leave the
@@ -444,7 +460,7 @@ policy:
       // Deleting the last entry by hand leaves exactly this. It used to reach
       // `null.add(...)` — a TypeError with a stack trace, mid-deploy, after the
       // provision steps had already created cloud resources.
-      expect(repairLines(ensureSetupConnection(document))).toEqual([
+      expect(repairLines(ensureSetup(document))).toEqual([
         'connections += setup.main',
         'policy.allow += setup.*',
       ]);
@@ -460,7 +476,7 @@ policy:
 
       const document = await ConfigDocument.open(root, 'personal');
 
-      expect(repairLines(ensureSetupConnection(document))).toEqual([
+      expect(repairLines(ensureSetup(document))).toEqual([
         'connections += setup.main',
         'policy.allow += setup.*',
       ]);
@@ -479,7 +495,7 @@ policy:
 
       const document = await ConfigDocument.open(root, 'personal');
 
-      expect(() => ensureSetupConnection(document)).not.toThrow();
+      expect(() => ensureSetup(document)).not.toThrow();
     });
   });
 
@@ -497,7 +513,7 @@ policy:
       // Not "added the rule but it is denied": a deny beats an allow, so the
       // caller would have printed that an agent can now see what is connected
       // here, about a surface that is still refused.
-      expect(repairLines(ensureSetupConnection(document))).toEqual([]);
+      expect(repairLines(ensureSetup(document))).toEqual([]);
     });
 
     test('a blanket deny stops it too', async () => {
@@ -505,7 +521,7 @@ policy:
 
       const document = await ConfigDocument.open(root, 'personal');
 
-      expect(repairLines(ensureSetupConnection(document))).toEqual([]);
+      expect(repairLines(ensureSetup(document))).toEqual([]);
     });
 
     test('denying one capability is a narrowing, and the repair still runs', async () => {
@@ -516,10 +532,152 @@ policy:
 
       const document = await ConfigDocument.open(root, 'personal');
 
-      expect(repairLines(ensureSetupConnection(document))).toEqual([
+      expect(repairLines(ensureSetup(document))).toEqual([
         'connections += setup.main',
         'policy.allow += setup.*',
       ]);
     });
+  });
+});
+
+/**
+ * The owner layer as a whole — ADR-050.
+ *
+ * The per-surface rules are held above. What this block is for is the part that
+ * only exists once there are six of them: that a profile written before they
+ * were default gets all six on the next command, that each is still decided on
+ * its own, and that the template needs no repair — because a template and its
+ * repair writing two spellings of one row is the failure `config-repair.ts` is
+ * shaped to prevent.
+ */
+describe('repairing a profile that predates the owner layer', () => {
+  const OLD = `contract: 1
+instance:
+  profile: personal
+targets:
+  local:
+    credentials: { adapter: file, path: ./data/personal/credentials.enc }
+    storage: { adapter: filesystem, path: ./data/personal }
+connections:
+  - id: ada_lovelace
+    provider: gmail
+    account: ada.lovelace@example.com
+policy:
+  allow:
+    - gmail.*
+  deny: []
+`;
+
+  test('all six arrive, both halves each, in the order the template writes', async () => {
+    const { root } = await profileFile(OLD);
+
+    const document = await ConfigDocument.open(root, 'personal');
+    const added = repairLines(ensureOwnerLayer(document));
+    await document.save();
+
+    expect(added).toEqual([
+      'connections += memory.main',
+      'connections += tasks.main',
+      'connections += assets.main',
+      'connections += skills.main',
+      'connections += vault.main',
+      'connections += setup.main',
+      'policy.allow += memory.*',
+      'policy.allow += tasks.*',
+      'policy.allow += assets.*',
+      'policy.allow += skills.*',
+      'policy.allow += vault.*',
+      'policy.allow += setup.*',
+    ]);
+  });
+
+  test('identity is not among them, because a profile declaring none has nothing to report', async () => {
+    const { root } = await profileFile(OLD);
+
+    const document = await ConfigDocument.open(root, 'personal');
+    ensureOwnerLayer(document);
+
+    const config = document.toJSON() as {
+      connections: { provider: string }[];
+      policy: { allow: string[] };
+    };
+    expect(config.connections.map((row) => row.provider)).not.toContain('identity');
+    expect(config.policy.allow).not.toContain('identity.*');
+  });
+
+  test('the account already there is untouched', async () => {
+    const { root } = await profileFile(OLD);
+
+    const document = await ConfigDocument.open(root, 'personal');
+    ensureOwnerLayer(document);
+
+    const config = document.toJSON() as {
+      connections: { id: string; provider: string; account: string }[];
+      policy: { allow: string[] };
+    };
+    expect(config.connections).toContainEqual({
+      id: 'ada_lovelace',
+      provider: 'gmail',
+      account: 'ada.lovelace@example.com',
+    });
+    expect(config.policy.allow).toContain('gmail.*');
+  });
+
+  test('a fresh profile from the template needs no repair at all', async () => {
+    const { root } = await profileFile();
+
+    const document = await ConfigDocument.open(root, 'personal');
+
+    // If this fails, the template and its repair have drifted and one of them is
+    // writing a second spelling of a row the other already wrote.
+    expect(repairLines(ensureOwnerLayer(document))).toEqual([]);
+  });
+
+  test('a second run changes nothing', async () => {
+    const { root, path } = await profileFile(OLD);
+
+    const first = await ConfigDocument.open(root, 'personal');
+    ensureOwnerLayer(first);
+    await first.save();
+    const afterFirst = await readFile(path, 'utf8');
+
+    const second = await ConfigDocument.open(root, 'personal');
+    expect(repairLines(ensureOwnerLayer(second))).toEqual([]);
+    await second.save();
+
+    expect(await readFile(path, 'utf8')).toBe(afterFirst);
+  });
+
+  test('one surface denied stays denied while the rest are repaired', async () => {
+    // The operator who does not want an agent writing skills. Repairing that one
+    // would undo a decision; refusing to repair the others would punish them for
+    // having made it.
+    const { root } = await profileFile(OLD.replace('  deny: []', '  deny:\n    - skills.*'));
+
+    const document = await ConfigDocument.open(root, 'personal');
+    const added = repairLines(ensureOwnerLayer(document));
+
+    expect(added).not.toContain('connections += skills.main');
+    expect(added).not.toContain('policy.allow += skills.*');
+    expect(added).toContain('connections += memory.main');
+    expect(added).toContain('policy.allow += tasks.*');
+  });
+
+  test('a blanket deny leaves the whole layer off', async () => {
+    const { root } = await profileFile(OLD.replace('  deny: []', "  deny:\n    - '*'"));
+
+    const document = await ConfigDocument.open(root, 'personal');
+
+    expect(repairLines(ensureOwnerLayer(document))).toEqual([]);
+  });
+
+  test('a blanket allow needs no rules, only rows', async () => {
+    const { root } = await profileFile(OLD.replace('    - gmail.*', "    - '*'"));
+
+    const document = await ConfigDocument.open(root, 'personal');
+    const added = repairLines(ensureOwnerLayer(document));
+
+    expect(added.filter((line) => line.startsWith('policy.allow'))).toEqual([]);
+    expect(added).toHaveLength(6);
   });
 });

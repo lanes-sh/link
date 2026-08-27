@@ -228,6 +228,45 @@ describe('referential integrity', () => {
   });
 });
 
+/**
+ * The one id that moved out from under a profile — ADR-051.
+ *
+ * A refusal rather than a warning, because the failure it replaces is silent:
+ * the row resolves to the built-in, reconcile calls it active, and the operator
+ * loses their Google Tasks tools with nothing saying why.
+ */
+describe('a provider whose id has been renamed', () => {
+  const withTasks = (id: string, account: string) =>
+    VALID.replace(
+      '  - id: a\n    provider: example\n    account: Scratch',
+      `  - id: a\n    provider: example\n    account: Scratch\n  - id: ${id}\n    provider: tasks\n    account: ${account}`,
+    );
+
+  test('a tasks row naming an account is refused, and names google_tasks', () => {
+    expect(() => parseConfig(withTasks('ada', 'ada.lovelace@example.com'))).toThrow(
+      /was Google Tasks, which is now "google_tasks"/,
+    );
+  });
+
+  test("the built-in's own row is not mistaken for it", () => {
+    expect(() => parseConfig(withTasks('main', 'Tasks'))).not.toThrow();
+  });
+
+  test('a second task list is allowed, because several is a legitimate thing to want', () => {
+    // Keying on `id !== "main"` would have refused this forever to catch a
+    // one-release migration.
+    expect(() => parseConfig(withTasks('work', 'Work'))).not.toThrow();
+  });
+
+  test('google_tasks itself is fine, which is the whole point', () => {
+    const yaml = VALID.replace(
+      '  - id: a\n    provider: example\n    account: Scratch',
+      '  - id: a\n    provider: example\n    account: Scratch\n  - id: ada\n    provider: google_tasks\n    account: ada.lovelace@example.com',
+    );
+    expect(() => parseConfig(yaml)).not.toThrow();
+  });
+});
+
 describe('where a target deploys', () => {
   /** `VALID` with a second target carrying whatever deployment block is under test. */
   const withTarget = (block: string) =>

@@ -1,5 +1,6 @@
 import { startEndpoint } from '#server/endpoint.ts';
 import { streamLogger } from '#server/logging.ts';
+import { repairOwnerLayer } from '../../config-repair.ts';
 import { announce, ok, print, style, warn } from '../../output.ts';
 import { staleNudge } from '../../release.ts';
 import { resolveProfile, type GlobalFlags } from '../../runtime.ts';
@@ -15,6 +16,26 @@ export async function start(
 ): Promise<void> {
   const { resolution } = await resolveProfile(flags);
   announce(resolution);
+
+  // Before the bootstrap, and only here.
+  //
+  // This is the one command an existing install runs without being told to, so
+  // it is how a profile written before ADR-050 comes to have memory, tasks,
+  // assets, skills and the vault at all — `connect` and `deploy` repair too, but
+  // someone who is already set up may not run either for months. What it writes
+  // is the rows and rules a fresh profile is created with; a `deny` covering a
+  // surface is left alone, which is how one stays off.
+  //
+  // Not inside `startEndpoint`, which the container entrypoint also calls: a
+  // deployed revision holds `objectViewer` on `profiles/` (ADR-023) and must not
+  // be the thing that edits config. The repair belongs to the control plane
+  // (ADR-007), and this is the control plane.
+  //
+  // Scoped as the serving is: `--only` serves one profile, so it repairs one.
+  await repairOwnerLayer(
+    resolution.workspaceRoot,
+    flags.only ? [resolution.profile] : undefined,
+  );
 
   // The bootstrap itself lives in `endpoint.ts`, shared with the container
   // entrypoint. What stays here is what a terminal wants: the plan, printed as

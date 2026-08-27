@@ -1,6 +1,6 @@
 import { credentialRefForConnection, WRITE_BUNDLE } from '#connectivity';
 import { ConfigDocument } from '../../config-edit.ts';
-import { ensureSetupConnection, repaired } from '../../config-repair.ts';
+import { ensureOwnerLayer, repaired } from '../../config-repair.ts';
 import { emit, print } from '../../output.ts';
 import { nonInteractivePrompter, terminalPrompter, type Prompter } from '../../prompt.ts';
 import { openRuntime, type GlobalFlags } from '../../runtime.ts';
@@ -334,26 +334,29 @@ export async function runConnect(
     // 5. Grant it — one rule per provider; `grant.ts` says why not per capability.
     const granted = grantProvider(document, runtime.config.policy.allow, providerId);
 
-    // 6. Repair the setup surface if this profile predates it.
+    // 6. Repair the owner layer if this profile predates it.
     //
     //    Connecting is the moment it matters: the operator is adding something
     //    an agent will be asked about, and a profile with no `setup` row serves
     //    no `setup_overview` — so the agent has nothing to read and invents a
     //    command instead. `doctor` reports this, but a deployed operator never
-    //    runs it, which is how it stayed broken.
+    //    runs it, which is how it stayed broken. The same argument now covers
+    //    memory, tasks, assets, skills and the vault (ADR-050): a profile
+    //    written before they were default has no rows for them, and none of them
+    //    reaches an account, so there is nothing for the operator to decide.
     //    Each half goes to the field that is for it. `emit` serialises both
     //    verbatim under `--json`: `changes` is a list of config edits, so a
     //    sentence in it is something a caller counting edits has to recognise
     //    and skip, and `granted` is the field that answers "what did this widen"
     //    — an audit reading it would have missed `setup.*` entirely.
-    const repair = ensureSetupConnection(document);
+    const repair = ensureOwnerLayer(document);
     changes.push(...repair.changes);
     granted.push(...repair.granted);
 
     // The explanation is prose, so it goes where prose goes. Without it the
-    // operator has two lines naming a provider they never asked for.
+    // operator has a block of lines naming providers they never asked for.
     const notes = repaired(repair)
-      ? ['that is the setup surface — it lets an agent see what is connected here']
+      ? ['that is your own memory, tasks, assets, skills and vault — no account, nothing stored until you use them']
       : [];
 
     if (changes.length === 0 && granted.length === 0) {
