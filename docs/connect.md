@@ -56,11 +56,13 @@ so leaving that one allowed lets an agent approve its own. Read
 [`detailed/setup/bunq.md`](detailed/setup/bunq.md) before connecting it; it is the only page here
 that is mostly about what not to do.
 
-**Only GitHub and bunq ask you to register anything.** Google and Slack authorise against the client Lanes
-operates, Notion and Linear register themselves, and iCloud takes an app-specific password you
-generate at appleid.apple.com. GitHub takes a personal access token you create once —
-[`detailed/setup/github.md`](detailed/setup/github.md) — and bunq takes an API key you generate in
-the bunq app, which is also where you set its spending limit.
+**GitHub, Reddit, and bunq ask you to register something.** Google and Slack authorise against the
+client Lanes operates, Notion and Linear register themselves, and iCloud takes an app-specific
+password you generate at appleid.apple.com. The other three each want one thing you make yourself:
+GitHub a personal access token — [`detailed/setup/github.md`](detailed/setup/github.md) — Reddit an
+OAuth client at reddit.com/prefs/apps, because it matches the loopback redirect exactly
+([`detailed/setup/reddit.md`](detailed/setup/reddit.md)), and bunq an API key from inside the bunq
+app, which is also where you set its spending limit.
 
 Slack used to be on that list and no longer is. Slack does not register clients automatically and
 is not going to — it would let a client authenticate someone without an app existing, and on

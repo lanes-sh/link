@@ -123,10 +123,11 @@ spending your budget. Google and Slack need no
 OAuth client of your own: both authorise against the one Lanes operates, so there is no console to
 visit — for Google, add `--own-client` if you would rather register your own, or take a service
 account key or an app password over IMAP where you would rather nothing expired. And GitHub takes a
-token you paste rather than a browser sign-in, because it will not register a client for us; that
-is the one console visit left here. bunq is the one that can move money, and it says so: its
-payment tool executes immediately and is not reversible. Set a spending limit on the API key in the
-bunq app, and read [docs/detailed/setup/bunq.md](docs/detailed/setup/bunq.md) before connecting it.
+token you paste rather than a browser sign-in, because it will not register a client for us. And
+bunq — which wants a key from inside its app rather than a console at all — is the one that can move
+money, and it says so: its payment tool executes immediately and is not reversible. Set a spending
+limit on the API key while you are in there, and read
+[docs/detailed/setup/bunq.md](docs/detailed/setup/bunq.md) before connecting it.
 
 Full guide — what each one gives your agent, what it needs, and adding your own:
 **[docs/connect.md](docs/connect.md)**.
