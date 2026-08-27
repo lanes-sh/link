@@ -20,6 +20,10 @@ $ bun test          # establish the baseline before changing anything
 has no `node_modules`. Getting a green baseline first is what makes a later failure
 attributable.
 
+Work lands by pull request into `develop`, squashed — `gh pr merge <n> --squash --delete-branch`.
+Both `develop` and `main` require a passing `ci` and an approval, so a solo merge adds `--admin`.
+The one pull request that is not squashed is the release; see below.
+
 ## Never run `lanes link` from a worktree without `LANES_LINK_HOME`
 
 `resolveWorkspaceRoot` (`src/profile/workspace.ts`) checks `LANES_LINK_HOME`, then
@@ -56,9 +60,14 @@ paths `release.yml` takes, and the verification that a release shipped. What an 
 - **The merge to `main` is the irreversible step.** It publishes to npm under this repository's
   OIDC identity. Get the branch green and the pull request open unattended; do not merge a release
   the operator has not asked for.
-- **Fast-forward `develop` afterwards** — `git push origin origin/main:refs/heads/develop` — and
-  check `git rev-list --count` both directions. Nothing in the workflow does it for you, and the
-  next comparison between the branches is noise until you do.
+- **Squash every pull request except the release one.** `gh pr merge <n> --squash
+  --delete-branch` for work landing in `develop`. The `develop` → `main` release pull request is
+  the exception and must be `--merge`: a squash writes a new commit onto `main`, `develop`'s tip
+  stops being an ancestor, and the fast-forward below is then rejected as non-fast-forward even
+  though the trees are identical. Rebase-merging is disabled for the same reason.
+- **A release is finished when `develop` and `main` are 0/0, not when npm has the version.**
+  Fast-forward with `git push origin origin/main:refs/heads/develop`, then check
+  `git rev-list --count` in *both* directions. Nothing in the workflow does it for you.
 - **Never tag or `npm publish` by hand.** The workflow owns both, in that order, for a reason a
   manual run reverses.
 
