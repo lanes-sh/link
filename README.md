@@ -76,9 +76,11 @@ a settings page. **Settings → Integrations → Lanes Link** installs it, holds
 every command runs against, connects your accounts, starts and stops the endpoint, and registers it
 with Claude Code or Codex.
 
+![The Lanes Link page in the Lanes desktop app: the CLI status card and its version, the target and profile selectors, the endpoint row with its running state, and the list of connected accounts.](docs/images/lanes-link-desktop.png)
+
 It runs the commands above rather than reimplementing them, so consent and the token stay here where
 they belong, and an endpoint set up in the app is the same one you get from a shell. Available from
-Lanes v0.46.3, as a research preview.
+Lanes v0.47.0, as a research preview.
 **[How to use it →](https://lanes.sh/docs/desktop/lanes-link)**
 
 ## What your agent gets
