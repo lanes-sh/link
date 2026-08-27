@@ -22,6 +22,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { OpenAPIToolGenerator, type McpOpenAPITool } from 'mcp-from-openapi';
 import { cutCycles, referenced, type Spec } from '../../shared/openapi.ts';
+import { projectRequestBody } from '../../shared/vendor-operations.ts';
 
 const SOURCE = 'https://raw.githubusercontent.com/bunq/doc/master/swagger.json';
 const OUT = 'bunq.v1.json';
@@ -187,6 +188,34 @@ function dropReadOnly(node: unknown): number {
   return dropped;
 }
 
+/**
+ * The operations bunq describes with the schema of a *different* operation.
+ *
+ * `PUT .../draft-payment/{itemId}` points at `DraftPayment`, the same schema as
+ * the `POST` that creates one, which requires `entries` and
+ * `number_of_required_accepts`. For a create those two *are* the payment. For an
+ * update bunq refuses both as superfluous — its own generated SDK sends only
+ * `status`, `previous_updated_timestamp` and `schedule` here — so the tool asked
+ * for exactly what the bank rejects and every accept failed. Worse than the
+ * error: made to send `entries` for a draft that has them, a model reaches for
+ * the array echoed back or for `[]`, and both ask bunq to rewrite what the draft
+ * pays on the way to approving it. A hint cannot fix a required argument, which
+ * is the difference between this and the `payments`-is-really-an-array note
+ * above: nothing stops an agent sending an array, and nothing lets it omit a
+ * required field. `required` is asserted here rather than projected because
+ * bunq's own is the one written for the create.
+ *
+ * `schedule` is deliberately not projected: it carries `recurrence_unit` and
+ * `recurrence_size`, so approving a one-off draft would be a place to acquire a
+ * standing order — the risk `OPERATIONS` gives for leaving the scheduling
+ * *endpoints* out. Not the whole of that risk, though: `CREATE_DraftPayment`
+ * still offers the same field, because it comes with bunq's create schema.
+ * Closing that changes what the provider can do rather than whether a call
+ * works, and is not done here.
+ */
+const UPDATE_BODIES: Record<string, readonly string[]> = {
+  UPDATE_DraftPayment_for_User_MonetaryAccount: ['status', 'previous_updated_timestamp'],
+};
 
 async function vendor(): Promise<void> {
   const response = await fetch(SOURCE);
@@ -246,6 +275,34 @@ async function vendor(): Promise<void> {
   }
 
   const schemas = spec.components?.schemas ?? {};
+
+  const projected = new Set<string>();
+  for (const item of Object.values(paths)) {
+    for (const [method, operation] of Object.entries(item)) {
+      if (!METHODS.includes(method)) continue;
+      const fields = operation.operationId ? UPDATE_BODIES[operation.operationId] : undefined;
+      if (!fields || !operation.operationId) continue;
+
+      projectRequestBody(
+        operation as unknown as Record<string, unknown>,
+        operation.operationId,
+        schemas,
+        fields,
+        'The whole of what this call takes. bunq refuses any other field here as superfluous — the rest ' +
+          'of the schema it shares belongs to the call that creates one.',
+      );
+      projected.add(operation.operationId);
+    }
+  }
+
+  // The same refusal as `missing` above, and for a sharper reason: an entry that
+  // matches nothing narrows nothing, and what is left is the wide body this
+  // exists to remove — printed as a success.
+  const unprojected = Object.keys(UPDATE_BODIES).filter((id) => !projected.has(id));
+  if (unprojected.length > 0) {
+    throw new Error(`UPDATE_BODIES names operations the spec does not have — ${unprojected.join(', ')}`);
+  }
+
   const keep = referenced(paths, schemas);
   const trimmedSchemas = Object.fromEntries(
     Object.entries(schemas).filter(([name]) => keep.has(name)),
@@ -295,7 +352,8 @@ async function vendor(): Promise<void> {
     `  bunq   ${String(Object.keys(paths).length).padStart(2)} paths, ` +
       `${seen.size} operations, ${Object.keys(trimmedSchemas).length} schemas, ` +
       `${cuts} cycle${cuts === 1 ? '' : 's'} cut, ${headers} protocol params dropped, ` +
-      `${readOnly} read-only fields dropped, ${size}KB`,
+      `${readOnly} read-only fields dropped, ${projected.size} update ` +
+      `bod${projected.size === 1 ? 'y' : 'ies'} projected, ${size}KB`,
   );
 
   await report(trimmed);

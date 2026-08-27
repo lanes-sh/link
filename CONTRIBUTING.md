@@ -62,6 +62,16 @@ Two tests hold the layers to the code, and both should stay green rather than be
 `src/readme.test.ts` asserts the README names a working `lanes link connect` command for every
 provider, and `src/profile/docs.test.ts` parses the YAML examples out of the reference pages.
 
+## Merging
+
+Pull requests are **squashed** — one change, one commit on `develop`, carrying the message written
+for the change. `gh pr merge <n> --squash --delete-branch`. Rebase-merging is disabled.
+
+The single exception is the release pull request, `develop` → `main`, which is merged as a **merge
+commit**. Squashing it would leave `develop` no longer an ancestor of `main`, and the fast-forward
+that ends a release — the step that leaves the two branches identical — would be rejected. See
+[`docs/detailed/releasing.md`](docs/detailed/releasing.md#how-a-pull-request-is-merged).
+
 ## Releasing
 
 [`docs/detailed/releasing.md`](docs/detailed/releasing.md) is the whole lifecycle in order — the

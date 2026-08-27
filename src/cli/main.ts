@@ -321,7 +321,11 @@ export async function run(argv: readonly string[]): Promise<void> {
           return mcpStdio({ ...global, ...(flags['only'] === true ? { only: true } : {}) });
         case 'list':
         case undefined:
-          return mcpList({ name: text(flags, 'name'), scope: text(flags, 'scope') });
+          return mcpList({
+            name: text(flags, 'name'),
+            scope: text(flags, 'scope'),
+            json: flags['json'] === true,
+          });
         default:
           throw new Error(`Unknown: ${PROGRAM} mcp ${second}`);
       }
