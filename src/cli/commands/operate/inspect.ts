@@ -2,9 +2,10 @@ import { credentialRefFor, formatPlan, planIsNoop, planReconcile } from '#regist
 import { DEFAULT_SURFACES } from '../../config-repair.ts';
 import { announce, announceProfile, emit, fail, ok, print, warn } from '../../output.ts';
 import { staleNudge } from '../../release.ts';
-import { openRuntime, resolveProfileOnly, type GlobalFlags } from '../../runtime.ts';
+import { openRuntime, resolveProfileOnly, type GlobalFlags, type Runtime } from '../../runtime.ts';
 import type { FetchLike } from '#deployments/knowledge.ts';
 import { credentialAge, reportCapabilityDrift } from './findings.ts';
+import { migratedRenamedProviders } from './migrate.ts';
 
 /**
  * The gate order — check, doctor, plan, start — exists so failures surface in
@@ -41,6 +42,8 @@ export async function plan(flags: GlobalFlags): Promise<void> {
 
 export interface DoctorFlags extends GlobalFlags {
   readonly json?: boolean | undefined;
+  /** Apply a repair `doctor` would otherwise only report. */
+  readonly fix?: boolean | undefined;
   /** Injected for tests. A knowledge repository is the only thing doctor fetches. */
   readonly fetch?: FetchLike | undefined;
 }
@@ -63,7 +66,18 @@ export interface DoctorFinding {
 
 /** Read-only external checks: credentials resolve, stores reachable. */
 export async function doctor(flags: DoctorFlags): Promise<void> {
-  const runtime = await openRuntime(flags, { fetch: flags.fetch });
+  // The one check that cannot use a runtime, because it answers for the profiles
+  // that cannot open one. A provider rename left in the config refuses at load,
+  // which takes every command down together — including the rest of this one —
+  // so it is asked first and, with `--fix`, undone. Anything else that refused
+  // is rethrown untouched.
+  let runtime: Runtime;
+  try {
+    runtime = await openRuntime(flags, { fetch: flags.fetch });
+  } catch (refusal) {
+    if (await migratedRenamedProviders(flags, refusal)) return;
+    throw refusal;
+  }
 
   const checks: string[] = [];
   const warnings: DoctorFinding[] = [];

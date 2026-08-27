@@ -277,7 +277,7 @@ export async function run(argv: readonly string[]): Promise<void> {
     case 'plan':
       return plan(global);
     case 'doctor':
-      return doctor({ ...global, json });
+      return doctor({ ...global, json, fix: flags['fix'] === true });
     case 'status':
       return status({ ...global, json });
     case 'outputs':
