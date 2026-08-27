@@ -59,6 +59,78 @@ $ lanes link connect gmail --profile personal --target local --id work
 `--target` never points at a running endpoint: `connect --target cloud` runs consent locally and
 writes the token into the deployment's store.
 
+### `lanes link connect custom <id>`
+
+Declare a service that is not built in, and connect it. The provider is composed from two fixed
+lists — one connectivity type and one credential type — written to
+`data/<profile>/providers.d/<id>.yaml`, and then connected exactly as a built-in is. The manifest is
+yours to edit afterwards; `lanes link connect <id>` re-reads it every time.
+
+Omit a required value and it is asked for. `--non-interactive` names every missing one at once
+instead, with the command to re-run.
+
+| | |
+|---|---|
+| `--connector <kind>` | `mcp`, `http`, `imap`, `dav`, `fs` |
+| `--auth <method>` | `none`, `bearer`, `api-key`, `header`, `basic`, `oauth`, `strategy` |
+| `--name <text>`, `--description <text>` | how the provider is labelled; the name defaults to the id read as words |
+| `--endpoint <url>` | `mcp`: the URL the server speaks Streamable HTTP on |
+| `--base-url <url>` | `http` and `dav` |
+| `--openapi <url\|path>` | `http`: a URL, or a path resolved against the manifest's own directory |
+| `--operations <globs>` | `http`: which operations to expose, by operationId, path or tag |
+| `--service <kind>` | `dav`: `caldav` or `carddav` |
+| `--host`, `--port` | `imap` |
+| `--smtp-host`, `--smtp-port` | `imap`: omit the host and the mailbox is read-only, with no send capability |
+| `--root <path>`, `--exclude <names>` | `fs` |
+| `--header 'Name: value'` | sent on every request, repeatable; `mcp` and `http` only. Never `Authorization` |
+| `--auth-header <name>` | the header the credential is sent in |
+| `--auth-query <param>` | `api-key` only: the query parameter instead of a header |
+| `--scopes <list>` | `oauth` |
+| `--authorize-url`, `--token-url` | `oauth`: together or not at all; required on `http` |
+| `--client-app <name>` | which `oauth_apps` entry holds the client; defaults to the id |
+| `--registration <kind>` | `dynamic` or `manual`; `mcp` defaults to `dynamic`, everything else to `manual` |
+| `--authorize-param k=v` | `oauth`: extra parameters on the authorization request, repeatable. Some vendors issue no refresh token without one |
+| `--redirect-uri <url>` | only for a vendor that matches the whole redirect URL (ADR-045) |
+| `--strategy <name>` | `strategy`: the name a provider in this build supplies, e.g. `bunq`. `http` only |
+| `--strategy-option k=v` | `strategy`: repeatable, read by the strategy itself — a sandbox host, say |
+| `--identity-url`, `--identity-field` | `http`: one GET that names the account, and which field to read |
+| `--setup-docs <url\|text>` | where the credential comes from. A URL becomes a link, a sentence a step |
+| `--replace-manifest` | rewrite a declaration that exists and differs. `--replace` is about the credential |
+
+It also takes `--id`, `--display-name`, `--replace`, `--accept-broad-scopes` and
+`--non-interactive`, which are forwarded to the connect that follows.
+
+```console
+$ lanes link connect custom docs_server --connector mcp --auth oauth \
+    --endpoint https://mcp.example.com/mcp --profile personal --target local
+
+$ lanes link connect custom thing --connector http --auth api-key --auth-header X-Api-Key \
+    --base-url https://api.example.com/v1 --openapi https://api.example.com/openapi.json \
+    --profile personal --target local
+
+$ lanes link connect custom mailbox --connector imap --auth basic \
+    --host imap.example.com --smtp-host smtp.example.com --smtp-port 465 \
+    --profile personal --target local
+```
+
+`--auth strategy` names code a provider in this build carries, which a manifest of your own can
+borrow — the only way to point a connection at a vendor's sandbox, since a built-in manifest's
+`options` are not yours to edit ([ADR-046](adr/046-an-auth-strategy-belongs-to-its-provider.md)).
+
+Thirteen of the thirty-five possible pairs are legal, and the rest are refused with the alternative named —
+an `mcp` connector has nowhere to put an API key, an `imap` one authenticates with a password, an
+`fs` one holds no account at all.
+[`connectivity-coverage.md`](connectivity-coverage.md) is the whole matrix, including what no pair
+covers yet.
+
+No flag carries a credential. The manifest declares what to ask for and the ordinary connect path
+asks — the same reason `secrets set` reads stdin rather than an argument.
+
+Two limits worth knowing. A declaration is written to the local filesystem, so this refuses a
+workspace that is a bucket: declare it where you deploy from, and `lanes link deploy` carries it up.
+And a failed connect leaves the manifest in place — that is the normal state of a hand-written one,
+`status` reports it, and the retry is plain `lanes link connect <id>`.
+
 ### `lanes link start`
 
 Reconcile, then serve every profile in the workspace on one endpoint.

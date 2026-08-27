@@ -67,16 +67,27 @@ async function manifestExamples(relative: string): Promise<string[]> {
 }
 
 describe('documented provider manifests parse', () => {
-  // The same lesson as above, applied where the copy-paste actually happens. The
-  // custom-provider page is the one someone follows verbatim, and its example
-  // silently could not connect until this milestone — so it is worth having a
-  // test rather than a promise.
-  test('docs/detailed/creating-a-provider.md', async () => {
-    const examples = await manifestExamples('docs/detailed/creating-a-provider.md');
+  /**
+   * The same lesson as above, applied where the copy-paste actually happens. The
+   * custom-provider page is the one someone follows verbatim, and its example
+   * silently could not connect until this milestone — so it is worth having a
+   * test rather than a promise.
+   *
+   * The coverage page is here for a sharper version of the same reason: its
+   * examples are one per open row of a matrix, which means they are precisely the
+   * combinations no built-in exercises. A page that claims a cell works is worth
+   * less than nothing if its example for that cell does not parse.
+   */
+  const pages = ['docs/detailed/creating-a-provider.md', 'docs/detailed/connectivity-coverage.md'];
+
+  test.each(pages)('%s', async (page: string) => {
+    const examples = await manifestExamples(page);
+    // Per file, not across them: the guard is against a page whose fences drift
+    // out of the selector and then passes by not looking.
     expect(examples.length).toBeGreaterThan(3);
 
     for (const example of examples) {
-      expect(() => parseManifest(example, 'docs/detailed/creating-a-provider.md')).not.toThrow();
+      expect(() => parseManifest(example, page)).not.toThrow();
     }
   });
 });

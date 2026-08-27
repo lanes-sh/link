@@ -108,7 +108,8 @@ describe('what an mcp connector may authenticate with', () => {
     expect(() => mcp({ kind: 'api_key' })).toThrow(/must be "none", "oauth", or "bearer"/);
     expect(() => mcp({ kind: 'header', header: 'X-Token' })).toThrow(/nowhere else on the request/);
     expect(() => mcp({ kind: 'basic' })).toThrow(/must be "none", "oauth", or "bearer"/);
-    expect(() => mcp({ kind: 'strategy', strategy: 'bunq' })).toThrow(/"strategy"/);
+    // `strategy` is refused too, but earlier and for every connector — see
+    // below. Asserting it here would read as an mcp rule, which it is not.
   });
 
   test('bearer may not rename its header here, though the schema allows it', () => {

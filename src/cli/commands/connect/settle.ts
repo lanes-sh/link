@@ -27,6 +27,7 @@ export async function settleIdentity(input: {
     credentials: SecretStore;
     registry: { manifest(id: string): ProviderManifest | undefined };
     connectorFor(providerId: string, connectionId: string): AnyConnector | undefined;
+    authorizeRequest(providerId: string, connectionId: string, request: Request): Promise<Request>;
   };
   prompter?: Prompter;
 }): Promise<{ connectionId: string; account: string }> {
@@ -51,8 +52,24 @@ export async function settleIdentity(input: {
   if (!account) {
     const token = () => bearerTokenAsStored(manifest, provisionalId, runtime.credentials);
 
+    // Only where `accessToken` cannot answer: `requestAuthorizer` goes through
+    // `credentialResolver`, which may *refresh* an OAuth token, and
+    // `bearerTokenAsStored` is deliberately the connect-time variant that does
+    // not. Leaving oauth and bearer on the token keeps refresh behaviour
+    // exactly as it was; these three had no working path at all.
+    const carriesItsOwnHeader =
+      manifest.auth.kind === 'api_key' ||
+      manifest.auth.kind === 'header' ||
+      manifest.auth.kind === 'basic';
+
     account = await resolveAccount(manifest, {
       accessToken: token,
+      ...(carriesItsOwnHeader
+        ? {
+            authorize: (request: Request) =>
+              runtime.authorizeRequest(manifest.id, provisionalId, request),
+          }
+        : {}),
       // A protocol that authenticates by username has nothing to GET and no
       // tool to call — it knows, once the server has accepted the login.
       identify: async () =>

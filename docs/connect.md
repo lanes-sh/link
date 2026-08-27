@@ -177,9 +177,23 @@ output, and in any transcript.
 
 ## Add your own
 
-Any MCP server, any REST API with an OpenAPI spec, any IMAP mailbox, any CalDAV or CardDAV server.
-Most are a fifteen-line YAML manifest in `~/.lanes-link/data/<profile>/providers.d/` and no code at all. See
-[`detailed/creating-a-provider.md`](detailed/creating-a-provider.md).
+Any MCP server, any REST API with an OpenAPI spec, any IMAP mailbox, any CalDAV or CardDAV server,
+any folder on this machine. One command:
+
+```console
+$ lanes link connect custom thing --connector http --auth api-key --auth-header X-Api-Key \
+    --base-url https://api.example.com/v1 --openapi https://api.example.com/openapi.json \
+    --profile personal --target local
+```
+
+`--connector` is `mcp`, `http`, `imap`, `dav` or `fs`; `--auth` is `none`, `bearer`, `api-key`,
+`header`, `basic`, `oauth` or `strategy`. Leave out a value it needs and it asks. What it writes is a
+fifteen-line YAML manifest in `~/.lanes-link/data/<profile>/providers.d/` — the same declaration a
+built-in is, and yours to edit from there.
+
+See [`detailed/creating-a-provider.md`](detailed/creating-a-provider.md) to write one by hand, and
+[`detailed/connectivity-coverage.md`](detailed/connectivity-coverage.md) for which combinations
+work, which are closed on purpose, and what none of them covers yet.
 
 ---
 

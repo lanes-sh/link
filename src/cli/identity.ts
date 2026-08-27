@@ -29,9 +29,29 @@ export function pluck(value: unknown, path: string): string | null {
   return typeof current === 'string' && current.length > 0 ? current : null;
 }
 
+/** The header an OAuth or bearer provider's probe carries. */
+async function bearerHeaders(probe: IdentityProbe): Promise<RequestInit> {
+  const token = await probe.accessToken();
+  return { headers: token ? { authorization: `Bearer ${token}` } : {} };
+}
+
 export interface IdentityProbe {
   /** A valid upstream access token, if the provider authenticates. */
   readonly accessToken: () => Promise<string | null>;
+  /**
+   * Put this connection's credential on a request, whatever method it is.
+   *
+   * Supplied where `accessToken` cannot answer. A stored `api_key`, `header` or
+   * `basic` credential is not a bearer token and `bearerToken` throws for all
+   * three — under a comment calling the branch unreachable, which it is on an
+   * mcp connector and is not on an http one. The throw was caught by the
+   * catch-all below, so an `identity: { kind: http }` block on the commonest
+   * custom shape there is — a REST API behind an API key — never worked and
+   * never said so: the operator was asked to name the account by hand on every
+   * reconnect, and a different answer each time is a new row rather than a
+   * repair.
+   */
+  readonly authorize?: (request: Request) => Promise<Request>;
   /** Call a capability on the upstream MCP server. */
   readonly callTool?: (name: string, args: Record<string, unknown>) => Promise<unknown>;
   /** Ask the connector, for a protocol whose identity is not a URL away. */
@@ -52,11 +72,15 @@ export async function resolveAccount(
     }
 
     if (identity.kind === 'http') {
-      const token = await probe.accessToken();
-      const request = probe.fetch ?? globalThis.fetch;
-      const response = await request(identity.url, {
-        headers: token ? { authorization: `Bearer ${token}` } : {},
-      });
+      const send = probe.fetch ?? globalThis.fetch;
+
+      // `authorize` where the caller supplied one, because it is the same
+      // switch the dispatch path uses and knows every method. The token is the
+      // fallback rather than the other way round only because the OAuth
+      // providers reached here first; both end at the same header for them.
+      const response = probe.authorize
+        ? await send(await probe.authorize(new Request(identity.url)))
+        : await send(identity.url, await bearerHeaders(probe));
       if (!response.ok) return null;
 
       const body = await response.json();

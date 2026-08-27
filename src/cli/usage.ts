@@ -26,6 +26,10 @@ ${style.bold('Everyday')}
   ${PROGRAM} connect <...> --replace    ask for the stored password or key again
   ${PROGRAM} connect <...> --auth <method>  pick how, where there is a choice
   ${PROGRAM} connect <...> --non-interactive [--json]
+  ${PROGRAM} connect custom <id> --connector <kind> --auth <method>
+                                 declare a service that is not built in, and connect it.
+                                 kinds: mcp, http, imap, dav, fs. Omit a value and it is
+                                 asked for; the manifest it writes is yours to edit
                                         answer nothing from a terminal: take every value
                                         from the credential store, or say what is missing
   ${PROGRAM} start [--only]             reconcile and serve every profile on one endpoint
@@ -137,7 +141,11 @@ ${style.bold('Other flags')}
                                  one this project operates (connect only)
   --auth <method>                which way in, where a provider offers two (connect
                                  only). "oauth" is the browser; the other is named
-                                 in the choice connect prints
+                                 in the choice connect prints. On connect custom it
+                                 names the credential type instead: none, bearer,
+                                 api-key, header, basic, oauth, strategy
+  --replace-manifest             rewrite a declaration that already exists and differs
+                                 (connect custom only — --replace is about the credential)
   --port <n>                     override the configured port (start only)
 
 Every command prints the profile and target it is acting on, before it acts.

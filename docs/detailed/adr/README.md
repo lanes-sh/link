@@ -55,6 +55,8 @@ Nothing in the codebase depends on it.
 | [045](045-a-redirect-the-vendor-matches-exactly.md) | A provider may name the loopback redirect verbatim, for a vendor that matches `redirect_uri` exactly rather than ignoring the port |
 | [046](046-an-auth-strategy-belongs-to-its-provider.md) | An auth strategy belongs to its provider, and its session is state |
 | [047](047-a-pasted-token-carries-its-own-scheme.md) | A pasted token may carry its own auth scheme in the stored value, and a vendored write surface may return a credential to the caller where the alternative is losing the capability |
+| [048](048-declaring-a-provider-from-the-fixed-lists.md) | A provider is declared by composing the two fixed lists — one connectivity type, one credential type — and connected in the same command |
+| [049](049-manifests-are-read-through-the-workspace-store.md) | A profile's manifests are read through its store, so a custom provider serves from a deployed endpoint |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 
@@ -117,3 +119,16 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
   the owner wrote are kept. What it may hold is fixed by having no field for anything else: the
   credential store and the vault cannot be named by it, by a flag, or by an example somebody copies.
   It also settles the one cost ADR-030 wrote down and declined to pay.
+
+- **ADR-048** finishes ADR-008 rather than amending it. That decision made a provider a
+  declaration and said a service nobody has integrated should be a file rather than a pull
+  request; the mechanism has been true since and the way in did not exist. What it adds is a
+  command, and one constraint on it worth reading as part of the decision: the flags are a
+  projection of the two unions, so what cannot be declared is exactly what those unions cannot
+  express — never a field this command invents to route around them.
+
+- **ADR-049** amends ADR-030 on one point. That decision moved manifests into the profile and
+  named the path; it did not say how the path is read, and the filesystem read it inherited meant
+  a deployed revision — whose workspace is a bucket URL — silently loaded none of them. ADR-014
+  had already answered the same question for skills, and this applies that answer to the other
+  directory ADR-030 created.

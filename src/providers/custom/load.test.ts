@@ -3,6 +3,8 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { layout } from '#profile';
+import { createMemoryBlobStore } from '#stores/blobs/testing.ts';
+import type { BlobStore } from '#stores/blobs';
 import { loadProfileProviders, parseManifest } from './load.ts';
 import { manifestTemplate } from './template.ts';
 
@@ -84,21 +86,30 @@ setup:
     expect(manifest.setup?.docs).toContain('acme.com/settings/api');
   });
 
+  /**
+   * A strategy names code, and a declaration-only manifest is the case
+   * `strategyFor` added the borrowing path for: a YAML file has no definition of
+   * its own, so it reaches a registered provider's strategy by name. Which is
+   * also the only way to point a connection at a vendor's sandbox, since a
+   * built-in manifest's `options` are not the operator's to edit.
+   *
+   * Whether the name resolves is not a question this schema can answer — the
+   * registry knows, and `refuseStrategy` is what says so.
+   */
   test('a pluggable auth strategy is expressible in YAML', () => {
     const manifest = parseManifest(`
-id: bunq
-name: bunq
+id: thing_sandbox
+name: Thing Sandbox
 connector:
   kind: http
-  base_url: https://public-api.sandbox.bunq.com/v1
-  openapi: ./bunq.json
+  base_url: https://public-api.sandbox.example.com/v1
+  openapi: ./thing.json
 auth:
   kind: strategy
-  strategy: bunq
-  credential_ref: bunq/api_key
+  strategy: thing
 `);
 
-    expect(manifest.auth).toMatchObject({ kind: 'strategy', strategy: 'bunq' });
+    expect(manifest.auth).toMatchObject({ kind: 'strategy', strategy: 'thing' });
   });
 });
 
@@ -215,5 +226,91 @@ describe('a relative openapi path', () => {
 describe('the starting templates are themselves valid', () => {
   test.each(['mcp', 'http', 'imap', 'dav', 'fs'] as const)('%s template parses', (kind) => {
     expect(() => parseManifest(manifestTemplate(kind))).not.toThrow();
+  });
+});
+
+/**
+ * A workspace in a bucket, which is what a deployed revision is handed.
+ *
+ * The keys are the same ones the filesystem store uses, because that is the
+ * property the fix turns on: the manifest is addressed by key either way, and
+ * only the store behind it changes.
+ */
+async function bucketWith(files: Record<string, string>): Promise<BlobStore> {
+  const store = createMemoryBlobStore();
+  for (const [name, contents] of Object.entries(files)) {
+    await store.put(`${layout.providers(PROFILE)}/${name}`, new TextEncoder().encode(contents));
+  }
+  return store;
+}
+
+describe('a workspace in a bucket', () => {
+  const manifest =
+    'id: acme\nname: Acme\nconnector: { kind: mcp, endpoint: https://mcp.example.com/mcp }\n';
+
+  /**
+   * The bug this describe block exists for.
+   *
+   * `loadProfileProviders` used `join(workspaceRoot, …)` against `node:fs`, and
+   * `join('gs://b', 'data/p/providers.d')` is `gs:/b/data/p/providers.d` — so
+   * `readdir` threw ENOENT and the catch reported an empty list, which is
+   * indistinguishable from a workspace that has no manifests. The manifest was
+   * uploaded, the read grant covered it, and it silently did not exist.
+   */
+  test('loads the manifests a deployed revision was given', async () => {
+    const store = await bucketWith({ 'acme.yaml': manifest });
+    const loaded = await loadProfileProviders('gs://your-bucket', PROFILE, store);
+
+    expect(loaded.map((entry) => entry.manifest.id)).toEqual(['acme']);
+  });
+
+  test('names the manifest by its bucket URL, so a refusal can be acted on', async () => {
+    const store = await bucketWith({ 'acme.yaml': manifest });
+    const [loaded] = await loadProfileProviders('gs://your-bucket', PROFILE, store);
+
+    expect(loaded?.path).toBe(`gs://your-bucket/${layout.providers(PROFILE)}/acme.yaml`);
+  });
+
+  test('applies the same filters as a directory does', async () => {
+    const store = await bucketWith({
+      'acme.yaml': manifest,
+      'notes.md': 'not a manifest',
+      'template.example.yaml': 'id: bad',
+    });
+
+    const loaded = await loadProfileProviders('gs://your-bucket', PROFILE, store);
+    expect(loaded.map((entry) => entry.manifest.id)).toEqual(['acme']);
+  });
+
+  test('a spec beside a manifest is not itself a manifest', async () => {
+    // A relative `openapi:` points at a sibling, and `upload.ts` carries it into
+    // the same prefix. Listing a prefix returns both; only one is a declaration.
+    const store = await bucketWith({
+      'acme.yaml':
+        'id: acme\nname: Acme\n' +
+        'connector: { kind: http, base_url: https://api.example.com, openapi: https://api.example.com/openapi.json }\n',
+    });
+    await store.put(
+      `${layout.providers(PROFILE)}/specs/acme.json`,
+      new TextEncoder().encode('{}'),
+    );
+
+    const loaded = await loadProfileProviders('gs://your-bucket', PROFILE, store);
+    expect(loaded.map((entry) => entry.manifest.id)).toEqual(['acme']);
+  });
+
+  test('refuses a relative openapi path rather than resolving it into nothing', async () => {
+    // There is no directory to resolve against, and the generator wants a file
+    // or a URL. Left to itself this surfaces as a discovery failure the runtime
+    // swallows, leaving a provider with no capabilities and nothing saying why.
+    const store = await bucketWith({
+      'acme.yaml':
+        'id: acme\nname: Acme\n' +
+        'connector: { kind: http, base_url: https://api.example.com, openapi: ./acme.json }\n',
+    });
+
+    await expect(loadProfileProviders('gs://your-bucket', PROFILE, store)).rejects.toThrow(
+      /relative path.*publish the spec at a URL/s,
+    );
   });
 });

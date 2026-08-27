@@ -1,5 +1,5 @@
 /**
- * The scaffold `lanes link` writes, one per connectivity type.
+ * A hand-editable starting point, one per connectivity type.
  *
  * A custom provider is the same declaration a built-in is — this is the *only*
  * difference between `#providers/google/gmail/` and a file an operator drops in
