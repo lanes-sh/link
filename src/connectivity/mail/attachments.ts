@@ -362,7 +362,11 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
   // opens by extension anyway. Adding them back will fail the suite.
 };
 
-function guessContentType(filename: string): string {
+/**
+ * Exported because `assets` needs exactly this and the table above must not be
+ * copied — its `.pages`/`.numbers` note is a rule the copy would not carry.
+ */
+export function guessContentType(filename: string): string {
   const extension = filename.split('.').pop()?.toLowerCase();
   return (extension ? CONTENT_TYPES[extension] : undefined) ?? 'application/octet-stream';
 }

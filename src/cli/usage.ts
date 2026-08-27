@@ -16,7 +16,7 @@ import { style } from './output.ts';
 /** How this CLI is invoked — the `link` area of the `lanes` command. */
 export const PROGRAM = 'lanes link';
 
-export const USAGE = `${style.bold(PROGRAM)} — a self-hostable MCP gateway for all your connections, memory, skills, and secrets
+export const USAGE = `${style.bold(PROGRAM)} — a self-hostable MCP gateway for all your connections, memory, tasks, files, and secrets
 
 ${style.bold('Everyday')}
   ${PROGRAM} setup plan [--json]        what each provider needs, and which are connected
@@ -26,6 +26,9 @@ ${style.bold('Everyday')}
   ${PROGRAM} connect <...> --replace    ask for the stored password or key again
   ${PROGRAM} connect <...> --auth <method>  pick how, where there is a choice
   ${PROGRAM} connect <...> --non-interactive [--json]
+  ${PROGRAM} disconnect <provider>.<id>  remove an account, and delete its credential
+  ${PROGRAM} disconnect <...> --keep-credential   leave the credential in the store
+  ${PROGRAM} relabel <provider>.<id> <name>      rename what an account is called
   ${PROGRAM} connect custom <id> --connector <kind> --auth <method>
                                  declare a service that is not built in, and connect it.
                                  kinds: mcp, http, imap, dav, fs. Omit a value and it is
@@ -77,6 +80,18 @@ ${style.bold('Your own context')}
   ${PROGRAM} memory get <id>
   ${PROGRAM} memory write <id> --title <t> [--tag t]   body on stdin
   ${PROGRAM} memory forget <id>
+
+  ${PROGRAM} tasks list [--status s]     what is outstanding; --status all for everything
+  ${PROGRAM} tasks get <id>
+  ${PROGRAM} tasks add <title> [--status s] [--due d] [--tag t]   notes on stdin
+  ${PROGRAM} tasks update <id> --status <s>   closing one is an update, not a remove
+  ${PROGRAM} tasks remove <id>
+                                 statuses: in_progress open blocked muted done dropped
+
+  ${PROGRAM} assets list                files kept in this profile
+  ${PROGRAM} assets get <name>          the bytes, to stdout — redirect them
+  ${PROGRAM} assets add <file> [--name n] [--content-type t]
+  ${PROGRAM} assets remove <name>
 
   ${PROGRAM} skills list                the procedures agents can invoke
   ${PROGRAM} skills show <name>
@@ -131,7 +146,8 @@ ${style.bold('Naming what a command acts on')}
                                  command that names neither refuses and lists what exists.
 
 ${style.bold('Other flags')}
-  --connection <id>              which memory/skills/vault connection, if a profile has several
+  --connection <id>              which memory/tasks/assets/skills/vault connection, where
+                                 a profile has several of one kind
   --yes                          skip the confirmation a destructive command would ask for
   --json                         machine-readable output, where a command offers it
   --non-interactive              never prompt: connect refuses with what to store,

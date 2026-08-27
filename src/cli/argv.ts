@@ -117,6 +117,13 @@ export function ownerFlags(flags: Flags): OwnerFlags {
     tag: text(flags, 'tag'),
     description: text(flags, 'description'),
     file: text(flags, 'file'),
+    status: text(flags, 'status'),
+    // `text` keeps an empty string, which matters for exactly this flag:
+    // `--due ""` is how `tasks update` clears a date, and `undefined` is how it
+    // leaves one alone. The two are different intentions.
+    due: text(flags, 'due'),
+    name: text(flags, 'name'),
+    contentType: text(flags, 'content-type'),
     yes: flags['yes'] === true,
   };
 }

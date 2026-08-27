@@ -152,7 +152,7 @@ one. For claude.ai, ChatGPT, or a phone, add a custom connector by URL — see
 
 ## Storage is not optional up here
 
-State, the audit log, memory, skills, and your own provider manifests all live in the bucket. A container filesystem loses every
+State, the audit log, memory, tasks, assets, skills, and your own provider manifests all live in the bucket. A container filesystem loses every
 one of them on an instance recycle without reporting anything, so the deploy configures the bucket
 for you rather than leaving it to a flag.
 

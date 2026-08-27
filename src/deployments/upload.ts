@@ -7,8 +7,6 @@ import {
   type Config,
   type TargetConfig,
 } from '#profile';
-import { ConfigDocument } from '#cli/config-edit.ts';
-import { ensureSetupConnection, repairLines, repaired } from '#cli/config-repair.ts';
 import { ok, print, style, warn } from '#cli/output.ts';
 
 /**
@@ -98,57 +96,6 @@ function authoredAreaOwner(key: string): string | null {
 
   const area = `${DATA_DIR}/${owner}/${segments[2]}`;
   return area === layout.skills(owner) || area === layout.providers(owner) ? owner : null;
-}
-
-/**
- * Give every profile about to be uploaded its setup surface.
- *
- * **Scoped exactly as the upload is**, because a profile this deploy sends is a
- * profile the endpoint will serve: repairing a narrower set would leave a served
- * profile without the surface, which is this bug one profile over. Note what
- * `flags.profile` does not mean — it is the flag alone, so a profile resolved
- * from `LANES_LINK_PROFILE` leaves it undefined and both this and the upload
- * read that as the whole workspace. Surprising, pre-existing in the upload, and
- * fixed there rather than here so the two cannot drift apart.
- *
- * *Which files are profiles* comes from `listProfiles`, never from
- * `isWorkspaceConfig`: the allowlist decides what is safe to *copy*, so it
- * happily sends a committed `personal.example.yaml` and a nested
- * `profiles/archive/old.yaml` as bytes, while this opens and validates what it
- * is handed — which turned that template into a `ConfigError` aborting the
- * deploy after provisioning had already made cloud resources.
- *
- * A profile that cannot be read is warned about rather than fatal: the repair is
- * a courtesy on the way past, and the upload still sends the file. Not silent,
- * though — nothing else here widens a policy without being asked.
- */
-export async function repairSetupSurface(
-  workspaceRoot: string,
-  profiles: readonly string[] | undefined,
-): Promise<void> {
-  const wanted = profiles === undefined ? undefined : new Set(profiles);
-
-  for (const name of await listProfiles(workspaceRoot)) {
-    if (wanted !== undefined && !wanted.has(name)) continue;
-
-    try {
-      const document = await ConfigDocument.open(workspaceRoot, name);
-      const repair = ensureSetupConnection(document);
-      if (!repaired(repair)) continue;
-
-      await document.save();
-
-      print(ok(`gave ${style.bold(name)} the setup surface`));
-      for (const change of repairLines(repair)) print(`      ${style.dim(change)}`);
-      print(`      ${style.dim('an agent can now see what is connected here, instead of guessing')}`);
-    } catch (error) {
-      print(
-        warn(
-          `could not give ${name} the setup surface: ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`,
-        ),
-      );
-    }
-  }
 }
 
 /**

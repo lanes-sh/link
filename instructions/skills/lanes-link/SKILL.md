@@ -40,9 +40,10 @@ failure. Four levels:
   `lanes link deploy` and `lanes link sync targets` act on one endpoint serving
   every profile that declares that target. `--profile` is accepted and *narrows*
   the answer; it does not choose the subject.
-- **Both.** Everything acting on one account: `lanes link connect`,
-  `lanes link token rotate`, `lanes link secrets set`, `lanes link policy allow`,
-  `lanes link memory list`, `lanes link mcp add`.
+- **Both.** Everything acting on one account, and everything reaching the
+  owner's own stores: `lanes link connect`, `lanes link token rotate`,
+  `lanes link secrets set`, `lanes link policy allow`, `lanes link memory list`,
+  `lanes link tasks list`, `lanes link assets list`, `lanes link mcp add`.
 
 `lanes link profile add` and `lanes link profile remove` **reject** `--profile`.
 Both name their profile positionally, so a flag naming a second one could only
@@ -55,6 +56,30 @@ A `connection` names an account within that profile. One profile may hold
 several of the same kind, and naming a connection belonging to a *different*
 profile is refused rather than guessed at.
 
+## Which store a thing goes in
+
+Three of them hold what the owner keeps, and they divide by what a thing *is*.
+Getting this wrong is the most common way to be unhelpful here, because nothing
+refuses it — the write succeeds, in the wrong place, and stays there.
+
+- **memory** — what is *true*. A fact, a preference, a decision, how something
+  works. It has no state, because a fact does not finish.
+- **tasks** — what is to be *done*. It carries a status, so it can be closed.
+- **assets** — a *file*. Bytes, kept under a name.
+
+**"Remember to…" is a task, not a memory entry.** So are "add a todo", "don't
+let me forget", "put this on my list", and anything with a deadline in it. Filed
+as memory it becomes a note that nothing can ever close, and it will be read
+back to them as a fact forever. The give-away is a verb: *chase the invoice* is
+a task, *invoices are paid on the 1st* is memory.
+
+The reverse matters too. **A fact with no action in it is not a task.** Filing
+one as a task puts something on a list that can never legitimately be marked
+done.
+
+And **a procedure is neither** — see the next section. If they say "always do X
+when Y", that is a skill they should write, not a memory entry describing it.
+
 ## Reach for memory before answering from nothing
 
 `memory.search` before concluding you do not know something about this person or
@@ -65,6 +90,51 @@ Writing is a separate grant, and it should be. What you write is served back to
 every later session, including to a different agent, so **write when you are
 asked to remember something, not as a habit.** The owner reaches the same
 entries with `lanes link memory list --profile <name> --target <name>` and a text editor.
+
+## Tasks have a status, so finish them rather than deleting them
+
+`tasks.list` answers what is outstanding. It shows `in_progress`, `open` and
+`blocked` and hides the rest, so a listing is what is left to do rather than
+everything that ever was — name a status to see more.
+
+Six of them, and the two that are easy to confuse are worth learning:
+
+| | |
+|---|---|
+| `in_progress` | started |
+| `open` | not started |
+| `blocked` | waiting on something that is not the owner |
+| `muted` | deliberately not being surfaced — they asked not to be reminded |
+| `done` | finished |
+| `dropped` | decided against, which is not the same as finished |
+
+**Closing a task is `tasks.update` with a status, never `tasks.remove`.** The
+record of having done it is the useful half, and it is what stops the same thing
+being suggested again next week. Remove is for something recorded by mistake.
+
+Do not mute a task on your own initiative. It means "stop telling me about
+this", which is the owner's judgement, not yours.
+
+They manage these with `lanes link tasks list --profile <name> --target <name>`.
+
+## Assets are files kept by name
+
+Storing one names a source and the endpoint reads the bytes — the same five
+sources the attachments section below describes, and the same rule: **never
+encode a file into the call.** The name is the address; there is no id and no
+description, so what a file is *for* belongs in memory, next to its name.
+
+Reading gives you text when the file is text. Anything else comes back described
+— name, type, size, digest — and that is not a refusal to work around. There is
+no form of a read that hands you a PDF, and a megabyte of base64 in the
+conversation would not help you if there were.
+
+To attach a stored file to something you are sending, ask the owner to run
+`lanes link attach <file> --profile <name> --target <name> --connection <provider>.<account>`,
+which prints a handle the send tools take. An asset's own store is not reachable
+from a mailbox's, deliberately.
+
+They manage these with `lanes link assets list --profile <name> --target <name>`.
 
 ## Skills are theirs, not yours
 
@@ -163,6 +233,13 @@ Call `setup_overview` before answering any question about what you can reach, an
 before suggesting that anything be connected. It names the accounts reachable in a
 profile and the providers that are not connected yet. `setup_provider` then gives
 one provider's console steps, the values it will ask for, and the exact command.
+
+**Memory, tasks, assets, skills and the vault need no setup at all.** They hold
+the owner's own material rather than an account, so a profile arrives with all
+five already reachable — there is no command to run and nothing to connect. If
+one is missing, it was switched off with a `deny`, which is their decision; do not
+offer to connect it. What setup is for is accounts: mail, calendar, files,
+issues.
 
 **Take the command from `setup_provider`; never compose one yourself.** It carries
 the right profile and, where the provider stores a credential per account, the

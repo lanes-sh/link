@@ -4,11 +4,11 @@ import { confirm } from '../../prompt.ts';
 import { openRuntime, type GlobalFlags, type Runtime } from '../../runtime.ts';
 
 /**
- * What `lanes link memory`, `lanes link skills` and `lanes link vault` all need: the flag shape, the
- * runtime wrapper, connection resolution, and the two prompts.
+ * What every `lanes link` command over the owner's own data needs: the flag
+ * shape, the runtime wrapper, connection resolution, and the two prompts.
  *
- * All four commands are the same shape — open a runtime, announce, act, close —
- * so the wrapper lives here rather than three times over.
+ * All of them are the same shape — open a runtime, announce, act, close — so the
+ * wrapper lives here rather than once per noun.
  */
 
 export interface OwnerFlags extends GlobalFlags {
@@ -18,6 +18,14 @@ export interface OwnerFlags extends GlobalFlags {
   readonly tag?: string | undefined;
   readonly description?: string | undefined;
   readonly file?: string | undefined;
+  /** `tasks`: which status to set, or to filter a listing by. */
+  readonly status?: string | undefined;
+  /** `tasks`: when it is due, as the owner would write it. Empty clears it. */
+  readonly due?: string | undefined;
+  /** `assets`: what to call the stored file, where the path's basename is wrong. */
+  readonly name?: string | undefined;
+  /** `assets`: for the file whose extension does not say what it is. */
+  readonly contentType?: string | undefined;
   /** Reveal a vault value on a terminal. */
   readonly show?: boolean | undefined;
   /** Print only the value, for `$(…)`. */
@@ -100,6 +108,22 @@ export async function readStdin(usage: string, what: string): Promise<string> {
   const text = (await Bun.stdin.text()).replace(/\n$/, '');
   if (!text) throw new ConfigError(`Nothing on stdin. Pipe ${what} in:  ${usage} < file`);
   return text;
+}
+
+/**
+ * Read stdin where there may legitimately be nothing on it.
+ *
+ * `readStdin` refuses both a terminal and an empty pipe, which is right for
+ * `memory write` and `vault set` — a command whose whole subject arrived empty
+ * has been mis-invoked. It is wrong for `tasks add`, whose subject is the title
+ * on argv and whose notes are optional: refusing there made
+ * `lanes link tasks add "x"` fail in every non-interactive context — a script, a
+ * cron, a `< /dev/null` — while working by hand, which is the worst shape for a
+ * bug to have.
+ */
+export async function optionalStdin(): Promise<string> {
+  if (process.stdin.isTTY) return '';
+  return (await Bun.stdin.text()).replace(/\n$/, '');
 }
 
 /** Confirm a destructive action, unless `--yes` already answered. */

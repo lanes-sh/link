@@ -6,26 +6,39 @@ secrets to any agent, behind an authorization boundary the runtime enforces.
 The bet: `gmail.search = allow` and `gmail.send = deny` are decisions the runtime **enforces**, not
 instructions the model is asked to respect. Everything below exists to make that answer binding.
 
-## The four component types
+## The component types
 
 | Type | Backed by | MCP shape | Control plane |
 |---|---|---|---|
 | **Connections** | a third-party vendor | tools | `lanes link connect` |
 | **Memory** | `BlobStore` — one Markdown file per entry | resources + search | `lanes link memory` |
+| **Tasks** | `BlobStore` — one Markdown file per task | resources + tools | `lanes link tasks` |
+| **Assets** | `BlobStore` — the file, under its own name | resources + tools | `lanes link assets` |
 | **Skills** | `BlobStore` — one Markdown file per skill | prompts, plus `skills.manage.*` | `lanes link skills` |
 | **Vault** | one encrypted document, its own key | tools, tightly scoped | `lanes link vault` |
 
-All four are **providers** behind the same policy layer, audit log, profile boundary, and endpoint —
-and since [ADR-030](adr/030-a-profile-owns-its-skills-and-manifests.md) the profile boundary holds
-for all four rather than three, because a skill is no longer a workspace-wide file.
-`memory.search = allow` is evaluated by the identical code path as `gmail.search`. The core cannot
-tell them apart and must not try.
+Every one of them is a **provider** behind the same policy layer, audit log, profile boundary, and
+endpoint — and since [ADR-030](adr/030-a-profile-owns-its-skills-and-manifests.md) the profile
+boundary holds for all of them rather than only the credentialed ones, because a skill is no longer
+a workspace-wide file. `memory.search = allow` is evaluated by the identical code path as
+`gmail.search`. The core cannot tell them apart and must not try.
 
 Two families, structurally identical to the core:
 
 - **Account providers** (`gmail`, `notion`) — external, credentialed, tool-shaped
-- **Owner providers** (`memory`, `skills`, `vault`, `example`) — local, owner-authored, no external
-  credential, resource- and prompt-shaped
+- **Owner providers** (`memory`, `tasks`, `assets`, `skills`, `vault`, `example`) — local,
+  owner-authored, no external credential, resource- and prompt-shaped
+
+The owner providers are also the ones a profile arrives with already granted
+([ADR-050](adr/050-the-owner-layer-is-granted-by-default.md)). That is not an exception to the
+policy layer: the rules are written into the profile like any others, a `deny` still beats them, and
+the evaluation is the same code. What makes it defensible is that none of them reaches an account,
+which is what default deny is for.
+
+The three that hold what the owner keeps divide by what a thing *is*, not by size
+([ADR-051](adr/051-tasks-and-assets-are-their-own-stores.md)): memory is what is true, tasks is what
+is to be done, assets is a file. Memory has no status field because a fact does not finish, which is
+the property that made a second store necessary rather than a wider first one.
 
 `example` is an owner provider in miniature, which is why it earns its place beyond being an SDK
 sample: it proves that shape before the owner layer exists.
@@ -166,9 +179,12 @@ See [ADR-004](adr/004-declarative-config.md).
 
 ## The owner layer
 
-The capability namespaces `memory.*`, `skills.*`, and `vault.*` are **still refused at registration**
-— only the built-in registry opts in, because reclaiming a namespace once providers exist in the wild
-would silently change what a policy rule means.
+The capability namespaces `memory.*`, `tasks.*`, `assets.*`, `skills.*`, and `vault.*` are **still
+refused at registration** — only the built-in registry opts in, because reclaiming a namespace once
+providers exist in the wild would silently change what a policy rule means. `tasks` cost something
+to reserve: Google Tasks held that id and was renamed `google_tasks`, because a manifest already
+registered under it would have thrown on the second registration rather than shadowing anything
+([ADR-051](adr/051-tasks-and-assets-are-their-own-stores.md)).
 
 Everything else that was reserved for it is now in use. The MCP prompts primitive carries `skills`.
 `BlobStore` has its first consumer in `memory`, which is the workload the interface was defined for

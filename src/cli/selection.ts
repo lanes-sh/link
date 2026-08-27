@@ -111,6 +111,11 @@ export const SELECTION: Record<string, Requires> = {
   'identity list': 'profile',
 
   connect: 'profile+target',
+  // Both edit the profile config, and `disconnect` also opens the target's
+  // credential store to delete from it. Same requirement as `connect` for the
+  // same reasons.
+  disconnect: 'profile+target',
+  relabel: 'profile+target',
   // Its own row rather than an inheritance from `connect`. Both need the same
   // two things, but the row is what makes `selectionKey` return the two-word
   // key — and that is what keeps thirty declaration flags off
@@ -153,6 +158,8 @@ export const SELECTION: Record<string, Requires> = {
   'mcp add': 'profile+target',
   'mcp stdio': 'profile+target',
   memory: 'profile+target',
+  tasks: 'profile+target',
+  assets: 'profile+target',
   skills: 'profile+target',
   vault: 'profile+target',
   // Both halves open the target's adapters — `show` counts what is in the
@@ -181,6 +188,8 @@ const SUBCOMMANDS: Record<string, readonly string[]> = {
   config: ['show'],
   setup: ['plan'],
   memory: ['list', 'get', 'write', 'forget'],
+  tasks: ['list', 'get', 'add', 'update', 'remove'],
+  assets: ['list', 'get', 'add', 'remove'],
   skills: ['list', 'show', 'add', 'remove'],
   vault: ['list', 'get', 'set', 'remove', 'key'],
   mcp: ['skill', 'add', 'stdio', 'list'],
@@ -310,6 +319,8 @@ const ACCEPTS: Record<string, readonly string[]> = {
   // `removalPlan`, and was refused here — the flag existed everywhere except in
   // the list that decides whether it may be typed.
   'profile remove': ['dry-run', 'yes', 'target'],
+  disconnect: ['yes', 'keep-credential'],
+  relabel: [],
   'target list': ['urls', 'target'],
   'target show': ['target'],
   'token show': ['show', 'raw'],
@@ -332,6 +343,9 @@ const ACCEPTS: Record<string, readonly string[]> = {
   update: ['check'],
   'identity add': ['note'],
   memory: ['connection', 'title', 'description', 'file', 'tag'],
+  // `--yes` on both, because both have a delete that asks first.
+  tasks: ['connection', 'title', 'status', 'due', 'tag', 'yes'],
+  assets: ['connection', 'name', 'content-type', 'yes'],
   skills: ['connection', 'title', 'description', 'file'],
   vault: ['connection'],
   // `no-migrate` is listed beside `migrate` because they are three states

@@ -1,7 +1,7 @@
 {
   "name": "@lanes-sh/link",
-  "version": "0.4.1",
-  "description": "A self-hostable MCP gateway for all your connections, memory, skills, and secrets",
+  "version": "0.5.0",
+  "description": "A self-hostable MCP gateway for all your connections, memory, tasks, files, and secrets",
   "license": "Apache-2.0",
   "homepage": "https://lanes.sh/link",
   "repository": {

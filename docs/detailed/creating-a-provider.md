@@ -170,7 +170,8 @@ have read. The Google specs ship that way; `src/providers/google/specs/vendor.ts
 ## The rest of this page: local providers
 
 Everything below is for a `local` provider — our own code, in-process. That is `example`, and it is
-what memory, skills, and vault are. **If you are integrating someone else's service, you
+what the owner layer is — memory, tasks, assets, skills, vault. **If you are integrating someone
+else's service, you
 almost certainly want a manifest above, not this.**
 
 ## Read this first
@@ -405,10 +406,16 @@ is pre-populated rather than hand-typed.
 Built-in providers are statically imported in `src/cli/runtime.ts`. Nothing in the registry
 assumes that, so independently versioned packages remain possible.
 
-The ids `memory`, `skills`, and `vault` are **reserved** for the owner layer and are still refused at
-registration — the guard was never about the layer being unbuilt, and reclaiming a namespace once
-providers exist in the wild would silently change what a policy rule means. Only the built-in
-registry opts in.
+The ids `memory`, `tasks`, `assets`, `skills`, `vault`, `setup` and `identity` are **reserved** for
+the owner layer and are still refused at registration — the guard was never about the layer being
+unbuilt, and reclaiming a namespace once providers exist in the wild would silently change what a
+policy rule means. Only the built-in registry opts in.
+
+The guard bites in the other direction too, which is worth knowing before picking a name. `tasks`
+was Google Tasks until the built-in list took the plain noun, and it could not simply be added:
+`buildRegistry` registers the owner layer before looping over `PROVIDERS`, so the manifest holding
+that id threw on the second registration rather than being shadowed. The vendor surface is now
+`google_tasks` ([ADR-051](adr/051-tasks-and-assets-are-their-own-stores.md)).
 
 ## Testing
 

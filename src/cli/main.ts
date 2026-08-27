@@ -1,5 +1,6 @@
 import { connect } from './commands/connect/index.ts';
 import { connectCustom } from './commands/connect/custom/index.ts';
+import { disconnect, relabel } from './commands/connection.ts';
 import {
   attachFile,
   auditTail,
@@ -246,17 +247,20 @@ export async function run(argv: readonly string[]): Promise<void> {
       if (second !== 'show' && second !== undefined) throw new Error(`Unknown: ${PROGRAM} config ${second}`);
       return configShow(global);
 
-    // memory, skills and vault — one subject, dispatched together.
+    // The owner's own data — one subject, dispatched together.
     // `vault key generate` is synchronous, so this returns the result rather
     // than testing it for truthiness.
     case 'memory':
+    case 'tasks':
+    case 'assets':
     case 'skills':
     case 'vault':
       return dispatchOwner(first, second, rest, owner, PROGRAM);
 
     // Beside `memory` and `skills` because it is the question they raise next:
     // those two say what is stored, and this says where it is kept. Not one of
-    // them, though — it takes its own flags rather than the owner set.
+    // them, though — it takes its own flags rather than the owner set, and it
+    // moves those two only (ADR-041), not tasks or assets.
     case 'knowledge':
       switch (second) {
         case 'show':
@@ -329,6 +333,21 @@ export async function run(argv: readonly string[]): Promise<void> {
         default:
           throw new Error(`Unknown: ${PROGRAM} mcp ${second}`);
       }
+    case 'disconnect':
+      return disconnect(second, {
+        ...global,
+        yes: flags['yes'] === true,
+        keepCredential: flags['keep-credential'] === true,
+        json: flags['json'] === true,
+      });
+    // The new label is joined rather than taken as `rest[0]`, so an unquoted
+    // multi-word name works: `relabel gmail.main Work Mail` is what someone
+    // types before they think about quoting, and refusing it teaches nothing.
+    case 'relabel':
+      return relabel(second, rest.length > 0 ? rest.join(' ') : undefined, {
+        ...global,
+        json: flags['json'] === true,
+      });
     case 'start':
       return start({
         ...global,

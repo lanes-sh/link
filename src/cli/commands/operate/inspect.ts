@@ -1,4 +1,5 @@
 import { credentialRefFor, formatPlan, planIsNoop, planReconcile } from '#registry';
+import { DEFAULT_SURFACES } from '../../config-repair.ts';
 import { announce, announceProfile, emit, fail, ok, print, warn } from '../../output.ts';
 import { staleNudge } from '../../release.ts';
 import { openRuntime, resolveProfileOnly, type GlobalFlags } from '../../runtime.ts';
@@ -180,33 +181,49 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
       }
     }
 
-    // A profile written before the setup surface existed has no connection for
-    // it, and `allowedConnections` returns nothing for a provider with no
-    // connection *before* consulting policy — so the capabilities are simply
-    // absent, with nothing saying why. An agent then has no way to see what is
-    // configured and starts guessing at commands.
+    // A profile written before the owner layer was default has no connection row
+    // for any of it, and `allowedConnections` returns nothing for a provider with
+    // no connection *before* consulting policy — so the capabilities are simply
+    // absent, with nothing saying why. An agent then has no memory to consult, no
+    // list to add to, and no way to see what is configured, and starts guessing.
     //
     // Both halves, because either alone is inert: a connection row that no rule
     // grants serves nothing, and a rule naming a provider with no row is what
     // `allowedConnections` drops before policy is consulted. Reporting only the
-    // row left the half-repaired profile reading as healthy while serving
-    // exactly as little as the untouched one — and both halves are what
-    // `ensureSetupConnection` writes, so this is the check that says whether it
-    // has run.
-    const hasSetupRow = runtime.config.connections.some(
-      (connection) => connection.provider === 'setup',
-    );
-    const grantsSetup = runtime.config.policy.allow.some(
-      (rule) => rule.capability === '*' || rule.capability === 'setup.*',
-    );
+    // row left the half-repaired profile reading as healthy while serving exactly
+    // as little as the untouched one — and both halves are what
+    // `ensureOwnerLayer` writes, so this is the check that says whether it ran.
+    //
+    // A surface the operator has *denied* is not missing, it is off, so a deny
+    // covering it is not reported. That is the same rule the repair follows, and
+    // reading it here from `policy.deny` rather than asking the repair keeps
+    // `doctor` a read.
+    const denied = (rule: string): boolean =>
+      runtime.config.policy.deny.some(
+        (entry) => entry.capability === '*' || entry.capability === rule,
+      );
 
-    if (!hasSetupRow || !grantsSetup) {
+    const missing = DEFAULT_SURFACES.filter((provider) => {
+      const rule = `${provider}.*`;
+      if (denied(rule)) return false;
+
+      const hasRow = runtime.config.connections.some(
+        (connection) => connection.provider === provider,
+      );
+      const granted = runtime.config.policy.allow.some(
+        (entry) => entry.capability === '*' || entry.capability === rule,
+      );
+      return !hasRow || !granted;
+    });
+
+    if (missing.length > 0) {
       warnings.push({
-        kind: 'no_setup_connection',
+        kind: 'no_owner_layer',
         message:
-          `this profile ${hasSetupRow ? 'does not grant "setup.*"' : 'has no "setup" connection'}` +
-          ', so an agent cannot see what is configured — run: lanes link connect setup',
-        fix: forSelection('lanes link connect setup'),
+          `this profile cannot reach its own ${missing.join(', ')} — ` +
+          'the connection row or the allow rule is missing, and either alone serves nothing. ' +
+          'Any of start, connect or deploy repairs it',
+        fix: forSelection('lanes link start'),
       });
     }
 

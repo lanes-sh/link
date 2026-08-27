@@ -18,7 +18,7 @@ import { version } from './version.ts';
  */
 
 const AREAS: Record<string, string> = {
-  link: 'a self-hostable MCP gateway for all your connections, memory, skills, and secrets',
+  link: 'a self-hostable MCP gateway for all your connections, memory, tasks, files, and secrets',
 };
 
 function areasUsage(): string {

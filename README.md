@@ -4,10 +4,10 @@
 [![license Apache-2.0](https://img.shields.io/github/license/lanes-sh/link?style=flat-square&color=black)](LICENSE)
 [![ci](https://img.shields.io/github/actions/workflow/status/lanes-sh/link/ci.yml?branch=main&style=flat-square&label=ci)](https://github.com/lanes-sh/link/actions/workflows/ci.yml)
 
-**One secure endpoint between your AI agents and all your connections, memory, skills, and secrets.**
+**One secure endpoint between your AI agents and all your connections, memory, tasks, files, and secrets.**
 
-Connect your mail, calendar, files, and notes once, and add the memory and skills that only you
-have. Every agent you use — Claude, ChatGPT, and anything else that speaks MCP — reaches them
+Connect your mail, calendar, files, and notes once, and add the memory, tasks, and procedures that
+only you have. Every agent you use — Claude, ChatGPT, and anything else that speaks MCP — reaches them
 through a single MCP endpoint that you own and run. Open source, self-hostable, no vendor sitting in
 the middle of your data.
 
@@ -38,6 +38,9 @@ the middle of your data.
 - **One set of notes behind every agent.** What you have Claude Code write down, claude.ai reads
   back later — your accumulated context follows you between tools instead of being trapped in
   whichever one recorded it.
+- **A to-do list your agents share.** "Remind me to chase the invoice" lands somewhere with a
+  status, so whichever agent you are talking to next knows it is still open — and knows when it
+  is done.
 - **Your own procedures, followed rather than guessed.** How a standup update reads, where an
   invoice gets filed, who gets cc'd on a contract — written down once, and every agent you use
   follows the same one.
@@ -62,9 +65,9 @@ ok    registered lanes-link with Claude Code (user scope)
 ok    registered lanes-link with Codex
 ```
 
-Your agents can now use it. Memory, skills, and the vault hold your own material rather than an
-account, so switching them on costs nothing — one command each, no credentials, no browser. Mail and
-calendar are the next step. **[Full quickstart →](docs/quickstart.md)**
+Your agents can now use it. Memory, tasks, files, skills, and the vault hold your own material
+rather than an account, so they are already there — nothing to connect, no credentials, no browser.
+Mail and calendar are the next step. **[Full quickstart →](docs/quickstart.md)**
 
 ## What your agent gets
 
@@ -72,11 +75,19 @@ calendar are the next step. **[Full quickstart →](docs/quickstart.md)**
 |---|---|---|
 | **Connections** | your external accounts — mail, calendar, files, issues | `lanes link connect` |
 | **Memory** | what you want remembered between sessions | `lanes link memory` |
+| **Tasks** | what you have to do, each with a status | `lanes link tasks` |
+| **Assets** | files you want kept, by name | `lanes link assets` |
 | **Skills** | your own procedures, handed to an agent as instructions | `lanes link skills` |
 | **Vault** | passwords and API keys, released only where you allow it | `lanes link vault` |
 
-Memory and skills are plain Markdown files, so a text editor and an agent reach the same bytes. All
-four belong to one profile: what you add under `work` is invisible under `personal`.
+The first five arrive switched on: they hold your own material rather than an account, so there was
+never anything to authorise. Memory, tasks, and skills are plain Markdown files and an asset is
+stored under its own filename, so a text editor and an agent reach the same bytes. Every one of them
+belongs to a single profile: what you add under `work` is invisible under `personal`.
+
+Which store a thing goes in is the one thing worth knowing. **Memory is what is true, tasks is what
+is to be done, assets is a file.** "Remember to chase the invoice" is a task — filed as memory it
+becomes a note nothing can ever close. Your agents are told this too.
 
 Keep those two in a private GitHub repository instead of on this machine, and get history, diffs,
 and the same notes from anywhere you run this:
@@ -100,7 +111,7 @@ One command per account. Run it again to add a second mailbox, a second calendar
 | Google Sheets | `lanes link connect sheets` |
 | Google Docs | `lanes link connect docs` |
 | Google Calendar | `lanes link connect calendar` |
-| Google Tasks | `lanes link connect tasks` |
+| Google Tasks | `lanes link connect google_tasks` |
 | Google Contacts | `lanes link connect contacts` |
 | iCloud Mail | `lanes link connect icloud_mail` |
 | iCloud Calendar | `lanes link connect icloud_calendar` |

@@ -38,7 +38,7 @@ export function buildMcpServer(options: BuildServerOptions): McpServer {
       // rather than trusting a copy to stay one. It is the whole endpoint being
       // described, not this connection, so it does not name the profiles the
       // way `title` does.
-      description: 'A self-hostable MCP gateway for all your connections, memory, skills, and secrets',
+      description: 'A self-hostable MCP gateway for all your connections, memory, tasks, files, and secrets',
       websiteUrl: 'https://github.com/lanes-sh/link',
       icons: SERVER_ICONS,
     },

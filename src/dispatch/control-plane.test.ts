@@ -2,15 +2,21 @@ import { describe, expect, test } from 'bun:test';
 import { z } from 'zod';
 import { createMemoryCredentials, createMemoryState } from '#stores/state/testing.ts';
 import { createMemoryBlobStore } from '#stores/blobs/testing.ts';
-import { defineLocalProvider, type ProviderContext } from '#connectivity';
+import {
+  defineLocalProvider,
+  RESERVED_PROVIDER_IDS,
+  type ProviderContext,
+} from '#connectivity';
 import { exampleProvider } from '#providers/example/provider.ts';
 import {
+  assetsProvider,
   createIdentityProvider,
   createMemoryVaultStore,
   createSetupProvider,
   createSkillsProvider,
   createVaultProvider,
   memoryProvider,
+  tasksProvider,
 } from '#providers/owner.ts';
 import { buildProviderContext } from './context.ts';
 import { ProviderRegistry } from '#registry';
@@ -44,8 +50,10 @@ const FORBIDDEN_CAPABILITY_PATTERNS: ReadonlyArray<{ pattern: RegExp; why: strin
 /**
  * Every provider that ships, including the owner layer.
  *
- * `allowReserved` is what admits `memory`, `skills`, and `vault` — the same opt
- * in `buildRegistry` makes, and the only one. The vault is built with **no
+ * `allowReserved` is what admits the owner layer — the same opt in
+ * `buildRegistry` makes, and the only one. **Every provider `buildRegistry`
+ * registers has to appear here**, because this list is hand-written and a
+ * provider left off passes the wall by not being tested against it. The vault is built with **no
  * items** on purpose: a `vault.get.<id>` capability carries an id the *owner*
  * chose, which is their data rather than a name this project ships, and an item
  * called `github_token` would trip the token pattern below for no good reason.
@@ -56,6 +64,8 @@ function registryWithBuiltins(): ProviderRegistry {
 
   registry.register(exampleProvider);
   registry.register(memoryProvider);
+  registry.register(tasksProvider);
+  registry.register(assetsProvider);
   registry.register(createSkillsProvider({ skills: [] }));
   registry.register(createVaultProvider({ store: createMemoryVaultStore(), items: [] }));
   // Read-only by construction (ADR-019): it describes setup, and describing
@@ -76,6 +86,30 @@ function registryWithBuiltins(): ProviderRegistry {
 }
 
 describe('no registered capability maps to a control-plane operation', () => {
+  /**
+   * The wall is only as wide as the list above, and the list is hand-written.
+   *
+   * This is not hypothetical: `tasks` and `assets` were registered in
+   * `buildRegistry` and the suite stayed green, because `registryWithBuiltins`
+   * had never heard of them — and a provider that is not in the registry cannot
+   * fail a check on the registry.
+   *
+   * Held against `RESERVED_PROVIDER_IDS` rather than against `buildRegistry`,
+   * for the reason the docstring above gives about vault items and catalogues:
+   * this file asserts the surface *we author*, and a vendor manifest's
+   * capability names come out of an OpenAPI document, which is data. The
+   * reserved ids are exactly the providers whose capabilities are written here,
+   * so they are exactly the ones that have to be represented.
+   *
+   * `has` rather than `capabilities`, because a provider built with nothing to
+   * offer — `skills` with no skills, `vault` with no items — contributes no
+   * capability id to derive a provider id from.
+   */
+  test('the list covers every provider whose surface we author', () => {
+    const registry = registryWithBuiltins();
+    expect(RESERVED_PROVIDER_IDS.filter((id) => !registry.has(id))).toEqual([]);
+  });
+
   test('every built-in capability name is clean', () => {
     const offences: string[] = [];
 

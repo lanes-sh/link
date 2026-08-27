@@ -264,13 +264,27 @@ oauth_apps: {}
 # reports — an address, a workspace — so this list says whose data is reachable
 # without having to look anything up.
 #
-# "setup" holds no account. It lets an agent see what is connected here and what
-# connecting something else would take, so it can tell you the command to run
-# rather than guess at one. It is read-only: nothing it offers writes config,
-# stores a credential, signs in, or changes what is permitted — those stay in
-# this CLI (ADR-007, ADR-019). Delete this entry and the allow line below to
-# remove it entirely.
+# The six below hold no account, and that is why they are here already: they
+# reach your own material rather than anybody's API, so there was never anything
+# for a connect step to authorise (ADR-050). What each one is:
+#
+#   memory   what you want remembered between sessions
+#   tasks    what you have to do, each with a status
+#   assets   files you want kept, by name
+#   skills   procedures you have written, handed to an agent as instructions
+#   vault    passwords and API keys, released one at a time
+#   setup    what is connected here, and what connecting more would take
+#
+# Nothing is stored in any of them until you or an agent puts something there,
+# and none of them can read an account. To switch one off, deny it below —
+# deleting the entry no longer works, because the next connect or deploy puts it
+# back.
 connections:
+  - { id: main, provider: memory, account: Memory }
+  - { id: main, provider: tasks, account: Tasks }
+  - { id: main, provider: assets, account: Assets }
+  - { id: main, provider: skills, account: Skills }
+  - { id: main, provider: vault, account: Vault }
   - { id: main, provider: setup, account: Setup }
 
 # Only what is listed here is reachable, and an empty policy grants nothing.
@@ -284,8 +298,20 @@ connections:
 #   allow: ['*']                  everything, which is what connect writes
 #   allow: [notion.*, gmail.*]    two providers
 #   deny:  [gmail.send_message]   a deny always beats an allow
+#
+# The rules below grant each of the six its whole namespace, writes included —
+# the same thing "connect memory" wrote when it was a command you had to run.
+# Narrowing is one line, and these are the three worth knowing:
+#
+#   deny: [memory.write]          memory becomes read-only
+#   deny: [skills.manage.*]       skills can be invoked but not authored
+#   deny: [vault.put, vault.remove]   nothing new can be stored
+#
+# A vault read is not granted by "vault.*" alone: each stored item is its own
+# "vault.get.<id>" capability and only appears after a restart, so a write can
+# never hand itself a read (ADR-012).
 policy:
-  allow: [setup.*]
+  allow: [memory.*, tasks.*, assets.*, skills.*, vault.*, setup.*]
   deny: []
 `;
 }

@@ -7,12 +7,14 @@ import { loadProfileProviders } from '#providers/custom/index.ts';
 import { loadProfileSkills, type LoadedSkill } from '#providers/skills/store.ts';
 import { exampleProvider } from '#providers/example/provider.ts';
 import {
+  assetsProvider,
   createIdentityProvider,
   createMemoryVaultStore,
   createSetupProvider,
   createSkillsProvider,
   createVaultProvider,
   memoryProvider,
+  tasksProvider,
   type IdentityProviderOptions,
   type SetupProviderOptions,
   type VaultStore,
@@ -84,8 +86,8 @@ export interface OwnerLayerOptions {
  * Statically imported for now; the registry does not care where a manifest came
  * from, which is what lets workspace YAML register alongside these.
  *
- * `allowReserved` is what admits `memory`, `skills`, `vault`, `setup`, and
- * `identity`. The guard
+ * `allowReserved` is what admits `memory`, `tasks`, `assets`, `skills`, `vault`,
+ * `setup`, and `identity`. The guard
  * stays rather than being retired: it exists so a *third-party* provider cannot
  * claim a namespace whose policy rules would then silently mean something else,
  * and that reason survives the owner layer shipping. Only this one construction
@@ -95,7 +97,13 @@ export function buildRegistry(owner: OwnerLayerOptions = {}): ProviderRegistry {
   const registry = new ProviderRegistry({ allowReserved: true });
 
   registry.register(exampleProvider);
+  // The three that hold what the owner keeps. All module-level constants rather
+  // than factories: each reads and writes through `context.storage`, which core
+  // scopes per call, so there is nothing to hand in at construction time and
+  // nothing for `OwnerLayerOptions` to carry.
   registry.register(memoryProvider);
+  registry.register(tasksProvider);
+  registry.register(assetsProvider);
   registry.register(skillsProviderFor(owner));
   registry.register(
     createVaultProvider({
