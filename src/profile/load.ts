@@ -115,26 +115,38 @@ function formatZodIssues(error: z.ZodError): string {
  * left saying `provider: tasks` does not fail — it resolves to the *built-in*,
  * `reconcile` marks it active because a provider needing no credential is
  * authorized by construction, and the operator is left with their Google Tasks
- * tools gone, a task list labelled with their email address, and nothing
- * anywhere saying why. Refusing is the only outcome that names the fix.
+ * tools gone, a task list wearing their old label, and nothing anywhere saying
+ * why. Refusing is the only outcome that names the fix.
  *
- * **The tell is the account.** A built-in row is written in exactly one spelling
- * by `newProfileTemplate` and by `ensureReservedConnection` — `account: Tasks` —
- * while `connect tasks` recorded the address the operator typed, because Google
- * Tasks publishes no identity to read one from. So an `@` in the account of a
- * `tasks` row means a mailbox, and a mailbox means the vendor surface.
+ * **The rule is a positive assertion, not a guess at what a vendor row looks
+ * like.** The built-in's row is written in exactly one spelling, by
+ * `newProfileTemplate` and by `ensureReservedConnection`: `account: Tasks`. So
+ * any other label on a `tasks` row is either a pre-rename Google Tasks row or a
+ * hand-edited built-in one, and the message names both fixes because either is
+ * one word.
  *
- * Not a check on the connection *id*: several task lists in one profile is a
- * legitimate thing to want (`tasks.work`, `tasks.personal`), exactly as several
- * memory connections are, so keying on `id !== 'main'` would refuse a valid
- * profile forever to catch a one-release migration.
+ * It was very nearly a guess, and the guess was wrong. The first version keyed
+ * on an `@` in the account, reasoning that `connect tasks` recorded the address
+ * the operator typed — Google Tasks publishes no identity, so `connect` asks.
+ * But what it asks for is a *label*: the real profile this was written for holds
+ * `account: personal`, so the check would have passed it and rebound their Google
+ * Tasks to the built-in in silence. That is the exact failure this exists to
+ * prevent, missed by one heuristic.
+ *
+ * Deliberately not a check on the connection *id*. Several task lists in one
+ * profile is a legitimate thing to want, exactly as several memory connections
+ * are, and keying on `id !== 'main'` would refuse a valid profile forever to
+ * catch a one-release migration. Labelling both `Tasks` is consistent with what
+ * the accountless providers already do — every memory connection is `Memory`.
  */
 function renamedProvider(connection: { provider: string; account: string }): string | null {
-  if (connection.provider !== 'tasks' || !connection.account.includes('@')) return null;
+  if (connection.provider !== 'tasks' || connection.account === 'Tasks') return null;
 
   return (
-    `"tasks" is the built-in task list, and this row names an account — so it was Google Tasks, ` +
-    'which is now "google_tasks". Change provider to google_tasks here and in any "tasks.*" policy rule.'
+    `"tasks" is now the built-in task list, and this row is labelled ` +
+    `"${connection.account}" rather than "Tasks".\n` +
+    '  If it was Google Tasks: set provider to google_tasks here, and rename any "tasks.*" policy rule.\n' +
+    '  If it is your own task list: set account to Tasks.'
   );
 }
 

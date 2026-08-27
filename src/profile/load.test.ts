@@ -242,9 +242,20 @@ describe('a provider whose id has been renamed', () => {
       `  - id: a\n    provider: example\n    account: Scratch\n  - id: ${id}\n    provider: tasks\n    account: ${account}`,
     );
 
-  test('a tasks row naming an account is refused, and names google_tasks', () => {
+  test('a tasks row wearing any other label is refused, and names google_tasks', () => {
     expect(() => parseConfig(withTasks('ada', 'ada.lovelace@example.com'))).toThrow(
-      /was Google Tasks, which is now "google_tasks"/,
+      /set provider to google_tasks/,
+    );
+  });
+
+  test('a label that is not an address is caught too — the case a heuristic missed', () => {
+    // The first version of this check keyed on an `@`, reasoning that `connect`
+    // recorded the address that was typed. What `connect` asks an accountless
+    // provider for is a *label*, and the real profile this was written for holds
+    // `account: personal` — so the heuristic passed it and would have rebound
+    // Google Tasks to the built-in in silence.
+    expect(() => parseConfig(withTasks('personal', 'personal'))).toThrow(
+      /set provider to google_tasks/,
     );
   });
 
@@ -252,10 +263,15 @@ describe('a provider whose id has been renamed', () => {
     expect(() => parseConfig(withTasks('main', 'Tasks'))).not.toThrow();
   });
 
-  test('a second task list is allowed, because several is a legitimate thing to want', () => {
+  test('a second task list is allowed, as long as it is labelled like the first', () => {
     // Keying on `id !== "main"` would have refused this forever to catch a
-    // one-release migration.
-    expect(() => parseConfig(withTasks('work', 'Work'))).not.toThrow();
+    // one-release migration. Every accountless provider labels its rows the same
+    // way — every memory connection is `Memory` — so this is the existing shape.
+    expect(() => parseConfig(withTasks('work', 'Tasks'))).not.toThrow();
+  });
+
+  test('the refusal offers the other fix too, for a hand-edited built-in row', () => {
+    expect(() => parseConfig(withTasks('work', 'Work'))).toThrow(/set account to Tasks/);
   });
 
   test('google_tasks itself is fine, which is the whole point', () => {

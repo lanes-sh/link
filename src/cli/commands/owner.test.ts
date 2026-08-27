@@ -36,12 +36,16 @@ targets:
     credentials: { adapter: file,       path: ./data/personal.credentials.enc }
     storage:     { adapter: filesystem, path: ./data/files }
 
+# Labelled the way the CLI writes them: the provider's own name. A tasks row
+# under any other label is refused, because that is the only signal a config
+# carries that it used to be Google Tasks (ADR-051). The ids stay "owner",
+# since what these tests are about is that --connection resolves.
 connections:
-  - { id: owner, provider: memory, account: Owner }
-  - { id: owner, provider: tasks,  account: Owner }
-  - { id: owner, provider: assets, account: Owner }
-  - { id: owner, provider: skills, account: Owner }
-  - { id: owner, provider: vault,  account: Owner }
+  - { id: owner, provider: memory, account: Memory }
+  - { id: owner, provider: tasks,  account: Tasks }
+  - { id: owner, provider: assets, account: Assets }
+  - { id: owner, provider: skills, account: Skills }
+  - { id: owner, provider: vault,  account: Vault }
 
 policy:
   allow: ['*']
@@ -295,8 +299,8 @@ describe('which connection a command acts on', () => {
   test('two is ambiguous, and refuses rather than picking', () => {
     const two = parseConfig(
       PROFILE.replace(
-        '  - { id: owner, provider: memory, account: Owner }',
-        '  - { id: owner, provider: memory, account: Owner }\n  - { id: work, provider: memory, account: Work }',
+        '  - { id: owner, provider: memory, account: Memory }',
+        '  - { id: owner, provider: memory, account: Memory }\n  - { id: work, provider: memory, account: Memory }',
       ),
     ).config;
 

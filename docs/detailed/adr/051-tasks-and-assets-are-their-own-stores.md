@@ -88,16 +88,26 @@ and the `icloud_*` family already use for a surface that needs saying which one.
 
 **The migration is a refusal, in `assertReferentialIntegrity`.** A profile that ran
 `connect tasks` holds `provider: tasks`, which now resolves to the built-in — reconcile marks it
-active, because a provider needing no credential is authorized by construction, and the operator
-is left with their Google Tasks tools gone and a task list labelled with their email address.
-Nothing errors. The tell is the account: a built-in row is written in exactly one spelling,
-`account: Tasks`, while `connect tasks` recorded the address the operator typed, because Google
-Tasks publishes no identity to read one from. So an `@` there means the vendor surface, and the
-message names the fix.
+active, because a provider needing no credential is authorized by construction, and the operator is
+left with their Google Tasks tools gone and a task list wearing their old label. Nothing errors.
 
-Deliberately not keyed on the connection id. Several task lists in one profile is a legitimate
-thing to want, exactly as several memory connections are, so `id !== 'main'` would refuse a valid
-profile forever to catch a one-release migration.
+The rule is a **positive assertion**: the built-in's row is written in exactly one spelling,
+`account: Tasks`, by the template and by the repair. Any other label on a `tasks` row is either a
+pre-rename Google Tasks row or a hand-edited built-in one, and the message offers both fixes because
+either is one word.
+
+It was nearly a heuristic, and the heuristic was wrong — which is worth recording, because it failed
+against the first real profile it met. The first version keyed on an `@` in the account, reasoning
+that `connect tasks` recorded the address the operator typed, since Google Tasks publishes no
+identity and `connect` therefore asks. What it asks for is a *label*. The profile this was written
+for holds `account: personal`, so the check would have passed it and rebound Google Tasks to the
+built-in in silence — the exact failure the refusal exists to prevent, missed by one guess about what
+a vendor row looks like.
+
+Deliberately not keyed on the connection id. Several task lists in one profile is a legitimate thing
+to want, exactly as several memory connections are, so `id !== 'main'` would refuse a valid profile
+forever to catch a one-release migration. Labelling them all `Tasks` is what the accountless
+providers already do — every memory connection is `Memory`.
 
 The rename also lengthened every redaction key, and that is worth recording because it fails
 silently. `shortenName` strips the *provider id* from a discovered tool name and Google namespaces
