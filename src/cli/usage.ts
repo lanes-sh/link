@@ -26,6 +26,9 @@ ${style.bold('Everyday')}
   ${PROGRAM} connect <...> --replace    ask for the stored password or key again
   ${PROGRAM} connect <...> --auth <method>  pick how, where there is a choice
   ${PROGRAM} connect <...> --non-interactive [--json]
+  ${PROGRAM} disconnect <provider>.<id>  remove an account, and delete its credential
+  ${PROGRAM} disconnect <...> --keep-credential   leave the credential in the store
+  ${PROGRAM} relabel <provider>.<id> <name>      rename what an account is called
   ${PROGRAM} connect custom <id> --connector <kind> --auth <method>
                                  declare a service that is not built in, and connect it.
                                  kinds: mcp, http, imap, dav, fs. Omit a value and it is

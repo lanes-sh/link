@@ -1,5 +1,5 @@
 import type { ProviderManifest } from '#connectivity';
-import { hasOwnClientPath, setupRequirements, type SetupRequirement } from '#connectivity';
+import { hasOwnClientPath, RESERVED_PROVIDER_IDS, setupRequirements, type SetupRequirement } from '#connectivity';
 
 /**
  * What connecting a provider involves, assembled from its manifest.
@@ -19,6 +19,21 @@ export interface ProviderPlan {
   readonly id: string;
   readonly name: string;
   readonly description: string;
+  /**
+   * This provider is part of what a profile *is*, not an account it holds.
+   *
+   * The owner layer — `memory`, `skills`, `vault`, `setup`, `identity` — keyed off
+   * `RESERVED_PROVIDER_IDS`, which is the same list the registry uses to stop a
+   * third-party manifest claiming one of those ids.
+   *
+   * Reported because it is the fact a surface needs and cannot derive.
+   * `multiAccount` is the nearest thing and it is not it: that is a credential
+   * test, and `icloud_drive` is `auth: none` without being owner-layer at all. A
+   * client wanting to group these, or to withhold a disconnect that would leave a
+   * dangling policy grant, was left hardcoding the list — which then goes stale
+   * the next time one is added here. This travels with the release instead.
+   */
+  readonly reserved: boolean;
   /** Connection keys of this provider already configured, e.g. `gmail.main`. */
   readonly connected: readonly string[];
   /**
@@ -122,6 +137,7 @@ export function planFor(
     id: manifest.id,
     name: manifest.name,
     description: manifest.description,
+    reserved: RESERVED_PROVIDER_IDS.includes(manifest.id),
     connected,
     multiAccount: manifest.auth.kind !== 'none',
     browser: manifest.auth.kind === 'oauth',

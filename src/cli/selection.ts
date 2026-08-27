@@ -111,6 +111,11 @@ export const SELECTION: Record<string, Requires> = {
   'identity list': 'profile',
 
   connect: 'profile+target',
+  // Both edit the profile config, and `disconnect` also opens the target's
+  // credential store to delete from it. Same requirement as `connect` for the
+  // same reasons.
+  disconnect: 'profile+target',
+  relabel: 'profile+target',
   // Its own row rather than an inheritance from `connect`. Both need the same
   // two things, but the row is what makes `selectionKey` return the two-word
   // key — and that is what keeps thirty declaration flags off
@@ -310,6 +315,8 @@ const ACCEPTS: Record<string, readonly string[]> = {
   // `removalPlan`, and was refused here — the flag existed everywhere except in
   // the list that decides whether it may be typed.
   'profile remove': ['dry-run', 'yes', 'target'],
+  disconnect: ['yes', 'keep-credential'],
+  relabel: [],
   'target list': ['urls', 'target'],
   'target show': ['target'],
   'token show': ['show', 'raw'],
