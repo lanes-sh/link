@@ -64,6 +64,10 @@ provider, and `src/profile/docs.test.ts` parses the YAML examples out of the ref
 
 ## Releasing
 
+[`docs/detailed/releasing.md`](docs/detailed/releasing.md) is the whole lifecycle in order — the
+branches, both release paths, the `develop` fast-forward that ends one, and how to verify a release
+shipped. The short version:
+
 You do not tag anything. Merging a change under `src/`, `bin/`, `instructions/`, `package.json`, or
 `bun.lock` pushes a **`release/next`** branch carrying the patch bump, and the run summary links
 straight to the pull request it opens — already titled and described, because the bump commit's

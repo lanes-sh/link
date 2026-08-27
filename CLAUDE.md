@@ -44,6 +44,24 @@ talking to their server.
 writes credentials. Running it changes something outside the repository that a `git checkout`
 cannot undo. Get to a green `bun test` unattended, then stop and ask.
 
+## A release publishes, and npm does not give a version back
+
+[`docs/detailed/releasing.md`](docs/detailed/releasing.md) is the lifecycle end to end — the two
+paths `release.yml` takes, and the verification that a release shipped. What an agent gets wrong:
+
+- **Set the version on `develop`, before the pull request to `main`.** A merge whose version is
+  already tagged runs the *propose* path, which puts the bump on a side branch that merges into
+  `main` only — `develop` is then behind by a version commit. Untagged publishes directly, and both
+  branches end up on the same tree. This is the whole reason a minor is not just a merge.
+- **The merge to `main` is the irreversible step.** It publishes to npm under this repository's
+  OIDC identity. Get the branch green and the pull request open unattended; do not merge a release
+  the operator has not asked for.
+- **Fast-forward `develop` afterwards** — `git push origin origin/main:refs/heads/develop` — and
+  check `git rev-list --count` both directions. Nothing in the workflow does it for you, and the
+  next comparison between the branches is noise until you do.
+- **Never tag or `npm publish` by hand.** The workflow owns both, in that order, for a reason a
+  manual run reverses.
+
 ## Never write a real address, project, or bucket into this repository
 
 This repository is public. The shortest path to a passing test or a convincing doc example is
