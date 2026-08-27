@@ -240,6 +240,7 @@ export async function openRuntime(
         key: `${connection.provider}.${connection.id}`,
         provider: connection.provider,
         account: connection.account,
+        ...(connection.label ? { label: connection.label } : {}),
       }));
 
   // Read before the registry is built, so a store that cannot be reached is a

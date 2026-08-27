@@ -48,8 +48,13 @@ export function familyMembers(registry: ProviderRegistry, name: string): readonl
  * the target belongs to the account, not to each service under it, so it is
  * printed once here and suppressed in every member. Three copies of it is three
  * times nothing new.
+ *
+ * The label travels on the same argument: it too belongs to the account, so the
+ * first member asks what to call it and the rest are told.
  */
-export async function connectFamily<Options extends { readonly id?: string | undefined }>(input: {
+export async function connectFamily<
+  Options extends { readonly id?: string | undefined; readonly label?: string | undefined },
+>(input: {
   readonly name: string;
   readonly members: readonly string[];
   readonly options: Options;
@@ -64,9 +69,20 @@ export async function connectFamily<Options extends { readonly id?: string | und
 
   progress(style.dim(familyNote(name, members)));
 
-  const inherited = { ...options, id: options.id ?? namedId };
+  let inherited = { ...options, id: options.id ?? namedId };
   const outcomes: ConnectOutcome[] = [];
-  for (const member of members) outcomes.push(await connect(member, inherited, true));
+
+  for (const member of members) {
+    const outcome = await connect(member, inherited, true);
+    outcomes.push(outcome);
+
+    // One account, one name. Without this, connecting iCloud asks what to call
+    // it three times — and three different answers is three rows that read as
+    // three accounts.
+    if (inherited.label === undefined && outcome.label !== undefined) {
+      inherited = { ...inherited, label: outcome.label };
+    }
+  }
 
   return familyOutcome(outcomes);
 }
