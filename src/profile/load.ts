@@ -107,6 +107,49 @@ function formatZodIssues(error: z.ZodError): string {
  * left to resolve silently it grants nothing, which looks identical to a
  * working rule until the day someone relies on it.
  */
+/**
+ * A connection naming a provider whose id has moved out from under it.
+ *
+ * There is exactly one, and it is the reason this function exists: `tasks` was
+ * Google Tasks until the built-in task list took the plain noun (ADR-051). A row
+ * left saying `provider: tasks` does not fail — it resolves to the *built-in*,
+ * `reconcile` marks it active because a provider needing no credential is
+ * authorized by construction, and the operator is left with their Google Tasks
+ * tools gone, a task list wearing their old label, and nothing anywhere saying
+ * why. Refusing is the only outcome that names the fix.
+ *
+ * **The rule is a positive assertion, not a guess at what a vendor row looks
+ * like.** The built-in's row is written in exactly one spelling, by
+ * `newProfileTemplate` and by `ensureReservedConnection`: `account: Tasks`. So
+ * any other label on a `tasks` row is either a pre-rename Google Tasks row or a
+ * hand-edited built-in one, and the message names both fixes because either is
+ * one word.
+ *
+ * It was very nearly a guess, and the guess was wrong. The first version keyed
+ * on an `@` in the account, reasoning that `connect tasks` recorded the address
+ * the operator typed — Google Tasks publishes no identity, so `connect` asks.
+ * But what it asks for is a *label*: the real profile this was written for holds
+ * `account: personal`, so the check would have passed it and rebound their Google
+ * Tasks to the built-in in silence. That is the exact failure this exists to
+ * prevent, missed by one heuristic.
+ *
+ * Deliberately not a check on the connection *id*. Several task lists in one
+ * profile is a legitimate thing to want, exactly as several memory connections
+ * are, and keying on `id !== 'main'` would refuse a valid profile forever to
+ * catch a one-release migration. Labelling both `Tasks` is consistent with what
+ * the accountless providers already do — every memory connection is `Memory`.
+ */
+function renamedProvider(connection: { provider: string; account: string }): string | null {
+  if (connection.provider !== 'tasks' || connection.account === 'Tasks') return null;
+
+  return (
+    `"tasks" is now the built-in task list, and this row is labelled ` +
+    `"${connection.account}" rather than "Tasks".\n` +
+    '  If it was Google Tasks: set provider to google_tasks here, and rename any "tasks.*" policy rule.\n' +
+    '  If it is your own task list: set account to Tasks.'
+  );
+}
+
 function assertReferentialIntegrity(config: Config, source: string): void {
   const problems: string[] = [];
 
@@ -142,6 +185,9 @@ function assertReferentialIntegrity(config: Config, source: string): void {
       problems.push(`connections[${index}]: duplicate connection "${key}"`);
     }
     connectionKeys.add(key);
+
+    const renamed = renamedProvider(connection);
+    if (renamed) problems.push(`connections[${index}]: ${renamed}`);
   });
 
   // Same reason as a duplicate connection: two entries with the same kind and

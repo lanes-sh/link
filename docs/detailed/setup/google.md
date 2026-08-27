@@ -377,7 +377,7 @@ $ lanes link connect drive --profile personal --target local      # reuses the s
 $ lanes link connect sheets --profile personal --target local     # ditto, but do step 1 and step 4 for Sheets first
 $ lanes link connect docs --profile personal --target local
 $ lanes link connect calendar --profile personal --target local
-$ lanes link connect tasks --profile personal --target local
+$ lanes link connect google_tasks --profile personal --target local
 $ lanes link connect contacts --profile personal --target local
 
 $ lanes link connect gmail_mcp --profile personal --target local  # only if you are enrolled in the preview

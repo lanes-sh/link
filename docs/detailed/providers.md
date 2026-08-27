@@ -7,7 +7,7 @@ Capabilities shipped today, and why each is a tool, a resource, or a prompt
 
 No external service, no credentials, no browser. Ships as the provider SDK reference and as the way
 to exercise connection isolation without any accounts — and it is an **owner provider in miniature**,
-the same shape memory, skills, and vault take.
+the same shape the owner layer takes.
 
 | Capability | Kind | Bundle | Why |
 |---|---|---|---|
@@ -542,41 +542,59 @@ look machine-generated to the person reading it, which for client-facing mail is
 so usable file weight is about three quarters of that. Oversized sends are refused before anything
 is submitted, since a message rejected part-way through `DATA` reads like a dropped connection.
 
-## The owner layer — `memory`, `skills`, `vault`
+## The owner layer — `memory`, `tasks`, `assets`, `skills`, `vault`
 
-Three providers holding no third-party account: no OAuth, no vendor API, no rate limit anyone else
+Five providers holding no third-party account: no OAuth, no vendor API, no rate limit anyone else
 imposes. They are the reason the resource and prompt primitives exist, and the decisions behind their
-shapes are [ADR-012](adr/012-owner-layer-primitives.md) and
-[ADR-014](adr/014-owner-layer-is-managed.md).
+shapes are [ADR-012](adr/012-owner-layer-primitives.md),
+[ADR-014](adr/014-owner-layer-is-managed.md), and — for the two newest —
+[ADR-051](adr/051-tasks-and-assets-are-their-own-stores.md).
 
-Their ids stay **reserved**: `RESERVED_PROVIDER_IDS` still refuses `memory`, `skills`, and `vault`
-everywhere except the one built-in registry that registers them. The guard was never about the layer
-being unbuilt — reclaiming a namespace once providers exist in the wild would silently change what a
-policy rule means.
+**Three of them hold what the owner keeps, and they divide by what a thing *is*.** Memory is what is
+true, tasks is what is to be done, assets is a file. The distinguishing property is state: a fact
+does not finish, so memory has no status field, and that is why a task could not simply be a memory
+entry with one. Nothing refuses the wrong choice, so the routing rule is stated in the `initialize`
+instructions and in the bundled skill rather than left to be inferred.
 
-**All three have a CLI**, and it reaches the same bytes the providers do — `lanes link memory`, `lanes link skills`,
-`lanes link vault`. That is not a convenience: without it the two stores holding your own data were reachable
-only by an agent, which is the wrong way round for a project whose README says control-plane decisions
-are not agent-reachable.
+Their ids stay **reserved**: `RESERVED_PROVIDER_IDS` refuses all of them everywhere except the one
+built-in registry that registers them. The guard was never about the layer being unbuilt —
+reclaiming a namespace once providers exist in the wild would silently change what a policy rule
+means. `tasks` is the one that cost something: Google Tasks held that id and is now `google_tasks`,
+because the plain noun belongs to the owner's own list and a manifest already registered under it
+throws on the second registration rather than shadowing anything.
 
-**All three follow the target.** Memory and skills are Markdown documents in `BlobStore`; the vault is
-one encrypted document. Locally that is files under the workspace, and in a deployment the same keys
-in S3. Before ADR-014 the vault had no target switch at all, so a Cloud Run instance wrote it to a
-container filesystem that the next revision discarded.
+**A profile arrives with all five granted** ([ADR-050](adr/050-the-owner-layer-is-granted-by-default.md)).
+They hold no account, so there was never anything for a connect step to authorise, and three commands
+whose whole effect was two lines of YAML each read as an oversight rather than as caution. The rules
+are ordinary policy: a `deny` still beats them, and deleting a connection row no longer switches one
+off because the next `start`, `connect` or `deploy` writes it back.
 
-**All three are the profile's**, and so is the `providers.d/` beside them — see
+**Every one has a CLI**, and it reaches the same bytes the providers do — `lanes link memory`,
+`lanes link tasks`, `lanes link assets`, `lanes link skills`, `lanes link vault`. That is not a
+convenience: without it the stores holding your own data were reachable only by an agent, which is the
+wrong way round for a project whose README says control-plane decisions are not agent-reachable.
+
+**All of them follow the target.** Memory, tasks and skills are Markdown documents in `BlobStore`, an
+asset is its own bytes there, and the vault is one encrypted document. Locally that is files under the
+workspace, and in a deployment the same keys in S3. Before ADR-014 the vault had no target switch at
+all, so a Cloud Run instance wrote it to a container filesystem that the next revision discarded.
+
+**All of them are the profile's**, and so is the `providers.d/` beside them — see
 [ADR-030](adr/030-a-profile-owns-its-skills-and-manifests.md). Skills were workspace-wide until
 then, which made them the one owner-layer store a second profile could read.
 
 | | Local | Cloud | With a `knowledge:` block |
 |---|---|---|---|
 | skills | `<workspace>/data/<profile>/skills.d/<name>.md` | the same key, in the bucket | `skills/<name>/SKILL.md` in the repository |
-| memory | `<storage>/memory/<connection>/entry/<id>.md` | the same key, in the bucket | `memory/<connection>/<id>.md` in the repository |
+| memory | `<storage>/memory/<connection>/<id>.md` | the same key, in the bucket | `memory/<connection>/<id>.md` in the repository |
+| tasks | `<storage>/tasks/<connection>/<id>.md` | the same key, in the bucket | unchanged — see below |
+| assets | `<storage>/assets/<connection>/<name>` | the same key, in the bucket | unchanged — see below |
 | vault | `<workspace>/data/<profile>/vault.enc` | one object, `targets.<t>.vault.adapter: blob` | unchanged — a vault is never a repository |
 
-The last column is [ADR-041](adr/041-memory-and-skills-in-a-repository.md), and it moves those two
-and only those two. `lanes link knowledge use github --repo <owner/name>` writes it;
-`configuration.md` has the block and what it costs.
+The last column is [ADR-041](adr/041-memory-and-skills-in-a-repository.md), and it moves memory and
+skills and nothing else. Tasks could reasonably follow later; assets raises its own question, since
+binaries in a git repository is not the same trade as Markdown. `lanes link knowledge use github
+--repo <owner/name>` writes the block; `configuration.md` has it and what it costs.
 
 ### `memory`
 
@@ -613,6 +631,102 @@ never a second source of truth.
 **Redaction.** `write` records the title, id, and tags, never the text. `search` records **nothing** —
 a memory query is at least as revealing as a mail search, since it asks for the owner's own material.
 A resource read records its URI, because an address is a useful, harmless identifier.
+
+### `tasks`
+
+| Capability | Kind | Bundle | Why |
+|---|---|---|---|
+| `tasks://task/{id}` | **resource** | read | Read-oriented context at a stable address, exactly as a memory entry is. |
+| `tasks.list` | tool | read | A parameterised query, and the one that applies the default filter below. |
+| `tasks.get` | tool | read | The same content, for clients that do not read resources. |
+| `tasks.add` | tool | **write** | An action, carrying the risk `memory.write` does. |
+| `tasks.update` | tool | **write** | Likewise — and this is how a task is closed. |
+| `tasks.remove` | tool | **write** | Likewise. |
+
+**Why this is not memory.** A task has a status and a fact does not. "Remember to chase the invoice"
+written into memory becomes a note that nothing can ever close, served back to every later session as
+something that is *true* — so the invoice is still being chased months after it was paid. The
+alternative was a `status` field on memory, which would put one on every entry that is not a task and
+turn "what is outstanding" into a query over things that never were. [ADR-051](adr/051-tasks-and-assets-are-their-own-stores.md).
+
+**Six statuses**, each a different answer to "why is this not done":
+
+| | |
+|---|---|
+| `in_progress` | started |
+| `open` | not started |
+| `blocked` | waiting on something that is not the owner |
+| `muted` | a decision to stop being reminded |
+| `done` | finished |
+| `dropped` | decided against, which is not the same fact as finished |
+
+`blocked` and `muted` look adjacent and are not: one is the world's doing, the other is the owner's.
+An unrecognised value in a hand-edited file reads as `open` rather than failing the listing that
+would have shown it.
+
+**`tasks.list` shows `in_progress`, `open` and `blocked` and hides the rest.** The question is almost
+always what is outstanding, and a list that only grows is one nobody reads. Naming a status overrides
+it. There is no `tasks.complete`: `update` covers it, and `tools.test.ts` holds a per-tool schema
+budget that a wider surface spends for nothing.
+
+**Storage is memory's, unchanged.** One Markdown file per task, `title` / `status` / `tags` / `due` /
+timestamps in frontmatter, the notes as the body, no index, and a tolerant parse so a plain file
+dropped into the directory is an open task titled after its filename. `due` is kept as written and
+never normalised — normalising would have to invent a time zone, and what was typed was a day.
+
+**Redaction.** `add` and `update` record the id, status, tags and due date and never the title or
+notes: the shape of the change is what makes a write log worth reading, and the words are the owner's.
+`list` records **nothing**, for the reason `memory.search` does.
+
+### `assets`
+
+| Capability | Kind | Bundle | Why |
+|---|---|---|---|
+| `assets://file/{name}` | **resource** | read | A file at a stable address. Text comes back as text; anything else is described. |
+| `assets.list` | tool | read | The whole index — see below. |
+| `assets.get` | tool | read | The same content, for clients that do not read resources. |
+| `assets.store` | tool | **write** | An action, and the one that names a source rather than carrying bytes. |
+| `assets.remove` | tool | **write** | Likewise. |
+
+**The key is the filename.** `invoice-2026-03.pdf` is stored at
+`assets/<connection>/invoice-2026-03.pdf`, and that is the whole layout — no id, no prefix, no
+sidecar, no index. `BlobStore.list()` already reports size and mtime and the content type follows
+from the extension, so every fact a listing needs is either the key or something the store already
+had. It is ADR-014's reversal pushed one step further: a sidecar holding an asset's name would be a
+second name for a file that already has one.
+
+The cost is that an asset carries no description, and that is deliberate. "The March invoice is in
+assets as invoice-2026-03.pdf" is a memory entry; prose in a store with no way to search it would be
+worse than either.
+
+**A write names a source and never carries bytes.** `assets.store` takes one of the five sources
+`resolveAttachments` resolves — `path`, `url`, `handle`, `message_id`, `data` — which is
+[ADR-017](adr/017-attachments-by-reference.md) reused rather than restated, and brings the size
+ceiling, the two-sources-named refusal, and the SHA-256 receipt with it. `message_id` refuses here,
+because an assets connection is not a mailbox, and says what to do instead.
+
+**A read returns text or a description.** `ResourceContents` carries text and nothing else, so a text
+asset comes back as text and a binary one comes back named, typed, sized and digested. A 239 KB PDF
+is roughly 320,000 characters of base64; there is no reason to refuse that inbound and pay it
+outbound. Two checks, not one: the declared type has to be textual *and* the bytes must contain no
+NUL, because a content type is a claim rather than an observation.
+
+**Getting an asset into a mail is not offered here.** A staged handle is scoped to
+`<provider>/<connection>`, so one minted under `assets/main` is deliberately unresolvable from
+`gmail/main`. `lanes link attach <file> --connection <provider>.<account>` prints a handle the mail
+tools accept, and the refusal text says so.
+
+**A name may not end `.meta` or `.tmp`.** The filesystem adapter writes `<key>.meta` beside a blob
+whose content type its extension cannot express, `<key>.tmp` mid-write, and skips both in `list()` —
+so an asset called `report.meta` would be stored, never listed, and readable only by someone who
+already knew the name. Memory never met this because every key it writes ends `.md`. Nor may a name
+contain a path separator, which would nest the namespace, or start with a dot, which would hide the
+file in the directory the owner is meant to be able to read.
+
+**Redaction.** `store` records the name; the resolved receipt — filename, size, type, digest, origin
+— is added by `context.audit.annotate`, because the argument may literally *be* a file and keeping it
+verbatim would put base64 in the log. The same treatment `gmail.send_message` gets, and for the same
+reason.
 
 ### `skills`
 
@@ -701,7 +815,7 @@ policy decision, so a denied vault call discloses no more than an allowed one.
 
 ## `setup`
 
-A fourth owner-layer provider, and the only one that holds nothing at all: it reads manifests
+One more owner-layer provider, and the only one that holds nothing at all: it reads manifests
 and reports what is connected. It exists because a client with no shell — Claude Desktop, or
 anything reaching a deployed instance — could not otherwise learn what this endpoint reaches,
 and an agent that cannot see the answer invents commands instead.

@@ -8,9 +8,9 @@ import {
   deployedWorkspace,
   isWorkspaceConfig,
   publishWorkspace,
-  repairSetupSurface,
   uploadWorkspace,
 } from './upload.ts';
+import { repairOwnerLayer } from '#cli/config-repair.ts';
 import { layout, parseConfig, workspaceFiles } from '#profile';
 
 const roots: string[] = [];
@@ -147,7 +147,7 @@ policy:
   test('every profile it would upload, when none is named', async () => {
     const root = await workspace('personal', 'work');
 
-    await repairSetupSurface(root, undefined);
+    await repairOwnerLayer(root, undefined);
 
     // `work` is going to the bucket too, so it is going to be served. Repairing
     // a narrower set than the upload sends would leave it served and dark,
@@ -159,7 +159,7 @@ policy:
   test('only the named one, matching what the upload sends', async () => {
     const root = await workspace('personal', 'work');
 
-    await repairSetupSurface(root, ['personal']);
+    await repairOwnerLayer(root, ['personal']);
 
     expect(await has(root, 'personal')).toBe(true);
     // Not touched: it is not going up, so editing it would be this command
@@ -169,10 +169,10 @@ policy:
 
   test('a profile that already has it is left byte-identical', async () => {
     const root = await workspace('personal');
-    await repairSetupSurface(root, undefined);
+    await repairOwnerLayer(root, undefined);
     const after = await readFile(join(root, 'profiles', 'personal.yaml'), 'utf8');
 
-    await repairSetupSurface(root, undefined);
+    await repairOwnerLayer(root, undefined);
 
     expect(await readFile(join(root, 'profiles', 'personal.yaml'), 'utf8')).toBe(after);
   });
@@ -201,7 +201,7 @@ policy:
       // repaired at all before the throw.
       await write(root, 'personal.example.yaml', 'contract: 1\n');
 
-      await repairSetupSurface(root, undefined);
+      await repairOwnerLayer(root, undefined);
 
       expect(await has(root, 'personal')).toBe(true);
       expect(await readFile(join(root, 'profiles', 'personal.example.yaml'), 'utf8')).toBe(
@@ -213,7 +213,7 @@ policy:
       const root = await workspace('personal');
       await write(root, 'archive/old.yaml', OLD('old'));
 
-      await repairSetupSurface(root, undefined);
+      await repairOwnerLayer(root, undefined);
 
       expect(await has(root, 'personal')).toBe(true);
       expect(await has(root, 'archive/old')).toBe(false);
@@ -226,7 +226,7 @@ policy:
       // The upload that follows still sends it, which is what happened before
       // this function existed — repairing is a courtesy on the way past, and a
       // sibling nobody named should not cost the operator their rollout.
-      await repairSetupSurface(root, undefined);
+      await repairOwnerLayer(root, undefined);
 
       expect(await has(root, 'personal')).toBe(true);
     });
@@ -294,7 +294,7 @@ policy:
   });
 
   test('every profile the upload sends, when none is named', async () => {
-    // The same scoping `repairSetupSurface` has, and for a sharper reason: a
+    // The same scoping `repairOwnerLayer` has, and for a sharper reason: a
     // deploy with no `--profile` sends the whole workspace up, so binding only
     // the resolved profile leaves the others served and 403ing an hour later.
     const root = await workspaceOf({

@@ -64,6 +64,29 @@ about this person or their work, search it. Writing to memory is a separate
 grant, and what you write is served back to every later session — including to
 a different agent — so write when asked to remember something, not by habit.`;
 
+const TASKS = `**Tasks are what the owner has to do**, each with a status. "Remember to…" and
+"add a todo" belong here. Closing one is an update, not a delete, and a listing
+shows outstanding work unless you ask for more.`;
+
+/**
+ * The pair, when both are reachable — which after ADR-050 is the ordinary case.
+ *
+ * Not the two paragraphs above concatenated. The mistake this is here to prevent
+ * is a routing one — a thing to *do* written into memory, where nothing can ever
+ * close it — and a routing rule is shorter and clearer said once, in one
+ * sentence naming both stores, than implied by two paragraphs that each describe
+ * only themselves. It also very nearly pays for itself: this replaces `MEMORY`
+ * rather than joining it, so the pair costs about what the single one did.
+ */
+const MEMORY_AND_TASKS = `**Memory and tasks are different stores.** Search memory before concluding you do
+not know something about this person or their work. A thing to *do* goes in
+tasks, not memory — "remember to…" is a task, and it has a status. Both are
+served back to every later session, so write when asked, not by habit.`;
+
+const ASSETS = `**Assets are the owner's own files**, kept by name in this profile. Storing one
+names a source, exactly as an attachment does; a text asset reads back as text
+and anything else is described rather than encoded.`;
+
 const SKILLS = `**Skills are the owner's procedures**, surfaced as prompts rather than tools.
 That is deliberate: a procedure is selected by the person, not chosen by the
 model, and you cannot read one's body. They belong to one profile, so a skill
@@ -133,14 +156,38 @@ runs, and a client can report it unreachable while it is up. That is ordinary �
 not a fault to diagnose, and not authorization you have lost. Say the call did
 not land, do not redo what already succeeded, and offer to retry.`;
 
-/** Which paragraph each owner-layer provider brings, when it is reachable. */
+/** Which paragraph each owner-layer provider brings, when it is reachable alone. */
 const OWNER_HABITS: Record<string, string> = {
   memory: MEMORY,
+  tasks: TASKS,
+  assets: ASSETS,
   skills: SKILLS,
   vault: VAULT,
   setup: SETUP,
   identity: IDENTITY,
 };
+
+/**
+ * The paragraphs this principal should be told, in `RESERVED_PROVIDER_IDS` order.
+ *
+ * A lookup per provider would be enough if every paragraph described exactly one
+ * provider, and one does not: memory and tasks are only worth distinguishing
+ * from each other, so when both are reachable they collapse into one. The
+ * substitution is conditional rather than unconditional for the reason the
+ * docstring at the top of this file gives — prose describing a tool that is not
+ * there is worse than absent prose, and a profile carrying `deny: [tasks.*]` is
+ * exactly the case that would produce it.
+ */
+function habitsFor(reachable: readonly string[]): string[] {
+  const present = new Set(reachable);
+  const paired = present.has('memory') && present.has('tasks');
+
+  return reachable.flatMap((id) => {
+    if (paired && id === 'memory') return [MEMORY_AND_TASKS];
+    if (paired && id === 'tasks') return [];
+    return OWNER_HABITS[id] ? [OWNER_HABITS[id]!] : [];
+  });
+}
 
 /**
  * The whole string's ceiling, and the only budget there is.
@@ -158,11 +205,23 @@ const OWNER_HABITS: Record<string, string> = {
  * Raised a second time, to 2500, for `IDENTITY`, and the same answer for the
  * same reason: an agent signing as the wrong person has already sent the
  * message, and a skill loaded only when relevant is not loaded at the moment
- * that happens. The measured worst case — twenty profiles, twenty connections
- * each, every owner provider reachable, remote clients — is 2474, so this is
- * the measurement plus a little, not a round number picked first. Two things
- * hold it there: the paragraph names no identity, and it is spent only by a
- * profile that declared one.
+ * that happens.
+ *
+ * Raised a third time, to 2700, for tasks and assets (ADR-051), and the answer
+ * is the same shape a third time. The memory/tasks distinction is a routing rule
+ * applied at the instant of a write: an agent that files "remember to chase the
+ * invoice" as a memory entry has put it somewhere nothing can ever close, and it
+ * has already done so by the time a skill would have been loaded. The client
+ * that most needs the rule is the one holding no skills directory.
+ *
+ * The arithmetic, because the number is a measurement and not a round figure:
+ * twenty profiles, twenty connections each, every owner provider reachable,
+ * remote clients, is **2686**. That is the *unpaired* case — memory reachable
+ * and tasks denied — which runs three characters longer than the ordinary one
+ * (2683), because `MEMORY_AND_TASKS` is slightly shorter than `MEMORY` and
+ * `TASKS` apart. Worth stating, because the last two raises were both certified
+ * against a case an endpoint does not actually serve, and the widest case here
+ * is the one that looks like the narrower configuration.
  *
  * Exported because the test asserted `2000` as a literal while the code
  * reserved room against a second, differently-derived number — so the two could
@@ -171,7 +230,7 @@ const OWNER_HABITS: Record<string, string> = {
  * exactly the final length, because `join` adds the same two characters the
  * reduce already counted.
  */
-export const MAX_INSTRUCTIONS = 2500;
+export const MAX_INSTRUCTIONS = 2700;
 
 /** Which of the owner-layer providers this principal can actually reach. */
 function ownerProviders(merged: ReadonlyMap<string, MergedCapability>): string[] {
@@ -238,7 +297,7 @@ export function serverInstructions(
   const sections = [
     OPENING,
     ROUTING,
-    ...owner.map((id) => OWNER_HABITS[id]).filter((habit): habit is string => habit !== undefined),
+    ...habitsFor(owner),
     FILES,
     REFUSAL,
     ...(remoteClients ? [AVAILABILITY] : []),

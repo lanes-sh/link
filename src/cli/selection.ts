@@ -158,6 +158,8 @@ export const SELECTION: Record<string, Requires> = {
   'mcp add': 'profile+target',
   'mcp stdio': 'profile+target',
   memory: 'profile+target',
+  tasks: 'profile+target',
+  assets: 'profile+target',
   skills: 'profile+target',
   vault: 'profile+target',
   // Both halves open the target's adapters — `show` counts what is in the
@@ -186,6 +188,8 @@ const SUBCOMMANDS: Record<string, readonly string[]> = {
   config: ['show'],
   setup: ['plan'],
   memory: ['list', 'get', 'write', 'forget'],
+  tasks: ['list', 'get', 'add', 'update', 'remove'],
+  assets: ['list', 'get', 'add', 'remove'],
   skills: ['list', 'show', 'add', 'remove'],
   vault: ['list', 'get', 'set', 'remove', 'key'],
   mcp: ['skill', 'add', 'stdio', 'list'],
@@ -339,6 +343,9 @@ const ACCEPTS: Record<string, readonly string[]> = {
   update: ['check'],
   'identity add': ['note'],
   memory: ['connection', 'title', 'description', 'file', 'tag'],
+  // `--yes` on both, because both have a delete that asks first.
+  tasks: ['connection', 'title', 'status', 'due', 'tag', 'yes'],
+  assets: ['connection', 'name', 'content-type', 'yes'],
   skills: ['connection', 'title', 'description', 'file'],
   vault: ['connection'],
   // `no-migrate` is listed beside `migrate` because they are three states

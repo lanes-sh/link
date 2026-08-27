@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { ProviderManifest } from '#connectivity';
-import { calendar, contacts, docs, drive, gmail, sheets, tasks } from '../index.ts';
+import { calendar, contacts, docs, drive, gmail, googleTasks, sheets } from '../index.ts';
 import { manifestOf } from '#providers/index.ts';
 
 /**
@@ -81,7 +81,7 @@ describe.each([
   ['sheets', sheets],
   ['docs', docs],
   ['calendar', calendar],
-  ['tasks', tasks],
+  ['google_tasks', googleTasks],
   ['contacts', contacts],
 ])('%s', (_name, entry) => {
   // `gmail` is a definition rather than a bare manifest now: it authors
@@ -273,7 +273,7 @@ describe.each([
 describe('verification', () => {
   test('every scope justified for verification is one a manifest requests', async () => {
     const requested = new Set(
-      [gmail, drive, sheets, docs, calendar, tasks, contacts].flatMap((entry) => {
+      [gmail, drive, sheets, docs, calendar, googleTasks, contacts].flatMap((entry) => {
         const manifest = manifestOf(entry);
         return manifest.auth.kind === 'oauth' ? manifest.auth.scopes : [];
       }),

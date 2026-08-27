@@ -7,7 +7,8 @@ import { resolveTarget, vaultEnv } from './bootstrap.ts';
 import { printSteps, runSteps } from './steps.ts';
 import { driverFor } from './drivers.ts';
 import { prepareSecrets, readableRefs, rotatableRefs } from './prepare.ts';
-import { deployedWorkspace, repairSetupSurface, uploadWorkspace } from './upload.ts';
+import { repairOwnerLayer } from '#cli/config-repair.ts';
+import { deployedWorkspace, uploadWorkspace } from './upload.ts';
 import { unservableProfiles, unservableRefusal } from './servable.ts';
 import { collidingRefs, collisionRefusal, servingProfiles } from './serving.ts';
 import { healthLine, reachability, registerLine, reportUnauthorised } from './report.ts';
@@ -255,7 +256,7 @@ export async function deploy(flags: DeployFlags): Promise<void> {
       throw new ConfigError(unservableRefusal(unservable, target));
     }
 
-    await repairSetupSurface(resolution.workspaceRoot, serving);
+    await repairOwnerLayer(resolution.workspaceRoot, serving);
 
     // Before the rollout, so the revision that comes up finds a config to read.
     // Uploading after would leave a window where the service is serving and the

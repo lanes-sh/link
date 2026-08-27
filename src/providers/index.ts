@@ -11,7 +11,7 @@ import { gmail } from './google/gmail/index.ts';
 import { gmailImap } from './google/gmail-imap/index.ts';
 import { gmailMcp } from './google/gmail-mcp/index.ts';
 import { sheets } from './google/sheets/index.ts';
-import { tasks } from './google/tasks/index.ts';
+import { googleTasks } from './google/tasks/index.ts';
 import { icloudCalendar } from './icloud/calendar/index.ts';
 import { icloudContacts } from './icloud/contacts/index.ts';
 import { icloudDrive } from './icloud/drive/index.ts';
@@ -63,7 +63,7 @@ export const PROVIDERS: readonly (ProviderManifest | ProviderDefinition)[] = [
   sheets,
   docs,
   calendar,
-  tasks,
+  googleTasks,
   contacts,
   gmailImap,
   gmailMcp,
@@ -97,8 +97,8 @@ export {
   gmail,
   gmailImap,
   gmailMcp,
+  googleTasks,
   sheets,
-  tasks,
 } from './google/index.ts';
 export { icloudCalendar, icloudContacts, icloudDrive, icloudMail } from './icloud/index.ts';
 export { bunq } from './bunq/index.ts';

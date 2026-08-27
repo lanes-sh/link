@@ -274,9 +274,14 @@ nothing looks identical to a working one until someone relies on it.
 
 ## Your own context
 
-Memory, skills, and the vault are providers like any other — `lanes link connect memory`, `lanes link connect
-skills`, `lanes link connect vault` — but they hold your material rather than an account, so they have a
-control plane of their own. It reaches the same bytes an agent does.
+Memory, tasks, assets, skills, and the vault are providers like any other, but they hold your
+material rather than an account — so a profile arrives with all five declared and granted and there
+is nothing to connect ([ADR-050](adr/050-the-owner-layer-is-granted-by-default.md)). Each has a
+control plane of its own, reaching the same bytes an agent does.
+
+Which store a thing goes in: **memory is what is true, tasks is what is to be done, assets is a
+file.** Nothing refuses the wrong choice, which is why the rule is stated to agents as well as
+here — [ADR-051](adr/051-tasks-and-assets-are-their-own-stores.md).
 
 ```console
 $ printf 'The deploy window is Thursday evening.' \
@@ -300,8 +305,8 @@ $ lanes link skills remove review-diff --profile personal --target local
 A skill becomes the MCP prompt `skills_<name>`. A running endpoint picks up a new one within a few
 seconds — no restart. Skills belong to the profile they were added under and no other sees them, so
 `--profile work` is worth being deliberate about here. Agents can author skills too, under
-`skills.manage.*`, which is **not** in the default bundle; `lanes link connect skills` grants it
-anyway, so narrowing it is one line:
+`skills.manage.*`, which is **not** in the default bundle; the `skills.*` rule a profile is created
+with grants it anyway, so narrowing it is one line:
 
 ```console
 $ lanes link policy deny skills.manage.* --profile personal --target local
@@ -351,8 +356,9 @@ not a list this project ships, so `linkedin`, `phone` or `pronouns` work with no
 note is what makes several of a kind usable — it is read by whatever is deciding which one to use.
 Order is the ranking, so the first of a kind is the default.
 
-Unlike memory, skills and the vault, there is no `lanes link connect identity` to run: the first
-`identity add` writes the connection row and the `identity.*` grant for you, and says so.
+`identity` is the one owner-layer surface a profile does *not* arrive with, and that is deliberate:
+a profile declaring no identity has nothing for the surface to report. The first `identity add`
+writes the connection row and the `identity.*` grant for you, and says so.
 
 ```console
 $ lanes link identity add name "A. Lovelace" --profile personal --target local
@@ -524,4 +530,5 @@ contradicting since those stopped being read.
 
 A command that reads a value takes it on **stdin**, never on argv, so it does not land in shell
 history: `lanes link memory write`, `lanes link skills add`, `lanes link vault set`, and `lanes link secrets set` all work this way and
-refuse rather than hang when stdin is a terminal.
+refuse rather than hang when stdin is a terminal. `lanes link tasks add` reads its notes the same
+way but does not refuse, because they are optional — the title is the argument.

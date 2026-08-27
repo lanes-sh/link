@@ -3,12 +3,14 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseConfig } from '#profile';
-import { memoryStorage } from '#providers/owner.ts';
+import { assetStorage, memoryStorage, taskStorage } from '#providers/owner.ts';
 import { openRuntime, ownerPrincipal } from '../runtime.ts';
 import { memoryStore, ownerConnection } from './owner.ts';
+import { tasksStore } from './owner/tasks.ts';
+import { assetsStore } from './owner/assets.ts';
 
 /**
- * `lanes link memory` / `lanes link skills` / `lanes link vault`.
+ * `lanes link memory` / `tasks` / `assets` / `skills` / `vault`.
  *
  * The property worth a test is not the printing — it is that these commands and
  * the providers address the **same bytes**. A control plane that writes its own
@@ -34,10 +36,16 @@ targets:
     credentials: { adapter: file,       path: ./data/personal.credentials.enc }
     storage:     { adapter: filesystem, path: ./data/files }
 
+# Labelled the way the CLI writes them: the provider's own name. A tasks row
+# under any other label is refused, because that is the only signal a config
+# carries that it used to be Google Tasks (ADR-051). The ids stay "owner",
+# since what these tests are about is that --connection resolves.
 connections:
-  - { id: owner, provider: memory, account: Owner }
-  - { id: owner, provider: skills, account: Owner }
-  - { id: owner, provider: vault,  account: Owner }
+  - { id: owner, provider: memory, account: Memory }
+  - { id: owner, provider: tasks,  account: Tasks }
+  - { id: owner, provider: assets, account: Assets }
+  - { id: owner, provider: skills, account: Skills }
+  - { id: owner, provider: vault,  account: Vault }
 
 policy:
   allow: ['*']
@@ -119,6 +127,107 @@ describe('the CLI and the provider address the same bytes', () => {
     }
   });
 
+  test('a task added the CLI way is what tasks.get returns', async () => {
+    await workspace();
+    const runtime = await openRuntime({ profile: 'personal', target: 'local' });
+
+    try {
+      await taskStorage.write(tasksStore(runtime, {}), {
+        id: 'chase-the-invoice',
+        title: 'Chase the invoice',
+        status: 'in_progress',
+        tags: ['billing'],
+        due: '2026-09-01',
+        createdAt: new Date(0).toISOString(),
+        updatedAt: new Date(0).toISOString(),
+        body: 'Third reminder.',
+      });
+
+      const outcome = await runtime.dispatcher.invoke({
+        principal: ownerPrincipal('personal'),
+        capabilityId: 'tasks.get',
+        connectionKey: 'tasks.owner',
+        arguments: { id: 'chase-the-invoice' },
+      });
+
+      expect(outcome.ok).toBe(true);
+      expect(JSON.stringify(outcome)).toContain('Third reminder.');
+      expect(JSON.stringify(outcome)).toContain('in_progress');
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  test('a task added by tasks.add is what the CLI lists, status included', async () => {
+    await workspace();
+    const runtime = await openRuntime({ profile: 'personal', target: 'local' });
+
+    try {
+      await runtime.dispatcher.invoke({
+        principal: ownerPrincipal('personal'),
+        capabilityId: 'tasks.add',
+        connectionKey: 'tasks.owner',
+        arguments: { id: 'ship', title: 'Ship it', status: 'blocked', tags: ['release'] },
+      });
+
+      const tasks = await taskStorage.all(tasksStore(runtime, {}));
+
+      expect(tasks.map((task) => task.id)).toEqual(['ship']);
+      expect(tasks[0]?.status).toBe('blocked');
+      expect(tasks[0]?.tags).toEqual(['release']);
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  test('a file kept the CLI way is one assets.list reports', async () => {
+    await workspace();
+    const runtime = await openRuntime({ profile: 'personal', target: 'local' });
+
+    try {
+      const store = assetsStore(runtime, {});
+      await store.put('invoice.pdf', new TextEncoder().encode('%PDF-1.4'));
+
+      const outcome = await runtime.dispatcher.invoke({
+        principal: ownerPrincipal('personal'),
+        capabilityId: 'assets.list',
+        connectionKey: 'assets.owner',
+        arguments: {},
+      });
+
+      expect(outcome.ok).toBe(true);
+      expect(JSON.stringify(outcome)).toContain('invoice.pdf');
+      expect(JSON.stringify(outcome)).toContain('application/pdf');
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  test('a file stored by assets.store is one the CLI lists', async () => {
+    await workspace();
+    const root = roots[roots.length - 1]!;
+    const source = join(root, 'source.txt');
+    await writeFile(source, 'the contents');
+
+    const runtime = await openRuntime({ profile: 'personal', target: 'local' });
+
+    try {
+      const outcome = await runtime.dispatcher.invoke({
+        principal: ownerPrincipal('personal'),
+        capabilityId: 'assets.store',
+        connectionKey: 'assets.owner',
+        arguments: { source: { path: source } },
+      });
+      expect(outcome.ok).toBe(true);
+
+      const assets = await assetStorage.all(assetsStore(runtime, {}));
+      expect(assets.map((asset) => asset.name)).toEqual(['source.txt']);
+      expect(assets[0]?.bytes).toBe(12);
+    } finally {
+      await runtime.close();
+    }
+  });
+
   test('a vault item set from the CLI is the one the vault provider reads', async () => {
     await workspace();
     const runtime = await openRuntime({ profile: 'personal', target: 'local' });
@@ -190,8 +299,8 @@ describe('which connection a command acts on', () => {
   test('two is ambiguous, and refuses rather than picking', () => {
     const two = parseConfig(
       PROFILE.replace(
-        '  - { id: owner, provider: memory, account: Owner }',
-        '  - { id: owner, provider: memory, account: Owner }\n  - { id: work, provider: memory, account: Work }',
+        '  - { id: owner, provider: memory, account: Memory }',
+        '  - { id: owner, provider: memory, account: Memory }\n  - { id: work, provider: memory, account: Memory }',
       ),
     ).config;
 
