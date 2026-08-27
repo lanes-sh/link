@@ -29,11 +29,14 @@ $ lanes link connect gmail --profile personal --target local        # again, for
 | Linear | `lanes link connect linear` | Linear's own MCP server |
 | GitHub | `lanes link connect github` | Repositories, issues, pull requests, and workflow runs |
 | Slack | `lanes link connect slack` | Search, read, and send messages, threads, files, and canvases |
+| Reddit | `lanes link connect reddit` | Read subreddits and comments, search, and post, comment, and vote as you |
+| Discord | `lanes link connect discord` | Post announcements and read channels, as a bot application you own |
 | Gmail (IMAP) | `lanes link connect gmail_imap` | The same mailbox over IMAP and SMTP, with an app password that does not expire |
 | Gmail (Google MCP) | `lanes link connect gmail_mcp` | Google's own MCP server — Developer Preview only |
 | Drive (Google MCP) | `lanes link connect drive_mcp` | Likewise; use `drive` unless you are enrolled |
+| bunq | `lanes link connect bunq` | Accounts, balances, transaction history, and payments |
 
-## Three things the table does not show
+## Four things the table does not show
 
 **Each Google product is its own connection.** Connecting Gmail does not imply Drive, Sheets, Docs,
 Calendar, Tasks, or Contacts — each holds its own token under its own scopes. One OAuth client
@@ -46,10 +49,21 @@ app-specific password covers all three. iCloud Drive is separate — it holds no
 reading your sync folder through the filesystem. Full walkthrough:
 [`detailed/setup/icloud.md`](detailed/setup/icloud.md).
 
-**Only GitHub asks you to register anything.** Google and Slack authorise against the client Lanes
-operates, Notion and Linear register themselves, and iCloud takes an app-specific password you
-generate at appleid.apple.com. GitHub takes a personal access token you create once —
-[`detailed/setup/github.md`](detailed/setup/github.md).
+**bunq can move money, and nothing asks you to confirm.** Its payment tool executes immediately
+and is not reversible — there is no approval step in the bunq app or anywhere else. Set a spending
+limit on the API key, and if you want an agent to prepare payments rather than make them, deny the
+two payment tools **and** `UPDATE_DraftPayment` — accepting a draft is itself how a draft is spent,
+so leaving that one allowed lets an agent approve its own. Read
+[`detailed/setup/bunq.md`](detailed/setup/bunq.md) before connecting it; it is the only page here
+that is mostly about what not to do.
+
+**GitHub, Reddit, and bunq ask you to register something.** Google and Slack authorise against the
+client Lanes operates, Notion and Linear register themselves, and iCloud takes an app-specific
+password you generate at appleid.apple.com. The other three each want one thing you make yourself:
+GitHub a personal access token — [`detailed/setup/github.md`](detailed/setup/github.md) — Reddit an
+OAuth client at reddit.com/prefs/apps, because it matches the loopback redirect exactly
+([`detailed/setup/reddit.md`](detailed/setup/reddit.md)), and bunq an API key from inside the bunq
+app, which is also where you set its spending limit.
 
 Slack used to be on that list and no longer is. Slack does not register clients automatically and
 is not going to — it would let a client authenticate someone without an app existing, and on
@@ -163,9 +177,23 @@ output, and in any transcript.
 
 ## Add your own
 
-Any MCP server, any REST API with an OpenAPI spec, any IMAP mailbox, any CalDAV or CardDAV server.
-Most are a fifteen-line YAML manifest in `~/.lanes-link/data/<profile>/providers.d/` and no code at all. See
-[`detailed/creating-a-provider.md`](detailed/creating-a-provider.md).
+Any MCP server, any REST API with an OpenAPI spec, any IMAP mailbox, any CalDAV or CardDAV server,
+any folder on this machine. One command:
+
+```console
+$ lanes link connect custom thing --connector http --auth api-key --auth-header X-Api-Key \
+    --base-url https://api.example.com/v1 --openapi https://api.example.com/openapi.json \
+    --profile personal --target local
+```
+
+`--connector` is `mcp`, `http`, `imap`, `dav` or `fs`; `--auth` is `none`, `bearer`, `api-key`,
+`header`, `basic`, `oauth` or `strategy`. Leave out a value it needs and it asks. What it writes is a
+fifteen-line YAML manifest in `~/.lanes-link/data/<profile>/providers.d/` — the same declaration a
+built-in is, and yours to edit from there.
+
+See [`detailed/creating-a-provider.md`](detailed/creating-a-provider.md) to write one by hand, and
+[`detailed/connectivity-coverage.md`](detailed/connectivity-coverage.md) for which combinations
+work, which are closed on purpose, and what none of them covers yet.
 
 ---
 

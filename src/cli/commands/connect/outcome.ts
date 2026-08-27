@@ -140,7 +140,9 @@ function renderBlocked(outcome: ConnectOutcome): void {
         ? 'a browser is needed'
         : outcome.reason === 'needs_terminal'
           ? 'a terminal is needed'
-          : 'more is needed first',
+          : outcome.reason === 'needs_declaration'
+            ? 'this provider is not declared yet'
+            : 'more is needed first',
     ),
   );
 

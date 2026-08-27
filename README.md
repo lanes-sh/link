@@ -110,17 +110,25 @@ One command per account. Run it again to add a second mailbox, a second calendar
 | Linear | `lanes link connect linear` |
 | GitHub | `lanes link connect github` |
 | Slack | `lanes link connect slack` |
+| Reddit | `lanes link connect reddit` |
+| Discord | `lanes link connect discord` |
 | Gmail (IMAP, app password) | `lanes link connect gmail_imap` |
 | Gmail (Google MCP) | `lanes link connect gmail_mcp` |
 | Drive (Google MCP) | `lanes link connect drive_mcp` |
+| bunq | `lanes link connect bunq` |
 
 Three things worth knowing up front. `lanes link connect icloud` sets up Mail, Calendar, and
-Contacts together, because one app-specific password covers all three. Google and Slack need no
+Contacts together, because one app-specific password covers all three. Reddit is the one that does
+need an app of your own — it rate-limits per client id, so a shared client would mean strangers
+spending your budget. Google and Slack need no
 OAuth client of your own: both authorise against the one Lanes operates, so there is no console to
 visit — for Google, add `--own-client` if you would rather register your own, or take a service
 account key or an app password over IMAP where you would rather nothing expired. And GitHub takes a
-token you paste rather than a browser sign-in, because it will not register a client for us; that
-is the one console visit left here.
+token you paste rather than a browser sign-in, because it will not register a client for us. And
+bunq — which wants a key from inside its app rather than a console at all — is the one that can move
+money, and it says so: its payment tool executes immediately and is not reversible. Set a spending
+limit on the API key while you are in there, and read
+[docs/detailed/setup/bunq.md](docs/detailed/setup/bunq.md) before connecting it.
 
 Full guide — what each one gives your agent, what it needs, and adding your own:
 **[docs/connect.md](docs/connect.md)**.

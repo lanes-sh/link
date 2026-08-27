@@ -1,6 +1,6 @@
 {
   "name": "@lanes-sh/link",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "description": "A self-hostable MCP gateway for all your connections, memory, skills, and secrets",
   "license": "Apache-2.0",
   "homepage": "https://lanes.sh/link",
@@ -49,6 +49,8 @@
     "typecheck": "tsc --noEmit",
     "lanes": "bun run ./src/cli/lanes.ts",
     "audit": "bun pm scan",
+    "vendor:bunq": "bun run ./src/providers/bunq/specs/vendor.ts",
+    "vendor:discord": "bun run ./src/providers/discord/specs/vendor.ts",
     "vendor:google": "bun run ./src/providers/google/specs/vendor.ts"
   },
   "imports": {

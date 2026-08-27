@@ -56,6 +56,27 @@ export const httpConnectorSchema = z.object({
       exclude: z.array(z.string()).default([]),
     })
     .optional(),
+  /**
+   * Sent on every request this connector makes.
+   *
+   * The same field as `mcp`'s above and refused the same way for
+   * `Authorization` — but for the opposite reason. An mcp server chooses its
+   * own tool list and a header is the only way to ask it for less; a REST API
+   * asks for nothing, and this is for what the *vendor* requires of a client
+   * rather than what a caller wants from it.
+   *
+   * The case in hand is a `User-Agent`. Nothing else here sets one, so every
+   * install of this program looks identical to a host that rate-limits by
+   * client — and a service that asks callers to identify themselves throttles
+   * the default agent hardest, which reads as an outage rather than a refusal.
+   *
+   * Precedence is narrowest-wins: `accept` is a default this may override, a
+   * header parameter the operation itself declares overrides this, and
+   * `content-type` is derived from the document and overrides everything —
+   * a blanket header cannot silently change how one operation's body is
+   * encoded.
+   */
+  headers: z.record(z.string(), z.string()).optional(),
 });
 
 /**

@@ -79,6 +79,16 @@ export interface Runtime {
   readonly authenticator: BearerAuthenticator;
   /** Same factory the dispatcher uses, exposed for commands that probe upstream. */
   connectorFor(providerId: string, connectionId: string): AnyConnector | undefined;
+  /**
+   * Same authorizer the dispatcher uses, for the same reason `connectorFor` is here.
+   *
+   * A command that probes upstream needs the credential on the request, and it
+   * must not learn how to put it there — that is one switch on the resolved
+   * shape (`connectivity/auth/authorize.ts`) and a second copy would be a
+   * second answer. `settleIdentity` is the caller: it asks a provider whose
+   * account was just authorised, over whatever method that provider declares.
+   */
+  authorizeRequest(providerId: string, connectionId: string, request: Request): Promise<Request>;
   /** A provider's manifest, so an omitted `credential_ref` can be derived from it. */
   manifestFor(providerId: string): ProviderManifest | undefined;
   close(): Promise<void>;
@@ -309,13 +319,14 @@ export async function openRuntime(
   // the *same instance* whichever side asks for it, or a held session is held
   // twice.
   const connectorFor = connectorFactory({ registry, credentials });
+  const authorizeRequest = requestAuthorizer(registry, credentials);
   let closed = false;
 
   const dispatcher = new Dispatcher({
     config,
     registry,
     connectorFor,
-    authorizeRequest: requestAuthorizer(registry, credentials),
+    authorizeRequest,
     policy,
     state,
     audit: auditSink,
@@ -345,6 +356,7 @@ export async function openRuntime(
       credentials,
     }),
     connectorFor,
+    authorizeRequest,
     manifestFor: (providerId: string) => registry.manifest(providerId),
     // Sessions first, then the state: a connector may still want to log out
     // cleanly, and LOGOUT is worth more than the microsecond it costs.

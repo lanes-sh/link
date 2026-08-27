@@ -1,0 +1,864 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "bunq API",
+    "description": "Trimmed from the published bunq specification. See x-vendored-from for the original, and https://doc.bunq.com for the reference.",
+    "termsOfService": "http://bunq.com/terms-api/",
+    "contact": {
+      "name": "bunq Developer Support",
+      "url": "http://bunq.com/developer"
+    },
+    "license": {
+      "name": "Apache 2.0",
+      "url": "https://www.apache.org/licenses/LICENSE-2.0.html"
+    },
+    "version": "1.0",
+    "x-vendored-from": "https://raw.githubusercontent.com/bunq/doc/master/swagger.json",
+    "x-vendored-note": "Trimmed by src/providers/bunq/specs/vendor.ts. Committed deliberately: a spec decides which paths are called with the operator credential, and this one can move money."
+  },
+  "servers": [
+    {
+      "url": "https://api.bunq.com/v1"
+    }
+  ],
+  "paths": {
+    "/user/{userID}/monetary-account/{monetary-accountID}/draft-payment": {
+      "post": {
+        "tags": [
+          "draft-payment"
+        ],
+        "summary": "",
+        "operationId": "CREATE_DraftPayment_for_User_MonetaryAccount",
+        "description": "Create a new DraftPayment.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userID",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "monetary-accountID",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftPayment"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "draft-payment"
+        ],
+        "summary": "",
+        "operationId": "List_all_DraftPayment_for_User_MonetaryAccount",
+        "description": "Get a listing of all DraftPayments from a given MonetaryAccount.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userID",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "monetary-accountID",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        }
+      }
+    },
+    "/user/{userID}/monetary-account/{monetary-accountID}/draft-payment/{itemId}": {
+      "put": {
+        "tags": [
+          "draft-payment"
+        ],
+        "summary": "",
+        "operationId": "UPDATE_DraftPayment_for_User_MonetaryAccount",
+        "description": "Update a DraftPayment.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userID",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "monetary-accountID",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "itemId",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftPayment"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "draft-payment"
+        ],
+        "summary": "",
+        "operationId": "READ_DraftPayment_for_User_MonetaryAccount",
+        "description": "Get a specific DraftPayment.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userID",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "monetary-accountID",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "itemId",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        }
+      }
+    },
+    "/user/{userID}/monetary-account": {
+      "get": {
+        "tags": [
+          "monetary-account"
+        ],
+        "summary": "",
+        "operationId": "List_all_MonetaryAccount_for_User",
+        "description": "Get a collection of all your MonetaryAccounts.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userID",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        }
+      }
+    },
+    "/user/{userID}/monetary-account/{monetary-accountID}/payment": {
+      "post": {
+        "tags": [
+          "payment"
+        ],
+        "summary": "",
+        "operationId": "CREATE_Payment_for_User_MonetaryAccount",
+        "description": "Create a new Payment.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userID",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "monetary-accountID",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Payment"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "payment"
+        ],
+        "summary": "",
+        "operationId": "List_all_Payment_for_User_MonetaryAccount",
+        "description": "Get a listing of all Payments performed on a given MonetaryAccount (incoming and outgoing).",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userID",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "monetary-accountID",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        }
+      }
+    },
+    "/user/{userID}/monetary-account/{monetary-accountID}/payment/{itemId}": {
+      "get": {
+        "tags": [
+          "payment"
+        ],
+        "summary": "",
+        "operationId": "READ_Payment_for_User_MonetaryAccount",
+        "description": "Get a specific previous Payment.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userID",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "monetary-accountID",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "itemId",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        }
+      }
+    },
+    "/user/{userID}/monetary-account/{monetary-accountID}/payment-batch": {
+      "post": {
+        "tags": [
+          "payment-batch"
+        ],
+        "summary": "",
+        "operationId": "CREATE_PaymentBatch_for_User_MonetaryAccount",
+        "description": "Create a payment batch by sending an array of single payment objects, that will become part of the batch.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userID",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "monetary-accountID",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "description": "",
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PaymentBatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "payment-batch"
+        ],
+        "summary": "",
+        "operationId": "List_all_PaymentBatch_for_User_MonetaryAccount",
+        "description": "Return all the payment batches for a monetary account.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "userID",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "in": "path",
+            "name": "monetary-accountID",
+            "description": "",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        }
+      }
+    },
+    "/user": {
+      "get": {
+        "tags": [
+          "user"
+        ],
+        "summary": "",
+        "operationId": "List_all_User",
+        "description": "Get a collection of all available users.",
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Address": {
+        "type": "object",
+        "properties": {
+          "street": {
+            "type": "string",
+            "description": "The street.",
+            "readOnly": false,
+            "writeOnly": false
+          },
+          "house_number": {
+            "type": "string",
+            "description": "The house number.",
+            "readOnly": false,
+            "writeOnly": false
+          },
+          "po_box": {
+            "type": "string",
+            "description": "The PO box.",
+            "readOnly": false,
+            "writeOnly": false
+          },
+          "postal_code": {
+            "type": "string",
+            "description": "The postal code.",
+            "readOnly": false,
+            "writeOnly": false
+          },
+          "city": {
+            "type": "string",
+            "description": "The city.",
+            "readOnly": false,
+            "writeOnly": false
+          },
+          "country": {
+            "type": "string",
+            "description": "The country as an ISO 3166-1 alpha-2 country code.",
+            "readOnly": false,
+            "writeOnly": false
+          },
+          "extra": {
+            "type": "string",
+            "description": "The apartment, building or other extra information for addresses.",
+            "readOnly": false,
+            "writeOnly": false
+          },
+          "mailbox_name": {
+            "type": "string",
+            "description": "The name on the mailbox (only used for Postal and Shipping addresses).",
+            "readOnly": false,
+            "writeOnly": false
+          }
+        }
+      },
+      "Amount": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": "string",
+            "description": "The amount formatted to two decimal places.",
+            "readOnly": false,
+            "writeOnly": false
+          },
+          "currency": {
+            "type": "string",
+            "description": "The currency of the amount. It is an ISO 4217 formatted currency code.",
+            "readOnly": false,
+            "writeOnly": false
+          }
+        }
+      },
+      "AttachmentMonetaryAccountPayment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "The id of the attached Attachment.",
+            "readOnly": false,
+            "writeOnly": false
+          }
+        }
+      },
+      "Avatar": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "The public UUID of the avatar.",
+            "readOnly": false,
+            "writeOnly": false
+          }
+        }
+      },
+      "DraftPayment": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "The status of the DraftPayment.",
+            "readOnly": false,
+            "writeOnly": false
+          },
+          "entries": {
+            "type": "array",
+            "description": "The list of entries in the DraftPayment. Each entry will result in a payment when the DraftPayment is accepted.",
+            "readOnly": false,
+            "writeOnly": false,
+            "items": {
+              "$ref": "#/components/schemas/DraftPaymentEntry"
+            }
+          },
+          "previous_updated_timestamp": {
+            "type": "string",
+            "description": "The last updated_timestamp that you received for this DraftPayment. This needs to be provided to prevent race conditions.",
+            "readOnly": false,
+            "writeOnly": true
+          },
+          "number_of_required_accepts": {
+            "type": "integer",
+            "description": "The number of accepts that are required for the draft payment to receive status ACCEPTED. Currently only 1 is valid.",
+            "readOnly": false,
+            "writeOnly": true
+          },
+          "schedule": {
+            "type": "object",
+            "description": "The schedule details when creating or updating a scheduled payment.",
+            "readOnly": false,
+            "writeOnly": false,
+            "$ref": "#/components/schemas/Schedule"
+          }
+        },
+        "required": [
+          "entries",
+          "number_of_required_accepts"
+        ]
+      },
+      "DraftPaymentEntry": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "object",
+            "description": "The amount of the payment.",
+            "readOnly": false,
+            "writeOnly": false,
+            "$ref": "#/components/schemas/Amount"
+          },
+          "counterparty_alias": {
+            "type": "object",
+            "description": "The LabelMonetaryAccount containing the public information of the other (counterparty) side of the DraftPayment.",
+            "readOnly": false,
+            "writeOnly": false,
+            "$ref": "#/components/schemas/LabelMonetaryAccount"
+          },
+          "description": {
+            "type": "string",
+            "description": "The description for the DraftPayment. Maximum 140 characters for DraftPayments to external IBANs, 9000 characters for DraftPayments to only other bunq MonetaryAccounts.",
+            "readOnly": false,
+            "writeOnly": false
+          },
+          "merchant_reference": {
+            "type": "string",
+            "description": "Optional data to be included with the Payment specific to the merchant.",
+            "readOnly": false,
+            "writeOnly": false
+          },
+          "attachment": {
+            "type": "array",
+            "description": "The Attachments attached to the DraftPayment.",
+            "readOnly": false,
+            "writeOnly": false,
+            "items": {
+              "$ref": "#/components/schemas/AttachmentMonetaryAccountPayment"
+            }
+          }
+        }
+      },
+      "Error": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "error_description": {
+              "type": "string",
+              "description": "The error description in English."
+            },
+            "error_description_translated": {
+              "type": "string",
+              "description": "The error description translated to the user's language."
+            }
+          }
+        }
+      },
+      "Geolocation": {
+        "type": "object",
+        "properties": {
+          "latitude": {
+            "type": "integer",
+            "description": "The latitude for a geolocation restriction.",
+            "readOnly": false,
+            "writeOnly": false
+          },
+          "longitude": {
+            "type": "integer",
+            "description": "The longitude for a geolocation restriction.",
+            "readOnly": false,
+            "writeOnly": false
+          },
+          "altitude": {
+            "type": "integer",
+            "description": "The altitude for a geolocation restriction.",
+            "readOnly": false,
+            "writeOnly": false
+          },
+          "radius": {
+            "type": "integer",
+            "description": "The radius for a geolocation restriction.",
+            "readOnly": false,
+            "writeOnly": false
+          }
+        }
+      },
+      "GinmonTransaction": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Every field bunq documents here is read-only, so its request shape is not described by the specification — send the object the tool description names."
+      },
+      "Image": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Every field bunq documents here is read-only, so its request shape is not described by the specification — send the object the tool description names."
+      },
+      "LabelMonetaryAccount": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Every field bunq documents here is read-only, so its request shape is not described by the specification — send the object the tool description names."
+      },
+      "LabelUser": {
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "The public UUID of the label-user.",
+            "readOnly": false,
+            "writeOnly": false
+          },
+          "display_name": {
+            "type": "string",
+            "description": "The name to be displayed for this user, as it was given on the request.",
+            "readOnly": false,
+            "writeOnly": false
+          },
+          "country": {
+            "type": "string",
+            "description": "The country of the user. 000 stands for \"unknown\"",
+            "readOnly": false,
+            "writeOnly": false
+          }
+        }
+      },
+      "Payment": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "object",
+            "description": "The Amount transferred by the Payment. Will be negative for outgoing Payments and positive for incoming Payments (relative to the MonetaryAccount indicated by monetary_account_id).",
+            "readOnly": false,
+            "writeOnly": false,
+            "$ref": "#/components/schemas/Amount"
+          },
+          "counterparty_alias": {
+            "type": "object",
+            "description": "The LabelMonetaryAccount containing the public information of the other (counterparty) side of the Payment.",
+            "readOnly": false,
+            "writeOnly": false,
+            "$ref": "#/components/schemas/LabelMonetaryAccount"
+          },
+          "description": {
+            "type": "string",
+            "description": "The description for the Payment. Maximum 140 characters for Payments to external IBANs, 9000 characters for Payments to only other bunq MonetaryAccounts.",
+            "readOnly": false,
+            "writeOnly": false
+          },
+          "attachment": {
+            "type": "array",
+            "description": "The Attachments attached to the Payment.",
+            "readOnly": false,
+            "writeOnly": false,
+            "items": {
+              "$ref": "#/components/schemas/AttachmentMonetaryAccountPayment"
+            }
+          },
+          "merchant_reference": {
+            "type": "string",
+            "description": "Optional data included with the Payment specific to the merchant.",
+            "readOnly": false,
+            "writeOnly": false
+          },
+          "allow_bunqto": {
+            "type": "boolean",
+            "description": "Whether or not sending a bunq.to payment is allowed.",
+            "readOnly": false,
+            "writeOnly": true
+          }
+        }
+      },
+      "PaymentArrivalExpected": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Every field bunq documents here is read-only, so its request shape is not described by the specification — send the object the tool description names."
+      },
+      "PaymentAutoAllocateInstance": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Every field bunq documents here is read-only, so its request shape is not described by the specification — send the object the tool description names."
+      },
+      "PaymentBatch": {
+        "type": "object",
+        "properties": {
+          "payments": {
+            "type": "object",
+            "description": "The list of mutations that were made.",
+            "readOnly": false,
+            "writeOnly": false,
+            "$ref": "#/components/schemas/PaymentBatchAnchoredPayment"
+          }
+        }
+      },
+      "PaymentBatchAnchoredPayment": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Every field bunq documents here is read-only, so its request shape is not described by the specification — send the object the tool description names."
+      },
+      "PaymentFee": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Every field bunq documents here is read-only, so its request shape is not described by the specification — send the object the tool description names."
+      },
+      "PaymentSuspendedOutgoing": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "The status of the payment.",
+            "readOnly": false,
+            "writeOnly": false
+          }
+        }
+      },
+      "Pointer": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "The alias type, can be: EMAIL|PHONE_NUMBER|IBAN.",
+            "readOnly": false,
+            "writeOnly": false
+          },
+          "value": {
+            "type": "string",
+            "description": "The alias value.",
+            "readOnly": false,
+            "writeOnly": false
+          },
+          "name": {
+            "type": "string",
+            "description": "The alias name.",
+            "readOnly": false,
+            "writeOnly": false
+          },
+          "service": {
+            "type": "string",
+            "description": "The pointer service. Only required for external counterparties.",
+            "readOnly": false,
+            "writeOnly": true
+          }
+        }
+      },
+      "RequestInquiryReference": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Every field bunq documents here is read-only, so its request shape is not described by the specification — send the object the tool description names."
+      },
+      "Schedule": {
+        "type": "object",
+        "properties": {
+          "time_start": {
+            "type": "string",
+            "description": "The schedule start time (UTC).",
+            "readOnly": false,
+            "writeOnly": false
+          },
+          "time_end": {
+            "type": "string",
+            "description": "The schedule end time (UTC).",
+            "readOnly": false,
+            "writeOnly": false
+          },
+          "recurrence_unit": {
+            "type": "string",
+            "description": "The schedule recurrence unit, options: ONCE, HOURLY, DAILY, WEEKLY, MONTHLY, YEARLY",
+            "readOnly": false,
+            "writeOnly": false
+          },
+          "recurrence_size": {
+            "type": "integer",
+            "description": "The schedule recurrence size. For example size 4 and unit WEEKLY means the recurrence is every 4 weeks.",
+            "readOnly": false,
+            "writeOnly": false
+          }
+        }
+      },
+      "ScheduleAnchorObject": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "Every field bunq documents here is read-only, so its request shape is not described by the specification — send the object the tool description names."
+      }
+    }
+  }
+}

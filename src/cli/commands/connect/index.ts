@@ -4,7 +4,8 @@ import { ensureSetupConnection, repaired } from '../../config-repair.ts';
 import { emit, print } from '../../output.ts';
 import { nonInteractivePrompter, terminalPrompter, type Prompter } from '../../prompt.ts';
 import { openRuntime, type GlobalFlags } from '../../runtime.ts';
-import { matchesRule, moveCredential, siblingAccountId } from './accounts.ts';
+import { moveCredential, siblingAccountId } from './accounts.ts';
+import { grantProvider } from './grant.ts';
 import { discoverCapabilities } from './discover.ts';
 import { connectFamily, familyMembers } from './family.ts';
 import { authoriseWithKey } from './assertion.ts';
@@ -16,7 +17,9 @@ import { ALREADY, NOTHING, renderOutcome, where, type ConnectOutcome } from './o
 import { nextAfterEdit, publishRuntimeEdit } from '#cli/publish.ts';
 import { ensureStaticCredential } from './setup.ts';
 import { settleIdentity } from './settle.ts';
+import { runStrategySetup } from './strategy.ts';
 import { announceConnectTarget } from './target-note.ts';
+import { unknownProvider } from './unknown.ts';
 
 /**
  * `lanes link connect <provider>` — the one command that adds an account.
@@ -91,7 +94,14 @@ export async function connect(target: string, options: ConnectOptions): Promise<
   return emit(options.json, outcome, () => renderOutcome(outcome));
 }
 
-async function runConnect(
+/**
+ * Exported for `connect custom`, which declares a provider and then connects it.
+ *
+ * Narrow on purpose — no extra parameters, no second entry point into the five
+ * steps. The manifest is written before this is called, because the registry
+ * that reads `providers.d/` is built by `openRuntime` on the first line.
+ */
+export async function runConnect(
   target: string,
   options: ConnectOptions,
   /** A family member — the account this belongs to has already said where it goes. */
@@ -133,17 +143,13 @@ async function runConnect(
     }
 
     if (!entry) {
-      const available = registry.list();
-      const builtin = available.filter((c) => c.origin === 'builtin').map((c) => c.manifest.id);
-      const custom = available.filter((c) => c.origin === 'workspace').map((c) => c.manifest.id);
-
-      throw new Error(
-        `Unknown provider "${providerId}".\n` +
-          `  built in: ${builtin.join(', ')}\n` +
-          (custom.length > 0
-            ? `  yours:    ${custom.join(', ')}\n`
-            : `  add your own: a manifest in ${runtime.resolution.workspaceRoot}/providers/\n`),
-      );
+      throw unknownProvider({
+        providerId,
+        registry,
+        workspaceRoot: runtime.resolution.workspaceRoot,
+        profile: runtime.resolution.profile,
+        target: runtime.target,
+      });
     }
 
     const manifest = entry.manifest;
@@ -257,6 +263,9 @@ async function runConnect(
       });
     }
 
+    // 1b. The vendor's own handshake — see `./strategy.ts`, including why here.
+    await runStrategySetup(manifest, provisionalId, runtime);
+
     // 2. Ask the provider whose account that was.
     //
     //    This is what distinguishes reconnecting an existing account from
@@ -322,20 +331,8 @@ async function runConnect(
       changes.push(`re-authorised ${connectionKey}${method.id ? ` with ${method.id}` : ''}`);
     }
 
-    // 5. Grant it.
-    //
-    //    One rule per provider, not one per capability. The pinned-per-tool
-    //    form this replaced was 85 lines for four providers and unreadable, and
-    //    what it bought — a vendor cannot widen your policy by shipping a new
-    //    tool — is preserved instead by `doctor`, which reports capabilities
-    //    that appeared after you connected.
-    const granted: string[] = [];
-    const rule = `${providerId}.*`;
-
-    if (!runtime.config.policy.allow.some((existing) => matchesRule(existing.capability, rule))) {
-      document.addTo(['policy', 'allow'], rule, { inline: true });
-      granted.push(rule);
-    }
+    // 5. Grant it — one rule per provider; `grant.ts` says why not per capability.
+    const granted = grantProvider(document, runtime.config.policy.allow, providerId);
 
     // 6. Repair the setup surface if this profile predates it.
     //

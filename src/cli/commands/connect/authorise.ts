@@ -283,6 +283,11 @@ async function authoriseDirect(input: {
       ...(client.kind === 'brokered' && client.config.redirectUri
         ? { relayRedirect: client.config.redirectUri }
         : {}),
+      // The other spelling of the same need, for a vendor that takes a loopback
+      // redirect but matches it exactly. The manifest owns this URL because the
+      // vendor's console does — it has to be the string registered there, and
+      // `defineProvider` refuses a manifest declaring both this and a broker.
+      ...(manifest.auth.redirect_uri ? { fixedRedirect: manifest.auth.redirect_uri } : {}),
       scopes,
       connectionLabel: manifest.name,
       ...(manifest.auth.authorize_params

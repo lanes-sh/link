@@ -1,5 +1,7 @@
 import type { ProviderDefinition, ProviderManifest } from '#connectivity';
+import { bunq } from './bunq/index.ts';
 import { calendar } from './google/calendar/index.ts';
+import { discord } from './discord/index.ts';
 import { contacts } from './google/contacts/index.ts';
 import { docs } from './google/docs/index.ts';
 import { github } from './github/index.ts';
@@ -16,6 +18,7 @@ import { icloudDrive } from './icloud/drive/index.ts';
 import { icloudMail } from './icloud/mail/index.ts';
 import { linear } from './linear/index.ts';
 import { notion } from './notion/index.ts';
+import { reddit } from './reddit/index.ts';
 import { slack } from './slack/index.ts';
 
 /**
@@ -53,6 +56,8 @@ export const PROVIDERS: readonly (ProviderManifest | ProviderDefinition)[] = [
   linear,
   github,
   slack,
+  reddit,
+  discord,
   gmail,
   drive,
   sheets,
@@ -67,6 +72,7 @@ export const PROVIDERS: readonly (ProviderManifest | ProviderDefinition)[] = [
   icloudCalendar,
   icloudContacts,
   icloudDrive,
+  bunq,
 ];
 
 /** The manifest half of an entry, whichever shape it arrived in. */
@@ -95,8 +101,11 @@ export {
   tasks,
 } from './google/index.ts';
 export { icloudCalendar, icloudContacts, icloudDrive, icloudMail } from './icloud/index.ts';
+export { bunq } from './bunq/index.ts';
+export { discord } from './discord/index.ts';
 export { github } from './github/index.ts';
 export { linear } from './linear/index.ts';
 export { notion } from './notion/index.ts';
+export { reddit } from './reddit/index.ts';
 export { slack } from './slack/index.ts';
 export { SCOPE_MEANINGS, type ScopeMeaning } from './scopes.ts';

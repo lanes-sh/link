@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { readFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { assertKnownFlags, requireSelection, requirementFor, SELECTION } from './selection.ts';
+import { CONNECT_CUSTOM_FLAGS, RESERVED_BY_GRAMMAR } from './commands/connect/custom/spec.ts';
 
 /**
  * That every command says what it needs, and that nothing can be added without
@@ -250,6 +252,76 @@ describe('a target-independent command is runnable in the spelling it demands', 
     expect(() =>
       assertKnownFlags('profile', 'remove', { target: 'cloud', 'dry-run': true }),
     ).not.toThrow();
+  });
+
+  /**
+   * `connect custom` is a second word of `connect`, and its own row.
+   *
+   * The row is the whole mechanism: `selectionKey` returns a two-word key only
+   * when `SELECTION` holds one, and that is what gives the command its own
+   * `ACCEPTS` entry. Without it the thirty declaration flags would have to join
+   * `connect`'s list, where `--openapi` on `connect gmail` would be accepted and
+   * silently ignored — the defect this file exists for.
+   */
+  test('connect custom takes its own flags', () => {
+    expect(() =>
+      assertKnownFlags('connect', 'custom', {
+        connector: 'mcp',
+        endpoint: 'https://mcp.example.com/mcp',
+        auth: 'bearer',
+        'replace-manifest': true,
+      }),
+    ).not.toThrow();
+  });
+
+  test('and they stay off connect <provider>, which is why it has a row', () => {
+    expect(() => assertKnownFlags('connect', 'gmail', { connector: 'mcp' })).toThrow(
+      'Unknown flag "--connector"',
+    );
+    expect(() => assertKnownFlags('connect', 'gmail', { 'replace-manifest': true })).toThrow(
+      'Unknown flag',
+    );
+  });
+
+  test('connect custom does not take --own-client, which would be inert', () => {
+    // It selects between an operator's OAuth client and a broker's, and a
+    // synthesized manifest never declares a broker.
+    expect(() => assertKnownFlags('connect', 'custom', { 'own-client': true })).toThrow(
+      'Unknown flag',
+    );
+  });
+
+  test('and it needs both a profile and a target, like connect', async () => {
+    await expect(requireSelection('connect', 'custom', {}, nowhere)).rejects.toThrow(
+      '--profile is required',
+    );
+    await expect(
+      requireSelection('connect', 'custom', { profile: 'work', target: 'local' }, nowhere),
+    ).resolves.toBeUndefined();
+  });
+
+  test('every flag customFlags reads is a flag connect custom accepts', () => {
+    // Two files, one list: `argv.ts` spells the kebab-case names and
+    // `spec.ts` allowlists them. They drifted apart once for `--own-client`.
+    const source = readFileSync(join(import.meta.dir, 'argv.ts'), 'utf8');
+    const body = source.slice(source.indexOf('export function customFlags'));
+
+    const read = [
+      ...body.matchAll(/(?:text\(flags, |all\(argv, )'([a-z-]+)'/g),
+      ...body.matchAll(/flags\['([a-z-]+)'\]/g),
+    ].map((match) => match[1]!);
+
+    expect(read.length).toBeGreaterThan(20);
+    expect(read.filter((flag) => !CONNECT_CUSTOM_FLAGS.includes(flag))).toEqual([]);
+  });
+
+  test('every id the grammar reserves is actually a second word of connect', () => {
+    // The constant is what refuses `providers.d/custom.yaml` at load. If the
+    // spelling of the command ever changed, it would go on refusing a name
+    // nothing takes.
+    for (const id of RESERVED_BY_GRAMMAR) {
+      expect(`connect ${id}` in SELECTION).toBe(true);
+    }
   });
 
   test('the flags a command reads are flags it accepts', () => {

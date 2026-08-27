@@ -16,5 +16,9 @@ export const credentialRef = z
   .string()
   .regex(
     /^[a-z0-9][a-z0-9_-]*(?:\/[a-z0-9][a-z0-9_-]*)+$/,
-    'must be a credential reference like "bunq/api_key", not a literal value',
+    // A placeholder rather than a real provider id. The example teaches the
+    // shape either way, and this file is inside the scope
+    // `architecture.test.ts` keeps free of vendor names — an error message that
+    // names one is exactly the "message that assumes a vendor" the rule is for.
+    'must be a credential reference like "acme/api_key", not a literal value',
   );

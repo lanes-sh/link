@@ -165,6 +165,25 @@ export const authOAuthSchema = z.object({
   authorize_url: z.url().optional(),
   token_url: z.url().optional(),
   /**
+   * A loopback redirect to name to the vendor verbatim, for one that matches it
+   * exactly rather than by prefix.
+   *
+   * `connect` normally listens on a port the kernel picks, which works because
+   * most authorization servers accept any loopback port. One that pins the
+   * whole URL cannot: the port it was told in a console months ago is not the
+   * port this run happens to get, and the grant is refused with
+   * `redirect_uri_mismatch`.
+   *
+   * The full URL rather than a port, because the vendor's console decides the
+   * spelling — `localhost` and `127.0.0.1` are different strings to a matcher
+   * even when they are the same host — and the two must be identical.
+   *
+   * Mutually exclusive with `broker`, which answers the same question the other
+   * way: there the redirect is the broker's HTTPS origin and the loopback port
+   * travels in `state`.
+   */
+  redirect_uri: z.url().optional(),
+  /**
    * Extra parameters on the authorization request.
    *
    * Google needs `access_type=offline` and `prompt=consent`, without which it

@@ -15,13 +15,20 @@ transport asks when it has a token to send and no request to attach it to.
 | `basic/` | `basic` | `username:password`, RFC 7617's own encoding |
 | `oauth-authcode/` | `oauth` | a refresh token, exchanged on every use |
 | `oauth-jwt/` | `oauth` + `assertion` | a private key, signed into an assertion per exchange |
-| `strategy/` | `strategy` | the escape hatch — per-vendor code, none registered |
+| `strategy/` | `strategy` | the escape hatch — the seam only; the code is the provider's |
 
 ## Adding one
 
 A folder, a member of `authSchema` in `../manifest/auth.ts`, and a case in
 `resolve.ts` (plus `authorize.ts` if it touches the request). Nothing else in
 the codebase learns about it — that is the point of the split.
+
+`strategy/` is the other shape, and holds no vendor code at all. It resolves the
+strategy a manifest names from the `ProviderDefinition` beside it and refuses
+when the two disagree; the implementation lives with its provider, because a
+folder of vendor code under `connectivity/` is precisely what the vendor-name
+rule in `architecture.test.ts` exists to prevent. `providers/bunq/strategy/` is
+the one there is. See [ADR-046](../../../docs/detailed/adr/046-an-auth-strategy-belongs-to-its-provider.md).
 
 `oauth-jwt/` is the exception that proves the shape rather than breaking it. It
 is not a `kind`, because it is a second way into a provider that already has

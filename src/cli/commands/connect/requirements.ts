@@ -37,7 +37,17 @@ export type BlockedReason =
   | 'needs_browser'
   /** A question only a person can answer, on a run with nobody to ask. */
   | 'needs_terminal'
-  | 'missing_credentials';
+  | 'missing_credentials'
+  /**
+   * The manifest itself is not settled yet — `connect custom` only.
+   *
+   * Unlike the others this is not about a credential: nothing has been written
+   * and nothing needs storing first, the declaration is simply incomplete or
+   * disagrees with the file already on disk. It shares `Blocked` because it
+   * shares the thing that matters about one — every missing piece named at
+   * once, and the command that ends it.
+   */
+  | 'needs_declaration';
 
 export interface Blocked {
   readonly reason: BlockedReason;

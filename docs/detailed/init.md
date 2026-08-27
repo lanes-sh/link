@@ -683,7 +683,7 @@ Run nor the owner layer got built against a shape that was about to be replaced.
 | M3 | Cloud Run | ✅ done |
 | M4 | the owner layer — memory, skills, vault | ✅ done |
 | M5 | managing the owner layer — a CLI, a skill write path, one storage shape ([ADR-014](adr/014-owner-layer-is-managed.md)) | ✅ done |
-| M6 | expanding — more providers, and the bunq `AuthStrategy` | |
+| M6 | expanding — more providers, and the bunq `AuthStrategy` | bunq shipped |
 
 M5 was not on this list. It is here because M4 shipped three providers and no way to manage any of
 them: the two stores holding the owner's own data were reachable only by an agent, and the one thing
@@ -865,10 +865,22 @@ target, and a memory entry became one Markdown file rather than an index row bes
 
 Not before M3 is done. Two strands.
 
-**The `AuthStrategy` seam and bunq.** The seam exists and fails loudly; the RSA keygen, three-step
-handshake, per-request signing, and response verification are unwritten. Sandbox first — it touches
-a bank account — and local target only until the permitted-IP and session constraints are designed
-against M3.
+**The `AuthStrategy` seam and bunq.** Built. The keypair, three-step handshake, per-request body
+signing, and response verification are in `providers/bunq/strategy/` — not in `connectivity/`,
+which keeps the seam and no vendor name; [ADR-046](adr/046-an-auth-strategy-belongs-to-its-provider.md)
+records why, and `bunq` is in the `VENDORS` pattern so the placement is checked rather than
+intended.
+
+Two constraints this milestone said would need designing, and what they turned out to be. The
+**permitted-IP** problem is not ours to solve: bunq refuses to set the wildcard over the API, on
+purpose, so a deployed endpoint needs a key the operator marked wildcard in the app and the honest
+answer is a documented setup step. The **session** constraint decided its own storage — one
+`/session-server` call per thirty seconds means a token that must be shared between instances, so
+it lives in `state` rather than per-instance memory or the credential store, which cannot be
+written on the dispatch path anyway.
+
+Sandbox first still stands, and is a manifest in `providers.d/` naming the sandbox `base_url` —
+the strategy reads its host from there — rather than a second provider or a flag beside it.
 
 **More accounts.** Owner's target stack:
 

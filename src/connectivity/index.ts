@@ -48,7 +48,17 @@ export {
  * Everything else is a manifest.
  */
 export type { AuthRequirement, ProviderDefinition } from './provider.ts';
-export { defineLocalProvider, defineProviderWithCapabilities } from './provider.ts';
+export {
+  defineLocalProvider,
+  defineProviderWithCapabilities,
+  defineProviderWithStrategy,
+} from './provider.ts';
+
+/**
+ * The strategy seam. Vendor-free by construction: these three know that a
+ * strategy exists and never which one.
+ */
+export { refuseStrategy, strategyContextFrom, strategyFor } from './auth/strategy/index.ts';
 
 export type {
   ProviderManifest,

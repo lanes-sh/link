@@ -521,3 +521,87 @@ describe('the exchange is a seam', () => {
     expect(sent['code_verifier']).toMatch(/^[\w-]{43}$/);
   });
 });
+
+describe('a redirect the vendor matches exactly', () => {
+  /**
+   * The third answer to "where does the browser come back to". A kernel-chosen
+   * port cannot be registered in a console months in advance, and a vendor that
+   * matches `redirect_uri` byte for byte refuses the grant rather than the
+   * port — so the failure is `redirect_uri_mismatch` after consent, which reads
+   * as a broken client rather than as a port that moved.
+   */
+  function freePort(): number {
+    const probe = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch: () => new Response('') });
+    const { port } = probe;
+    probe.stop(true);
+    if (!port) throw new Error('Bun.serve bound no port');
+    return port;
+  }
+
+  test('the declared URL is what the vendor is told, verbatim', async () => {
+    const port = freePort();
+    const fixedRedirect = `http://127.0.0.1:${port}/callback`;
+    const { fetch: tokenFetch } = mockTokenEndpoint(SUCCESS);
+    let announced: string | undefined;
+
+    await runOAuthFlow(
+      options({
+        fixedRedirect,
+        fetch: tokenFetch,
+        openBrowser: (url: string) => {
+          announced = new URL(url).searchParams.get('redirect_uri') ?? undefined;
+          browserThatApproves()(url);
+        },
+      }) as never,
+    );
+
+    expect(announced).toBe(fixedRedirect);
+  });
+
+  test('the listener binds the port the vendor was told about', async () => {
+    // The two must agree by construction. If the flow announced the fixed URL
+    // but still listened on a kernel-chosen port, the browser would come back
+    // to a closed socket and this would time out rather than resolve.
+    const port = freePort();
+    const { fetch: tokenFetch } = mockTokenEndpoint(SUCCESS);
+
+    const tokens = await runOAuthFlow(
+      options({
+        fixedRedirect: `http://127.0.0.1:${port}/callback`,
+        fetch: tokenFetch,
+        openBrowser: browserThatApproves(),
+      }) as never,
+    );
+
+    expect(tokens.accessToken).toBe('access-1');
+  });
+
+  test('a redirect naming no port is refused before the browser opens', async () => {
+    await expect(
+      runOAuthFlow(
+        options({
+          fixedRedirect: 'https://example.com/callback',
+          openBrowser: () => {},
+        }) as never,
+      ),
+    ).rejects.toThrow(/names no port/);
+  });
+
+  test('a port already in use says so, and says why it cannot be moved', async () => {
+    const port = freePort();
+    const holder = Bun.serve({ hostname: '127.0.0.1', port, fetch: () => new Response('') });
+
+    try {
+      await expect(
+        runOAuthFlow(
+          options({
+            fixedRedirect: `http://127.0.0.1:${port}/callback`,
+            openBrowser: () => {},
+          }) as never,
+        ),
+      ).rejects.toThrow(/already in use/);
+    } finally {
+      holder.stop(true);
+    }
+  });
+});
