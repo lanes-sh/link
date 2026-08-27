@@ -49,7 +49,8 @@
     "typecheck": "tsc --noEmit",
     "lanes": "bun run ./src/cli/lanes.ts",
     "audit": "bun pm scan",
-    "vendor:google": "bun run ./src/providers/google/specs/vendor.ts"
+    "vendor:google": "bun run ./src/providers/google/specs/vendor.ts",
+    "vendor:bunq": "bun run ./src/providers/bunq/specs/vendor.ts"
   },
   "imports": {
     "#audit": "./src/audit/index.ts",

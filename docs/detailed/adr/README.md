@@ -53,6 +53,7 @@ Nothing in the codebase depends on it.
 | [043](043-a-target-scoped-command-acts-on-the-target.md) | A command whose subject is the endpoint acts on the target, and every profile declaring it |
 | [044](044-a-deployment-records-where-it-lives.md) | A deployment records where it lives outside any profile, and the two copies of a workspace can be merged |
 | [045](045-a-redirect-the-vendor-matches-exactly.md) | A provider may name the loopback redirect verbatim, for a vendor that matches `redirect_uri` exactly rather than ignoring the port |
+| [046](046-an-auth-strategy-belongs-to-its-provider.md) | An auth strategy belongs to its provider, and its session is state |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 

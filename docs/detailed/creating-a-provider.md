@@ -86,8 +86,63 @@ setup:
     - { key: password, label: App password, secret: true, scope: connection, field: password }
 ```
 
+```yaml
+# A vendor whose authentication is a protocol rather than a value. The strategy
+# is code and lives with the provider that owns it, so this names one that is
+# already registered rather than supplying it — which is also how you point a
+# connection at a vendor's sandbox. Copy the vendored spec in beside this file:
+# a relative `openapi` resolves against the manifest's own directory.
+id: bunq_sandbox
+name: bunq (sandbox)
+connector:
+  kind: http
+  base_url: https://public-api.sandbox.bunq.com/v1
+  openapi: ./bunq.v1.json
+auth:
+  kind: strategy
+  strategy: bunq
+```
+
 Then `lanes link connect mything`. The same schema validates a built-in, so the list in
 `src/providers/index.ts` is a convenience and never a boundary.
+
+### When the credential is a handshake
+
+`auth: { kind: strategy }` is the escape hatch, and it is the **only** place per-vendor code is
+allowed outside a `local` provider ([ADR-008](adr/008-connectors.md),
+[ADR-046](adr/046-an-auth-strategy-belongs-to-its-provider.md)). Reach for it when a vendor wants
+something no field can describe — bunq generates a keypair, runs a three-step handshake, signs every
+request body, and signs its replies back.
+
+A strategy is three optional methods on the provider's definition:
+
+```ts
+export const acme = defineProviderWithStrategy({
+  manifest,                       // auth: { kind: 'strategy', strategy: 'acme' }
+  strategy: {
+    id: 'acme',
+    async setup(context) { /* once, at connect. The only place `context.write` exists. */ },
+    async authorize(request, context) { /* per request: sign it, add headers, renew a session */ },
+    async verify(response, context) { /* optional: check a signed reply, notice a 401 */ },
+  },
+});
+```
+
+Three things about it are not negotiable:
+
+**Keep it to auth.** It takes a request, not an operation. The moment a strategy branches on which
+endpoint is being called, the per-endpoint translation ADR-008 removed has come back.
+
+**`write` is setup-only.** A handshake persists what it produces; per-request code must not. The
+restriction is the absence of the key rather than a rule to remember — and it is not only a
+convention, because a deployed revision is granted write access on nothing for a non-OAuth provider.
+Anything a request needs to save goes in `context.state`, which is namespaced to the connection and
+shared across instances.
+
+**It lives in `src/providers/<id>/strategy/`, never under `connectivity/`.** That component is held
+free of vendor names by `src/architecture.test.ts`, and the seam there resolves a strategy without
+knowing which one it is. A YAML manifest may name any strategy a registered provider supplies, which
+is what the sandbox example above does.
 
 ### Where the credential goes
 

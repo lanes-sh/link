@@ -48,6 +48,17 @@ damaging single mistake available.
 | Agent-reachable | **never, in any form** | yes, under policy, default deny |
 | Store | encrypted file, its own key | separate store, **separate key** |
 
+**One thing is a credential and does not live in that store**, and it is worth naming rather than
+leaving to be discovered. An `auth: { kind: strategy }` provider may hold a vendor-issued *session*,
+and bunq's lives in scoped runtime state — the blob store on a deployed target — not in
+`SecretStore`. That is not a preference: `AuthStrategyContext.write` exists only during `connect`,
+and a deployed revision is granted write access on nothing for a non-OAuth provider, so per-request
+code cannot put one there. It is acceptable because of what such a token is — short-lived, revocable
+by the owner from the vendor's own app, and reconstructible from the durable credential, which does
+sit in `SecretStore`. It is still a bearer token in a weaker store than the material beside it, and
+[ADR-046](adr/046-an-auth-strategy-belongs-to-its-provider.md) argues the trade in full. It is not
+agent-reachable either way.
+
 If an agent could read the Gmail refresh token it would simply call Google directly, and the entire
 policy layer would become decorative. That is why the infrastructure interface is called
 `SecretStore` rather than "secrets", why `Vault` will be a separate provider over a separate

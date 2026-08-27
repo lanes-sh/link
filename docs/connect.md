@@ -33,8 +33,9 @@ $ lanes link connect gmail --profile personal --target local        # again, for
 | Gmail (IMAP) | `lanes link connect gmail_imap` | The same mailbox over IMAP and SMTP, with an app password that does not expire |
 | Gmail (Google MCP) | `lanes link connect gmail_mcp` | Google's own MCP server — Developer Preview only |
 | Drive (Google MCP) | `lanes link connect drive_mcp` | Likewise; use `drive` unless you are enrolled |
+| bunq | `lanes link connect bunq` | Accounts, balances, transaction history, and payments |
 
-## Three things the table does not show
+## Four things the table does not show
 
 **Each Google product is its own connection.** Connecting Gmail does not imply Drive, Sheets, Docs,
 Calendar, Tasks, or Contacts — each holds its own token under its own scopes. One OAuth client
@@ -47,10 +48,21 @@ app-specific password covers all three. iCloud Drive is separate — it holds no
 reading your sync folder through the filesystem. Full walkthrough:
 [`detailed/setup/icloud.md`](detailed/setup/icloud.md).
 
-**Only GitHub asks you to register anything.** Google and Slack authorise against the client Lanes
-operates, Notion and Linear register themselves, and iCloud takes an app-specific password you
-generate at appleid.apple.com. GitHub takes a personal access token you create once —
-[`detailed/setup/github.md`](detailed/setup/github.md).
+**bunq can move money, and nothing asks you to confirm.** Its payment tool executes immediately
+and is not reversible — there is no approval step in the bunq app or anywhere else. Set a spending
+limit on the API key, and if you want an agent to prepare payments rather than make them, deny the
+two payment tools **and** `UPDATE_DraftPayment` — accepting a draft is itself how a draft is spent,
+so leaving that one allowed lets an agent approve its own. Read
+[`detailed/setup/bunq.md`](detailed/setup/bunq.md) before connecting it; it is the only page here
+that is mostly about what not to do.
+
+**GitHub, Reddit, and bunq ask you to register something.** Google and Slack authorise against the
+client Lanes operates, Notion and Linear register themselves, and iCloud takes an app-specific
+password you generate at appleid.apple.com. The other three each want one thing you make yourself:
+GitHub a personal access token — [`detailed/setup/github.md`](detailed/setup/github.md) — Reddit an
+OAuth client at reddit.com/prefs/apps, because it matches the loopback redirect exactly
+([`detailed/setup/reddit.md`](detailed/setup/reddit.md)), and bunq an API key from inside the bunq
+app, which is also where you set its spending limit.
 
 Slack used to be on that list and no longer is. Slack does not register clients automatically and
 is not going to — it would let a client authenticate someone without an app existing, and on

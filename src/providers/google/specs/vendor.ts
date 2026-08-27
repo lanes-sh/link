@@ -20,18 +20,11 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { OpenAPIToolGenerator, type McpOpenAPITool } from 'mcp-from-openapi';
+import { cutCycles, referenced, type Spec } from '../../shared/openapi.ts';
 
 /** Kept in step with `BUDGET_KB` in `src/cli/tools.test.ts`, which enforces it. */
 const BUDGET_KB = 64;
 
-interface Spec {
-  openapi: string;
-  info: Record<string, unknown>;
-  servers?: Array<{ url: string }>;
-  paths: Record<string, Record<string, { operationId?: string } & Record<string, unknown>>>;
-  components?: { schemas?: Record<string, unknown> } & Record<string, unknown>;
-  [key: string]: unknown;
-}
 
 /**
  * The operations each provider exposes.
@@ -321,83 +314,7 @@ const SELECTION: Record<
   // field but `title` on it anyway.
 };
 
-/** Every `$ref` target reachable from a value, transitively. */
-function referenced(root: unknown, schemas: Record<string, unknown>): Set<string> {
-  const found = new Set<string>();
-  const queue: unknown[] = [root];
 
-  while (queue.length > 0) {
-    const node = queue.pop();
-    if (node === null || typeof node !== 'object') continue;
-
-    if (Array.isArray(node)) {
-      queue.push(...node);
-      continue;
-    }
-
-    for (const [key, value] of Object.entries(node)) {
-      if (key === '$ref' && typeof value === 'string') {
-        const name = value.replace('#/components/schemas/', '');
-        if (!found.has(name) && name in schemas) {
-          found.add(name);
-          queue.push(schemas[name]);
-        }
-        continue;
-      }
-      queue.push(value);
-    }
-  }
-
-  return found;
-}
-
-/**
- * Cut reference cycles, replacing the back-edge with an open object.
- *
- * Gmail's `MessagePart` contains `MessagePart[]` — a MIME tree, so the
- * recursion is honest — and the OpenAPI tool generator inlines `$ref`s, so it
- * recurses until the stack ends. That silently costs the two draft-writing
- * operations, which are the useful half of `gmail.compose`.
- *
- * Cutting the back-edge rather than dropping the operation keeps the tool: the
- * field that matters for creating a draft is `raw`, an RFC 2822 message, and
- * nothing below the cut is required to fill it in. A depth-first walk marks the
- * names currently on the path, and any `$ref` reaching back to one of them
- * becomes a plain object.
- */
-function cutCycles(schemas: Record<string, unknown>): number {
-  let cuts = 0;
-
-  const walk = (node: unknown, path: Set<string>): void => {
-    if (node === null || typeof node !== 'object') return;
-
-    if (Array.isArray(node)) {
-      for (const item of node) walk(item, path);
-      return;
-    }
-
-    const record = node as Record<string, unknown>;
-    for (const [key, value] of Object.entries(record)) {
-      if (key === '$ref' && typeof value === 'string') {
-        const name = value.replace('#/components/schemas/', '');
-        if (path.has(name)) {
-          delete record['$ref'];
-          record['type'] = 'object';
-          record['additionalProperties'] = true;
-          record['description'] = `A nested ${name}. Structure omitted: it recurses.`;
-          cuts++;
-        } else if (name in schemas) {
-          walk(schemas[name], new Set([...path, name]));
-        }
-        continue;
-      }
-      walk(value, path);
-    }
-  };
-
-  for (const [name, schema] of Object.entries(schemas)) walk(schema, new Set([name]));
-  return cuts;
-}
 
 /**
  * Replace a named schema with an open object.
