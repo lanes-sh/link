@@ -167,6 +167,20 @@ policy:
     expect(await has(root, 'work')).toBe(false);
   });
 
+  test('reports where it is told to, so a --json caller keeps its stdout', async () => {
+    // `lanes link update` repairs on the way past and can be asked for a
+    // document. The repair still says what it widened — a policy edit nobody
+    // asked for is not a thing to do quietly — it just says it somewhere that
+    // does not corrupt the answer.
+    const root = await workspace('personal');
+    const lines: string[] = [];
+
+    await repairOwnerLayer(root, undefined, { report: (line) => lines.push(line) });
+
+    expect(await has(root, 'personal')).toBe(true);
+    expect(lines.join('\n')).toContain('owner layer');
+  });
+
   test('a profile that already has it is left byte-identical', async () => {
     const root = await workspace('personal');
     await repairOwnerLayer(root, undefined);
