@@ -46,6 +46,9 @@ export async function status(flags: StatusFlags): Promise<void> {
         provider: connection.provider,
         id: connection.id,
         account: connection.account,
+        // Null rather than absent: a caller reading this to prefill a rename box
+        // needs to tell "called nothing in particular" from a field it forgot.
+        label: connection.label ?? null,
         state: byKey.get(key)?.status ?? 'not reconciled',
       };
     });
@@ -102,7 +105,14 @@ export async function status(flags: StatusFlags): Promise<void> {
               connection.state === 'active'
                 ? style.green(connection.state)
                 : style.yellow(connection.state),
-              style.dim(connection.account),
+              // Both, where they differ. The label is what the operator called
+              // it and the account is which mailbox it is; a row answering only
+              // one of those is the row this column already was.
+              style.dim(
+                connection.label && connection.label !== connection.account
+                  ? `${connection.label} — ${connection.account}`
+                  : connection.account,
+              ),
             ]),
           );
         }

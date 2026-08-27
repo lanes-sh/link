@@ -154,6 +154,9 @@ ${style.bold('Other flags')}
   --json                         machine-readable output, where a command offers it
   --non-interactive              never prompt: connect refuses with what to store,
                                  deploy takes the answers its config already holds
+  --label <text>                 what to call a connection, instead of being asked at the
+                                 end of connect. A display name only: nothing addresses
+                                 a connection by it. Use relabel to change one later
   --accept-broad-scopes          agree in advance to scopes broader than a provider needs
   --own-client                   register your own OAuth client instead of using the
                                  one this project operates (connect only)

@@ -30,6 +30,8 @@ export interface DashboardConnection {
   readonly key: string;
   readonly provider: string;
   readonly account: string;
+  /** What the operator calls it, where that is not just the account. */
+  readonly label?: string | undefined;
   /** `active`, `unauthorized`, `disabled`, or `not reconciled`. */
   readonly state: string;
 }
@@ -155,7 +157,14 @@ function connectionsSection(view: DashboardView): string {
         mark(connection.provider) +
         `<code class="key">${escapeHtml(connection.key)}</code>` +
         statusPill(connection.state) +
-        `<span class="account">${escapeHtml(connection.account)}</span>` +
+        // The label reads, the account hovers: the row is one line wide and the
+        // address is the longer of the two, so putting both in it wraps every
+        // row to make one of them legible.
+        `<span class="account"${
+          connection.label && connection.label !== connection.account
+            ? ` title="${escapeHtml(connection.account)}"`
+            : ''
+        }>${escapeHtml(connection.label ?? connection.account)}</span>` +
         repair +
         '</div>'
       );

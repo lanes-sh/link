@@ -6,6 +6,7 @@ import { nonInteractivePrompter, terminalPrompter, type Prompter } from '../../p
 import { openRuntime, type GlobalFlags } from '../../runtime.ts';
 import { moveCredential, siblingAccountId } from './accounts.ts';
 import { grantProvider } from './grant.ts';
+import { declareConnection } from './declare.ts';
 import { discoverCapabilities } from './discover.ts';
 import { connectFamily, familyMembers } from './family.ts';
 import { authoriseWithKey } from './assertion.ts';
@@ -38,6 +39,14 @@ import { unknownProvider } from './unknown.ts';
 export interface ConnectOptions extends GlobalFlags {
   readonly id?: string | undefined;
   readonly displayName?: string | undefined;
+  /**
+   * `--label`: what to call this connection, instead of being asked.
+   *
+   * Distinct from `--display-name`, which answers *whose account this is* for a
+   * provider that cannot report it. This one never touches the identity, so it
+   * is safe to pass anything a person would say out loud.
+   */
+  readonly label?: string | undefined;
   /** Ask for the stored credential again — a key rotated, or a password revoked. */
   readonly replace?: boolean | undefined;
   /**
@@ -272,11 +281,12 @@ export async function runConnect(
     //    adding a new one. Without it, a retried connect appends a second row
     //    rather than repairing the first — which is how `main2` and `main3`
     //    ended up in a config describing two mailboxes.
-    const { connectionId, account } = await settleIdentity({
+    const { connectionId, account, label } = await settleIdentity({
       manifest,
       provisionalId,
       explicitId: named,
       account: options.displayName,
+      label: options.label,
       runtime,
       prompter,
     });
@@ -306,30 +316,17 @@ export async function runConnect(
     });
 
     // 4. Declare the connection, or update the one this account already has.
-    const existingIndex = runtime.config.connections.findIndex(
-      (c) => `${c.provider}.${c.id}` === connectionKey,
+    changes.push(
+      ...declareConnection({
+        document,
+        connections: runtime.config.connections,
+        providerId,
+        connectionId,
+        account,
+        label,
+        method: method.id,
+      }),
     );
-
-    if (existingIndex === -1) {
-      // No `credential_ref`: it derives to `<provider>/<id>`, which is exactly
-      // where the OAuth provider already looks. Writing it would add a line per
-      // connection that can only ever agree or be a bug.
-      document.addTo(['connections'], { id: connectionId, provider: providerId, account });
-      changes.push(`connections += ${connectionKey} (${account})`);
-    } else {
-      // A reconnect. The credential was just replaced above; the declaration
-      // stays as it is, so re-running connect after an expiry is a no-op on the
-      // file rather than a second row.
-      if (runtime.config.connections[existingIndex]?.account !== account) {
-        document.setIn(['connections', existingIndex, 'account'], account);
-        changes.push(`connections.${connectionKey}.account = ${account}`);
-      }
-      // Named where the provider offered a choice, because this is the line an
-      // operator reads to see that a re-connect swapped the route rather than
-      // refreshed it — and `--auth` reaches here having asked nothing. Unnamed
-      // for a provider with one way in, whose output is unchanged.
-      changes.push(`re-authorised ${connectionKey}${method.id ? ` with ${method.id}` : ''}`);
-    }
 
     // 5. Grant it — one rule per provider; `grant.ts` says why not per capability.
     const granted = grantProvider(document, runtime.config.policy.allow, providerId);
@@ -365,6 +362,7 @@ export async function runConnect(
         ok: true,
         key: connectionKey,
         account,
+        label,
         ...where(runtime),
         discovered: discovered.length,
         next: ALREADY,
@@ -381,6 +379,7 @@ export async function runConnect(
       ok: true,
       key: connectionKey,
       account,
+      label,
       ...where(runtime),
       changes,
       granted,

@@ -5,7 +5,7 @@ import type { Config } from '#profile';
 import type { AnyConnector, ProviderManifest } from '#connectivity';
 import { idFromAccount, resolveAccount } from '../../identity.ts';
 import { style } from '../../output.ts';
-import { terminalPrompter, type Prompter } from '../../prompt.ts';
+import { PromptCancelled, terminalPrompter, type Prompter } from '../../prompt.ts';
 import { accountSiblings } from './accounts.ts';
 
 /**
@@ -16,12 +16,26 @@ import { accountSiblings } from './accounts.ts';
  * connection already holds that account, we reuse *its* id, which is what turns
  * a re-run of `connect` into a repair rather than a duplicate. Only when
  * identity cannot be resolved at all do we ask.
+ *
+ * The *label* is settled last and separately, because it is the one thing here
+ * the provider cannot answer. `account` is load-bearing three times over — the
+ * reconnect match above, the id derived from it, and the `From` header
+ * `gmail.send_message` writes — so the operator's own words for a connection
+ * cannot be put there, and `label` is where they go instead.
  */
 export async function settleIdentity(input: {
   manifest: ProviderManifest;
   provisionalId: string;
   explicitId: string | undefined;
   account: string | undefined;
+  /**
+   * The label, where the caller already has one.
+   *
+   * `--label`, and the family path: `connect icloud` is three `connect` runs on
+   * one account, and asking what to call it once per service is asking the same
+   * question three times.
+   */
+  label?: string | undefined;
   runtime: {
     config: Config;
     credentials: SecretStore;
@@ -30,7 +44,7 @@ export async function settleIdentity(input: {
     authorizeRequest(providerId: string, connectionId: string, request: Request): Promise<Request>;
   };
   prompter?: Prompter;
-}): Promise<{ connectionId: string; account: string }> {
+}): Promise<{ connectionId: string; account: string; label: string }> {
   const { manifest, provisionalId, explicitId, runtime } = input;
   const prompter = input.prompter ?? terminalPrompter;
 
@@ -112,6 +126,11 @@ export async function settleIdentity(input: {
   const unaccounted = !account && manifest.auth.kind === 'none';
   if (unaccounted) account = manifest.name;
 
+  // Whether the name we hold is one the operator has just typed, rather than one
+  // a provider reported. It settles the label below: a name someone chose a
+  // second ago does not need confirming against itself.
+  let typed = false;
+
   if (!account) {
     // Nothing to go on. Asking beats inventing `main2`, and the answer is the
     // one piece of information the file cannot reconstruct later — which is
@@ -125,32 +144,85 @@ export async function settleIdentity(input: {
     }
 
     account =
-      (await prompter.ask(`Which account is this? ${style.dim('(label for this connection)')}`)) ||
+      (await prompter.ask(`Which account is this? ${style.dim('(the address or handle)')}`)) ||
       `${manifest.name} ${provisionalId}`;
+    typed = true;
   }
 
-  if (explicitId) return { connectionId: explicitId, account };
+  const taken = siblings.map((candidate) => candidate.id);
 
-  if (unaccounted) {
-    return {
-      connectionId: idFromAccount(
-        'main',
-        siblings.map((candidate) => candidate.id),
-      ),
-      account: account!,
-    };
-  }
-
-  const already = siblings.find(
-    (candidate) => candidate.account.toLowerCase() === account.toLowerCase(),
-  );
-  if (already) return { connectionId: already.id, account };
+  const connectionId =
+    explicitId ??
+    (unaccounted
+      ? idFromAccount('main', taken)
+      : (siblings.find(
+          (candidate) => candidate.account.toLowerCase() === account!.toLowerCase(),
+        )?.id ?? idFromAccount(account, taken)));
 
   return {
-    connectionId: idFromAccount(
-      account,
-      siblings.map((candidate) => candidate.id),
-    ),
+    connectionId,
     account,
+    label: await settleLabel({
+      given: input.label,
+      // What the row this is about to land on is already called. Looked up
+      // across the whole vendor account rather than this provider alone, for the
+      // reason `accountSiblings` exists: `connect icloud_calendar` adopts iCloud
+      // Mail's id, and should adopt the name that goes with it too.
+      declared: siblings.find((candidate) => candidate.id === connectionId)?.label,
+      account,
+      typed,
+      prompter,
+    }),
   };
+}
+
+/**
+ * What to call this connection, offering what it is already called.
+ *
+ * Asked on every interactive connect, not only where identity resolution failed.
+ * That was the old behaviour and it had the case exactly backwards: the run that
+ * could not name the account is the run where the operator has least to add,
+ * and the run that resolved `ada@example.com` — where they may well want "Work
+ * mail" — never asked at all.
+ *
+ * The suggestion is in the question and an empty answer takes it, so the cost of
+ * always asking is one keystroke. Nothing addresses a connection by its label,
+ * so there is no answer here that can break anything.
+ */
+async function settleLabel(input: {
+  given: string | undefined;
+  declared: string | undefined;
+  account: string;
+  typed: boolean;
+  prompter: Prompter;
+}): Promise<string> {
+  const { given, declared, account, typed, prompter } = input;
+
+  if (given) return given;
+
+  // A label already chosen wins over the account, so re-authorising an expired
+  // credential does not quietly undo the operator's own word for the row.
+  const suggestion = declared ?? account;
+
+  if (typed || !prompter.interactive) return suggestion;
+
+  try {
+    return (
+      (await prompter.ask(`What should this be called? ${style.dim(`[${suggestion}]`)}`)) ||
+      suggestion
+    );
+  } catch (refusal) {
+    // Ctrl-C is an answer: the operator stopped the command, and swallowing it
+    // here would finish a connect they interrupted.
+    if (refusal instanceof PromptCancelled) throw refusal;
+
+    // Anything else is `terminalPrompter` discovering there is no terminal —
+    // it reports itself interactive and finds out only when asked, so a piped
+    // `lanes link connect gmail` reaches this line having already opened a
+    // browser and stored a credential. Failing there for want of a display name
+    // would undo none of that. A label is worth having and never worth failing
+    // a connect over; the account above it is the identity, and that one still
+    // refuses rather than inventing a name.
+    return suggestion;
+  }
 }

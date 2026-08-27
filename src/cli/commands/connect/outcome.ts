@@ -17,6 +17,14 @@ export interface ConnectOutcome {
   readonly ok: boolean;
   readonly key?: string;
   readonly account?: string;
+  /**
+   * What the connection is called, where that is not just the account.
+   *
+   * Reported so the family path can carry it: `connect icloud` is three runs on
+   * one account, and the name belongs to the account rather than to each
+   * service under it.
+   */
+  readonly label?: string;
   /** The profile written to, for a caller that cannot see the announce line. */
   readonly profile?: string;
   /** The target written to — which credential store now holds this account. */
