@@ -12,7 +12,8 @@ command wants only `--profile`, or neither.
 is refused, with a guess when the spelling is close.
 
 **Values arrive on stdin.** `memory write`, `skills add`, `vault set` and `secrets set` read from a
-pipe and refuse rather than hang when stdin is a terminal.
+pipe and refuse rather than hang when stdin is a terminal. `tasks add` is the exception: its notes
+are optional, so an empty pipe or a terminal simply means a task with no notes.
 
 > Three commands cannot be run at all, several documented flags are refused when you type them, and
 > a few more are accepted and ignored. Each is marked **broken** in its own entry, and the tables
@@ -436,9 +437,14 @@ $ lanes link token rotate --profile personal --target local
 
 ## Your own context
 
-Memory, skills and the vault are providers — `connect memory`, `connect skills`, `connect vault` —
-holding your material rather than an account, so they also have a CLI of their own. It reaches the
-same bytes an agent does.
+Memory, tasks, assets, skills and the vault are providers holding your material rather than an
+account, so a profile arrives with all five declared and granted — there is nothing to connect
+([ADR-050](adr/050-the-owner-layer-is-granted-by-default.md)). Each also has a CLI of its own, which
+reaches the same bytes an agent does.
+
+Which store a thing goes in: **memory is what is true, tasks is what is to be done, assets is a
+file.** Nothing refuses the wrong choice, so it is worth knowing —
+[ADR-051](adr/051-tasks-and-assets-are-their-own-stores.md) has the reasoning.
 
 `--connection <id>` picks between several of a kind; with exactly one it is inferred.
 
@@ -490,6 +496,142 @@ Delete one entry, after printing it and asking.
 
 ```console
 $ lanes link memory forget deploy-window --profile personal --target local
+```
+
+### `lanes link tasks list`
+
+What is outstanding: id, status, title, due date, tags. Shows `in_progress`, `open` and `blocked`
+and hides the rest, because the question is almost always what is left to do.
+
+| | |
+|---|---|
+| `--connection <id>` | which tasks connection |
+| `--status <status>` | one status, or `all` for everything |
+| `--tag <tag>` | only tasks carrying this tag |
+
+```console
+$ lanes link tasks list --profile personal --target local
+
+Tasks (2 outstanding)
+  write-the-release-notes  in_progress  write the release notes
+  chase-the-invoice        open         chase the invoice        due 2026-09-01  billing
+```
+
+### `lanes link tasks get <id>`
+
+One task: title, status, due date, tags, then the notes.
+
+```console
+$ lanes link tasks get chase-the-invoice --profile personal --target local
+```
+
+### `lanes link tasks add <title>`
+
+Record something to be done. The title is the argument, because a task is usually one line; notes
+are optional and read from stdin when there are any. A task is one Markdown file with YAML
+frontmatter, so a text editor is an equally good client.
+
+| | |
+|---|---|
+| `--status <status>` | `in_progress`, `open`, `blocked`, `muted`, `done`, `dropped`. Defaults to `open`. |
+| `--due <when>` | as you would write it — `2026-09-01`, or a full instant. Kept verbatim. |
+| `--tag <tag>` | one label |
+
+```console
+$ lanes link tasks add "chase the invoice" --due 2026-09-01 --profile personal --target local
+ok    added task chase-the-invoice
+
+$ printf 'Third reminder.' | lanes link tasks add "chase the invoice" --profile personal --target local
+```
+
+The id is derived from the title. Adding under an id that exists replaces it, keeping the date it
+was first recorded.
+
+### `lanes link tasks update <id>`
+
+Change a task in place. **This is how a task is closed** — the record of having done it is the useful
+half, and it is what stops the same thing being suggested next week. Omitted flags leave their fields
+alone.
+
+| | |
+|---|---|
+| `--status <status>` | the new status |
+| `--title <t>` | replaces the title |
+| `--due <when>` | replaces the due date; `--due ""` clears it |
+| `--tag <tag>` | replaces the tags |
+
+```console
+$ lanes link tasks update chase-the-invoice --status done --profile personal --target local
+ok    updated task chase-the-invoice — now done
+```
+
+### `lanes link tasks remove <id>`
+
+Delete a task, after printing it and asking. For something finished or decided against, prefer
+`update --status done` or `--status dropped`: deleting loses the record that it happened.
+
+| | |
+|---|---|
+| `--yes` | skip the confirmation |
+
+```console
+$ lanes link tasks remove mistake --yes --profile personal --target local
+```
+
+### `lanes link assets list`
+
+Every file kept in this profile, newest first, with its type and size. This is the whole index — an
+asset carries no description, so what a file is *for* belongs in memory beside its name.
+
+```console
+$ lanes link assets list --profile personal --target local
+
+Assets (2)
+  blob.bin    application/octet-stream  3 KB  2026-08-27
+  report.csv  text/csv                  12 B  2026-08-27
+```
+
+### `lanes link assets get <name>`
+
+The bytes, to stdout. **Redirect them** — it refuses a terminal rather than writing a binary into
+your scrollback.
+
+```console
+$ lanes link assets get invoice.pdf --profile personal --target local > invoice.pdf
+```
+
+This is the one place the CLI and the capability deliberately differ: `assets.get` over MCP describes
+a binary rather than returning it, because a conversation has a context window and a shell does not.
+
+### `lanes link assets add <file>`
+
+Keep a file. A path on this machine — the other four sources the capability takes exist because the
+endpoint may not be where the caller is, and a CLI already is.
+
+| | |
+|---|---|
+| `--name <n>` | what to call it, where the path's basename is wrong |
+| `--content-type <t>` | for the file whose extension does not say what it is |
+
+```console
+$ lanes link assets add ~/Downloads/invoice.pdf --profile personal --target local
+ok    kept invoice.pdf — 184 KB, sha256 9284ed4fd7fe…
+```
+
+Storing under a name that exists replaces it. A name may not contain a path separator, start with a
+dot, or end `.meta` or `.tmp` — the last two are suffixes a blob store keeps its own bookkeeping
+under and would hide the file.
+
+### `lanes link assets remove <name>`
+
+Delete a file, after printing it and asking. There is no trash.
+
+| | |
+|---|---|
+| `--yes` | skip the confirmation |
+
+```console
+$ lanes link assets remove invoice.pdf --yes --profile personal --target local
 ```
 
 ### `lanes link skills list`

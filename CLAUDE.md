@@ -104,6 +104,23 @@ selecting it (ADR-043). Everything acting on one account still names both. The t
 `src/cli/selection.ts` is the whole rule, and `selection.test.ts` reads the dispatch files to
 check a new command cannot be added without appearing in it.
 
+## The owner layer is seven ids, and `tasks` is not Google's
+
+`RESERVED_PROVIDER_IDS` is `memory`, `tasks`, `assets`, `skills`, `vault`, `setup`, `identity`. Two
+things an agent gets wrong here:
+
+- **`tasks` is the built-in task list; Google Tasks is `google_tasks`.** The rename was forced —
+  `buildRegistry` registers the owner layer before `PROVIDERS`, so a manifest holding a reserved id
+  throws rather than being shadowed (ADR-051). Its redaction keys carry Google's whole operationId
+  (`tasks.tasks.patch`) because `shortenName` strips the *provider id* and the API namespaces under
+  its own name. A key that misses does not error; it withholds every argument and reads exactly like
+  working redaction.
+- **A profile arrives with all of them granted except `identity`** (ADR-050). So there is no
+  `lanes link connect memory` step to suggest, and a surface that is missing was denied on purpose.
+  `ensureOwnerLayer` in `src/cli/config-repair.ts` repairs an older profile from `start`, `connect`
+  and `deploy`; the template in `config-edit.ts` and that repair must write a row in **one**
+  spelling, which `config-edit.test.ts` checks by asserting a fresh profile needs no repair.
+
 `src/architecture.test.ts` asserts the four rules the layout expresses: dependency
 direction between components, no vendor name in the code a request passes through, a
 file-size budget, and no real identifiers anywhere a reader can see. It replaces what

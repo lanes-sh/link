@@ -93,7 +93,8 @@ limitation. `RESERVED` names a compatibility slot with no implementation.
 | `state.provider-scoped` | ENFORCED | `ScopedStore` isolation tests |
 | `storage.namespace-contained` | ENFORCED | traversal rejection tests |
 | `deployed.config-not-self-writable` | ENFORCED (deployed target) | the revision's `objectAdmin` grant is conditioned on the prefixes it owns, so `profiles/`, `lanes-link.yaml` and each profile's `providers.d/` are readable and not writable. The last of those sits *inside* the granted `data/` prefix since [ADR-030](adr/030-a-profile-owns-its-skills-and-manifests.md), so the condition carries an explicit exclusion rather than simply not naming it. Enforced by the platform; `src/deployments/grants.test.ts` evaluates the shipped expression — not a scan for prefixes, which would read straight past a negation — and asserts the keys the endpoint writes fall inside it and the config paths fall outside. This replaces the read-only image that carried the guarantee before [ADR-023](adr/023-the-workspace-is-not-in-the-image.md) |
-| `knowledge.excludes-secrets` | ENFORCED | a target may keep memory and skills in a GitHub repository ([ADR-041](adr/041-memory-and-skills-in-a-repository.md)); the credential store, the vault, runtime state and the audit log are excluded **structurally** — `knowledgeTargetSchema` has no field that could name any of them, so no flag, no override, and no copied example can move one. `src/profile/load.test.ts` asserts that `credentials:` and `vault:` written into the block are stripped rather than honoured, and `src/cli/runtime/knowledge.test.ts` asserts that everything which is not memory stays on the target's own storage |
+| `knowledge.excludes-secrets` | ENFORCED | a target may keep memory and skills in a GitHub repository ([ADR-041](adr/041-memory-and-skills-in-a-repository.md)); the credential store, the vault, runtime state, the audit log, tasks and assets are excluded **structurally** — `knowledgeTargetSchema` has no field that could name any of them, so no flag, no override, and no copied example can move one. `src/profile/load.test.ts` asserts that `credentials:` and `vault:` written into the block are stripped rather than honoured, and `src/cli/runtime/knowledge.test.ts` asserts that everything which is not memory stays on the target's own storage |
+| `owner-layer.granted-by-default` | **WEAKENED deliberately, and only for providers with no account** | a new profile is created with `memory.*`, `tasks.*`, `assets.*`, `skills.*`, `vault.*` and `setup.*` allowed, and an existing one is repaired on the next `start`, `connect` or `deploy` ([ADR-050](adr/050-the-owner-layer-is-granted-by-default.md)). Default deny still holds for everything it is for: none of these reaches a third-party account, none has a credential or an OAuth app, and each is empty until the owner puts something in it. The grant is the one `lanes link connect memory` already wrote, so nothing is newly expressible — see the owner-layer section below for the write half, and `deny` for the way off. `src/cli/config-edit.test.ts` asserts the template and the repair write one spelling, and that a `deny` covering a surface is never undone |
 | `audit.append-only` | ENFORCED | the store interface has no update or delete |
 | `audit.tamper-evident` | ENFORCED **for edits and mid-run removals** | records are hash-chained per run; `lanes link audit verify`. Truncating a run killed mid-write, or deleting a run whole, is not detectable — see [ADR-020](adr/020-the-log-is-objects.md) |
 | `audit.redaction` | ENFORCED | provider redaction tests, including on denials |
@@ -340,19 +341,37 @@ instructions to give itself.
 **Neither of these screens anything.** They separate a privilege. Nothing in this codebase detects an
 injection, and no part of it claims to.
 
-**`lanes link connect` grants more than the engine does.** Connecting memory or skills writes
-`allow: ['<provider>.*']` into your profile, which includes the write half. Default-deny is true of
-the policy engine — nothing is reachable without a rule — and not of the file `connect` writes for
-you. Narrowing it is one `deny` line or a second profile.
+**A task is the same channel as memory, and an asset is a smaller one.**
+[ADR-051](adr/051-tasks-and-assets-are-their-own-stores.md) adds two more stores an agent can write
+to and that are re-served later. A task is memory's risk with a due date — an injected instruction
+that presents itself as something the owner asked for. Both answer it the same way memory does, with
+writing in a non-default bundle: `deny: [tasks.add, tasks.update, tasks.remove]`. An asset is
+narrower, because nothing reads one back as instructions unless it is text and something asks for
+it — but it is bytes the owner did not choose the size of, which is why `assets.store` carries the
+same ceiling and the same SHA-256 receipt a mail attachment does.
 
-**`lanes link deploy` also writes an allow rule, and not only for the profile you named.** A profile
-written before the `setup` surface existed serves none of it, silently — the capabilities are absent
-from `tools/list` rather than refused — so `connect` and `deploy` add the connection row and
-`allow: ['setup.*']` to any profile missing both. `deploy` does this for every profile it is about to
-upload, which without `--profile` is the whole workspace, because a profile it sends is a profile the
-endpoint will serve. Both commands print what they added. The surface is read-only (ADR-019) and
-`deny: ['setup.*']` stops the repair and keeps it off; deleting the two lines does not, because the
-next `connect` or `deploy` puts them back.
+**The profile a fresh install starts from grants more than the engine does.** A new profile is
+created with the whole owner layer allowed, write halves included, and an existing one is repaired
+on the next `start`, `connect` or `deploy`
+([ADR-050](adr/050-the-owner-layer-is-granted-by-default.md)). Default deny is true of the policy
+engine — nothing is reachable without a rule — and not of the file the CLI writes for you. That is a
+deliberate weakening and it is stated as one in the table above; what bounds it is that every
+provider in the list holds the owner's own material and reaches no account. Narrowing is one `deny`
+line or a second profile, and the three worth knowing are `deny: [memory.write]`,
+`deny: [skills.manage.*]` and `deny: [vault.put, vault.remove]`.
+
+Two things it does *not* do. A vault read is still granted per item: `vault.*` covers `put` and
+`remove`, and a `vault.get.<id>` capability exists only for an item already in the store and only
+after a restart, so a write cannot hand itself a read. And a connection is never granted — an account
+still takes `lanes link connect` and a browser.
+
+**The repair runs on three commands, and not only for the profile you named.** A profile missing a
+surface serves none of it silently — the capabilities are absent from `tools/list` rather than
+refused — so `start`, `connect` and `deploy` add the connection row and the `<provider>.*` rule to
+any profile missing both. `deploy` does this for every profile it is about to upload, which without
+`--profile` is the whole workspace, because a profile it sends is a profile the endpoint will serve.
+All three print what they added. A `deny` covering a surface stops the repair and keeps it off;
+deleting the two lines does not, because the next command puts them back.
 
 **Vault reads deserve stricter treatment than other reads.** Tools only, never resources — resources
 are listable and cacheable, which is wrong for secrets — plus per-item policy through the capability

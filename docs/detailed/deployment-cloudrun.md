@@ -11,8 +11,8 @@ $ lanes link deploy --profile personal --target cloud  # deployed: one bucket, S
 ```
 
 **Two standing dependencies, and that is the whole list.** No database: state is one object per
-key and the audit log is one object per event, both in the same bucket as memory, skills,
-attachments, and the config itself (ADR-020, ADR-021, ADR-023).
+key and the audit log is one object per event, both in the same bucket as memory, tasks, assets,
+skills, attachments, and the config itself (ADR-020, ADR-021, ADR-023).
 
 If you find yourself needing an application-layer change to make the second one work, that is a bug
 in the adapter boundary rather than a step in this guide.
@@ -71,7 +71,7 @@ targets:
       project: my-project
     storage:
       # Everything the endpoint remembers: the config it reads, its state, the
-      # audit log, memory, skills, attachments. `adapter: filesystem` would
+      # audit log, memory, tasks, assets, skills, attachments. `filesystem` would
       # appear to work and lose all of it when the instance recycles — see
       # "Storage is not optional up here" below.
       #
@@ -316,8 +316,10 @@ idle, on deploy, and whenever the platform feels like it. Nothing errors, becaus
 container's point of view nothing is wrong.
 
 That was worth stating when the bucket held only memory and skills. It is worth more now: the
-bucket also holds the config the endpoint reads, its connection state, and its audit log. A
-deployment on the filesystem adapter is one that forgets what it did.
+bucket also holds the config the endpoint reads, its connection state, its audit log, every task,
+and every file kept as an asset. A deployment on the filesystem adapter is one that forgets what it
+did — and for assets that is the only copy, since the point of keeping one is that the endpoint can
+reach it from anywhere.
 
 ### The vault key, which the deploy now mints
 

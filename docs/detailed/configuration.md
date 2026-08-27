@@ -89,7 +89,17 @@ oauth_apps:
 # Where the credential lives is the provider's answer, not this file's: an
 # optional "credential_ref" here adds a secret the connection may reach, and
 # does not move the one it authenticates with.
+#
+# The six with no account are the owner layer, and a profile is created with
+# them already declared — they reach your own material, so there was never
+# anything for a connect step to authorise (ADR-050).
 connections:
+  - { id: main, provider: memory, account: Memory }
+  - { id: main, provider: tasks, account: Tasks }
+  - { id: main, provider: assets, account: Assets }
+  - { id: main, provider: skills, account: Skills }
+  - { id: main, provider: vault, account: Vault }
+  - { id: main, provider: setup, account: Setup }
   - id: ada_lovelace
     provider: gmail
     account: ada.lovelace@example.com
@@ -98,6 +108,9 @@ connections:
     account: rin.shaw@example.com
 
 # Only what is listed here is reachable, and an empty policy grants nothing.
+# A deny always beats an allow, and it is how an owner-layer surface is
+# switched off — deleting its connection row does not, because the next start,
+# connect or deploy writes it back.
 policy:
   allow: ['*']
   deny:  [gmail.users.drafts.send]
@@ -350,9 +363,9 @@ as the identity already present — the service account `lanes link deploy` gran
 your own gcloud credentials locally — so the bucket needs **no credential of its own**. `s3` needs
 an endpoint and an HMAC key pair, which on GCS means a console visit to mint one; it is the answer
 for R2, MinIO, Supabase Storage, and AWS.
-**`BlobStore` is not optional in the cloud** — state, the log, memory, and skills all live in it,
-and a container filesystem loses every one of them on an instance recycle without reporting
-anything.
+**`BlobStore` is not optional in the cloud** — state, the log, memory, tasks, assets, and skills all
+live in it, and a container filesystem loses every one of them on an instance recycle without
+reporting anything.
 
 ### The vault block
 
@@ -373,8 +386,10 @@ unreadable while appearing to work. Mint one with `lanes link vault key generate
 ### The knowledge block
 
 Optional, and absent by default. It moves **memory entries and skills** into a GitHub repository,
-reached over the API, and it can move nothing else — runtime state, the audit log, the credential
-store and the vault stay wherever `storage:` and `credentials:` put them.
+reached over the API, and it can move nothing else — runtime state, the audit log, tasks, assets, the
+credential store and the vault stay wherever `storage:` and `credentials:` put them. Tasks could
+reasonably follow later; assets raises a different question, since binaries in a git repository is
+not the trade Markdown is ([ADR-041](adr/041-memory-and-skills-in-a-repository.md)).
 
 ```yaml
 targets:

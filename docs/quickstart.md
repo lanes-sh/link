@@ -34,30 +34,66 @@ ok    created profile personal
       targets  local
 ```
 
-## 3. Add your own context
+## 3. Your own context is already there
 
-Memory, skills, and the vault hold your material rather than an account, so they need no credential
-and no browser. One command each:
+Memory, tasks, assets, skills, and the vault hold your material rather than an account, so they need
+no credential, no browser, and no command. The profile you just created declares all five:
 
 ```console
-$ lanes link connect memory --profile personal --target local
-ok    connected memory.main
-      connections += memory.main (Memory)
-      policy.allow += memory.*
-      5 capabilities discovered, all reachable
-      2 of them write — lanes link policy deny memory.<capability> to withhold one
-
-$ lanes link connect skills --profile personal --target local
-$ lanes link connect vault --profile personal --target local
+$ lanes link check --profile personal
 ```
 
-`connect` takes one provider at a time. Connecting grants that provider's whole namespace, write
-half included — `lanes link policy deny memory.write` narrows it.
+```yaml
+connections:
+  - { id: main, provider: memory, account: Memory }
+  - { id: main, provider: tasks, account: Tasks }
+  - { id: main, provider: assets, account: Assets }
+  - { id: main, provider: skills, account: Skills }
+  - { id: main, provider: vault, account: Vault }
+  - { id: main, provider: setup, account: Setup }
 
-Both are stored on this machine. `lanes link knowledge use github --repo <owner/name> --migrate`
-keeps them in a private repository instead, so they have a history and follow you between machines.
+policy:
+  allow: [memory.*, tasks.*, assets.*, skills.*, vault.*, setup.*]
+```
 
-All three belong to the profile you ran them under. A second profile starts empty and stays that
+Each rule grants that provider's whole namespace, write half included. To narrow one, deny a
+capability — a deny always beats an allow:
+
+```console
+$ lanes link policy deny memory.write --profile personal --target local   # read-only memory
+$ lanes link policy deny skills.manage.* --profile personal --target local   # invoke, not author
+```
+
+Deleting the connection row does not switch a surface off; the next `start`, `connect` or `deploy`
+puts it back. A `deny` is how one stays off.
+
+Which store a thing goes in is worth knowing, because nothing refuses the wrong choice:
+
+| | |
+|---|---|
+| **memory** | what is *true* — a fact, a preference, how something works |
+| **tasks** | what is to be *done*, each with a status, so it can be closed |
+| **assets** | a *file*, kept under its own name |
+
+"Remember to chase the invoice" is a task, not a memory entry. Your agents are told this as well.
+
+Try it:
+
+```console
+$ lanes link tasks add "chase the invoice" --due 2026-09-01 --profile personal --target local
+ok    added task chase-the-invoice
+
+$ lanes link tasks list --profile personal --target local
+
+Tasks (1 outstanding)
+  chase-the-invoice  open  chase the invoice  due 2026-09-01
+```
+
+Memory, tasks, and skills are stored on this machine. `lanes link knowledge use github --repo
+<owner/name> --migrate` keeps memory and skills in a private repository instead, so they have a
+history and follow you between machines.
+
+All of them belong to the profile you ran them under. A second profile starts empty and stays that
 way: nothing you store in one is visible from another.
 
 ## 4. Start the endpoint
@@ -65,8 +101,12 @@ way: nothing you store in one is visible from another.
 ```console
 $ lanes link start --profile personal --target local
 profile personal  target local  ~/.lanes-link
-  + setup.main  create (active)
   + memory.main  create (active)
+  + tasks.main  create (active)
+  + assets.main  create (active)
+  + skills.main  create (active)
+  + vault.main  create (active)
+  + setup.main  create (active)
 ok    reconciled
 warn  minted a token — run: lanes link outputs --show
 ok    serving http://127.0.0.1:7337/mcp
@@ -135,8 +175,8 @@ Ask an agent to search your mail. If it is refused, that is the permission syste
 Work and personal never share a credential store, a state store, or an audit log:
 
 ```console
-$ lanes link profile add work
-$ lanes link --profile work connect notion
+$ lanes link profile add work --target local
+$ lanes link connect notion --profile work --target local
 $ lanes link start --profile personal --target local
 ok    serving http://127.0.0.1:7337/mcp
       profiles: personal, work
