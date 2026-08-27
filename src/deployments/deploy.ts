@@ -1,6 +1,7 @@
 import {
   ConfigError,
   recordTarget,
+  resolveTargetWorkspace,
   resolveWorkspaceRoot,
   type DeployConfig,
 } from '#profile';
@@ -61,6 +62,23 @@ export interface DeployFlags extends GlobalFlags {
 }
 
 export async function deploy(flags: DeployFlags): Promise<void> {
+  // **The target's own workspace is migrated before anything resolves it.**
+  //
+  // This is the first thing the command does, and it has to be. `deploy` is what
+  // the refusal on a contract-1 bucket tells you to run — and every other read of
+  // that bucket goes through `openTarget`, which refuses it for the same reason.
+  // Migrating after resolution made the instruction circular: the command named
+  // as the fix could not get past the problem it fixes.
+  //
+  // `resolveTargetWorkspace` is the one lookup that does not need the far end to
+  // declare anything: it reads this machine's pointer and stops. So the bucket is
+  // located, migrated, and only then opened.
+  //
+  // Idempotent, and silent on a workspace already at contract 2 — a listing and
+  // no writes. `--dry-run` reports what it would do and writes nothing, like
+  // every other step of this command.
+  if (!(await migrateTargetWorkspace(requireTargetFlag(flags), flags.dryRun !== true))) return;
+
   // The one command allowed to name a target that does not exist yet: creating
   // it is what a first deploy is for.
   //
@@ -258,21 +276,13 @@ export async function deploy(flags: DeployFlags): Promise<void> {
 
     // **The bucket's own migration, here and nowhere else.**
     //
-    // Contract 1 is not read by this binary at all (ADR-052), so the moment a
-    // bucket becomes contract 2 the revision in front of it stops being able to
-    // read its own config. Doing it here puts that window between an upload and
-    // a rollout that are seconds apart, rather than leaving it open until
-    // somebody happens to redeploy.
-    //
-    // After the upload, because the upload is what puts the profiles there for
-    // it to migrate. Idempotent, so a bucket already at contract 2 costs one
+    // A second pass, and it is not redundant. The one at the top of the command
+    // migrated whatever the bucket already held; this catches what the upload
+    // just put there — profiles from a workspace that is itself at contract 2
+    // arrive migrated, but a first deploy of a *newly created* bucket writes
+    // them here for the first time. Idempotent, so the ordinary case is one
     // listing and no writes.
-    const migrated = await migrateWorkspace(workspace);
-    if (!migrated.alreadyCurrent) {
-      heading('Migrated');
-      for (const change of migrated.changes) print(`  ${change}`);
-      print(style.dim('  The revision below is the first that can read it.'));
-    }
+    await migrateWorkspace(workspace, { apply: true });
 
     // **The target hands itself over to the workspace it now lives in.**
     //
@@ -329,4 +339,43 @@ function requireTargetFlag(flags: DeployFlags): string {
     throw new ConfigError('--target is required. It names the deployment this acts on.');
   }
   return flags.target;
+}
+
+/**
+ * Bring a target's own workspace to the current contract, before it is opened.
+ *
+ * Deliberately tolerant of a target this workspace has no pointer for: that is a
+ * first deploy, where there is nothing to migrate and `deploy` is about to create
+ * the workspace itself.
+ *
+ * Narrated when it does something. This rewrites every profile in somebody's
+ * bucket, and a command that reshapes that silently is one they cannot audit
+ * afterwards.
+ */
+async function migrateTargetWorkspace(target: string, apply: boolean): Promise<boolean> {
+  const root = resolveWorkspaceRoot();
+
+  const workspace = await resolveTargetWorkspace(root, target).catch(() => null);
+  if (workspace === null || workspace === root) return true;
+
+  const migrated = await migrateWorkspace(workspace, { apply });
+  if (migrated.alreadyCurrent) return true;
+
+  heading(apply ? 'Migrated' : 'Would migrate');
+  print(style.dim(`  ${workspace}`));
+  for (const change of migrated.changes) print(`  ${change}`);
+  if (apply) {
+    print(style.dim('  The revision this deploy rolls is the first that can read it.'));
+    return true;
+  }
+
+  // A dry run stops here rather than pressing on to survey and plan. Everything
+  // past this point opens the target, and the target is not readable until the
+  // migration above has actually happened — so continuing would report a second,
+  // confusing refusal about the thing the first paragraph just offered to fix.
+  print(style.dim('  Nothing was written, and nothing else was checked: the rest of this'));
+  print(style.dim('  command opens the target, which is not readable until this has run.'));
+  print('');
+  print(style.dim(`  Run it for real:  lanes link deploy --target ${target}`));
+  return false;
 }
