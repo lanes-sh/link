@@ -49,6 +49,7 @@ export interface ConnectCustomOptions extends GlobalFlags, CustomFlags {
   /** Forwarded to `connect` untouched. */
   readonly id?: string | undefined;
   readonly displayName?: string | undefined;
+  readonly label?: string | undefined;
   readonly replace?: boolean | undefined;
   readonly nonInteractive?: boolean | undefined;
   readonly acceptBroadScopes?: boolean | undefined;
@@ -170,6 +171,7 @@ export async function connectCustom(
       quiet: options.quiet ?? false,
       ...(options.id ? { id: options.id } : {}),
       ...(options.displayName ? { displayName: options.displayName } : {}),
+      ...(options.label ? { label: options.label } : {}),
       ...(options.replace ? { replace: options.replace } : {}),
       ...(options.nonInteractive ? { nonInteractive: options.nonInteractive } : {}),
       ...(options.acceptBroadScopes ? { acceptBroadScopes: options.acceptBroadScopes } : {}),

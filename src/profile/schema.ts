@@ -303,11 +303,20 @@ export const policySchema = z.object({
  * is *whose mailbox is this*. `id` is the stable key that `credential_ref` and
  * the agent's `connection` argument point at, and it is derived from `account`
  * so it means something too.
+ *
+ * `label` is the operator's own word for the same row, and it exists because
+ * `account` cannot be. Three things read `account` as an identity — the
+ * reconnect match in `settleIdentity`, the id derived from it, and the `From`
+ * header `gmail.send_message` writes — so a `relabel` that wrote "Work mail"
+ * there stopped the next `connect` recognising the account it had renamed.
+ * Nothing addresses a connection by its label; it is only ever displayed.
  */
 export const connectionSchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9_]*$/, 'must be lowercase alphanumeric with underscores'),
   provider: identifier,
   account: z.string().min(1),
+  /** Absent means the row is shown as its account, which is the usual case. */
+  label: z.string().min(1).optional(),
   credential_ref: credentialRef.optional(),
   /** Provider-specific, validated later against that provider's own schema. */
   config: z.record(z.string(), z.unknown()).optional(),

@@ -185,7 +185,7 @@ export function createSetupProvider(options: SetupProviderOptions): ProviderDefi
 
 function renderOverview(
   options: SetupProviderOptions,
-  connections: ReadonlyArray<{ key: string; account: string }>,
+  connections: ReadonlyArray<{ key: string; account: string; label?: string | undefined }>,
   plans: readonly ProviderPlan[],
   self: string,
 ): string {
@@ -196,7 +196,15 @@ function renderOverview(
   } else {
     lines.push('Connected and reachable:');
     for (const connection of connections) {
-      lines.push(`  ${connection.key}  — ${connection.account}`);
+      // Account first, label in brackets. The other way round for a person
+      // reading `status`, and deliberately not here: an agent choosing which
+      // connection to call needs the identity, and "Work mail" is not one.
+      lines.push(
+        `  ${connection.key}  — ${connection.account}` +
+          (connection.label && connection.label !== connection.account
+            ? ` (${connection.label})`
+            : ''),
+      );
     }
   }
 

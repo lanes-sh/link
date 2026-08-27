@@ -235,8 +235,29 @@ describe('relabel', () => {
     expect(relabelled.from).toBe('first@example.com');
     expect(relabelled.to).toBe('Work Mail');
     const config = await onDisk(root);
-    expect(config.connections.find((c) => c.provider === 'gmail' && c.id === 'main')?.account)
+    expect(config.connections.find((c) => c.provider === 'gmail' && c.id === 'main')?.label)
       .toBe('Work Mail');
+  });
+
+  /**
+   * The bug this command shipped with.
+   *
+   * Renaming wrote the operator's words over `account`, and `account` is an
+   * identity: `settleIdentity` matches on it to decide a `connect` is a repair,
+   * `idFromAccount` derives the id from it, and `gmail.send_message` puts it in
+   * a `From` header. So `relabel gmail.main "Work Mail"` left a row that the
+   * next `connect gmail` no longer recognised — it appended `gmail.first`
+   * alongside — and a mailbox that could no longer set a display name when it
+   * sent. The label is a separate field for exactly this reason.
+   */
+  test('leaves the identity it renames alone', async () => {
+    const root = await workspace();
+
+    await renameConnection('gmail.main', 'Work Mail', WHERE);
+
+    const config = await onDisk(root);
+    expect(config.connections.find((c) => c.provider === 'gmail' && c.id === 'main')?.account)
+      .toBe('first@example.com');
   });
 
   test('touches nothing else', async () => {
@@ -246,6 +267,17 @@ describe('relabel', () => {
     const config = await onDisk(root);
     expect(keys(config)).toContain('gmail.side');
     expect(config.connections.find((c) => c.id === 'side')?.account).toBe('second@example.com');
+    expect(config.connections.find((c) => c.id === 'side')?.label).toBeUndefined();
+  });
+
+  test('reports the label it replaced, not the account, once there is one', async () => {
+    await workspace();
+    await renameConnection('gmail.main', 'Work Mail', WHERE);
+
+    const { relabelled } = await renameConnection('gmail.main', 'Day job', WHERE);
+
+    expect(relabelled.from).toBe('Work Mail');
+    expect(relabelled.to).toBe('Day job');
   });
 
   test('is allowed for the owner layer, which has a label like anything else', async () => {
@@ -255,7 +287,7 @@ describe('relabel', () => {
     await renameConnection('memory.main', 'My notes', WHERE);
 
     const config = await onDisk(root);
-    expect(config.connections.find((c) => c.provider === 'memory')?.account).toBe('My notes');
+    expect(config.connections.find((c) => c.provider === 'memory')?.label).toBe('My notes');
   });
 
   test('refuses a key the profile does not declare', async () => {

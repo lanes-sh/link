@@ -227,6 +227,7 @@ export const CONNECT_CUSTOM_FLAGS: readonly string[] = [
   // and a broker's, and a synthesized manifest never declares a broker.
   'id',
   'display-name',
+  'label',
   'replace',
   'non-interactive',
   'accept-broad-scopes',

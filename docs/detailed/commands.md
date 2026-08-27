@@ -42,10 +42,23 @@ $ lanes link setup plan gmail --profile personal --target local
 Add an account. Run once per account — a second run adds a second account. `<provider>.<id>`
 re-authorises an existing one.
 
+It ends by asking what to call the connection, offering the account it just resolved:
+
+```console
+What should this be called? [ada@example.com]:
+```
+
+Pressing Enter takes the account, which is the usual answer. Anything else is written to `label` and
+changes nothing else — see `relabel` below for why that is a separate field from `account`. The
+question is skipped when `--label` says it, when there is no terminal to ask, and for the second and
+third service of a family: `connect icloud` is one account, so it is named once rather than
+three times.
+
 | | |
 |---|---|
 | `--id <name>` | the connection id, instead of one derived from the account |
-| `--display-name <text>` | the label |
+| `--display-name <text>` | whose account this is, for a provider that cannot report it |
+| `--label <text>` | what to call the connection, instead of being asked |
 | `--replace` | ask for the stored password or key again |
 | `--auth <method>` | which way in, where a provider offers two; `oauth` is the browser |
 | `--own-client` | your own OAuth client rather than this project's (older spelling of an `--auth` route) |
@@ -98,6 +111,13 @@ points at the file, where both lines are next to each other.
 Rename what an account is called. The label is what `status` and any surface built on it shows; it
 is not an identifier, so nothing addresses the connection by it and changing one breaks nothing.
 
+It writes `label`, never `account`, and the difference is not cosmetic. `account` is the identity
+the provider reported, and three things read it as one: `settleIdentity` matches on it to decide a
+second `connect` is a repair rather than a new account, the connection id is derived from it, and
+`gmail.send_message` writes it into a `From` header. Renaming through `account` — which this command
+did until the field existed — left a row the next `connect gmail` no longer recognised, and added a
+second one beside it.
+
 ```console
 $ lanes link relabel gmail.main "Work mail" --profile personal --target local
 $ lanes link relabel gmail.main Work mail --profile personal --target local
@@ -106,11 +126,10 @@ $ lanes link relabel gmail.main Work mail --profile personal --target local
 Both forms work: an unquoted multi-word name is joined, because quoting is what someone remembers
 second and refusing it teaches nothing.
 
-`connect` writes this field from the identity the provider reports at connect time, which is right
-for `gmail.main` and useless for a provider with no such endpoint — a bunq key belongs to an account
-bunq will not name. This is how that gets a name a person recognises. Allowed for the owner layer,
-unlike `disconnect`: a display name is harmless, and "Memory" is the operator's word for their own
-store.
+`connect` already asks for one and offers the account as the answer, so this is for changing your
+mind later — and for the surfaces that drive the CLI rather than type it. Allowed for the owner
+layer, unlike `disconnect`: a display name is harmless, and "Memory" is the operator's word for
+their own store.
 
 The state store keeps the old name until the next reconcile, which updates it.
 
@@ -152,7 +171,7 @@ instead, with the command to re-run.
 | `--setup-docs <url\|text>` | where the credential comes from. A URL becomes a link, a sentence a step |
 | `--replace-manifest` | rewrite a declaration that exists and differs. `--replace` is about the credential |
 
-It also takes `--id`, `--display-name`, `--replace`, `--accept-broad-scopes` and
+It also takes `--id`, `--display-name`, `--label`, `--replace`, `--accept-broad-scopes` and
 `--non-interactive`, which are forwarded to the connect that follows.
 
 ```console

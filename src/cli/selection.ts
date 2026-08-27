@@ -306,6 +306,7 @@ const ACCEPTS: Record<string, readonly string[]> = {
   connect: [
     'id',
     'display-name',
+    'label',
     'replace',
     'non-interactive',
     'accept-broad-scopes',

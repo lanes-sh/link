@@ -297,9 +297,18 @@ export async function disconnect(key: string | undefined, flags: DisconnectFlags
   })
 }
 
+/**
+ * Rename a connection, writing `label` and never `account`.
+ *
+ * It wrote `account` until it was noticed that `account` is not a display name:
+ * `settleIdentity` matches on it to tell a repair from a new account,
+ * `idFromAccount` derives the id from it, and `gmail.send_message` writes it
+ * into a `From` header. Renaming through it therefore un-recognised the account
+ * it renamed — the next `connect` added a second row beside it.
+ */
 export async function renameConnection(
   key: string,
-  account: string,
+  label: string,
   flags: RelabelFlags,
 ): Promise<{ resolution: Resolution; relabelled: Relabelled }> {
   const runtime = await openRuntime(flags);
@@ -309,7 +318,7 @@ export async function renameConnection(
     const located = locate(config, key, resolution.profile);
     const document = await ConfigDocument.open(resolution.workspaceRoot, resolution.profile);
 
-    document.setIn(['connections', located.index, 'account'], account);
+    document.setIn(['connections', located.index, 'label'], label);
     await document.save();
 
     return {
@@ -318,8 +327,10 @@ export async function renameConnection(
         profile: resolution.profile,
         target,
         key,
-        from: located.connection.account,
-        to: account,
+        // What it was called a moment ago, which is the account only until the
+        // first rename.
+        from: located.connection.label ?? located.connection.account,
+        to: label,
         published: nextAfterEdit(await publishProfileEdit({ resolution, config, target })),
       },
     };
@@ -330,13 +341,13 @@ export async function renameConnection(
 
 export async function relabel(
   key: string | undefined,
-  account: string | undefined,
+  label: string | undefined,
   flags: RelabelFlags,
 ): Promise<void> {
   if (!key) throw new Error('Which connection? Run: lanes link status');
-  if (!account) throw new Error(`What should ${key} be called? Run: lanes link relabel ${key} "New name"`);
+  if (!label) throw new Error(`What should ${key} be called? Run: lanes link relabel ${key} "New name"`);
 
-  const { resolution, relabelled: result } = await renameConnection(key, account, flags);
+  const { resolution, relabelled: result } = await renameConnection(key, label, flags);
 
   return emit(flags.json, result, () => {
     announce(resolution);

@@ -179,6 +179,7 @@ export async function handleDashboard(
       key: `${connection.provider}.${connection.id}`,
       provider: connection.provider,
       account: connection.account,
+      ...(connection.label ? { label: connection.label } : {}),
       state: byKey.get(`${connection.provider}.${connection.id}`)?.status ?? 'not reconciled',
     }));
 
