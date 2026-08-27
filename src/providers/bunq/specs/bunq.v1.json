@@ -144,7 +144,26 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/DraftPayment"
+                "type": "object",
+                "description": "The whole of what this call takes. bunq refuses any other field here as superfluous — the rest of the schema it shares belongs to the call that creates one.",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "description": "The status of the DraftPayment.",
+                    "readOnly": false,
+                    "writeOnly": false
+                  },
+                  "previous_updated_timestamp": {
+                    "type": "string",
+                    "description": "The last updated_timestamp that you received for this DraftPayment. This needs to be provided to prevent race conditions.",
+                    "readOnly": false,
+                    "writeOnly": true
+                  }
+                },
+                "required": [
+                  "status",
+                  "previous_updated_timestamp"
+                ]
               }
             }
           }

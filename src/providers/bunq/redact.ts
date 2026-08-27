@@ -51,14 +51,25 @@ export const BUNQ_REDACT: Record<string, string[]> = {
     'status',
     'schedule',
   ],
+  // Five, not seven: `entries` and `number_of_required_accepts` are no longer
+  // arguments at all. This is the one write here whose event cannot name an
+  // amount or a counterparty, because the call does not carry them — it says
+  // which draft was accepted and against which version of it, and that is
+  // everything there is to keep.
+  //
+  // Not everything a reader wants, though, and worth being honest that the gap
+  // is real rather than closed. The entries are on the event that *created* the
+  // draft, and nothing joins the two: an `AuditEvent` records arguments only,
+  // and bunq returns the draft id in the create's response. Reconstructing what
+  // an ACCEPTED draft paid means matching by hand. `context.audit.annotate`,
+  // which `gmail.send_message` uses to record resolved facts, is the shape of a
+  // fix and is a change to dispatch rather than to this list.
   UPDATE_DraftPayment_for_User_MonetaryAccount: [
     'userID',
     'monetary-accountID',
     'itemId',
     'status',
-    'entries',
     'previous_updated_timestamp',
-    'number_of_required_accepts',
   ],
   CREATE_PaymentBatch_for_User_MonetaryAccount: ['userID', 'monetary-accountID', 'payments'],
 };
