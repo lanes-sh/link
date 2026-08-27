@@ -138,6 +138,57 @@ export function connectionsSharingCredential(
     .map((one) => `${one.provider}.${one.id}`);
 }
 
+/**
+ * Take back the allow rules that named the provider, once nothing declares it.
+ *
+ * Not a tidy-up. `assertReferentialIntegrity` refuses an allow rule naming a
+ * provider with no connection, and `save` validates — so disconnecting the last
+ * connection of a provider *failed*, with a config error about a policy line the
+ * operator had not touched, and nothing removed. Every single-account provider
+ * was undisconnectable, which is most of them: the bug reproduced on `slack.*`
+ * and would have on `bunq.*`, while a profile with two Gmail accounts could
+ * disconnect one perfectly well.
+ *
+ * Symmetry is the argument for removing rather than warning. `connect` writes
+ * the row *and* the rule, and the pair is what `config-repair.ts` calls both
+ * halves or neither — a rule with nothing behind it grants nothing and is what
+ * that file exists to stop being written.
+ *
+ * `allow: ['*']` is untouched: it names no provider, so nothing about it becomes
+ * false. Narrower rules go with the wide one — `gmail.send_message` is as
+ * dangling as `gmail.*` once the last Gmail is gone, and the loader refuses it
+ * for the same reason.
+ *
+ * `deny` is left alone, deliberately. The loader permits a deny naming a
+ * provider with no connection, because denying something you have not connected
+ * yet is a reasonable thing to write ahead of time — and removing it here would
+ * silently re-permit whatever it covered if the account came back.
+ */
+function dropProviderRules(document: ConfigDocument, config: Config, index: number): void {
+  const going = config.connections[index];
+  if (!going) return;
+
+  const stillDeclared = config.connections.some(
+    (one, i) => i !== index && one.provider === going.provider,
+  );
+  if (stillDeclared) return;
+
+  const rules = document.getIn(['policy', 'allow']) as { items?: unknown[] } | null;
+  const doomed: number[] = [];
+
+  (rules?.items ?? []).forEach((_rule, at) => {
+    const bare = document.getIn(['policy', 'allow', at]);
+    const capability =
+      typeof bare === 'string' ? bare : document.getIn(['policy', 'allow', at, 'capability']);
+    if (typeof capability !== 'string') return;
+
+    if (capability.split('.')[0] === going.provider) doomed.push(at);
+  });
+
+  // Descending, so each removal cannot move the index of one still to come.
+  for (const at of doomed.reverse()) document.removeFrom(['policy', 'allow'], at);
+}
+
 export async function removeConnection(
   key: string,
   flags: DisconnectFlags,
@@ -162,6 +213,10 @@ export async function removeConnection(
     // running `connect`. The reverse — credential gone, declaration kept, edit
     // failed — is the same state, so ordering costs nothing either way; doing the
     // edit first means the file is right even if the store is unreachable.
+    // Both edits before the one `save`, so the file is never written in the
+    // state where the row is gone and the rule that named it is not — which is
+    // the state the loader refuses.
+    dropProviderRules(document, config, located.index);
     document.removeFrom(['connections'], located.index);
     await document.save();
 

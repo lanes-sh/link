@@ -287,3 +287,58 @@ describe('the plan reports which providers are reserved', () => {
     expect(drive?.reserved).toBe(false);
   });
 });
+
+/**
+ * The rule goes with the last connection that justified it.
+ *
+ * Not a tidiness feature. `assertReferentialIntegrity` refuses an allow rule
+ * naming a provider with no connection, and `removeConnection` saves through
+ * `validateConfig` — so disconnecting the last account of a provider failed, on
+ * a policy line the operator had not touched, and removed nothing. Every
+ * single-account provider was undisconnectable, which is most of them.
+ */
+describe('disconnecting the last connection of a provider', () => {
+  /** The policy line itself — the template's comments quote `allow: [` too. */
+  const POLICY = 'allow: [memory.*';
+
+  /** The fixture's profile, plus the `gmail.*` rule `connect` would have written. */
+  async function granted(): Promise<string> {
+    const root = await workspace();
+    const path = join(root, 'profiles', 'personal.yaml');
+    const text = await Bun.file(path).text();
+    await Bun.write(path, text.replace(POLICY, 'allow: [gmail.*, gmail.send_message, memory.*'));
+    return root;
+  }
+
+  test('works at all, which is the whole of the bug', async () => {
+    // It did not. `save` validates, and the loader refuses an allow rule naming
+    // a provider with no connection — so removing the last Gmail failed on a
+    // policy line the operator had not touched, and removed nothing.
+    const root = await granted();
+
+    await removeConnection('gmail.main', { ...WHERE, yes: true });
+    await removeConnection('gmail.side', { ...WHERE, yes: true });
+
+    const config = await onDisk(root);
+    expect(keys(config).filter((key) => key.startsWith('gmail.'))).toEqual([]);
+    expect(config.policy.allow.map((rule) => rule.capability)).not.toContain('gmail.*');
+  });
+
+  test('leaves the rule while a sibling still needs it', async () => {
+    const root = await granted();
+    await removeConnection('gmail.side', { ...WHERE, yes: true });
+
+    expect((await onDisk(root)).policy.allow.map((rule) => rule.capability)).toContain('gmail.*');
+  });
+
+  test('never touches a blanket allow, which names no provider', async () => {
+    const root = await workspace();
+    const path = join(root, 'profiles', 'personal.yaml');
+    await Bun.write(path, (await Bun.file(path).text()).replace(POLICY, "allow: ['*', memory.*"));
+
+    await removeConnection('gmail.main', { ...WHERE, yes: true });
+    await removeConnection('gmail.side', { ...WHERE, yes: true });
+
+    expect((await onDisk(root)).policy.allow.map((rule) => rule.capability)).toContain('*');
+  });
+});
