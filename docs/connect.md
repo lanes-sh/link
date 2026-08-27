@@ -19,7 +19,7 @@ $ lanes link connect gmail --profile personal --target local        # again, for
 | Google Sheets | `lanes link connect sheets` | Read and edit cells, ranges, and tabs |
 | Google Docs | `lanes link connect docs` | Read a document and edit its content |
 | Google Calendar | `lanes link connect calendar` | Read and write events, and answer when you are free |
-| Google Tasks | `lanes link connect tasks` | Create, edit, complete, and reorder tasks |
+| Google Tasks | `lanes link connect google_tasks` | Create, edit, complete, and reorder tasks |
 | Google Contacts | `lanes link connect contacts` | Look up an address, so "email Bob" resolves. Read-only |
 | iCloud Mail | `lanes link connect icloud_mail` | Read, search, and send over IMAP and SMTP |
 | iCloud Calendar | `lanes link connect icloud_calendar` | Read and write events over CalDAV |

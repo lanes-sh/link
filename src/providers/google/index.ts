@@ -7,5 +7,5 @@ export { driveMcp } from './drive-mcp/index.ts';
 export { gmail, GMAIL_SCOPES } from './gmail/index.ts';
 export { gmailImap } from './gmail-imap/index.ts';
 export { gmailMcp } from './gmail-mcp/index.ts';
+export { googleTasks } from './tasks/index.ts';
 export { sheets } from './sheets/index.ts';
-export { tasks } from './tasks/index.ts';

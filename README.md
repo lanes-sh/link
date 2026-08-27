@@ -100,7 +100,7 @@ One command per account. Run it again to add a second mailbox, a second calendar
 | Google Sheets | `lanes link connect sheets` |
 | Google Docs | `lanes link connect docs` |
 | Google Calendar | `lanes link connect calendar` |
-| Google Tasks | `lanes link connect tasks` |
+| Google Tasks | `lanes link connect google_tasks` |
 | Google Contacts | `lanes link connect contacts` |
 | iCloud Mail | `lanes link connect icloud_mail` |
 | iCloud Calendar | `lanes link connect icloud_calendar` |

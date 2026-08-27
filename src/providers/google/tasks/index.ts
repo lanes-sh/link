@@ -17,7 +17,7 @@ import { TASKS_REDACT } from './redact.ts';
  * What bounds it is what bounds the others. The token can delete a whole list;
  * the tool surface cannot, because `tasklists.delete` is not vendored — Tasks
  * has no trash, so destroying a list destroys every task in it. `lanes link
- * policy deny tasks.*` narrows it further.
+ * policy deny google_tasks.*` narrows it further.
  *
  * No `identity` block, and that is a decision rather than an omission. Nothing
  * reachable under `auth/tasks` returns an address: `tasklists.list` answers
@@ -32,8 +32,8 @@ import { TASKS_REDACT } from './redact.ts';
  */
 const TASKS_SCOPES = ['https://www.googleapis.com/auth/tasks'];
 
-export const tasks = defineProvider({
-  id: 'tasks',
+export const googleTasks = defineProvider({
+  id: 'google_tasks',
   name: 'Google Tasks',
   description:
     'Read and write task lists and tasks — create, edit, complete, reorder, and delete — via the Tasks REST API.',

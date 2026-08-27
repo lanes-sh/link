@@ -167,7 +167,7 @@ describe('the Google manifests stay at the documented minimum', () => {
 
   // One scope, and no narrower one exists — see the note above.
   test('tasks asks for the only scope that writes', () => {
-    expect(scopesOf('tasks')).toEqual(['https://www.googleapis.com/auth/tasks']);
+    expect(scopesOf('google_tasks')).toEqual(['https://www.googleapis.com/auth/tasks']);
   });
 
   // The only Google provider here that asks for nothing broad at all. Two
@@ -207,7 +207,7 @@ describe('the Google manifests stay at the documented minimum', () => {
         'sheets https://www.googleapis.com/auth/spreadsheets',
         'docs https://www.googleapis.com/auth/documents',
         'calendar https://www.googleapis.com/auth/calendar.events',
-        'tasks https://www.googleapis.com/auth/tasks',
+        'google_tasks https://www.googleapis.com/auth/tasks',
         // Slack's seven, which arrived when its scopes moved off a setup page
         // and into the manifest. Nothing widened to put them here: this is the
         // same grant the setup page asked the operator to transcribe, now

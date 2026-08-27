@@ -456,7 +456,7 @@ Shot list — connect, consent, then exercise, one provider at a time:
 4. `lanes link connect sheets` and `lanes link connect docs`. Read a range and write it back; read
    a document and edit a paragraph.
 5. `lanes link connect calendar`. Show free/busy and the calendar list, then create an event.
-6. `lanes link connect tasks`. List, then create and complete one.
+6. `lanes link connect google_tasks`. List, then create and complete one.
 7. `lanes link connect contacts`. Search a name to an address, including one that resolves out of
    Other contacts.
 
