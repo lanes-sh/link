@@ -112,6 +112,7 @@ limitation. `RESERVED` names a compatibility slot with no implementation.
 | `credentials.no-standing-grant` | **NOT-GUARANTEED for a connection authenticated with a key** | see below |
 | `credentials.plaintext-in-use` | NOT-GUARANTEED | inherent |
 | `provider.sandboxed` | NOT-GUARANTEED | provider code is trusted |
+| `provider.response-may-carry-a-credential` | NOT-GUARANTEED **for two Discord operations** | a capability's *response* is returned to the caller unread, and `discord.create_webhook` and `discord.list_channel_webhooks` include the webhook's token in theirs. A webhook token is standalone: it posts to that one channel with no other authentication. Accepted in [ADR-047](adr/047-a-pasted-token-carries-its-own-scheme.md) because the alternative is not the same capability made safe but no posting under the operator's own name at all. Bounded to one channel, withheld from the audit log by `DISCORD_REDACT` and asserted so in `src/providers/discord/discord.test.ts`, and revocable from Discord's channel settings — see [`setup/discord.md`](setup/discord.md). Distinct from `credentials.not-agent-reachable`, which is about this system's own store and still holds |
 | `egress.controlled` | NOT-GUARANTEED | follows from the above |
 | `policy.approval_required` | RESERVED | the model carries the state; no engine, and it fails closed |
 | `delegation.external-clients` | RESERVED | the principal parameter; nothing more |
@@ -243,8 +244,10 @@ The cache is keyed per connection, so two accounts never share a token, and a st
 starts cold with an empty cache.
 
 **Not every upstream credential is an OAuth token, and the ones that are not are weaker in two
-ways.** iCloud takes an app-specific password; GitHub and Slack take a token the operator generates
-and pastes, because neither vendor's MCP server will register a client for us (ADR-033). Such a
+ways.** iCloud takes an app-specific password; GitHub, Slack and Discord take a token the operator
+generates and pastes — the first two because neither vendor's MCP server will register a client
+for us (ADR-033), Discord because its bot token is a property of the application rather than
+anything an OAuth exchange returns (ADR-047). Such a
 credential is long-lived and *is* persisted — there is no refresh, so the stored value is the
 credential itself rather than a means of obtaining one. Rotation is manual: `connect --replace`,
 after revoking upstream.
@@ -254,7 +257,7 @@ is about to be granted and refuses to proceed if the scopes have widened without
 `confirmScopes` is that gate. There is no equivalent here, and there cannot be: what a pasted token
 can do is chosen in the vendor's own console, and this endpoint has no way to read it back. So the
 guarantee for these providers is narrower — the policy layer still bounds what an agent may *call*,
-but the credential's own reach is the operator's to bound, at the vendor, when they create it. Both
+but the credential's own reach is the operator's to bound, at the vendor, when they create it. All three
 setup pages say so at the point the token is generated.
 
 **A Google Cloud project left in "Testing" publishing status expires refresh tokens after seven

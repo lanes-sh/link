@@ -111,6 +111,7 @@ One command per account. Run it again to add a second mailbox, a second calendar
 | GitHub | `lanes link connect github` |
 | Slack | `lanes link connect slack` |
 | Reddit | `lanes link connect reddit` |
+| Discord | `lanes link connect discord` |
 | Gmail (IMAP, app password) | `lanes link connect gmail_imap` |
 | Gmail (Google MCP) | `lanes link connect gmail_mcp` |
 | Drive (Google MCP) | `lanes link connect drive_mcp` |
