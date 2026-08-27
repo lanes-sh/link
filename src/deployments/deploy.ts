@@ -272,7 +272,18 @@ export async function deploy(flags: DeployFlags): Promise<void> {
     // Before the rollout, so the revision that comes up finds a config to read.
     // Uploading after would leave a window where the service is serving and the
     // workspace it was told to read is not there yet.
-    await uploadWorkspace(resolution.workspaceRoot, workspace, serving);
+    // **Only when there is somewhere to copy from.** After ADR-052 the profiles
+    // a deployed target serves *live in* that target's workspace, so
+    // `resolution.workspaceRoot` and `workspace` are the same bucket and this is
+    // a copy onto itself. It ran, and the self-copy is how the bucket's registry
+    // came to be overwritten.
+    //
+    // What it is still for is the one-way trip: a first deploy, where the
+    // profile is on this machine and the bucket does not hold it yet. That is a
+    // move, not a sync — the next deploy finds it already there.
+    if (resolution.workspaceRoot !== workspace) {
+      await uploadWorkspace(resolution.workspaceRoot, workspace, serving);
+    }
 
     // **The bucket's own migration, here and nowhere else.**
     //
@@ -304,7 +315,11 @@ export async function deploy(flags: DeployFlags): Promise<void> {
       last_deploy: stamped,
     });
 
-    await recordTarget(resolution.workspaceRoot, target, {
+    // **This machine's registry, not the target's.** `resolution.workspaceRoot`
+    // is the workspace the profile was *found* in, which for a deployed target is
+    // the bucket — so writing the pointer there pointed the bucket at itself, and
+    // the revision that came up refused to open its own target.
+    await recordTarget(resolveWorkspaceRoot(), target, {
       workspace,
       primary: resolution.profile,
       last_deploy: stamped,

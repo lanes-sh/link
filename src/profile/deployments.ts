@@ -39,11 +39,14 @@ export async function recordTarget(
 ): Promise<void> {
   await editRegistry(workspaceRoot, (targets) => {
     const previous = targets[target];
+    // Neither shape merges into the other, and the symmetry is the point: an
+    // entry carrying both a `workspace:` and adapters is what the schema refuses.
+    //
     // A pointer replacing a declaration is `deploy` handing the target over to
-    // the workspace it just wrote, so the adapter keys have to go rather than
-    // merge — an entry carrying both is what the schema refuses.
-    targets[target] =
-      entry.workspace !== undefined ? { ...pick(previous), ...entry } : { ...previous, ...entry };
+    // the workspace it just wrote. A declaration replacing a pointer is the same
+    // command writing the bucket's own registry — and merging there left the
+    // laptop's `workspace:` on it, pointing the bucket at itself.
+    targets[target] = { ...pick(previous), ...entry };
   });
 }
 
@@ -54,7 +57,7 @@ export async function removeTarget(workspaceRoot: string, target: string): Promi
   });
 }
 
-/** The fields that survive a declaration becoming a pointer: the deploy record. */
+/** The fields that survive an entry changing shape: the deploy record, and only it. */
 function pick(previous: WorkspaceTarget | undefined): Partial<WorkspaceTarget> {
   if (!previous) return {};
   return {

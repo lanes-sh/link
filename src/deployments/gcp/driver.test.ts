@@ -67,12 +67,22 @@ describe('the steps', () => {
     expect(plan()[1]?.tolerateFailure).toBeUndefined();
   });
 
-  test('the build names the Dockerfile through a build config', () => {
+  test('the build names the Dockerfile through a build config, in the install', () => {
     // `gcloud builds submit --tag` always builds ./Dockerfile, and this one
     // lives under src/deployments/gcp/.
+    //
+    // Absolute, and rooted at the installed package rather than the working
+    // directory. Both were relative, so a deploy worked from a checkout and
+    // failed everywhere else with a missing cloudbuild.yaml — which reads as a
+    // broken install rather than as a wrong cwd.
     const build = plan().find((step) => step.argv[0] === 'builds')!;
-    expect(build.argv).toContain('src/deployments/gcp/cloudbuild.yaml');
-    expect(build.argv.at(-1)).toBe('.');
+    const config = build.argv[build.argv.indexOf('--config') + 1]!;
+    const context = build.argv.at(-1)!;
+
+    expect(config).toEndWith('src/deployments/gcp/cloudbuild.yaml');
+    expect(config).toStartWith('/');
+    expect(context).toStartWith('/');
+    expect(config).toStartWith(context);
   });
 
   test('the revision is told which target to open', () => {

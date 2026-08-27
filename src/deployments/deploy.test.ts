@@ -29,9 +29,16 @@ afterAll(async () => {
  * calls itself load-bearing; this is the same boundary for the upload.
  */
 describe('what a deploy sends up', () => {
-  test('config goes', () => {
-    expect(isWorkspaceConfig('lanes-link.yaml')).toBe(true);
+  test('profiles go, and the workspace file does not', () => {
     expect(isWorkspaceConfig('profiles/personal.yaml')).toBe(true);
+
+    // The one file that must not travel. It holds the target registry, and the
+    // two workspaces have different ones: this machine's says
+    // `cloud: workspace: gs://…`, so copying it into that bucket left the bucket
+    // pointing at itself — a loop `openTarget` refuses, on the target that had
+    // just been deployed (ADR-052). The bucket's own registry is written by
+    // `deploy`, from the declaration, once the upload is done.
+    expect(isWorkspaceConfig('lanes-link.yaml')).toBe(false);
   });
 
   test('the authored areas inside a profile go — they are config, not state', () => {
@@ -456,13 +463,12 @@ describe('the allowlist against a real workspace listing', () => {
       'data/personal/providers.d/acme.yaml',
       'data/personal/skills.d/review-diff/SKILL.md',
       'data/work/skills.d/triage.md',
-      'lanes-link.yaml',
       'profiles/personal.yaml',
       'profiles/work.yaml',
     ]);
   });
 
-  test('naming a profile sends that profile and the workspace file', async () => {
+  test('naming a profile sends that profile and nothing of its siblings', async () => {
     const { source, destination } = await populated();
 
     await uploadWorkspace(source, destination, ['personal']);
@@ -470,7 +476,6 @@ describe('the allowlist against a real workspace listing', () => {
     expect(await landed(destination)).toEqual([
       'data/personal/providers.d/acme.yaml',
       'data/personal/skills.d/review-diff/SKILL.md',
-      'lanes-link.yaml',
       'profiles/personal.yaml',
     ]);
   });

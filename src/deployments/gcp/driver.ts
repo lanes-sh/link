@@ -7,7 +7,8 @@ import type {
   SurveyInput,
   SurveyResult,
 } from '../driver.ts';
-import type { DeployConfig } from '#profile';
+import { join } from 'node:path';
+import { installRoot, type DeployConfig } from '#profile';
 import { encodeRef } from '../adapters/gcp-secret-manager.ts';
 import {
   captureGcloud,
@@ -50,6 +51,10 @@ export function deployPlan(input: PlanInput): DeployStep[] {
   const cloudrun = requireProject(input.deploy, input.target);
   const image = imageReference(cloudrun, input.tag);
   const scope = ['--project', cloudrun.project, '--region', cloudrun.region];
+  // Where this package is installed, which is where the Dockerfile and the build
+  // config live. Never the working directory: `lanes link deploy` is run from
+  // wherever somebody happens to be standing.
+  const root = installRoot(import.meta.dir);
 
   return [
     {
@@ -80,10 +85,15 @@ export function deployPlan(input: PlanInput): DeployStep[] {
         '--project',
         cloudrun.project,
         '--config',
-        'src/deployments/gcp/cloudbuild.yaml',
+        join(root, 'src/deployments/gcp/cloudbuild.yaml'),
         '--substitutions',
         `_IMAGE=${image}`,
-        '.',
+        // The build context, and the config beside it, are the *installed
+        // package* — not whatever directory the operator happened to run from.
+        // Both were relative, so `lanes link deploy` worked from a checkout and
+        // failed everywhere else with a missing cloudbuild.yaml, which reads as
+        // a broken install rather than as a wrong working directory.
+        root,
       ],
     },
     {
