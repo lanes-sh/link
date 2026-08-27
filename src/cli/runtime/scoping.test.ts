@@ -1,3 +1,4 @@
+import { workspaceYaml } from '#profile/testing.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -21,16 +22,10 @@ import { openRuntime, type Runtime } from '../runtime.ts';
 const roots: string[] = [];
 const previousHome = process.env['LANES_LINK_HOME'];
 
-const profileConfig = (name: string): string => `contract: 1
+const profileConfig = (name: string): string => `contract: 2
 
 instance:
   profile: ${name}
-  default_target: local
-
-targets:
-  local:
-    credentials: { adapter: file,       path: ./data/${name}/credentials.enc }
-    storage:     { adapter: filesystem, path: ./data/${name} }
 
 policy:
   allow: ['*']
@@ -47,7 +42,7 @@ async function workspace(files: Record<string, string>): Promise<string> {
   roots.push(root);
 
   await mkdir(join(root, 'profiles'), { recursive: true });
-  await writeFile(join(root, 'lanes-link.yaml'), 'contract: 1\ndefault_profile: personal\n');
+  await writeFile(join(root, 'lanes-link.yaml'), workspaceYaml(['local'], {defaultProfile: 'personal'}));
   for (const name of ['personal', 'work']) {
     await writeFile(join(root, 'profiles', `${name}.yaml`), profileConfig(name));
   }

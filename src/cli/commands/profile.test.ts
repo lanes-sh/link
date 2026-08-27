@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from 'bun:test';
+import { workspaceYaml } from '#profile/testing.ts';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -24,6 +25,10 @@ async function workspace(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'lanes-link-profile-'));
   roots.push(root);
   process.env['LANES_LINK_HOME'] = root;
+  // The registry, because a target is declared by the workspace now and every
+  // command below names one (ADR-052). `createProfile` seeds this itself on a
+  // bare directory, which the seeding test covers.
+  await writeFile(join(root, 'lanes-link.yaml'), workspaceYaml(['local']));
   return root;
 }
 
@@ -102,18 +107,21 @@ describe('createProfile', () => {
     expect(second.port).toBe(7338);
   });
 
-  test('declares every target it was given, in the order given', async () => {
-    // The reported bug: `--target` was accepted and dropped, and the template
-    // could only ever emit `local` — so the command reported success and made a
-    // profile that could not reach the deployment it had just been told about.
+  test('writes a profile that declares no target at all', async () => {
+    // The reported bug was the opposite one: `--target` was accepted and
+    // dropped, and the template could only ever emit `local`. The flag is now
+    // load-bearing in a different way — it decides which *workspace* the file is
+    // written into, and the file itself says nothing about where it runs
+    // (ADR-052).
     await workspace();
 
     const created = await createProfile('personal', { targets: ['local'] });
     const text = await readFile(created.path, 'utf8');
 
     expect(created.targets).toEqual(['local']);
-    expect(text).toContain('  local:');
-    expect(text).toContain('./data/personal/credentials.enc');
+    expect(text).toContain('contract: 2');
+    expect(text).not.toContain('targets:');
+    expect(text).not.toContain('credentials:');
   });
 
   test('writes no default_target, because nothing reads one', async () => {
@@ -124,58 +132,31 @@ describe('createProfile', () => {
     expect(await readFile(created.path, 'utf8')).not.toContain('default_target');
   });
 
-  test('refuses a target no sibling declares rather than inventing one', async () => {
-    // The one place guessing is actively harmful. `deploy`'s survey proposes a
-    // *fresh* project id, which is right for a first deploy and exactly wrong
-    // here: pressing return would build a second, separate deployment instead
-    // of adding this profile to the one that already exists.
-    await workspace();
-    await createProfile('personal', { targets: ['local'] });
-
-    await expect(
-      createProfile('work', { targets: ['local', 'cloud'], nonInteractive: true }),
-    ).rejects.toThrow(/No profile in this workspace declares a target called "cloud"/);
-  });
-
-  test('and leaves nothing behind when it refuses', async () => {
-    // Everything that can fail happens before the first write, so a refusal
-    // leaves the workspace as it was rather than half a profile behind.
+  test('refuses a target the workspace does not declare', async () => {
+    // It used to copy a sibling profile's adapters, or ask. There is nothing to
+    // copy and nothing to ask about: the target is declared by the workspace, so
+    // one that is not there is a name that resolves to nowhere.
     const root = await workspace();
     await createProfile('personal', { targets: ['local'] });
 
-    await createProfile('work', { targets: ['cloud'], nonInteractive: true }).catch(() => {});
-
+    await expect(createProfile('work', { targets: ['cloud'] })).rejects.toThrow(/cloud/);
     expect(existsSync(join(root, 'profiles', 'work.yaml'))).toBe(false);
   });
 
-  test('copies a sibling’s adapters, with a service name of its own', async () => {
-    const root = await workspace();
-    await createProfile('personal', { targets: ['local'] });
-    await writeFile(
-      join(root, 'profiles', 'personal.yaml'),
-      (await readFile(join(root, 'profiles', 'personal.yaml'), 'utf8')).replace(
-        '    storage: { adapter: filesystem, path: ./data/personal }\n',
-        '    storage: { adapter: filesystem, path: ./data/personal }\n' +
-          '  cloud:\n' +
-          '    credentials: { adapter: gcp-secret-manager, project: my-project }\n' +
-          '    storage: { adapter: gcs, bucket: your-bucket }\n' +
-          '    vault: { adapter: secret }\n' +
-          '    deploy: { platform: cloudrun, project: my-project, region: europe-west1, service: my-service, access: public }\n',
-      ),
-    );
+  test('creates the workspace file first, so an empty directory can be seeded', async () => {
+    // `profile add <name> --target local` on nothing at all is how a workspace
+    // comes into existence, and the target it names is declared *by* the file it
+    // is about to write. Resolving before writing would be resolving a target
+    // nothing has declared yet.
+    const root = await mkdtemp(join(tmpdir(), 'lanes-link-seed-'));
+    roots.push(root);
+    process.env['LANES_LINK_HOME'] = root;
 
-    const created = await createProfile('work', {
-      targets: ['local', 'cloud'],
-      nonInteractive: true,
-    });
-    const text = await readFile(created.path, 'utf8');
+    const created = await createProfile('personal', { targets: ['local'] });
 
-    expect(created.copiedFrom).toEqual({ cloud: 'personal' });
-    expect(text).toContain('project: my-project');
-    expect(text).toContain('bucket: your-bucket');
-    // The one field that must differ: two profiles in one project need two
-    // services, which is what makes them separately deployable.
-    expect(text).toContain('service: lanes-link-work-mcp');
+    expect(existsSync(join(root, 'lanes-link.yaml'))).toBe(true);
+    expect(await readFile(join(root, 'lanes-link.yaml'), 'utf8')).toContain('  local:');
+    expect(existsSync(created.path)).toBe(true);
   });
 
   test('refuses to overwrite a profile that already exists', async () => {
@@ -192,7 +173,7 @@ describe('readProfiles', () => {
     await createProfile('personal', { targets: ['local'] });
     await createProfile('work', { targets: ['local'] });
 
-    const listing = await readProfiles();
+    const listing = await readProfiles('local');
 
     expect(listing.root).toBe(root);
     expect(listing.profiles.map((profile) => profile.name).sort()).toEqual(['personal', 'work']);
@@ -202,7 +183,7 @@ describe('readProfiles', () => {
   test('an empty workspace is a listing, not a failure', async () => {
     await workspace();
 
-    expect(await readProfiles()).toMatchObject({ default: undefined, profiles: [] });
+    expect(await readProfiles('local')).toMatchObject({ default: undefined, profiles: [] });
   });
 });
 
@@ -211,7 +192,7 @@ describe('profile list --json', () => {
     await workspace();
     await createProfile('personal', { targets: ['local'] });
 
-    const written = await captureStdout(() => profileList({ json: true }));
+    const written = await captureStdout(() => profileList('local', { json: true }));
 
     // The assertion is the parse: a resolution line, a heading, or a table row
     // in front of this would throw here and nowhere else.
@@ -222,7 +203,7 @@ describe('profile list --json', () => {
   test('an empty workspace still emits a document rather than prose', async () => {
     await workspace();
 
-    const written = await captureStdout(() => profileList({ json: true }));
+    const written = await captureStdout(() => profileList('local', { json: true }));
 
     expect(JSON.parse(written)).toMatchObject({ profiles: [] });
   });

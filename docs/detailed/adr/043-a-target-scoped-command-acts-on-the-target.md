@@ -1,6 +1,6 @@
 # ADR-043: A target-scoped command acts on the target, and every profile behind it
 
-**Status:** accepted · **Amends** [ADR-037](037-a-command-names-what-it-acts-on.md) ·
+**Status:** accepted, amended by [ADR-052](052-a-target-owns-its-workspace.md) · **Amends** [ADR-037](037-a-command-names-what-it-acts-on.md) ·
 **Follows from** [ADR-009](009-one-endpoint-per-workspace.md)
 
 ## Context
@@ -96,3 +96,22 @@ The cost is that `Requires` is no longer a two-axis question with a uniform answ
 adding a command has a third option to think about. The table in `src/cli/selection.ts` is the
 whole rule, and `selection.test.ts` reads the dispatch files to check nothing was added without
 appearing in it.
+
+
+## Amended by ADR-052
+
+The third selection level stands, and so does the argument for it. What changed is where the set
+comes from.
+
+"Every profile *declaring* the target" is now "every profile *in* the target's workspace"
+([ADR-052](052-a-target-owns-its-workspace.md)). A profile declares no target, so the
+disagreement this decision made visible — one profile declaring `cloud` and its sibling not —
+cannot occur, and the `status` output above no longer has a "not declared" column to print.
+
+The two things `deploy` still refuses to guess are unchanged: whose bearer token opens the
+endpoint, and a first deploy naming a target nothing has created yet.
+
+One row moves the other way. `target list` was `profile`-level because a target was declared per
+profile; the registry is workspace-level, so it needs nothing. `profile list`, `profile add` and
+`profile remove` move *up* to `target`, because a profile lives inside one and there is no longer
+a single directory holding them all.

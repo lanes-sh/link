@@ -76,3 +76,16 @@ workspace's accounts.
 **An agent must be told which profile it means.** The bundled skill says to ask rather than default
 to the first, since profiles are how someone separates work from personal and quietly picking one
 crosses that line.
+
+
+## Note (ADR-052)
+
+Workspace, target and endpoint now coincide exactly. A workspace declares one target, holds the
+profiles that live in it, and is served by one endpoint under one token
+([ADR-052](052-a-target-owns-its-workspace.md)).
+
+That makes this decision literally rather than approximately true. "One endpoint serves every
+profile in the workspace" used to need the qualifier *that declares this target*, because a
+workspace could hold profiles that could not run on the target being deployed. It holds without
+qualification now, and `deployments/servable.ts` — the pre-flight that existed for the exception
+— is gone.

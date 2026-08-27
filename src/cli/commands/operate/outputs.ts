@@ -1,5 +1,4 @@
 import { listProfiles } from '#profile';
-import { unservableProfiles } from '#deployments/servable.ts';
 import { fileURLToPath } from 'node:url';
 import { deployedUrl, endpointHealth, localUrl } from '../../endpoint-url.ts';
 import { announce, heading, print, style, warn } from '../../output.ts';
@@ -28,7 +27,7 @@ export async function outputs(flags: OutputsFlags): Promise<void> {
 
   try {
     const { token } = await ensureProfileToken(runtime.credentials, runtime.config.auth.token_ref);
-    const declared = runtime.config.targets[runtime.target]?.deploy;
+    const declared = runtime.declared.deploy;
     const deployed = await deployedUrl(declared);
     // Not `endpointUrl`, which would ask the platform a second time for an
     // answer this line already has.
@@ -37,14 +36,12 @@ export async function outputs(flags: OutputsFlags): Promise<void> {
     const live = await endpointHealth(url, token);
     const mine = live?.profile === runtime.resolution.profile;
 
-    // Live if it is up, otherwise what `start` would serve — which is every
-    // profile in the workspace *that declares this target*, not every profile
-    // full stop. `start` opens them all against one target and skips the ones
-    // that cannot run on it, so listing those here would promise a reach the
-    // endpoint will not have.
-    const profiles = mine
-      ? live.profiles
-      : await servable(runtime.resolution.workspaceRoot, runtime.target);
+    // Live if it is up, otherwise every profile in this target's workspace.
+    // Those are the same set now: a profile lives in exactly one target
+    // (ADR-052), so every profile here is one this target can open. The filter
+    // that used to sit between them answered "which of these declare it", a
+    // question no profile has an opinion on any more.
+    const profiles = mine ? live.profiles : await listProfiles(runtime.resolution.workspaceRoot);
 
     if (flags.json) {
       print(
@@ -136,18 +133,6 @@ export async function outputs(flags: OutputsFlags): Promise<void> {
   } finally {
     await runtime.close();
   }
-}
-
-/** The profiles a `start` on this target would actually open. */
-async function servable(workspaceRoot: string, target: string): Promise<string[]> {
-  const all = await listProfiles(workspaceRoot);
-  const cannot = new Set(
-    (await unservableProfiles({ workspaceRoot, profiles: undefined, target })).map(
-      (one) => one.profile,
-    ),
-  );
-
-  return all.filter((name) => !cannot.has(name));
 }
 
 /**

@@ -1,7 +1,8 @@
 import {
   ConfigError,
-  findDeployment,
+  listProfiles,
   loadWorkspaceProfiles,
+  readRegistry,
   type WorkspaceProfiles,
 } from '#profile';
 import { rotatableCredentialRefsFor } from '#registry';
@@ -17,10 +18,16 @@ import { buildRegistryWithWorkspace } from '#cli/runtime.ts';
  * profile did not declare yet — which the survey then offered to create
  * somewhere new. The way to deploy both was to know that already.
  *
- * The set is derived rather than guessed: it is every profile declaring the
- * target, which is exactly the set the endpoint will try to open. `--profile`
- * narrows it, and naming one is still how a first deploy works, because a
- * target nothing declares has no set to derive (ADR-043).
+ * The set is derived rather than guessed: it is every profile *in* the target's
+ * workspace, which is exactly the set the endpoint will try to open. `--profile`
+ * narrows it, and naming one is still how a first deploy works, because a target
+ * that does not exist yet has no workspace to derive from (ADR-043, ADR-052).
+ *
+ * It used to be "every profile declaring the target", read out of each profile's
+ * own file. That is the shape ADR-052 removed: the same question had a different
+ * answer per profile, so a rewritten file could drop a profile out of the set
+ * silently and the deploy would quietly send fewer profiles than the endpoint
+ * was serving.
  */
 
 export interface Serving {
@@ -42,23 +49,20 @@ export async function servingProfiles(input: {
     return { profiles: [...named], primary: named[0]! };
   }
 
-  const workspace = await loadWorkspaceProfiles(workspaceRoot);
-  const declaring = workspace.loaded
-    .filter((entry) => target in entry.config.targets)
-    .map((entry) => entry.profile);
+  const living = await listProfiles(workspaceRoot);
 
-  if (declaring.length === 0) {
+  if (living.length === 0) {
     throw new ConfigError(
-      `No profile declares "${target}", so there is no set to deploy.\n` +
+      `No profile lives in "${target}", so there is no set to deploy.\n` +
         '  A first deploy creates the target, and has to be told which profile\n' +
         '  it belongs to:\n' +
         `    lanes link deploy --target ${target} --profile <name>\n\n` +
-        `  If "${target}" was deployed before and the declaration was lost:\n` +
+        `  If "${target}" was deployed before and the pointer to it was lost:\n` +
         `    lanes link sync targets --target ${target} --discover`,
     );
   }
 
-  return { profiles: declaring, primary: await choosePrimary(workspaceRoot, target, declaring) };
+  return { profiles: living, primary: await choosePrimary(workspaceRoot, target, living) };
 }
 
 /**
@@ -75,13 +79,13 @@ async function choosePrimary(
   target: string,
   declaring: readonly string[],
 ): Promise<string> {
-  const recorded = (await findDeployment(workspaceRoot, target))?.primary;
+  const recorded = (await readRegistry(workspaceRoot))[target]?.primary;
   if (recorded !== undefined && declaring.includes(recorded)) return recorded;
 
   if (declaring.length === 1) return declaring[0]!;
 
   throw new ConfigError(
-    `${declaring.length} profiles declare "${target}", and nothing records which\n` +
+    `${declaring.length} profiles live in "${target}", and nothing records which\n` +
       "of them owns the endpoint's token. One token opens the endpoint and\n" +
       'reaches every profile behind it, so this cannot be picked for you.\n\n' +
       `  Name it once and it is remembered:\n` +

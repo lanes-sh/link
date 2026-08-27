@@ -66,6 +66,7 @@
     "#dispatch": "./src/dispatch/index.ts",
     "#policy": "./src/policy/index.ts",
     "#profile": "./src/profile/index.ts",
+    "#profile/*": "./src/profile/*",
     "#providers/*": "./src/providers/*",
     "#registry": "./src/registry/index.ts",
     "#secrets": "./src/secrets/index.ts",

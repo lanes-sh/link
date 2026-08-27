@@ -53,52 +53,11 @@ exercise. Every adapter below has exactly one workable answer on Cloud Run, and 
 ones (`storage: filesystem`) *appears* to work.
 
 ```yaml
-contract: 1
+contract: 2
 
 instance:
   profile: personal
-  default_target: local
   port: 7337
-
-targets:
-  local:
-    credentials: { adapter: file,       path: ./data/personal.credentials.enc }
-    storage:     { adapter: filesystem, path: ./data/personal }
-
-  cloud:
-    credentials:
-      adapter: gcp-secret-manager
-      project: my-project
-    storage:
-      # Everything the endpoint remembers: the config it reads, its state, the
-      # audit log, memory, tasks, assets, skills, attachments. `filesystem` would
-      # appear to work and lose all of it when the instance recycles — see
-      # "Storage is not optional up here" below.
-      #
-      # No key pair: `gcs` authenticates as the service account the deploy
-      # creates and grants. Use `adapter: s3` with an endpoint and two
-      # credential refs for R2, MinIO, Supabase Storage, or AWS.
-      adapter: gcs
-      bucket: my-project
-    vault:
-      # One sealed entry in Secret Manager, under its own key. Not the bucket:
-      # LANES_LINK_VAULT_KEY already comes from Secret Manager, so putting the
-      # ciphertext in a bucket was protecting the smaller asset with the taller
-      # fence (ADR-022). Needs LANES_LINK_VAULT_KEY in the environment — below.
-      adapter: secret
-    deploy:
-      # `platform` is the discriminator, and the only thing that selects a
-      # driver. The block used to be named `cloudrun`, which meant the name of a
-      # key chose a vendor — that spelling still loads and is read as this one.
-      platform: cloudrun
-      project: my-project
-      region: europe-west1
-      service: lanes-link-personal-mcp
-      # Who gets past the platform's own door. See "Who can reach it" below.
-      # `iam` is the default and is not the one an MCP client can use; a target
-      # that declares `auth.authorization` wants `public` and gates internally.
-      access: public
-      service_account: lanes-link-personal-mcp-run@my-project.iam.gserviceaccount.com
 
 auth:
   mode: bearer

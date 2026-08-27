@@ -1,5 +1,5 @@
 import { ConfigError } from './load.ts';
-import type { Config } from './schema.ts';
+import { isPointer, type WorkspaceTarget } from './schema.ts';
 
 /**
  * Which target a command acts on.
@@ -9,8 +9,9 @@ import type { Config } from './schema.ts';
  * the profile, which is why it is a different file.
  *
  * **`--target`, or the command does not run** (ADR-037). There is no fallback:
- * not `LANES_LINK_TARGET`, not `instance.default_target`. Both are still
- * parsed, so no existing config file has to change, and neither is read.
+ * not `LANES_LINK_TARGET`, not `instance.default_target`. The variable is still
+ * named in a refusal so a shell configured for the old world can be told it is
+ * ignored; the key went with contract 1.
  *
  * The chain this replaces resolved `--target`, then the variable, then the key,
  * and printed which of the three it landed on. What that bought was one flag
@@ -19,10 +20,18 @@ import type { Config } from './schema.ts';
  * and the next command carried on from a different source, so the mistake
  * surfaced one command later with nothing connecting it to its cause. A
  * resolver with nowhere to fall back to cannot fail that way.
+ *
+ * **What changed under ADR-052** is where the list of targets comes from. It was
+ * one profile's `targets:` block, which meant "is this target declared" had a
+ * different answer per profile and a deployment could look vanished from inside
+ * one of them. It is now the workspace registry — one list, before any profile
+ * is read, which is what lets `--target` be chosen first.
  */
 
+export type Registry = Record<string, WorkspaceTarget>;
+
 /**
- * The target this command named, checked against what the profile declares.
+ * The target this command named, checked against the workspace registry.
  *
  * `allowUndeclared` is for the one command whose job is to create the target it
  * was given — `deploy`, on a first run. Every other command naming a target that
@@ -30,14 +39,14 @@ import type { Config } from './schema.ts';
  * answer.
  */
 export function requireTarget(
-  config: Config,
+  registry: Registry,
   targetFlag: string | undefined,
-  options: { allowUndeclared?: boolean; profile?: string } = {},
+  options: { allowUndeclared?: boolean; root?: string } = {},
 ): string {
-  if (!targetFlag) throw noTargetNamed(config, options.profile);
+  if (!targetFlag) throw noTargetNamed(registry, options.root);
 
-  if (options.allowUndeclared !== true && !(targetFlag in config.targets)) {
-    throw undeclaredTarget(targetFlag, config, options.profile);
+  if (options.allowUndeclared !== true && !(targetFlag in registry)) {
+    throw notInRegistry(targetFlag, registry, options.root);
   }
 
   return targetFlag;
@@ -46,43 +55,41 @@ export function requireTarget(
 /**
  * The refusal for a command that named no target.
  *
- * It lists the targets with their adapters, because "which one" is the question
- * being asked and the adapter set is what distinguishes them. It also reports
- * the two things that used to answer this and no longer do — an exported
- * variable and the key still sitting in the file — since an operator looking at
- * either has every reason to believe it is still working.
+ * It lists the targets and where each lives, because "which one" is the question
+ * being asked and here-versus-elsewhere is what distinguishes them. It also
+ * reports the variable that used to answer this and no longer does, since an
+ * operator with it exported has every reason to believe it still works.
+ *
+ * One refusal rather than the two this replaced. `noTargetNamed` used to list
+ * one profile's adapters and `noTargetInWorkspace` listed which profiles
+ * declared each name — a distinction that existed only because a target was
+ * declared per profile. There is one list now, so there is one sentence.
  */
 export function noTargetNamed(
-  config: Config,
-  profile?: string,
+  registry: Registry,
+  root?: string,
   env: Record<string, string | undefined> = process.env as Record<string, string | undefined>,
 ): ConfigError {
-  const names = Object.keys(config.targets);
-  const whose = profile ? ` by profile "${profile}"` : '';
+  const names = Object.keys(registry).sort();
+  const where = root ?? 'this workspace';
 
-  const rows = names
-    .map((name) => {
-      const declared = config.targets[name]!;
-      const deployed = declared.deploy ? '  deployed' : '';
-      return `    ${name}    ${declared.credentials.adapter}  ${declared.storage.adapter}${deployed}`;
-    })
-    .join('\n');
+  if (names.length === 0) {
+    return new ConfigError(
+      `--target is required, and ${where} declares none.\n` +
+        '  Create one with: lanes link profile add <name> --target local',
+    );
+  }
 
   const stale = env[LEGACY_TARGET_ENV];
-  const inert = config.instance.default_target;
 
   return new ConfigError(
     '--target is required. This command opens a target\'s stores, and nothing\n' +
       'else selects one.\n\n' +
-      `  Targets declared${whose}\n${rows}\n` +
-      `\n  e.g. lanes link status --profile ${profile ?? '<name>'} --target ${names[0] ?? '<target>'}` +
+      `  Targets in ${where}\n${rows(registry, names)}\n` +
+      `\n  e.g. lanes link status --target ${names[0]}` +
       (stale
         ? `\n\n  ${LEGACY_TARGET_ENV}=${stale} is set in this shell and is no longer read.\n` +
           '  Unset it, or pass --target.'
-        : '') +
-      (inert
-        ? `\n\n  instance.default_target: ${inert} is still in this profile. It is no longer\n` +
-          '  read either, and is safe to delete.'
         : ''),
   );
 }
@@ -94,72 +101,36 @@ export function noTargetNamed(
  * an operator is looking at and reasonably believes is still working — which is
  * the whole difference between "this stopped working" and "this stopped working
  * and here is why".
+ *
+ * The deployed image still *sets* it, and that is not a contradiction: a
+ * revision serves exactly one target and passes it to `serve` on the command
+ * line. Nothing resolves from the variable on either side.
  */
 export const LEGACY_TARGET_ENV = 'LANES_LINK_TARGET';
 
-/**
- * The refusal for a target that is not in the file, in one spelling.
- *
- * It was two — here and in the CLI's `openSecretStoreFor` — which is one more
- * than a sentence naming the available targets survives: the copies drift the
- * moment either learns something the other does not.
- */
-export function undeclaredTarget(target: string, config: Config, profile?: string): ConfigError {
-  const have = Object.keys(config.targets).join(', ') || 'none';
-  const whose = profile ? `profile "${profile}"` : 'this profile';
+/** The refusal for a target that is not in the registry, in one spelling. */
+export function notInRegistry(target: string, registry: Registry, root?: string): ConfigError {
+  const names = Object.keys(registry).sort();
+  const where = root ?? 'this workspace';
 
-  return new ConfigError(`Target "${target}" is not declared by ${whose} (have: ${have})`);
-}
-
-/**
- * The refusal for a target-scoped command that named no target.
- *
- * The twin of `noTargetNamed`, for the commands whose subject is the target
- * rather than one profile's view of it (ADR-043). It lists the target names the
- * *workspace* declares and who declares each, because the question those
- * commands are asking is "which endpoint", and a target only one profile knows
- * about is the answer to a different question than one they all share.
- *
- * Naming the profiles is not decoration. A target declared by one profile and
- * not its sibling is precisely the state that reads as a deployment having
- * disappeared, and it is invisible from inside either profile alone.
- */
-export function noTargetInWorkspace(
-  declared: ReadonlyMap<string, readonly string[]>,
-  workspaceRoot: string,
-  env: Record<string, string | undefined> = process.env as Record<string, string | undefined>,
-): ConfigError {
-  if (declared.size === 0) {
-    return new ConfigError(
-      `--target is required, and no profile in ${workspaceRoot} declares one.\n` +
-        '  Create a profile with: lanes link profile add <name> --target local',
-    );
+  if (names.length === 0) {
+    return new ConfigError(`Target "${target}" is not declared, and ${where} declares none.`);
   }
 
-  const total = new Set(
-    [...declared.values()].flatMap((profiles) => profiles as readonly string[]),
-  ).size;
+  return new ConfigError(
+    `Target "${target}" is not declared in ${where}.\n\n  Targets\n${rows(registry, names)}`,
+  );
+}
 
-  const rows = [...declared.entries()]
-    .map(([name, profiles]) => {
-      // "every profile" rather than the list once it is all of them: the list is
-      // there to show a gap, and a complete one shows none.
-      const whose = profiles.length === total ? 'every profile' : profiles.join(', ');
-      return `    ${name}    ${whose}`;
+function rows(registry: Registry, names: readonly string[]): string {
+  return names
+    .map((name) => {
+      const entry = registry[name]!;
+      if (isPointer(entry)) return `    ${name}    ${entry.workspace}`;
+      const adapters = [entry.credentials?.adapter, entry.storage?.adapter]
+        .filter(Boolean)
+        .join('  ');
+      return `    ${name}    here  ${adapters}${entry.deploy ? '  deployable' : ''}`;
     })
     .join('\n');
-
-  const first = [...declared.keys()][0]!;
-  const stale = env[LEGACY_TARGET_ENV];
-
-  return new ConfigError(
-    '--target is required. This command acts on a target, and every profile\n' +
-      'that declares it.\n\n' +
-      `  Targets in ${workspaceRoot}\n${rows}\n` +
-      `\n  e.g. lanes link status --target ${first}` +
-      (stale
-        ? `\n\n  ${LEGACY_TARGET_ENV}=${stale} is set in this shell and is no longer read.\n` +
-          '  Unset it, or pass --target.'
-        : ''),
-  );
 }

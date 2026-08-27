@@ -1,3 +1,4 @@
+import { workspaceYaml } from '#profile/testing.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -27,25 +28,12 @@ const previousTarget = process.env['LANES_LINK_TARGET'];
  * with a Google error rather than the refusal, which is exactly the regression
  * being guarded against.
  */
-const PROFILE = `contract: 1
+const PROFILE = `contract: 2
 
 instance:
   profile: personal
-  default_target: local
   port: 7337
 
-targets:
-  local:
-    credentials: { adapter: file }
-    storage: { adapter: filesystem }
-  cloud:
-    credentials: { adapter: gcp-secret-manager, project: my-project }
-    storage: { adapter: gcs, bucket: your-bucket }
-    deploy:
-      platform: cloudrun
-      project: my-project
-      region: europe-west1
-      service: my-service
 `;
 
 async function workspace(): Promise<string> {
@@ -56,7 +44,7 @@ async function workspace(): Promise<string> {
   process.env['LANES_LINK_HOME'] = root;
 
   await mkdir(join(root, 'profiles'), { recursive: true });
-  await writeFile(join(root, 'lanes-link.yaml'), 'contract: 1\ndefault_profile: personal\n');
+  await writeFile(join(root, 'lanes-link.yaml'), workspaceYaml(['local', 'cloud'], {defaultProfile: 'personal'}));
   await writeFile(join(root, 'profiles', 'personal.yaml'), PROFILE);
   return root;
 }

@@ -1,5 +1,5 @@
 import type { SecretStore } from '#secrets';
-import type { Config } from '#profile';
+import { openTarget, type Config } from '#profile';
 import { publishWorkspace } from '#deployments/upload.ts';
 import { openSecretStoreFor, type Runtime } from './runtime.ts';
 import { endpointUrl } from './endpoint-url.ts';
@@ -117,6 +117,7 @@ export async function publishProfileEdit(input: {
 /** Ask a running endpoint to re-read its config. Never throws. */
 async function notifyReload(input: {
   readonly config: Config;
+  readonly workspaceRoot: string;
   readonly target: string;
   readonly credentials: SecretStore;
 }): Promise<PublishOutcome> {
@@ -125,7 +126,8 @@ async function notifyReload(input: {
     // Answers for a deployed target as well as a local one — a loopback URL
     // sent to a deployment reaches a port with nothing behind it, which is the
     // bug this function's own doc comment records.
-    url = (await endpointUrl(input.config, input.target)).replace(/\/mcp$/, '/reload');
+    const { declared } = await openTarget(input.workspaceRoot, input.target);
+    url = (await endpointUrl(input.config, declared)).replace(/\/mcp$/, '/reload');
   } catch (error) {
     return { served: false, reason: `could not work out where the endpoint is: ${message(error)}` };
   }

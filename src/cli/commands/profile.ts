@@ -7,10 +7,13 @@ import {
   listProfiles,
   profilePath,
   readWorkspace,
+  isRemoteWorkspace,
+  workspaceFiles,
+  writeWorkspaceFile,
+  resolveTargetWorkspace,
   resolveWorkspaceRoot,
 } from '#profile';
 import { newProfileTemplate, newWorkspaceTemplate } from '../config-edit.ts';
-import { askTarget, localBlock, siblingTarget } from './profile/declare.ts';
 import { emit, ok, print, style, table } from '../output.ts';
 
 /**
@@ -48,70 +51,80 @@ export interface ProfileListing {
 /**
  * Write a new profile, and the workspace file if this is the first one.
  *
- * The targets are the argument that used to be missing. `--target` was accepted
+ * The target is the argument that used to be missing. `--target` was accepted
  * and dropped here, and the template could only ever emit `local` — so the
  * command reported success and produced a profile that could not reach the
  * deployment the operator had just told it about.
+ *
+ * It now decides *where the file goes* rather than what is written in it: a
+ * profile lives in one target's workspace and declares nothing about it
+ * (ADR-052), so `--target cloud` writes into the bucket and the endpoint there
+ * serves it on its next reconcile.
  */
 export async function createProfile(
   name: string,
   options: { targets: readonly string[]; nonInteractive?: boolean },
 ): Promise<ProfileCreated> {
-  const root = resolveWorkspaceRoot();
+  const local = resolveWorkspaceRoot();
+  const target = options.targets[0]!;
+
+  // The workspace file before the target is resolved, not after. `profile add
+  // <name> --target local` on an empty directory is how a workspace comes into
+  // existence, and the target it names is declared *by* that file — so writing
+  // it second means resolving a target nothing has declared yet.
+  if (!isRemoteWorkspace(local) && !existsSync(join(local, WORKSPACE_FILE))) {
+    await mkdir(local, { recursive: true });
+    await writeFile(join(local, WORKSPACE_FILE), newWorkspaceTemplate(), { mode: 0o600 });
+  }
+
+  const root = await resolveTargetWorkspace(local, target);
   const path = profilePath(root, name);
 
-  if (existsSync(path)) throw new Error(`Profile "${name}" already exists at ${path}`);
+  if (await workspaceFiles(root).has(`profiles/${name}.yaml`)) {
+    throw new Error(`Profile "${name}" already exists at ${path}`);
+  }
 
-  await mkdir(join(root, 'profiles'), { recursive: true });
+  // Only a directory needs making. A bucket has no directories, and the write
+  // that follows creates the key outright.
+  if (!isRemoteWorkspace(root)) await mkdir(join(root, 'profiles'), { recursive: true });
 
   // Each profile gets its own port so two can serve at once without an
   // operator having to think about it.
   const existing = await listProfiles(root);
   const port = FIRST_PORT + existing.length;
 
-  // Everything that can fail — a target nobody declares, a prompt nobody can
-  // answer — happens before the first write, so a refusal leaves the workspace
-  // exactly as it was rather than half a profile behind.
-  const blocks: string[] = [];
-  const copiedFrom: Record<string, string> = {};
+  // The prompting that used to happen here is gone. A new profile had to be
+  // given an adapter block per target it declared, and for anything but `local`
+  // there was nothing safe to derive one from — so the command copied a
+  // sibling's, or asked. It declares no target now (ADR-052): it is written into
+  // the workspace of the target it was named with, and that workspace already
+  // says where its bytes go.
+  await writeWorkspaceFile(
+    workspaceFiles(root),
+    `profiles/${name}.yaml`,
+    newProfileTemplate(name, port),
+  );
 
-  for (const target of options.targets) {
-    if (target === 'local') {
-      blocks.push(localBlock(name));
-      continue;
-    }
-
-    const declared = await askTarget({
-      target,
-      profile: name,
-      sibling: await siblingTarget(root, target, name),
-      ...(options.nonInteractive === true ? { nonInteractive: true } : {}),
-    });
-
-    blocks.push(declared.block);
-    if (declared.from) copiedFrom[target] = declared.from;
-  }
-
-  const workspaceFile = join(root, WORKSPACE_FILE);
-  if (!existsSync(workspaceFile)) {
-    await writeFile(workspaceFile, newWorkspaceTemplate(), { mode: 0o600 });
-  }
-
-  await writeFile(path, newProfileTemplate(name, port, blocks.join('')), { mode: 0o600 });
-
-  return { name, path, port, targets: options.targets, copiedFrom };
+  return { name, path, port, targets: options.targets, copiedFrom: {} };
 }
 
 /**
- * Every profile in the workspace, and which one is the default.
+ * Every profile in one target's workspace, and which one is the default.
+ *
+ * **It takes a target, and that is the whole point of ADR-052.** A profile lives
+ * in exactly one target's workspace, so "which profiles exist" is a question
+ * about a target rather than about this machine — `personal` on `local` and
+ * `personal` on `cloud` are two files in two places, and listing the local
+ * directory for both is precisely the confusion this change removes.
  *
  * Names and paths only — deliberately not each profile's port, which would mean
  * parsing every config. One unparseable profile would then fail the command
  * that tells you which profiles exist, and that is exactly when you need it.
  * `status --json` reports the endpoint for a profile you have named.
  */
-export async function readProfiles(): Promise<ProfileListing> {
-  const root = resolveWorkspaceRoot();
+export async function readProfiles(target: string): Promise<ProfileListing> {
+  const local = resolveWorkspaceRoot();
+  const root = await resolveTargetWorkspace(local, target);
   const profiles = await listProfiles(root);
   const workspace = await readWorkspace(root);
 
@@ -158,8 +171,11 @@ export async function profileAdd(
   });
 }
 
-export async function profileList(options: { json?: boolean } = {}): Promise<void> {
-  const listing = await readProfiles();
+export async function profileList(
+  target: string,
+  options: { json?: boolean } = {},
+): Promise<void> {
+  const listing = await readProfiles(target);
 
   return emit(options.json, listing, () => {
     if (listing.profiles.length === 0) {

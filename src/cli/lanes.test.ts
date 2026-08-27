@@ -1,3 +1,4 @@
+import { workspaceYaml } from '#profile/testing.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -92,19 +93,14 @@ describe('the fallback token invocation', () => {
     const root = await mkdtemp(join(tmpdir(), 'lanes-link-fallback-'));
     roots.push(root);
     await mkdir(join(root, 'profiles'), { recursive: true });
-    await writeFile(join(root, 'lanes-link.yaml'), 'contract: 1\ndefault_profile: scratch\n');
+    await writeFile(join(root, 'lanes-link.yaml'), workspaceYaml(['local'], {defaultProfile: 'scratch'}));
     await writeFile(
       join(root, 'profiles', 'scratch.yaml'),
-      `contract: 1
+      `contract: 2
 
 instance:
   profile: scratch
-  default_target: local
 
-targets:
-  local:
-    credentials: { adapter: file,       path: ./data/scratch.credentials.enc }
-    storage:     { adapter: filesystem, path: ./data/files }
 `,
     );
 

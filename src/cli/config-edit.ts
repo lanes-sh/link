@@ -5,6 +5,7 @@ import {
   isRemoteWorkspace,
   readWorkspaceFile,
   validateConfig,
+  validateConfigShape,
   workspaceFiles,
   writeWorkspaceFile,
 } from '#profile';
@@ -179,12 +180,28 @@ export class ConfigDocument {
    * Validation happens on the rendered text rather than the in-memory tree so
    * that what is checked is exactly what would land on disk.
    */
-  async save(): Promise<void> {
+  /**
+   * `shapeOnly` validates the schema and the secret scan, and skips the
+   * referential checks.
+   *
+   * For the contract 1 → 2 migration, and nothing else. That migration rewrites
+   * the structure of a file which may *also* carry an unrelated problem the
+   * loader refuses — a connection row still spelling a renamed provider is the
+   * one that actually happens. Blocking the structural fix on the unrelated one
+   * would leave the file stuck at a contract nothing reads, which is a worse
+   * place to be than contract 2 with a stale row that `doctor --fix` names and
+   * repairs.
+   *
+   * The half it keeps is the half that matters for a write: the schema, and the
+   * scan that stops a credential value being written into config.
+   */
+  async save(options: { shapeOnly?: boolean } = {}): Promise<void> {
     const rendered = this.toString();
 
     // Throws on any validation failure, including a credential value that has
     // crept in — so a CLI edit can never introduce one.
-    validateConfig(this.#document.toJSON(), this.#path);
+    if (options.shapeOnly === true) validateConfigShape(this.#document.toJSON(), this.#path);
+    else validateConfig(this.#document.toJSON(), this.#path);
 
     if (!this.#location) {
       throw new ConfigError(`${this.#path}: opened from text, so there is nowhere to save it`);
@@ -217,7 +234,7 @@ export class ConfigDocument {
  * Written with comments, because this is the file an operator will read first
  * and most of what it needs to say is *why*, not *what*.
  */
-export function newProfileTemplate(profile: string, port: number, targets: string): string {
+export function newProfileTemplate(profile: string, port: number): string {
   return `# Lanes Link profile: ${profile}
 #
 # This file is the source of truth for what exists. It never contains a
@@ -226,23 +243,24 @@ export function newProfileTemplate(profile: string, port: number, targets: strin
 #
 # Edit it by hand or through the CLI; both are supported, and CLI edits
 # preserve your comments and ordering.
-contract: 1
+contract: 2
 
 instance:
   profile: ${profile}
   port: ${port}
   host: 127.0.0.1
 
-# Adapter selection is per target, and every command names the one it means:
+# This file says nothing about where it runs, and that is the point.
+#
+# A profile lives in exactly one target, and the target is the workspace holding
+# this file — which declares its own adapters, once, in lanes-link.yaml beside
+# the profiles/ directory (ADR-052). Moving this profile somewhere else is
+# copying the file there; there is no block in it to edit.
+#
+# Every command still names both, because neither is inferred (ADR-037):
 #
 #     lanes link status --profile ${profile} --target <name>
 #
-# There is no default. A target is chosen on the command line or not at all,
-# so a flag that goes missing fails here rather than quietly running somewhere
-# else (ADR-037). Everything below "targets" is target-independent and declared
-# exactly once.
-targets:
-${targets}
 # The bearer token for the endpoint this profile serves.
 #
 # "lanes link start" serves every profile in the workspace from one URL, and this
@@ -323,10 +341,23 @@ export function newWorkspaceTemplate(): string {
 # every call names the profile it means, with --profile. Profiles never share a
 # database or a credential store, so what one holds is invisible to another.
 #
-# "deploy" adds a "deployments:" list here. It is an index, not configuration —
-# nothing resolves from it. It records where a deployment lives so that losing
-# the target block out of a profile does not lose the service, the bucket, and
-# the credential store along with it. "lanes link sync targets" reads it.
-contract: 1
+# This workspace IS a target. "targets:" below says where its bytes go, once,
+# for every profile in it — a profile says nothing about where it runs, so
+# there is one copy of it and nothing to keep in step (ADR-052).
+#
+# A target somewhere else is a pointer, and "deploy" writes one:
+#
+#   targets:
+#     cloud:
+#       workspace: gs://your-bucket
+#
+# The workspace at that address declares its own adapters, and is the only
+# thing that does. Reading it is a network call, which is why "--target cloud"
+# needs that bucket reachable.
+contract: 2
+targets:
+  local:
+    credentials: { adapter: file }
+    storage: { adapter: filesystem }
 `;
 }

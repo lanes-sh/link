@@ -66,6 +66,16 @@ export interface ResolveOptions {
   readonly profileFlag?: string | undefined;
   readonly cwd?: string;
   readonly env?: Record<string, string | undefined>;
+  /**
+   * The workspace to look in, when the caller has already resolved a target.
+   *
+   * A profile lives in exactly one target's workspace (ADR-052), so a command
+   * naming a target has to follow it before it can say whether the profile
+   * exists — the answer for `cloud` lives in a bucket and is nowhere on this
+   * disk. Absent means the local root, which is what the commands taking no
+   * target want.
+   */
+  readonly root?: string;
 }
 
 /**
@@ -183,7 +193,7 @@ export async function listProfiles(workspaceRoot: string): Promise<string[]> {
  */
 export async function resolveSelection(options: ResolveOptions = {}): Promise<ProfileSelection> {
   const env = options.env ?? (process.env as Record<string, string | undefined>);
-  const workspaceRoot = resolveWorkspaceRoot(options);
+  const workspaceRoot = options.root ?? resolveWorkspaceRoot(options);
   const profile = options.profileFlag;
 
   if (!profile) throw noProfileNamed(workspaceRoot, await listProfiles(workspaceRoot), env);
@@ -295,28 +305,4 @@ export async function loadWorkspaceProfiles(workspaceRoot: string): Promise<Work
   }
 
   return { workspaceRoot, loaded, unreadable };
-}
-
-/**
- * Which profiles declare each target name, across the whole workspace.
- *
- * A target is declared per profile and the endpoint serves every profile in the
- * workspace (ADR-009), so "who has `cloud`" is a question with a list for an
- * answer rather than a yes or no. The disagreement — one profile declaring it
- * and its sibling not — is the state that reads as a target having vanished.
- */
-export function targetsByName(
-  workspace: WorkspaceProfiles,
-): ReadonlyMap<string, readonly string[]> {
-  const byName = new Map<string, string[]>();
-
-  for (const { profile, config } of workspace.loaded) {
-    for (const target of Object.keys(config.targets)) {
-      const profiles = byName.get(target);
-      if (profiles) profiles.push(profile);
-      else byName.set(target, [profile]);
-    }
-  }
-
-  return byName;
 }

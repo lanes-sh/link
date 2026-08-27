@@ -23,14 +23,9 @@ const manifestFor = (provider: string) =>
 
 const config = (body: string) =>
   parseConfig(`
-contract: 1
+contract: 2
 instance:
   profile: personal
-  default_target: local
-targets:
-  local:
-    credentials: { adapter: file, path: ./data/personal.credentials.enc }
-    storage: { adapter: filesystem, path: ./data/files }
 ${body}
 `).config;
 

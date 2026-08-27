@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { parseConfig } from './load.ts';
-import { noTargetInWorkspace, noTargetNamed, requireTarget } from './targets.ts';
+import { noTargetNamed, notInRegistry, requireTarget, type Registry } from './targets.ts';
 
 /**
  * Which target a command acts on.
@@ -8,54 +7,37 @@ import { noTargetInWorkspace, noTargetNamed, requireTarget } from './targets.ts'
  * `--target`, or it does not run. What used to be tested here was a precedence
  * chain — flag, then `LANES_LINK_TARGET`, then `instance.default_target` — and
  * those cases are gone rather than inverted, because the thing they described
- * no longer exists (ADR-037). What is left is worth more: that a command
- * naming nothing is refused with the list, and that the refusal names the two
- * things an operator is most likely to still be looking at.
+ * no longer exists (ADR-037). What is left is worth more: that a command naming
+ * nothing is refused with the list, and that the refusal names the one thing an
+ * operator is most likely to still be looking at.
+ *
+ * The list itself moved under ADR-052. It was one profile's `targets:` block,
+ * which meant "is `cloud` declared" had a different answer per profile; it is
+ * the workspace registry now, so there is one list and it is read before any
+ * profile is.
  */
 
+const declared = (name: string, deploy = false): Registry[string] => ({
+  credentials: { adapter: 'file' },
+  storage: { adapter: 'filesystem' },
+  ...(deploy
+    ? { deploy: { platform: 'cloudrun' as const, region: 'r', service: 's', access: 'iam' as const, min_instances: 0 } }
+    : {}),
+});
+
+const twoTargets: Registry = {
+  local: declared('local'),
+  cloud: { workspace: 'gs://your-bucket' },
+};
+
+const localOnly: Registry = { local: declared('local') };
+
+const twoDeployable: Registry = {
+  cloud: declared('cloud', true),
+  staging: declared('staging', true),
+};
+
 describe('target resolution', () => {
-  const twoTargets = parseConfig(`
-contract: 1
-instance:
-  profile: personal
-  default_target: local
-targets:
-  local:
-    credentials: { adapter: file, path: ./data/personal.credentials.enc }
-    storage: { adapter: filesystem, path: ./data/files }
-  cloud:
-    credentials: { adapter: gcp-secret-manager }
-    storage: { adapter: s3, bucket: lanes-link-demo }
-    cloudrun: { project: p, region: r, service: s }
-`).config;
-
-  const localOnly = parseConfig(`
-contract: 1
-instance:
-  profile: personal
-  default_target: local
-targets:
-  local:
-    credentials: { adapter: file, path: ./data/personal.credentials.enc }
-    storage: { adapter: filesystem, path: ./data/files }
-`).config;
-
-  const twoDeployable = parseConfig(`
-contract: 1
-instance:
-  profile: personal
-  default_target: cloud
-targets:
-  cloud:
-    credentials: { adapter: gcp-secret-manager, project: p }
-    storage: { adapter: gcs, bucket: b }
-    deploy: { platform: cloudrun, project: p, region: r, service: s }
-  staging:
-    credentials: { adapter: gcp-secret-manager, project: p2 }
-    storage: { adapter: gcs, bucket: b2 }
-    deploy: { platform: cloudrun, project: p2, region: r, service: s2 }
-`).config;
-
   test('a named target is the target', () => {
     expect(requireTarget(twoTargets, 'cloud')).toBe('cloud');
     expect(requireTarget(twoTargets, 'local')).toBe('local');
@@ -70,107 +52,54 @@ targets:
     expect(() => requireTarget(twoTargets, undefined)).toThrow('cloud');
   });
 
+  test('the listing says where each target lives', () => {
+    // Here-versus-elsewhere is what distinguishes two entries, and following a
+    // pointer to find out would be a network call inside a refusal.
+    const message = noTargetNamed(twoTargets, '/ws', {}).message;
+
+    expect(message).toContain('gs://your-bucket');
+    expect(message).toContain('here');
+  });
+
   test('the refusal names an exported variable that no longer resolves', () => {
     // The single most confusing state during the change: a shell still
     // configured for the old world, where nothing on screen says the variable
     // stopped counting. Self-limiting — it disappears when the variable does.
-    const message = noTargetNamed(twoTargets, 'personal', {
-      LANES_LINK_TARGET: 'cloud',
-    }).message;
+    const message = noTargetNamed(twoTargets, '/ws', { LANES_LINK_TARGET: 'cloud' }).message;
 
     expect(message).toContain('LANES_LINK_TARGET=cloud');
     expect(message).toContain('no longer read');
   });
 
-  test('and the inert key still sitting in the profile', () => {
-    // Which is why the schema keeps parsing it. A key stripped by the schema is
-    // a key nothing can report, and an operator looking at
-    // `default_target: local` has every reason to think it still selects one.
-    expect(noTargetNamed(twoTargets, 'personal', {}).message).toContain(
-      'instance.default_target: local',
-    );
+  test('and says nothing about it when it is not set', () => {
+    expect(noTargetNamed(twoTargets, '/ws', {}).message).not.toContain('LANES_LINK_TARGET');
   });
 
-  test('says nothing about a variable that is not set', () => {
-    expect(noTargetNamed(twoTargets, 'personal', {}).message).not.toContain('LANES_LINK_TARGET');
+  test('an empty registry says how to make one rather than listing nothing', () => {
+    const message = noTargetNamed({}, '/ws', {}).message;
+
+    expect(message).toContain('declares none');
+    expect(message).toContain('lanes link profile add');
   });
 
-  test('one config yields a different adapter set per target', () => {
-    // Connections, providers, and policy are declared once and apply to every
-    // target; only the adapters differ.
-    expect(twoTargets.targets['local']?.storage.adapter).toBe('filesystem');
-    expect(twoTargets.targets['cloud']?.storage.adapter).toBe('s3');
-    expect(twoTargets.targets['local']?.credentials.adapter).toBe('file');
-    expect(twoTargets.targets['cloud']?.credentials.adapter).toBe('gcp-secret-manager');
-  });
-
-  test('an undeclared target fails and lists what exists', () => {
+  test('a target the registry does not hold is a typo, and the list is the answer', () => {
     expect(() => requireTarget(twoTargets, 'clod')).toThrow('is not declared');
-    expect(() => requireTarget(twoTargets, 'clod')).toThrow('local, cloud');
+    expect(() => requireTarget(twoTargets, 'clod')).toThrow('local');
+    expect(() => requireTarget(twoTargets, 'clod')).toThrow('cloud');
   });
 
-  test('unless the caller is going to create it — which is deploy, on a first run', () => {
+  test('the refusal names the workspace, because that is what holds the registry', () => {
+    expect(notInRegistry('clod', twoTargets, '/ws').message).toContain('/ws');
+  });
+
+  test('deploy may name a target that does not exist yet', () => {
+    // The one command whose job is to create the target it was given. Every
+    // other command naming an unknown one has made a typo.
     expect(requireTarget(localOnly, 'cloud', { allowUndeclared: true })).toBe('cloud');
   });
 
-  test('a profile with two deployable targets is no longer a question', () => {
-    // `resolveDeployTarget` guessed, refused, or invented a name depending on
-    // how many targets declared a deploy block. Naming one answers it
-    // structurally, on the one command that creates cloud resources.
+  test('two deployable targets are both nameable, and neither is a default', () => {
     expect(requireTarget(twoDeployable, 'staging')).toBe('staging');
     expect(() => requireTarget(twoDeployable, undefined)).toThrow('--target is required');
-  });
-});
-
-/**
- * The refusal for a target-scoped command, which describes the workspace.
- *
- * `noTargetNamed` lists one profile's targets with their adapters, because a
- * command acting on one profile wants to know which of *its* places to run in.
- * A target-scoped command is asking something else — which endpoint — and the
- * useful column there is who declares it (ADR-043).
- */
-describe('refusing a target-scoped command that named no target', () => {
-  const byName = (entries: Record<string, string[]>): ReadonlyMap<string, readonly string[]> =>
-    new Map(Object.entries(entries));
-
-  test('lists the targets the workspace declares', () => {
-    const message = noTargetInWorkspace(
-      byName({ local: ['personal', 'work'], cloud: ['personal'] }),
-      '/ws',
-      {},
-    ).message;
-
-    expect(message).toContain('--target is required');
-    expect(message).toContain('Targets in /ws');
-    expect(message).toContain('e.g. lanes link status --target local');
-  });
-
-  test('names the profiles only where they are not all of them', () => {
-    // The list is there to show a gap. Printing it when there is none turns the
-    // signal into noise on every well-configured workspace.
-    const message = noTargetInWorkspace(
-      byName({ local: ['personal', 'work'], cloud: ['personal'] }),
-      '/ws',
-      {},
-    ).message;
-
-    expect(message).toContain('local    every profile');
-    expect(message).toContain('cloud    personal');
-  });
-
-  test('says so plainly when no profile declares anything', () => {
-    const message = noTargetInWorkspace(byName({}), '/ws', {}).message;
-
-    expect(message).toContain('no profile in /ws declares one');
-    expect(message).toContain('profile add <name> --target local');
-  });
-
-  test('names a stale LANES_LINK_TARGET, which is no longer read', () => {
-    const message = noTargetInWorkspace(byName({ local: ['personal'] }), '/ws', {
-      LANES_LINK_TARGET: 'cloud',
-    }).message;
-
-    expect(message).toContain('LANES_LINK_TARGET=cloud is set in this shell');
   });
 });

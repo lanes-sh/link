@@ -199,7 +199,10 @@ export async function handleDashboard(
       profile: name,
       profiles: generation.names(),
       target: runtime.target,
-      targets: Object.keys(runtime.config.targets),
+      // One, and it is the one being served. A revision serves exactly the
+      // target it was deployed as, and the config no longer carries a list of
+      // alternatives for it to offer (ADR-052).
+      targets: [runtime.target],
       connections,
       ownClients: Object.keys(runtime.config.oauth_apps),
     });

@@ -27,8 +27,19 @@ import { knowledgeTargetSchema } from './knowledge.ts';
  * outright — never a best-effort load. Guessing at an unknown schema on a file
  * that governs authorization is how you end up granting something the operator
  * did not write.
+ *
+ * **2 moved `targets:` out of the profile and into the workspace** (ADR-052). A
+ * profile used to declare the adapter sets it could be opened against, which
+ * meant a deploy left two copies of every profile — one in the workspace and one
+ * in the bucket the endpoint reads — with nothing keeping them honest. Now a
+ * workspace *is* a target: it declares its own adapters once, holds the profiles
+ * that live in it, and a profile is one copy in one place.
+ *
+ * A hard cut, and contract 1 is not read here. `./legacy.ts` understands it, and
+ * only the migration uses that — a runtime that loaded either shape would be the
+ * two-sources-of-truth problem again, one level up.
  */
-export const SUPPORTED_CONTRACT = 1;
+export const SUPPORTED_CONTRACT = 2;
 
 /**
  * There is no `database:` block any more.
@@ -149,8 +160,13 @@ export const vaultTargetSchema = z.object({
  */
 export const deployTargetSchema = z.object({
   platform: z.enum(['cloudrun']),
-  region: z.string(),
-  service: z.string(),
+  // Non-empty here rather than in a referential check further down. Under
+  // contract 1 `assertReferentialIntegrity` walked the profile's `targets:`
+  // block for these; the block is the workspace's now (ADR-052), and a
+  // constraint the schema can express belongs in the schema — an empty service
+  // name should fail at load, not minutes into a build.
+  region: z.string().min(1),
+  service: z.string().min(1),
   /**
    * `iam` puts the platform's own identity check in front of the service;
    * `public` leaves the door open and relies on this application's gate.
@@ -197,68 +213,20 @@ export const deployTargetSchema = z.object({
 });
 
 /**
- * The pre-`deploy` spelling, still accepted.
+ * One adapter set — where credentials are kept, where bytes go, where it rolls.
  *
- * Normalised into `deploy` below rather than read anywhere, so exactly one shape
- * reaches the rest of the codebase. It gains `access: iam` in the process, which
- * is a deliberate change of default for a config that predates the field — a
- * deploy that was open stays open only by saying so.
+ * Declared by the **workspace** that is this target, not by a profile in it
+ * (ADR-052). The `cloudrun:` spelling `deploy:` replaced is gone with contract
+ * 1; `./legacy.ts` still normalises it, on the one path that reads a contract-1
+ * file at all.
  */
-const legacyCloudRunSchema = z.object({
-  project: z.string(),
-  region: z.string(),
-  service: z.string(),
+export const targetSchema = z.object({
+  credentials: credentialsTargetSchema,
+  audit: auditTargetSchema.optional(),
+  storage: storageTargetSchema,
+  vault: vaultTargetSchema.optional(),
+  deploy: deployTargetSchema.optional(),
 });
-
-export const targetSchema = z
-  .object({
-    credentials: credentialsTargetSchema,
-    audit: auditTargetSchema.optional(),
-    storage: storageTargetSchema,
-    vault: vaultTargetSchema.optional(),
-    /**
-     * Memory and skills, somewhere other than `storage` above.
-     *
-     * Optional and absent by default, so every profile written before it keeps
-     * storing both exactly where it did. See `knowledge.ts` for why these two
-     * are separable from the rest and why the credential store and the vault
-     * are not.
-     */
-    knowledge: knowledgeTargetSchema.optional(),
-    deploy: deployTargetSchema.optional(),
-    /** @deprecated Write `deploy` with `platform: cloudrun`. */
-    cloudrun: legacyCloudRunSchema.optional(),
-  })
-  .superRefine((target, ctx) => {
-    // Both present is refused rather than resolved by precedence: a second place
-    // to say where this deploys could only ever disagree with the first, and
-    // silently preferring one would roll a revision to the project the operator
-    // was not reading.
-    if (target.deploy && target.cloudrun) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['cloudrun'],
-        message:
-          'both "deploy" and "cloudrun" are declared — remove "cloudrun", which "deploy" replaces',
-      });
-    }
-  })
-  .transform(({ cloudrun, ...target }) =>
-    target.deploy || !cloudrun
-      ? target
-      : {
-          ...target,
-          // The pre-`deploy` spelling predates both of these, so it gets the
-          // same defaults the current one would: the closed door, and no
-          // instance kept warm.
-          deploy: {
-            ...cloudrun,
-            platform: 'cloudrun' as const,
-            access: 'iam' as const,
-            min_instances: 0,
-          },
-        },
-  );
 
 /**
  * A rule is a pattern, and usually just a string.
@@ -328,27 +296,20 @@ export const oauthAppSchema = z.object({
 });
 
 
+/**
+ * One profile: who it is, what it reaches, and what it may do.
+ *
+ * **It does not say where it runs.** A profile lives in exactly one workspace
+ * and that workspace is a target (ADR-052), so the adapter set is a property of
+ * where the file is, not of what is in it. `instance.default_target` went with
+ * `targets:` — it was already inert under ADR-037, and contract 2 is the release
+ * that stops carrying it.
+ */
 export const configSchema = z.object({
   contract: z.number().int().positive(),
 
   instance: z.object({
     profile: identifier,
-    /**
-     * @deprecated Parsed, never read. See ADR-037.
-     *
-     * Every command names its target on the command line now, so nothing
-     * consults this. It stays *declared* rather than being dropped, and that is
-     * the whole point: an undeclared key is stripped silently by the schema,
-     * which would leave `check` and `doctor` with nothing to report and an
-     * operator staring at a line they reasonably believe still selects
-     * something. Declaring it is what lets them be told it is inert.
-     *
-     * Optional, so a profile written today needs no such line, and unvalidated,
-     * so a stale value naming a target that no longer exists is harmless rather
-     * than a failure on a key nothing reads. The `database:` note above records
-     * the same decision for the same reason.
-     */
-    default_target: z.string().min(1).optional(),
     port: z.number().int().min(1).max(65535).default(7337),
     /**
      * Loopback by default. Binding elsewhere is possible but the server
@@ -356,8 +317,6 @@ export const configSchema = z.object({
      */
     host: z.string().default('127.0.0.1'),
   }),
-
-  targets: z.record(z.string(), targetSchema),
 
   auth: z
     .object({
@@ -399,6 +358,22 @@ export const configSchema = z.object({
   policy: policySchema.default({ allow: [], deny: [] }),
 
   /**
+   * Memory and skills, somewhere other than the target's own storage (ADR-041).
+   *
+   * On the profile rather than the target, which is where contract 1 kept it.
+   * That was never really a property of the adapter set — it says where *this
+   * profile's* notes live — and it had to be per-target only because a profile
+   * could be declared against several. It lives in exactly one now (ADR-052), so
+   * per-profile and per-profile-per-target are the same thing, and this is the
+   * one of the two that matches what ADR-030 says a profile owns.
+   *
+   * Optional and absent by default, so a profile that says nothing keeps both
+   * where it keeps everything else. See `knowledge.ts` for why these two are
+   * separable from the rest and why the credential store and the vault are not.
+   */
+  knowledge: knowledgeTargetSchema.optional(),
+
+  /**
    * Who the owner is, for anything written as them. Optional and additive, so
    * every profile written before it keeps loading unchanged — the same reasoning
    * as `auth.authorization` above, and the reason `contract` does not move.
@@ -416,44 +391,121 @@ export { authorizationSchema, identitySchema };
 export type { IdentityEntry } from './identity.ts';
 
 /**
- * Where a deployment lives — an index, not configuration.
+ * One entry in the workspace's target registry.
  *
- * **Nothing resolves from this.** A target is still declared by the profile,
- * and a command still acts on what the profile says. This exists because the
- * profile file was the *only* record that a deployment existed, so rewriting
- * one erased the sole pointer to a live service, a bucket holding every byte
- * the endpoint remembered, and a credential store — none of which had gone
- * anywhere. There was no command that could find them again.
+ * Two shapes, and which one a workspace writes says who owns the target:
  *
- * It lives in `lanes-link.yaml`, outside any profile, for exactly that reason:
- * a record kept inside the thing it describes cannot survive the thing being
- * lost. `lanes link sync targets` reads it, and reads it *only* to know where
- * to look (ADR-044).
+ * - **A declaration** — `credentials` and `storage`, and whatever else the
+ *   adapter set needs. This workspace *is* that target. `~/.lanes-link` writes
+ *   one of these for `local`.
+ * - **A pointer** — `workspace: gs://bucket[/prefix]`, and nothing else. The
+ *   target lives elsewhere and the workspace at that URI declares it. This is
+ *   what a machine holds for `cloud`.
  *
- * Written by `deploy`, after an upload has succeeded — so it never names a
- * workspace nothing was ever put in.
+ * The pointer is why there is nothing to sync. ADR-044 added an index beside the
+ * profile's own `targets:` block and had to insist it was "an index, not
+ * configuration", because resolving from it would have made it a second source
+ * of truth. Here it is the *only* source: the profile declares no target at all,
+ * so a pointer and a declaration cannot disagree — there is one of them per
+ * target, in one file (ADR-052).
+ *
+ * A declaration for a target that is not deployed yet is the bootstrap case and
+ * is allowed: `deploy` reads it, creates the remote workspace, writes the
+ * declaration *there*, and replaces this one with a pointer. That is the only
+ * moment a target is described in two places, and it does not outlive the
+ * command.
  */
-export const deploymentRecordSchema = z.object({
-  target: identifier,
-  /** Where the deployed endpoint reads its config: `gs://bucket[/prefix]`. */
-  workspace: z.string().min(1),
-  /**
-   * Whose bearer token opens this endpoint (ADR-009).
-   *
-   * Recorded rather than inferred. One endpoint serves every profile in the
-   * bucket under one token, and which profile's token that is decides who gets
-   * in — the one question about a deployment that must not be guessed at.
-   */
-  primary: identifier.optional(),
-  last_deploy: z.string().optional(),
-});
+export const workspaceTargetSchema = z
+  .object({
+    /** A pointer: where the workspace declaring this target lives. */
+    workspace: z.string().min(1).optional(),
+    credentials: credentialsTargetSchema.optional(),
+    audit: auditTargetSchema.optional(),
+    storage: storageTargetSchema.optional(),
+    vault: vaultTargetSchema.optional(),
+    deploy: deployTargetSchema.optional(),
+    /**
+     * Whose bearer token opens this endpoint (ADR-009).
+     *
+     * Recorded rather than inferred. One endpoint serves every profile in the
+     * workspace under one token, and which profile's token that is decides who
+     * gets in — the one question about a deployment that must not be guessed at.
+     */
+    primary: identifier.optional(),
+    last_deploy: z.string().optional(),
+  })
+  .superRefine((entry, ctx) => {
+    const declares = entry.credentials !== undefined || entry.storage !== undefined;
 
-/** The workspace file: `lanes-link.yaml`, alongside a `profiles/` directory. */
+    // Both is the state ADR-052 exists to prevent, and it is worth refusing
+    // rather than preferring one: a pointer beside a declaration is two answers
+    // to "where are this target's bytes", and picking either silently is how the
+    // fifteen-connection bucket got reported as seven.
+    if (declares && entry.workspace !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'names a "workspace" and also declares adapters — a target is declared by exactly ' +
+          'one workspace. Keep the adapters here, or keep the pointer and declare them there.',
+      });
+      return;
+    }
+
+    if (!declares && entry.workspace === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        message:
+          'declares neither "workspace" nor "credentials" and "storage" — a target either ' +
+          'lives here or points at where it does.',
+      });
+      return;
+    }
+
+    if (declares && (entry.credentials === undefined || entry.storage === undefined)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: [entry.credentials === undefined ? 'credentials' : 'storage'],
+        message: 'a target declared here needs both "credentials" and "storage"',
+      });
+    }
+  });
+
+/**
+ * The workspace file: `lanes-link.yaml`, alongside a `profiles/` directory.
+ *
+ * `default_profile` is parsed and ignored, as it has been since ADR-037 — it
+ * survives so `check` can say it is inert rather than the schema stripping it
+ * silently. `deployments:` is gone; `targets` above is what it became.
+ */
 export const workspaceSchema = z.object({
   contract: z.number().int().positive(),
   default_profile: identifier.optional(),
-  deployments: z.array(deploymentRecordSchema).default([]),
+  targets: z.record(z.string(), workspaceTargetSchema).default({}),
 });
 
 export type WorkspaceConfig = z.infer<typeof workspaceSchema>;
-export type DeploymentRecord = z.infer<typeof deploymentRecordSchema>;
+export type WorkspaceTarget = z.infer<typeof workspaceTargetSchema>;
+
+/** Whether a registry entry points elsewhere rather than declaring the target. */
+export function isPointer(
+  entry: WorkspaceTarget,
+): entry is WorkspaceTarget & { workspace: string } {
+  return entry.workspace !== undefined;
+}
+
+/**
+ * The adapter set a registry entry declares, or undefined for a pointer.
+ *
+ * A pointer has to be followed before there is anything to open, which is
+ * `resolveTargetWorkspace`'s job — this only narrows the shape once it has been.
+ */
+export function declaredTarget(entry: WorkspaceTarget): TargetConfig | undefined {
+  if (entry.credentials === undefined || entry.storage === undefined) return undefined;
+  return {
+    credentials: entry.credentials,
+    storage: entry.storage,
+    ...(entry.audit ? { audit: entry.audit } : {}),
+    ...(entry.vault ? { vault: entry.vault } : {}),
+    ...(entry.deploy ? { deploy: entry.deploy } : {}),
+  };
+}

@@ -1,9 +1,9 @@
+import { workspaceYaml } from '#profile/testing.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rotatableRefs } from './prepare.ts';
-import { unservableProfiles, unservableRefusal } from './servable.ts';
 import {
   deployedWorkspace,
   isWorkspaceConfig,
@@ -115,15 +115,10 @@ describe('what a deploy sends up', () => {
  */
 describe('what a deploy repairs before sending it', () => {
   /** An old profile: a real connection, its grant, and no setup surface. */
-  const OLD = (name: string) => `contract: 1
+  const OLD = (name: string) => `contract: 2
 instance:
   profile: ${name}
-  default_target: local
   port: 7337
-targets:
-  local:
-    credentials: { adapter: file, path: ./data/${name}.credentials.enc }
-    storage: { adapter: filesystem, path: ./data/${name}/files }
 connections:
   - { id: a, provider: example, account: someone@example.test }
 policy:
@@ -213,13 +208,13 @@ policy:
       const root = await workspace('personal');
       // Sorts before `personal.yaml`, so opening it first meant nothing was
       // repaired at all before the throw.
-      await write(root, 'personal.example.yaml', 'contract: 1\n');
+      await write(root, 'personal.example.yaml', OLD('personal'));
 
       await repairOwnerLayer(root, undefined);
 
       expect(await has(root, 'personal')).toBe(true);
       expect(await readFile(join(root, 'profiles', 'personal.example.yaml'), 'utf8')).toBe(
-        'contract: 1\n',
+        OLD('personal'),
       );
     });
 
@@ -258,14 +253,9 @@ policy:
  * manifest → the ref `CredentialOAuthProvider` rewrites while serving.
  */
 describe('which credentials a deploy asks provision to bind', () => {
-  const PROFILE = (name: string, connections: string) => `contract: 1
+  const PROFILE = (name: string, connections: string) => `contract: 2
 instance:
   profile: ${name}
-  default_target: local
-targets:
-  local:
-    credentials: { adapter: file, path: ./data/${name}.credentials.enc }
-    storage: { adapter: filesystem, path: ./data/${name}/files }
 connections:
 ${connections}
 policy:
@@ -352,15 +342,10 @@ policy:
  */
 describe('publishing a config edit', () => {
   const targets = (extra: string): string => `
-contract: 1
+contract: 2
 instance:
   profile: personal
-  default_target: local
   port: 7337
-targets:
-  local:
-    credentials: { adapter: file, path: ./data/personal/credentials.enc }
-    storage: { adapter: filesystem, path: ./data/personal }
 ${extra}
 connections: []
 policy:
@@ -382,18 +367,27 @@ policy:
   });
 
   test('a bucket-backed target resolves to the bucket it declares', () => {
-    const { config } = parseConfig(
-      targets(`  cloud:
-    credentials: { adapter: file, path: ./data/personal/credentials.enc }
-    storage: { adapter: gcs, bucket: your-bucket, prefix: workspace }`),
-    );
-
     // The destination is derived from the target, never passed in — which is
     // the whole of what `publishWorkspace` adds over `uploadWorkspace`. Driving
     // the copy itself would need a bucket; the allowlist that governs it is
     // covered above.
-    expect(deployedWorkspace(config.targets['cloud']!)).toBe('gs://your-bucket/workspace');
-    expect(deployedWorkspace(config.targets['local']!)).toBeUndefined();
+    //
+    // Read off the target rather than off a profile: a profile declares none
+    // (ADR-052), so `deployedWorkspace` takes the adapter set the registry
+    // holds.
+    expect(
+      deployedWorkspace({
+        credentials: { adapter: 'file' },
+        storage: { adapter: 'gcs', bucket: 'your-bucket', prefix: 'workspace' },
+      }),
+    ).toBe('gs://your-bucket/workspace');
+
+    expect(
+      deployedWorkspace({
+        credentials: { adapter: 'file' },
+        storage: { adapter: 'filesystem' },
+      }),
+    ).toBeUndefined();
   });
 });
 
@@ -423,10 +417,13 @@ describe('the allowlist against a real workspace listing', () => {
     const destination = await mkdtemp(join(tmpdir(), 'lanes-link-bucket-'));
     roots.push(source, destination);
 
+    const profile = (name: string): string =>
+      `contract: 2\ninstance:\n  profile: ${name}\nconnections: []\npolicy:\n  allow: []\n`;
+
     const files: Record<string, string> = {
-      'lanes-link.yaml': 'contract: 1\ndefault_profile: personal\n',
-      'profiles/personal.yaml': 'contract: 1\n',
-      'profiles/work.yaml': 'contract: 1\n',
+      'lanes-link.yaml': workspaceYaml(['local', 'cloud'], { defaultProfile: 'personal' }),
+      'profiles/personal.yaml': profile('personal'),
+      'profiles/work.yaml': profile('work'),
       [`${layout.skills('personal')}/review-diff/SKILL.md`]: '---\ndescription: d\n---\nb\n',
       [`${layout.providers('personal')}/acme.yaml`]: 'id: acme\n',
       [`${layout.skills('work')}/triage.md`]: '---\ndescription: d\n---\nb\n',
@@ -497,82 +494,3 @@ describe('the allowlist against a real workspace listing', () => {
  * a deploy that reports success followed by a service that will not start, and
  * nothing in either points at the profile that caused it.
  */
-describe('whether a profile can run where it is being sent', () => {
-  const PROFILE = (name: string, targets: string) => `contract: 1
-instance:
-  profile: ${name}
-  default_target: local
-  port: 7337
-targets:
-${targets}
-connections: []
-policy:
-  allow: []
-  deny: []
-`;
-
-  const LOCAL = `  local:
-    credentials: { adapter: file, path: ./data/x/credentials.enc }
-    storage: { adapter: filesystem, path: ./data/x }`;
-
-  const CLOUD = `  cloud:
-    credentials: { adapter: gcp-secret-manager, project: my-project }
-    storage: { adapter: gcs, bucket: your-bucket }
-    vault: { adapter: secret }`;
-
-  async function workspaceOf(profiles: Record<string, string>): Promise<string> {
-    const root = await mkdtemp(join(tmpdir(), 'lanes-link-servable-'));
-    roots.push(root);
-    await mkdir(join(root, 'profiles'), { recursive: true });
-    for (const [name, targets] of Object.entries(profiles)) {
-      await writeFile(join(root, 'profiles', `${name}.yaml`), PROFILE(name, targets));
-    }
-    return root;
-  }
-
-  test('says nothing when every profile declares the target', async () => {
-    const root = await workspaceOf({
-      personal: `${LOCAL}\n${CLOUD}`,
-      work: `${LOCAL}\n${CLOUD}`,
-    });
-
-    expect(await unservableProfiles({ workspaceRoot: root, profiles: undefined, target: 'cloud' })).toEqual([]);
-  });
-
-  test('names the profile that would take the revision down', async () => {
-    const root = await workspaceOf({ personal: `${LOCAL}\n${CLOUD}`, work: LOCAL });
-
-    const found = await unservableProfiles({ workspaceRoot: root, profiles: undefined, target: 'cloud' });
-
-    expect(found).toEqual([{ profile: 'work', declares: ['local'] }]);
-  });
-
-  test('is scoped as the upload is, so --profile narrows it too', async () => {
-    // The set that gets uploaded is the set that gets served. Checking a wider
-    // one would refuse a deploy that was never going to send the bad profile.
-    const root = await workspaceOf({ personal: `${LOCAL}\n${CLOUD}`, work: LOCAL });
-
-    expect(await unservableProfiles({ workspaceRoot: root, profiles: ['personal'], target: 'cloud' })).toEqual([]);
-    expect(
-      (await unservableProfiles({ workspaceRoot: root, profiles: ['work'], target: 'cloud' })).map((one) => one.profile),
-    ).toEqual(['work']);
-  });
-
-  test('leaves an unparseable profile to the error that reads better', async () => {
-    // It is already fatal further along, and a YAML syntax error dressed up as
-    // "cannot run on cloud" sends someone looking at their targets.
-    const root = await workspaceOf({ personal: `${LOCAL}\n${CLOUD}` });
-    await writeFile(join(root, 'profiles', 'broken.yaml'), 'targets: [unclosed\n');
-
-    expect(await unservableProfiles({ workspaceRoot: root, profiles: undefined, target: 'cloud' })).toEqual([]);
-  });
-
-  test('the refusal names the target, what was declared, and both ways out', () => {
-    const text = unservableRefusal([{ profile: 'work', declares: ['local'] }], 'cloud');
-
-    expect(text).toContain('cannot run on "cloud"');
-    expect(text).toContain('work   declares: local');
-    expect(text).toContain('lanes link profile add <name> --target cloud');
-    expect(text).toContain('--profile <name>');
-  });
-});

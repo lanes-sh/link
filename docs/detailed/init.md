@@ -146,34 +146,13 @@ Credentials follow the target, because each target has its own credential store.
 ### Example (`config/personal.example.yaml`)
 
 ```yaml
-contract: 1
+contract: 2
 
 instance:
   profile: personal
-  default_target: local
 
 # Adapter selection is per target. Everything below targets is
 # target-independent and declared exactly once.
-targets:
-  local:
-    database:    { adapter: sqlite, path: ./data/personal.db }
-    credentials: { adapter: file, path: ./data/personal.credentials.enc }
-    storage:     { adapter: filesystem, path: ./data/personal/files }
-  cloud:
-    database:    { adapter: postgres, url_ref: cloud/database_url }
-    credentials: { adapter: gcp-secret-manager, project: my-project }
-    storage:
-      adapter: s3
-      bucket: my-project-files
-      endpoint: https://abcdefgh.storage.supabase.co/storage/v1/s3
-      access_key_id_ref: cloud/s3_access_key_id
-      secret_access_key_ref: cloud/s3_secret_access_key
-    deploy:
-      platform: cloudrun
-      project: my-project
-      region: europe-west1
-      service: my-project
-      access: iam
 
 limits:
   requests_per_minute: 120        # per profile

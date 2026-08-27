@@ -77,7 +77,7 @@ export async function mcpAdd(target: string | undefined, options: McpAddOptions)
     // `http://<host>:<port>/mcp` unconditionally, so `mcp add --target cloud`
     // registered loopback with the agent: a registration that reports success,
     // names the right server, and points at a port with nothing behind it.
-    const url = await endpointUrl(runtime.config, runtime.target);
+    const url = await endpointUrl(runtime.config, runtime.declared);
     const input: AddInput = {
       name,
       url,
