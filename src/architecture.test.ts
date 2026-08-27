@@ -309,7 +309,6 @@ const KNOWN_LONG = new Set([
   'connectivity/transports/dav/ical.ts',
   'deployments/adapters/gcp-secret-manager.ts',
   'profile/schema.ts',
-  'providers/google/specs/vendor.ts',
   'providers/memory/provider.ts',
   'server/endpoint.ts',
   'server/harness.ts',

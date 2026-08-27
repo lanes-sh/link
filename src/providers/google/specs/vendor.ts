@@ -15,16 +15,13 @@
  * command rather than a hand edit.
  *
  *   bun run vendor:google
+ *
+ * The pipeline itself is `src/providers/shared/vendor-spec.ts`. What stays here
+ * is what only Google knows: which operations are worth exposing, and which of
+ * its system parameters have to go.
  */
 
-import { mkdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { OpenAPIToolGenerator, type McpOpenAPITool } from 'mcp-from-openapi';
-import { cutCycles, referenced, type Spec } from '../../shared/openapi.ts';
-
-/** Kept in step with `BUDGET_KB` in `src/cli/tools.test.ts`, which enforces it. */
-const BUDGET_KB = 64;
-
+import { vendorSpec } from '../../shared/vendor-spec.ts';
 
 /**
  * The operations each provider exposes.
@@ -314,50 +311,6 @@ const SELECTION: Record<
   // field but `title` on it anyway.
 };
 
-
-
-/**
- * Replace a named schema with an open object.
- *
- * Same device as `cutCycles` and a different disease. That one cuts recursion;
- * this one cuts *fan-out*. `mcp-from-openapi` inlines `$ref`s, so a schema's
- * cost to us is not its size in the document but its size once every reference
- * below it has been expanded — and Sheets' `Request` is a union of some eighty
- * variants, each with its own nested grid, filter, and chart schemas, sharing
- * sub-schemas that inlining duplicates per occurrence.
- *
- * Measured: `sheets.spreadsheets.batchUpdate` generates a 2,469KB input schema,
- * against 45KB for the whole of Drive. That is unusable — it would be sent on
- * every `tools/list` — and it is also the only operation that can add a tab,
- * freeze a header, or format a cell, so dropping it is no better.
- *
- * Opaque keeps the operation and costs 3KB. The agent fills in `requests` from
- * the API it already knows, which is the same bet `raw` makes for a Gmail draft:
- * a well-known wire format is cheaper described than schematised. The pointer to
- * Google's reference is in the description because that is the only thing lost.
- *
- * Applied before `referenced`, so the schemas that were reachable only through
- * the replaced one leave the document entirely rather than lingering unused.
- */
-function makeOpaque(schemas: Record<string, unknown>, names: readonly string[]): number {
-  let replaced = 0;
-
-  for (const name of names) {
-    if (!(name in schemas)) continue;
-    const original = schemas[name] as { description?: string };
-    schemas[name] = {
-      type: 'object',
-      additionalProperties: true,
-      description:
-        `${original.description ?? `A ${name}.`} Structure omitted: it expands to megabytes ` +
-        'when inlined. Pass the object as documented at https://developers.google.com/workspace.',
-    };
-    replaced++;
-  }
-
-  return replaced;
-}
-
 /**
  * Google's system parameters, dropped from every operation.
  *
@@ -391,188 +344,33 @@ const SYSTEM_PARAMETERS = new Set([
 ]);
 
 /**
- * Strip system parameters from a path item or an operation.
- *
- * They arrive as `$ref`s into `components.parameters`, and the component *key*
- * is not the parameter name — `$.xgafv` is keyed `_.xgafv`, because a `$` is
- * awkward in a JSON pointer. Matching on the key would therefore miss exactly
- * the one that breaks everything, so the ref is resolved first.
+ * The note recorded in each spec's `info`, and the one `makeOpaque` leaves
+ * behind. Both are baked into the committed JSON, so they are passed verbatim
+ * rather than reworded.
  */
-function dropSystemParameters(
-  holder: Record<string, unknown>,
-  components: Record<string, unknown>,
-): number {
-  const parameters = holder['parameters'];
-  if (!Array.isArray(parameters)) return 0;
+const VENDORED_NOTE =
+  'Trimmed by src/providers/google/specs/vendor.ts. Committed deliberately: a spec decides which paths are called with the operator token, so it must be reviewable rather than fetched at connect time.';
 
-  const nameOf = (parameter: unknown): string | undefined => {
-    const record = parameter as { name?: string; $ref?: string };
-    if (record.name) return record.name;
-    if (!record.$ref) return undefined;
+const OPAQUE_NOTE =
+  'Structure omitted: it expands to megabytes when inlined. ' +
+  'Pass the object as documented at https://developers.google.com/workspace.';
 
-    const key = record.$ref.replace('#/components/parameters/', '');
-    return (components[key] as { name?: string } | undefined)?.name;
-  };
-
-  const kept = parameters.filter((parameter) => {
-    const name = nameOf(parameter);
-    return !(name && SYSTEM_PARAMETERS.has(name));
+for (const [id, selection] of Object.entries(SELECTION)) {
+  await vendorSpec(id, {
+    source: selection.source,
+    // `import.meta.dir` *is* the specs directory — this script lives beside what
+    // it writes. It used to be `scripts/vendor-google-specs.ts` and reached
+    // across the tree; commit 3cd03ce moved the script and the specs together
+    // but not the path arithmetic, so for a while this resolved to
+    // `src/providers/google/providers/builtin/specs`, created it, reported
+    // success, and left the committed spec untouched — making the documented
+    // "re-run the script" step a silent no-op.
+    outputDirectory: import.meta.dir,
+    out: selection.out,
+    operations: selection.operations,
+    ...(selection.opaque ? { opaque: selection.opaque } : {}),
+    opaqueNote: OPAQUE_NOTE,
+    vendoredNote: VENDORED_NOTE,
+    systemParameters: SYSTEM_PARAMETERS,
   });
-
-  holder['parameters'] = kept;
-  return parameters.length - kept.length;
 }
-
-const METHODS = ['get', 'post', 'put', 'patch', 'delete', 'head'];
-
-async function vendor(id: string): Promise<void> {
-  const { source, out, operations, opaque } = SELECTION[id]!;
-  const wanted = new Set(operations);
-
-  const response = await fetch(source);
-  if (!response.ok) throw new Error(`${source}: HTTP ${response.status}`);
-  const spec = (await response.json()) as Spec;
-
-  const paths: Spec['paths'] = {};
-  const seen = new Set<string>();
-
-  for (const [path, item] of Object.entries(spec.paths)) {
-    const kept: Record<string, unknown> = {};
-    for (const [method, operation] of Object.entries(item)) {
-      // Path-level keys are not operations and must survive: `parameters` here
-      // is where Google puts the query parameters shared by every method on the
-      // path, and `fields` is one of them — which `drive.about.get` *requires*.
-      // Dropping it produced a tool with no arguments at all and a 400 on every
-      // call.
-      if (!METHODS.includes(method)) {
-        kept[method] = operation;
-        continue;
-      }
-      const operationId = operation.operationId;
-      if (!operationId || !wanted.has(operationId)) continue;
-      kept[method] = operation;
-      seen.add(operationId);
-    }
-
-    // Only path-level keys survived, so no operation here was wanted.
-    if (!Object.keys(kept).some((key) => METHODS.includes(key))) continue;
-    if (Object.keys(kept).length > 0) paths[path] = kept as Spec['paths'][string];
-  }
-
-  const componentParameters = (spec.components?.['parameters'] ?? {}) as Record<string, unknown>;
-
-  let dropped = 0;
-  for (const item of Object.values(paths)) {
-    dropped += dropSystemParameters(item as unknown as Record<string, unknown>, componentParameters);
-    for (const [method, operation] of Object.entries(item)) {
-      if (!METHODS.includes(method)) continue;
-      dropped += dropSystemParameters(
-        operation as unknown as Record<string, unknown>,
-        componentParameters,
-      );
-    }
-  }
-
-  // Drop response schemas.
-  //
-  // Two reasons, and the second is the blocking one. Nothing reads them: the
-  // connector hands the response body back as text, because an agent wants the
-  // JSON, not a validated shape. And Gmail's response schemas are recursive —
-  // `Message.payload` is a `MessagePart`, which contains `MessagePart[]` — which
-  // sends the OpenAPI tool generator into infinite recursion and silently drops
-  // eight of Gmail's twelve operations from the tool list.
-  for (const item of Object.values(paths)) {
-    for (const [method, operation] of Object.entries(item)) {
-      if (!METHODS.includes(method)) continue;
-      (operation as { responses?: unknown }).responses = {
-        '200': { description: 'Success. The response body is returned verbatim.' },
-      };
-    }
-  }
-
-  const missing = operations.filter((operationId) => !seen.has(operationId));
-  if (missing.length > 0) {
-    // Loudly, rather than shipping a provider quietly missing capabilities: an
-    // upstream rename should fail the refresh, not shrink the tool list.
-    throw new Error(`${id}: these operations are not in the spec — ${missing.join(', ')}`);
-  }
-
-  const schemas = spec.components?.schemas ?? {};
-  const opaqued = makeOpaque(schemas, opaque ?? []);
-  const keep = referenced(paths, schemas);
-  const trimmedSchemas = Object.fromEntries(
-    Object.entries(schemas).filter(([name]) => keep.has(name)),
-  );
-  const cuts = cutCycles(trimmedSchemas);
-
-  const trimmed: Spec = {
-    openapi: spec.openapi,
-    info: {
-      ...spec.info,
-      'x-vendored-from': source,
-      'x-vendored-note':
-        'Trimmed by src/providers/google/specs/vendor.ts. Committed deliberately: a spec decides which paths are called with the operator token, so it must be reviewable rather than fetched at connect time.',
-    },
-    ...(spec.servers ? { servers: spec.servers } : {}),
-    paths,
-    components: { ...spec.components, schemas: trimmedSchemas },
-  };
-
-  // `import.meta.dir` *is* the specs directory — this script lives beside what it
-  // writes. It used to be `scripts/vendor-google-specs.ts` and reached across the
-  // tree; commit 3cd03ce moved the script and the specs together but not the path
-  // arithmetic, so for a while this resolved to
-  // `src/providers/google/providers/builtin/specs`, created it, reported success,
-  // and left the committed spec untouched — making the documented "re-run the
-  // script" step a silent no-op.
-  const directory = import.meta.dir;
-  await mkdir(directory, { recursive: true });
-  await writeFile(join(directory, out), `${JSON.stringify(trimmed, null, 2)}\n`);
-
-  const size = Math.round(JSON.stringify(trimmed).length / 1024);
-  console.log(
-    `  ${id.padEnd(6)} ${String(Object.keys(paths).length).padStart(2)} paths, ` +
-      `${seen.size} operations, ${Object.keys(trimmedSchemas).length} schemas, ` +
-      `${cuts} cycle${cuts === 1 ? '' : 's'} cut, ${opaqued} made opaque, ` +
-      `${dropped} system params dropped, ${size}KB`,
-  );
-
-  await reportLargestTools(trimmed);
-}
-
-/**
- * The number the budget is actually about.
- *
- * Everything on the line above counts the *spec*; `cli/tools.test.ts` measures
- * the **generated input schema**, and the two differ by orders of magnitude
- * because `mcp-from-openapi` inlines `$ref`s — a schema shared by ten fields is
- * ten copies once generated. Reasoning about `spreadsheets.create` from a schema
- * count put it at 122 KB when the real figure was 1,133 KB, which is the whole
- * difference between "just over" and "seventeen times over".
- *
- * Printed here so the refresh that adds an operation shows its cost, rather than
- * leaving it to a test failure to say so after the fact.
- */
-async function reportLargestTools(trimmed: Spec): Promise<void> {
-  try {
-    const generator = await OpenAPIToolGenerator.fromJSON(trimmed);
-    const measured = (await generator.generateTools())
-      .map((tool: McpOpenAPITool) => ({
-        name: tool.metadata.operationId ?? tool.name,
-        kb: JSON.stringify(tool.inputSchema).length / 1024,
-      }))
-      .sort((a, b) => b.kb - a.kb);
-
-    for (const { name, kb } of measured.slice(0, 3)) {
-      const over = kb > BUDGET_KB ? `  ✗ over the ${BUDGET_KB}KB budget` : '';
-      console.log(`         ${name.padEnd(38)} ${kb.toFixed(1).padStart(8)}KB${over}`);
-    }
-  } catch (error) {
-    // A generator failure is a real problem, but it is `tools.test.ts`'s to
-    // report against every provider at once. Refusing to finish the vendoring
-    // over it would leave the specs half-written.
-    console.log(`         (could not measure generated schemas: ${String(error)})`);
-  }
-}
-
-for (const id of Object.keys(SELECTION)) await vendor(id);
