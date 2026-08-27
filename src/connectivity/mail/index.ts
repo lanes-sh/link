@@ -21,7 +21,12 @@ export { receiptFor } from './message.ts';
 export { composeMime } from './compose.ts';
 
 export type { AttachmentRef, MailboxAttachmentSource, ResolveOptions } from './attachments.ts';
-export { attachmentRefSchema, attachmentsJsonSchema, resolveAttachments } from './attachments.ts';
+export {
+  attachmentRefSchema,
+  attachmentsJsonSchema,
+  guessContentType,
+  resolveAttachments,
+} from './attachments.ts';
 
 export type { StagedFile, StagedMetadata } from './staging.ts';
 export {

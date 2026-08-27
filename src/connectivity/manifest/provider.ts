@@ -64,8 +64,21 @@ export const providerManifestSchema = z.object({
 
 export type ProviderManifest = z.infer<typeof providerManifestSchema>;
 
-/** Provider ids reserved for the owner layer. */
-export const RESERVED_PROVIDER_IDS: readonly string[] = ['memory', 'skills', 'vault', 'setup', 'identity'];
+/**
+ * Provider ids reserved for the owner layer.
+ *
+ * The order is read: `#server/mcp`'s instructions emit one paragraph per
+ * reachable id in this sequence, so it is the order an agent meets them in.
+ */
+export const RESERVED_PROVIDER_IDS: readonly string[] = [
+  'memory',
+  'tasks',
+  'assets',
+  'skills',
+  'vault',
+  'setup',
+  'identity',
+];
 
 /**
  * Validate a manifest, with the cross-field rules the schema alone cannot
