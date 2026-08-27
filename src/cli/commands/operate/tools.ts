@@ -28,7 +28,7 @@ export async function tools(flags: ToolsFlags): Promise<void> {
 
   try {
     const { token } = await ensureProfileToken(runtime.credentials, runtime.config.auth.token_ref);
-    const declared = runtime.config.targets[runtime.target]?.deploy;
+    const declared = runtime.declared.deploy;
     const deployed = await deployedUrl(declared);
     // Not `endpointUrl`, which asks the platform a second time for an answer
     // this line already has.

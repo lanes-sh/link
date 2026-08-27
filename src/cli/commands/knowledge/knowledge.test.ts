@@ -1,3 +1,4 @@
+import { workspaceYaml } from '#profile/testing.ts';
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -27,19 +28,10 @@ import { probe } from './setup.ts';
 const roots: string[] = [];
 const previousHome = process.env['LANES_LINK_HOME'];
 
-const PROFILE = `contract: 1
+const PROFILE = `contract: 2
 
 instance:
   profile: personal
-  default_target: local
-
-targets:
-  local:
-    credentials: { adapter: file,       path: ./data/personal/credentials.enc }
-    storage:     { adapter: filesystem, path: ./data/personal }
-  cloud:
-    credentials: { adapter: file,       path: ./data/personal/cloud.credentials.enc }
-    storage:     { adapter: filesystem, path: ./data/personal-cloud }
 
 connections:
   - id: main
@@ -65,7 +57,7 @@ async function workspace(seed = true): Promise<string> {
   roots.push(root);
 
   await mkdir(join(root, 'profiles'), { recursive: true });
-  await writeFile(join(root, 'lanes-link.yaml'), 'contract: 1\ndefault_profile: personal\n');
+  await writeFile(join(root, 'lanes-link.yaml'), workspaceYaml(['local'], {defaultProfile: 'personal'}));
   await writeFile(join(root, 'profiles', 'personal.yaml'), PROFILE);
 
   if (seed) {
@@ -126,13 +118,17 @@ describe('switching to a repository', () => {
     expect(existsSync(join(root, 'data/personal/skills.d/triage/SKILL.md'))).toBe(false);
   });
 
-  test('writes the block into every target the profile declares', async () => {
+  test('writes one block, on the profile', async () => {
+    // It used to write the same block into every target the profile declared —
+    // a per-profile fact stored per target, and the loop that kept them in step.
+    // A profile lives in one target now (ADR-052), so the block sits on the
+    // profile and there is one of it.
     const root = await workspace();
 
     await use({ migrate: true });
 
     const written = await readProfile(root);
-    expect(written.match(/repo: my-org\/my-notes/g)).toHaveLength(2);
+    expect(written.match(/repo: my-org\/my-notes/g)).toHaveLength(1);
     expect(written).toContain('token_ref: knowledge/token');
   });
 
@@ -401,16 +397,19 @@ describe('the probe', () => {
 });
 
 describe('saying where it is, without reading the YAML', () => {
-  test('target show names the repository beside the other adapters', async () => {
+  test('target show names the target’s adapters, and not the repository', async () => {
+    // The repository is the *profile's* — where its memory and skills live — and
+    // `target show` answers for a target, which several profiles may share.
+    // Reporting one profile's repository there would attribute it to all of
+    // them. `doctor` below is what says where a profile's knowledge is, and it
+    // opens the runtime that knows.
     await workspace(false);
     await use();
 
-    const output = await captureStdout(() => targetShow('local', { profile: 'personal' }));
+    const output = await captureStdout(() => targetShow('local', { target: 'local' }));
 
-    expect(output).toContain('knowledge');
-    expect(output).toContain('github:my-org/my-notes');
-    // The other three are unchanged, which is the point of moving only two.
     expect(output).toContain('filesystem');
+    expect(output).not.toContain('github:my-org/my-notes');
   });
 
   test('doctor reports the repository as reachable, and exits clean', async () => {

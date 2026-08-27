@@ -36,10 +36,10 @@ export async function dashboard(flags: DashboardFlags): Promise<void> {
   // still be correct and nobody would ever read it, because a storage 403
   // arrives first. This is the seam `runtime.ts` documents `deploy` and
   // `secrets push` stopping at, for the same reason.
-  const { resolution, config, target } = await resolveProfile(flags);
+  const { resolution, config, target, resolved } = await resolveProfile(flags);
   announce(resolution);
 
-  const deployed = deploymentIdentity(config.targets[target]?.deploy);
+  const deployed = deploymentIdentity(resolved?.declared.deploy);
   if (deployed) {
     throw new Error(
       `Target "${target}" is deployed to ${deployed.platform}, and the dashboard is served only ` +

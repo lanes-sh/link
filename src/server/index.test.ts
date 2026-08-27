@@ -768,15 +768,10 @@ describe('reload', () => {
   /** A config naming exactly these connections, so one can be seen to appear. */
   function configWith(profile: string, port: number, ids: string[], policy: string): Config {
     return parseConfig(`
-contract: 1
+contract: 2
 instance:
   profile: ${profile}
-  default_target: local
   port: ${port}
-targets:
-  local:
-    credentials: { adapter: file, path: ./data/${profile}/credentials.enc }
-    storage: { adapter: filesystem, path: ./data/${profile} }
 limits:
   requests_per_minute: 1000
   upstream_calls_per_minute: 1000

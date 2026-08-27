@@ -129,7 +129,7 @@ function formatZodIssues(error: z.ZodError): string {
  * A connection naming a provider whose id has moved out from under it.
  *
  * There is exactly one, and it is the reason this function exists: `tasks` was
- * Google Tasks until the built-in task list took the plain noun (ADR-051). A row
+ * Google Tasks until the built-in task list took the plain noun (ADR-052). A row
  * left saying `provider: tasks` does not fail — it resolves to the *built-in*,
  * `reconcile` marks it active because a provider needing no credential is
  * authorized by construction, and the operator is left with their Google Tasks
@@ -200,15 +200,15 @@ export const RENAMED_PROVIDERS: Readonly<Record<string, ProviderRename>> = {
 /**
  * The repair, spelled with the selection it will refuse without.
  *
- * Both flags come off the document being validated rather than off the command
- * that is running: nothing has resolved anything yet, and the profile is written
- * in the file. A profile declaring one target names it; one declaring several
- * cannot be guessed at, and a placeholder is more honest than picking.
+ * The profile comes off the document being validated rather than off the command
+ * that is running, because nothing has resolved anything yet and the name is
+ * written in the file. The target cannot come from there any more — a profile
+ * declares none (ADR-052) — so it stays a placeholder. That is honest rather
+ * than lossy: the file being repaired lives in exactly one target's workspace,
+ * and whoever is reading this refusal just typed which one.
  */
 function repairCommand(config: Config): string {
-  const targets = Object.keys(config.targets);
-  const target = targets.length === 1 ? targets[0] : `<${targets.join('|') || 'target'}>`;
-  return `lanes link doctor --fix --profile ${config.instance.profile} --target ${target}`;
+  return `lanes link doctor --fix --profile ${config.instance.profile} --target <target>`;
 }
 
 /** The rename a row is owed, or `null` when it is owed none. */
@@ -241,26 +241,10 @@ function renamedProvider(
 function assertReferentialIntegrity(config: Config, source: string): void {
   const problems: string[] = [];
 
-  const targetNames = new Set(Object.keys(config.targets));
-  if (targetNames.size === 0) {
-    problems.push('targets: at least one target must be declared');
-  }
-  // `instance.default_target` is deliberately not checked. Nothing reads it
-  // (ADR-037), so validating it would be validating a comment — and failing
-  // `check` on a stale value would teach that the key still matters.
-
-  // Only what holds for every platform. What one platform needs and the next
-  // has no concept of — a GCP project, an AWS role ARN — is refused by the
-  // driver that needs it, the way an adapter-specific field is refused by the
-  // code that opens the adapter rather than by this file.
-  for (const [name, target] of Object.entries(config.targets)) {
-    if (!target.deploy) continue;
-    for (const field of ['region', 'service'] as const) {
-      if (!target.deploy[field]) {
-        problems.push(`targets.${name}.deploy.${field}: required for a deployable target`);
-      }
-    }
-  }
+  // There is nothing to check about targets here any more. A profile declares
+  // none (ADR-052): the workspace holding this file declares the one target it
+  // lives in, and `workspaceSchema` is what validates that. A profile is now
+  // portable between targets precisely because it says nothing about them.
 
   // Connection ids are unique per provider, so `gmail.main` and
   // `icloud_mail.main` can coexist.

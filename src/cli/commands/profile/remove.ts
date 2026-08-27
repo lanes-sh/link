@@ -3,6 +3,7 @@ import type { BlobStore } from '#stores/blobs';
 import {
   ConfigError,
   WORKSPACE_FILE,
+  openTarget,
   readWorkspace,
   readWorkspaceFile,
   workspaceFiles,
@@ -250,15 +251,17 @@ export interface RemoveFlags extends GlobalFlags {
  * in the tool.
  */
 export async function removeProfile(name: string, flags: RemoveFlags): Promise<void> {
-  const { selection, config } = await resolveProfileOnly({ ...flags, profile: name });
+  const { selection, config, target } = await resolveProfileOnly({ ...flags, profile: name });
   announceProfile(selection);
 
   const root = selection.workspaceRoot;
   const registry = await buildRegistryWithWorkspace(root, name);
   const files = workspaceFiles(root);
+  const { declared } = await openTarget(root, target);
 
   const plan = await removalPlan(config, root, name, registry, {
-    target: flags.target,
+    target,
+    declared,
     openSecrets: (target) => openSecretStoreFor(config, root, target),
     openBlobs: (target, area) => openBlobStoreFor(config, root, target, area),
     readDefaultProfile: async () => (await readWorkspace(root))?.default_profile,

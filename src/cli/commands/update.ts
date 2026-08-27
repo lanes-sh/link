@@ -2,6 +2,7 @@ import { homedir } from 'node:os';
 import { join, sep } from 'node:path';
 import { installRoot, resolveWorkspaceRoot } from '#profile';
 import { repairOwnerLayer } from '../config-repair.ts';
+import { migrateWorkspace, needsMigration } from '../workspace-migrate.ts';
 import { emit, fail, ok, print, printErr, progress, style, warn } from '../output.ts';
 import { PACKAGE, release, type ReleaseState } from '../release.ts';
 import { version } from '../version.ts';
@@ -169,7 +170,21 @@ export async function update(flags: UpdateFlags): Promise<void> {
   // profile of someone already on the latest version is exactly the one this was
   // reported against.
   if (flags.check !== true) {
-    await repairOwnerLayer(resolveWorkspaceRoot(), undefined, {
+    const root = resolveWorkspaceRoot();
+
+    // The contract migration before the owner-layer repair, and the order is not
+    // cosmetic: the repair opens profiles through the ordinary loader, and the
+    // loader refuses contract 1 outright (ADR-052). On a workspace that has not
+    // been migrated the repair has nothing it can read.
+    //
+    // Local workspace only. A remote one is a bucket whose endpoint is running a
+    // pinned image, and migrating it from here would leave that revision reading
+    // a contract it does not implement until someone redeploys. `deploy` is what
+    // migrates a bucket, because it is the command that ships the image in the
+    // same breath.
+    await migrateLocal(root, flags.json === true ? progress : print);
+
+    await repairOwnerLayer(root, undefined, {
       ...(flags.json === true ? { report: progress } : {}),
     });
   }
@@ -273,5 +288,45 @@ async function runInstall(argv: readonly string[], json: boolean): Promise<boole
     return (await child.exited) === 0;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Bring the local workspace to the current contract, saying so if it did.
+ *
+ * Narrated rather than silent: this rewrites every profile in the workspace, and
+ * a command that reshapes somebody's config without a word is one they cannot
+ * audit afterwards. Routed to `report` for `--json`, where a line of prose in
+ * front of the document corrupts whatever is parsing it — the same routing
+ * `repairOwnerLayer` takes, for the same reason.
+ *
+ * A failure here is reported and swallowed. `update`'s job is to install a
+ * version, and a workspace that cannot migrate — a custom path that will not
+ * hoist, two profiles disagreeing about one target — is a thing to be told
+ * about, in a sentence naming the fix, rather than a reason for the upgrade to
+ * fail. `check` and `doctor` both refuse loudly on the next run.
+ */
+async function migrateLocal(root: string, say: (line: string) => void): Promise<void> {
+  try {
+    if (!(await needsMigration(root))) return;
+
+    const migration = await migrateWorkspace(root);
+    if (migration.alreadyCurrent) return;
+
+    say(
+      `migrated ${migration.profiles.length} profile(s) to contract 2 — a target is declared by ` +
+        'the workspace now, not by each profile',
+    );
+    for (const change of migration.changes) say(`  ${change}`);
+
+    const pointers = migration.targets.filter((one) => one.kind === 'pointer');
+    for (const pointer of pointers) {
+      say(
+        `  "${pointer.name}" points at ${pointer.where} — run ` +
+          `lanes link deploy --target ${pointer.name} to migrate what is there`,
+      );
+    }
+  } catch (error) {
+    say(`could not migrate this workspace: ${error instanceof Error ? error.message : String(error)}`);
   }
 }

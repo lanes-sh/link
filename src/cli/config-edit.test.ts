@@ -1,4 +1,3 @@
-import { localBlock } from './commands/profile/declare.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { readdir } from 'node:fs/promises';
@@ -34,7 +33,7 @@ async function profileFile(contents?: string): Promise<{ root: string; path: str
   roots.push(root);
   await mkdir(join(root, 'profiles'), { recursive: true });
   const path = join(root, 'profiles', 'personal.yaml');
-  await writeFile(path, contents ?? newProfileTemplate('personal', 7337, localBlock('personal')));
+  await writeFile(path, contents ?? newProfileTemplate('personal', 7337));
   return { root, path };
 }
 
@@ -55,7 +54,7 @@ describe('comments and ordering survive an edit', () => {
 
     for (const comment of [
       '# Lanes Link profile: personal',
-      '# Adapter selection is per target',
+      '# This file says nothing about where it runs, and that is the point.',
       '# Only what is listed here is reachable, and an empty policy grants nothing.',
     ]) {
       expect(before).toContain(comment);
@@ -97,16 +96,10 @@ describe('comments and ordering survive an edit', () => {
     // and its allow rule. Reading the starting state from the template would
     // leave this asserting nothing the day that changed, which is the day it
     // most needs to hold.
-    const { root, path } = await profileFile(`contract: 1
+    const { root, path } = await profileFile(`contract: 2
 
 instance:
   profile: personal
-  default_target: local
-
-targets:
-  local:
-    credentials: { adapter: file, path: ./data/personal/credentials.enc }
-    storage: { adapter: filesystem, path: ./data/personal }
 
 oauth_apps: {}
 connections: []
@@ -242,15 +235,10 @@ describe('repairing a profile that predates the setup surface', () => {
     ensureReservedConnection(document, 'setup');
 
   /** A profile as it was written before the surface, and as this operator's is. */
-  const OLD = `contract: 1
+  const OLD = `contract: 2
 instance:
   profile: personal
-  default_target: local
   port: 7337
-targets:
-  local:
-    credentials: { adapter: file, path: ./data/personal.credentials.enc }
-    storage: { adapter: filesystem, path: ./data/personal/files }
 connections:
   - id: ada_lovelace
     provider: gmail
@@ -551,13 +539,9 @@ policy:
  * shaped to prevent.
  */
 describe('repairing a profile that predates the owner layer', () => {
-  const OLD = `contract: 1
+  const OLD = `contract: 2
 instance:
   profile: personal
-targets:
-  local:
-    credentials: { adapter: file, path: ./data/personal/credentials.enc }
-    storage: { adapter: filesystem, path: ./data/personal }
 connections:
   - id: ada_lovelace
     provider: gmail

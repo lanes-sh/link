@@ -82,8 +82,17 @@ export interface RemovalPlan {
 }
 
 export interface PlanOptions {
-  /** Restrict to one target. The profile itself then survives. */
-  readonly target?: string | undefined;
+  /**
+   * The target whose stores this plans against.
+   *
+   * Required now, and not a restriction: a profile lives in exactly one target
+   * (ADR-052), so there is no "all of them" left for this to mean. It used to be
+   * optional because a profile could declare several and removing it meant
+   * emptying each.
+   */
+  readonly target: string;
+  /** That target's adapter set, from the workspace declaring it (ADR-052). */
+  readonly declared: TargetConfig;
   readonly openSecrets: (target: string) => Promise<SecretStore>;
   readonly openBlobs: (target: string, area?: string) => Promise<BlobStore>;
   readonly readDefaultProfile?: (() => Promise<string | undefined>) | undefined;
@@ -110,14 +119,13 @@ export async function removalPlan(
   const untouched: { target: string; refs: string[] }[] = [];
   const warnings: string[] = [];
 
-  const names = options.target ? [options.target] : Object.keys(config.targets);
+  // One target, always. A profile lived in as many as it declared and this
+  // planned across all of them; it lives in exactly one now (ADR-052), and that
+  // one is whichever workspace the caller resolved to reach this file.
+  const names: string[] = [options.target];
+  const declared = options.declared;
 
   for (const name of names) {
-    const declared = config.targets[name];
-    if (!declared) {
-      warnings.push(`Target "${name}" is not declared by this profile, so nothing was planned.`);
-      continue;
-    }
 
     // A repository this profile keeps memory and skills in is not this
     // command's to empty, and it is not reachable from here either: the routing
@@ -128,9 +136,9 @@ export async function removalPlan(
     // `rm -r data/<profile>` used to be the whole of "what could this profile
     // reach". So it is said before the operator confirms rather than discovered
     // afterwards.
-    if (declared.knowledge) {
+    if (config.knowledge) {
       warnings.push(
-        `Target "${name}" keeps this profile's memory and skills in ${declared.knowledge.repo}. ` +
+        `This profile keeps its memory and skills in ${config.knowledge.repo}. ` +
           'Nothing here touches a repository, so they survive this removal — delete them there ' +
           'if you want them gone.',
       );
@@ -226,22 +234,25 @@ export async function removalPlan(
     }
   }
 
-  // Only when the whole profile is going. With `--target` it still exists.
-  if (!options.target) {
-    const defaultProfile = await options.readDefaultProfile?.();
-    if (defaultProfile === profile) {
-      items.push({
-        target: null,
-        kind: 'workspace-key',
-        id: 'default_profile',
-        note: 'cleared, not repointed at whatever remains',
-      });
-    }
-
-    // Last. It is the only record of where everything else lives, so a failure
-    // before this point leaves data a later run can still find.
-    items.push({ target: null, kind: 'config', id: profilePath(root, profile) });
+  // Always, now. `--target` used to mean "decommission this one target and leave
+  // the profile behind", which was a coherent thing to want while a profile
+  // could be declared against several. It lives in exactly one (ADR-052), and
+  // the file itself is *in* that target's workspace — so emptying the target and
+  // keeping the profile would leave a config nothing can open, in a workspace it
+  // no longer belongs to.
+  const defaultProfile = await options.readDefaultProfile?.();
+  if (defaultProfile === profile) {
+    items.push({
+      target: null,
+      kind: 'workspace-key',
+      id: 'default_profile',
+      note: 'cleared, not repointed at whatever remains',
+    });
   }
+
+  // Last. It is the only record of where everything else lives, so a failure
+  // before this point leaves data a later run can still find.
+  items.push({ target: null, kind: 'config', id: profilePath(root, profile) });
 
   return { profile, items, untouched, warnings };
 }

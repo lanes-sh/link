@@ -31,14 +31,13 @@ const target = (over: Partial<TargetConfig> = {}): TargetConfig =>
 
 const config = (over: Partial<Config> = {}): Config =>
   ({
-    contract: 1,
-    instance: { profile: 'personal', default_target: 'local' },
+    contract: 2,
+    instance: { profile: 'personal' },
     auth: { mode: 'bearer', token_ref: 'profile/token' },
     oauth_apps: {
       google: { client_id_ref: 'google/client_id', client_secret_ref: 'google/client_secret' },
     },
     connections: [{ id: 'someone', provider: 'gmail', account: 'someone@example.com' }],
-    targets: { local: target() },
     policy: { allow: [] },
     ...over,
   }) as unknown as Config;
@@ -139,18 +138,21 @@ const ids = (plan: RemovalPlan, kind: RemovalItem['kind']): string[] =>
   plan.items.filter((item) => item.kind === kind).map((item) => item.id);
 
 describe('removalPlan', () => {
-  test('plans every declared target, and the workspace items exactly once', async () => {
-    const two = config({
-      targets: { local: target(), cloud: target({ storage: { adapter: 'gcs', bucket: 'your-bucket' } } as never) },
-    } as never);
-
-    const plan = await removalPlan(two, '/ws', 'personal', registry, {
+  test('plans the one target it was given, and the workspace items exactly once', async () => {
+    // It used to loop over every target the profile declared. A profile lives in
+    // exactly one (ADR-052), so the caller resolves that one and hands its
+    // adapters in — there is no set here to iterate.
+    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
+      target: 'local',
+      declared: target(),
       openSecrets: async () => fakeSecrets(['profile/token']),
       openBlobs: async () => fakeBlobs(['state.kv/a']),
     });
 
     expect(plan.items.filter((i) => i.target === 'local')).not.toHaveLength(0);
-    expect(plan.items.filter((i) => i.target === 'cloud')).not.toHaveLength(0);
+    // `null` is the workspace itself — the profile config and `default_profile`,
+    // which belong to no target.
+    expect(plan.items.every((i) => i.target === 'local' || i.target === null)).toBe(true);
     expect(ids(plan, 'config').filter((id) => !id.startsWith('profiles/'))).toHaveLength(1);
   });
 
@@ -159,6 +161,8 @@ describe('removalPlan', () => {
     // root `data/<p>`. Delete blobs first and the store the secret deletions
     // read through is gone.
     const plan = await removalPlan(config(), '/ws', 'personal', registry, {
+      target: 'local',
+      declared: target(),
       openSecrets: async () => fakeSecrets(['profile/token']),
       openBlobs: async () => fakeBlobs(['credentials.enc']),
     });
@@ -169,6 +173,8 @@ describe('removalPlan', () => {
 
   test('the local config is the last item, because it is the record of where things are', async () => {
     const plan = await removalPlan(config(), '/ws', 'personal', registry, {
+      target: 'local',
+      declared: target(),
       openSecrets: async () => fakeSecrets(['profile/token']),
       openBlobs: async () => fakeBlobs(['a']),
     });
@@ -178,6 +184,8 @@ describe('removalPlan', () => {
 
   test('a ref the profile does not declare is reported, never planned', async () => {
     const plan = await removalPlan(config(), '/ws', 'personal', registry, {
+      target: 'local',
+      declared: target(),
       openSecrets: async () => fakeSecrets(['profile/token', 'gmail/someone_else']),
       openBlobs: async () => fakeBlobs([]),
     });
@@ -187,30 +195,26 @@ describe('removalPlan', () => {
     expect(plan.untouched.flatMap((u) => u.refs)).toContain('gmail/someone_else');
   });
 
-  test('--target restricts to it, and leaves the profile itself alone', async () => {
-    const two = config({
-      targets: { local: target(), cloud: target() },
-    } as never);
-
-    const plan = await removalPlan(two, '/ws', 'personal', registry, {
+  test('the profile config goes too, because it lives in that target', async () => {
+    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
       target: 'cloud',
+      declared: target(),
       openSecrets: async () => fakeSecrets(['profile/token']),
       openBlobs: async () => fakeBlobs(['a']),
     });
 
-    expect(plan.items.every((item) => item.target === 'cloud')).toBe(true);
-    expect(ids(plan, 'config')).toHaveLength(0);
-    expect(ids(plan, 'workspace-key')).toHaveLength(0);
+    // `--target` used to mean "empty this one and keep the profile". There is
+    // nowhere left for it to be kept: the file is in that workspace (ADR-052).
+    expect(plan.items.filter((item) => item.target !== null).every((i) => i.target === 'cloud')).toBe(true);
+    expect(ids(plan, 'config')).toHaveLength(1);
   });
 
   test('a deployed target warns that its endpoint keeps answering with nothing behind it', async () => {
-    const deployed = config({
-      targets: {
-        cloud: target({ deploy: { platform: 'cloudrun', project: 'my-project' } } as never),
-      },
-    } as never);
-
-    const plan = await removalPlan(deployed, '/ws', 'personal', registry, {
+    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
+      target: 'cloud',
+      declared: target({
+        deploy: { platform: 'cloudrun', project: 'my-project', region: 'r', service: 's' },
+      } as never),
       openSecrets: async () => fakeSecrets([]),
       openBlobs: async () => fakeBlobs([]),
     });
@@ -218,21 +222,20 @@ describe('removalPlan', () => {
     expect(plan.warnings.join(' ')).toMatch(/keep answering|still answer/i);
   });
 
-  test('a store that cannot be opened warns, and the other target still plans', async () => {
-    const two = config({
-      targets: { local: target(), cloud: target() },
-    } as never);
-
-    const plan = await removalPlan(two, '/ws', 'personal', registry, {
-      openSecrets: async (name) => {
-        if (name === 'cloud') throw new Error('no credentials for this project');
-        return fakeSecrets(['profile/token']);
+  test('a credential store that cannot be opened warns, and the blobs still plan', async () => {
+    // There is no sibling target left to carry on with, so what this pins is the
+    // other half: one unreachable store does not abandon the rest of the plan.
+    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
+      target: 'cloud',
+      declared: target(),
+      openSecrets: async () => {
+        throw new Error('no credentials for this project');
       },
       openBlobs: async () => fakeBlobs(['a']),
     });
 
     expect(plan.warnings.join(' ')).toMatch(/cloud/);
-    expect(plan.items.some((item) => item.target === 'local')).toBe(true);
+    expect(plan.items.some((item) => item.kind === 'blob')).toBe(true);
   });
 
   test('skills and manifests go with the profile that owns them — ADR-030', async () => {
@@ -241,6 +244,8 @@ describe('removalPlan', () => {
     // them. Now they are inside the profile's own blob root, so the sweep has
     // them for the same reason it has state and the log.
     const plan = await removalPlan(config(), '/ws', 'personal', registry, {
+      target: 'local',
+      declared: target(),
       openSecrets: async () => fakeSecrets([]),
       openBlobs: async () =>
         fakeBlobs([
@@ -262,11 +267,9 @@ describe('removalPlan', () => {
     // provider blobs and nothing else. The sweep walks the declared root, so
     // without these two items the skills and manifests would survive a removal
     // that reported success.
-    const moved = config({
-      targets: { local: target({ storage: { adapter: 'filesystem', path: './elsewhere' } }) },
-    } as Partial<Config>);
-
-    const plan = await removalPlan(moved, '/ws', 'personal', registry, {
+    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
+      target: 'local',
+      declared: target({ storage: { adapter: 'filesystem', path: './elsewhere' } }),
       openSecrets: async () => fakeSecrets([]),
       openBlobs: async () => fakeBlobs([]),
     });
@@ -282,6 +285,8 @@ describe('removalPlan', () => {
     // for the same bytes would read as two things to delete in the preview the
     // operator confirms.
     const plan = await removalPlan(config(), '/ws', 'personal', registry, {
+      target: 'local',
+      declared: target(),
       openSecrets: async () => fakeSecrets([]),
       openBlobs: async () => fakeBlobs(['skills.d/review-diff/SKILL.md']),
     });
@@ -294,11 +299,9 @@ describe('removalPlan', () => {
     // What `newProfileTemplate` actually writes, against what `layout` returns.
     // Compared as strings these differ, and every default profile would have
     // its skills and manifests named twice in the preview.
-    const declared = config({
-      targets: { local: target({ storage: { adapter: 'filesystem', path: './data/personal' } }) },
-    } as Partial<Config>);
-
-    const plan = await removalPlan(declared, '/ws', 'personal', registry, {
+    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
+      target: 'local',
+      declared: target({ storage: { adapter: 'filesystem', path: './data/personal' } }),
       openSecrets: async () => fakeSecrets([]),
       openBlobs: async () => fakeBlobs([]),
     });

@@ -42,15 +42,10 @@ const CATALOGUE = [
 
 function config(profile: string, port: number, policy: string) {
   return parseConfig(`
-contract: 1
+contract: 2
 instance:
   profile: ${profile}
-  default_target: local
   port: ${port}
-targets:
-  local:
-    credentials: { adapter: file, path: ./data/${profile}.credentials.enc }
-    storage: { adapter: filesystem, path: ./data/${profile}/files }
 limits:
   requests_per_minute: 1000
   upstream_calls_per_minute: 1000
@@ -121,15 +116,10 @@ const never = startHarness({
   token: 'llk_never_token_value',
   providers: providersFor('never', []),
   config: parseConfig(`
-contract: 1
+contract: 2
 instance:
   profile: never
-  default_target: local
   port: ${neverPort}
-targets:
-  local:
-    credentials: { adapter: file, path: ./data/never.credentials.enc }
-    storage: { adapter: filesystem, path: ./data/never/files }
 limits:
   requests_per_minute: 1000
   upstream_calls_per_minute: 1000

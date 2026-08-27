@@ -68,7 +68,7 @@ stops a write is policy on the endpoint:
 
 ```console
 $ lanes link policy deny memory.write --profile <name> --target <name>
-$ lanes link policy list --profile <name>
+$ lanes link policy list --profile <name> --target <name>
 ```
 
 If you are running against a profile that grants writes, that is the owner's

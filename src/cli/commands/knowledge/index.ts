@@ -230,7 +230,6 @@ async function useGithub(flags: KnowledgeFlags): Promise<void> {
 
     print('');
     print(ok(`memory and skills are now kept in ${facts.fullName}`));
-    reportOtherTargets(runtime.config, runtime.target, knowledge.token_ref);
   } finally {
     await runtime.close();
   }
@@ -242,7 +241,7 @@ async function useLocal(flags: KnowledgeFlags): Promise<void> {
     announce(runtime.resolution);
     const selection = ` --profile ${runtime.resolution.profile} --target ${runtime.target}`;
 
-    const knowledge = runtime.config.targets[runtime.target]?.knowledge;
+    const knowledge = runtime.config.knowledge;
     if (!knowledge) {
       print(style.dim('  This profile already keeps memory and skills on its own storage.'));
       return;
@@ -299,8 +298,7 @@ async function openLocalStores(
   runtime: Runtime,
 ): Promise<{ storage: BlobStore; skills: BlobStore }> {
   const { openStorage } = await import('#deployments/target.ts');
-  const declared = runtime.config.targets[runtime.target];
-  if (!declared) throw new ConfigError(`Target "${runtime.target}" is not declared`);
+  const declared = runtime.declared;
 
   const factory = await openStorage(
     {
@@ -314,7 +312,14 @@ async function openLocalStores(
   return { storage: factory(), skills: factory(layout.skills(runtime.config.instance.profile)) };
 }
 
-/** Write, or remove, the block on every target this profile declares. */
+/**
+ * Write, or remove, this profile's knowledge block.
+ *
+ * One place, not one per target. It used to loop over every target the profile
+ * declared and write the same block into each — which is what a per-target key
+ * holding a per-profile fact costs. The block is on the profile now (ADR-052),
+ * so there is one of it.
+ */
 async function writeBlock(
   config: Config,
   root: string,
@@ -322,12 +327,10 @@ async function writeBlock(
 ): Promise<void> {
   const document = await ConfigDocument.open(root, config.instance.profile);
 
-  for (const target of Object.keys(config.targets)) {
-    if (knowledge === undefined) {
-      document.removeIn(['targets', target, 'knowledge']);
-      continue;
-    }
-    document.setIn(['targets', target, 'knowledge'], {
+  if (knowledge === undefined) {
+    document.removeIn(['knowledge']);
+  } else {
+    document.setIn(['knowledge'], {
       adapter: knowledge.adapter,
       repo: knowledge.repo,
       ...(knowledge.branch ? { branch: knowledge.branch } : {}),
@@ -337,29 +340,6 @@ async function writeBlock(
   }
 
   await document.save();
-}
-
-/**
- * The other targets need the same token in their own credential stores.
- *
- * Not written for them: a second target's store is Secret Manager, which needs
- * cloud credentials this command has no business assuming. `secrets push` is
- * the command that already does exactly this, so this points at it.
- */
-function reportOtherTargets(config: Config, current: string, ref: string): void {
-  const others = Object.keys(config.targets).filter((target) => target !== current);
-  if (others.length === 0) return;
-
-  const profile = config.instance.profile;
-
-  print(
-    style.dim(
-      `  Written into every target (${others.join(', ')} as well). Each reads "${ref}" from its own credential store:`,
-    ),
-  );
-  for (const target of others) {
-    print(style.dim(`    lanes link secrets push --from ${current} --to ${target} --profile ${profile}`));
-  }
 }
 
 async function decideMigration(hasContent: boolean, flags: KnowledgeFlags): Promise<boolean> {

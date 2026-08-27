@@ -1,4 +1,4 @@
-import type { Config, Resolution } from '#profile';
+import type { Resolution } from '#profile';
 import { announce } from '../../output.ts';
 
 /**
@@ -21,7 +21,7 @@ import { announce } from '../../output.ts';
  * is the same mistake caught where it is still cheap.
  */
 export function announceConnectTarget(
-  runtime: { readonly resolution: Resolution; readonly config: Pick<Config, 'targets'> },
+  runtime: { readonly resolution: Resolution },
   json?: boolean | undefined,
 ): void {
   // `emit`'s early return only protects lines printed *at* the emit, and this

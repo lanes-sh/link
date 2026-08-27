@@ -1,4 +1,9 @@
-import { ConfigError, recordDeployment, resolveWorkspaceRoot, type DeployConfig } from '#profile';
+import {
+  ConfigError,
+  recordTarget,
+  resolveWorkspaceRoot,
+  type DeployConfig,
+} from '#profile';
 import { announce, fail, heading, ok, print, style, warn } from '#cli/output.ts';
 import { staleNudge } from '#cli/release.ts';
 import { confirm, isInteractive } from '#cli/prompt.ts';
@@ -8,8 +13,8 @@ import { printSteps, runSteps } from './steps.ts';
 import { driverFor } from './drivers.ts';
 import { prepareSecrets, readableRefs, rotatableRefs } from './prepare.ts';
 import { repairOwnerLayer } from '#cli/config-repair.ts';
+import { migrateWorkspace } from '#cli/workspace-migrate.ts';
 import { deployedWorkspace, uploadWorkspace } from './upload.ts';
-import { unservableProfiles, unservableRefusal } from './servable.ts';
 import { collidingRefs, collisionRefusal, servingProfiles } from './serving.ts';
 import { healthLine, reachability, registerLine, reportUnauthorised } from './report.ts';
 
@@ -200,6 +205,7 @@ export async function deploy(flags: DeployFlags): Promise<void> {
   const credentials = await openSecretStoreFor(config, resolution.workspaceRoot, target);
   const prepared = await prepareSecrets({
     config,
+    declared,
     credentials,
     root: resolution.workspaceRoot,
     target,
@@ -237,25 +243,12 @@ export async function deploy(flags: DeployFlags): Promise<void> {
   // the upload sends would leave a served profile without the surface — this
   // bug again, one profile over.
   if (workspace) {
-    // Before anything is copied, and before the rollout: the endpoint opens
-    // every profile in the bucket against this one target, so a profile that
-    // does not declare it is not a profile that gets skipped — it is a revision
-    // that never goes healthy. `servable.ts` has the whole failure.
-    //
-    // Here rather than at the top of the command because it reads the same
-    // scope the upload does, and that scope is not settled until `workspace`
-    // says there is a bucket to send to at all.
-    const unservable = await unservableProfiles({
-      workspaceRoot: resolution.workspaceRoot,
-      profiles: serving,
-      target,
-    });
-
-    if (unservable.length > 0) {
-      heading('Cannot be served');
-      throw new ConfigError(unservableRefusal(unservable, target));
-    }
-
+    // The pre-flight that used to sit here is gone with contract 1. It refused
+    // a deploy carrying a profile that did not declare the target, because the
+    // endpoint opens every profile in the bucket against one target and one
+    // that could not run on it took the whole revision down. A profile declares
+    // no target now (ADR-052) — it lives in one — so there is no profile in this
+    // workspace that this target cannot open, and nothing left to check.
     await repairOwnerLayer(resolution.workspaceRoot, serving);
 
     // Before the rollout, so the revision that comes up finds a config to read.
@@ -263,14 +256,48 @@ export async function deploy(flags: DeployFlags): Promise<void> {
     // workspace it was told to read is not there yet.
     await uploadWorkspace(resolution.workspaceRoot, workspace, serving);
 
-    // Recorded once the bucket is known to hold this target's config. It is an
-    // index, not configuration (ADR-044) — the next recovery reads it instead
-    // of asking the platform.
-    await recordDeployment(resolution.workspaceRoot, {
-      target,
+    // **The bucket's own migration, here and nowhere else.**
+    //
+    // Contract 1 is not read by this binary at all (ADR-052), so the moment a
+    // bucket becomes contract 2 the revision in front of it stops being able to
+    // read its own config. Doing it here puts that window between an upload and
+    // a rollout that are seconds apart, rather than leaving it open until
+    // somebody happens to redeploy.
+    //
+    // After the upload, because the upload is what puts the profiles there for
+    // it to migrate. Idempotent, so a bucket already at contract 2 costs one
+    // listing and no writes.
+    const migrated = await migrateWorkspace(workspace);
+    if (!migrated.alreadyCurrent) {
+      heading('Migrated');
+      for (const change of migrated.changes) print(`  ${change}`);
+      print(style.dim('  The revision below is the first that can read it.'));
+    }
+
+    // **The target hands itself over to the workspace it now lives in.**
+    //
+    // Two writes, and the order matters. The declaration goes into the bucket's
+    // own `lanes-link.yaml` first, because that is the file the revision coming
+    // up will read to learn where its credentials and bytes are — and a
+    // revision that boots before it lands has nothing to open.
+    //
+    // The local entry then becomes a *pointer*. That is the whole of ADR-052 in
+    // two lines: after this, exactly one file declares this target, and this
+    // machine holds a reference to it rather than a copy. ADR-044's index
+    // existed because the profile's own block was the only record and could be
+    // lost in one edit; there is no second copy left to lose.
+    const stamped = new Date().toISOString();
+
+    await recordTarget(workspace, target, {
+      ...declared,
+      primary: resolution.profile,
+      last_deploy: stamped,
+    });
+
+    await recordTarget(resolution.workspaceRoot, target, {
       workspace,
       primary: resolution.profile,
-      last_deploy: new Date().toISOString(),
+      last_deploy: stamped,
     });
   }
 

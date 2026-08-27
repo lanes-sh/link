@@ -1,42 +1,35 @@
-import {
-  ConfigError,
-  findDeployment,
-  loadWorkspaceProfiles,
-  recordDeployment,
-  resolveWorkspaceRoot,
-} from '#profile';
-import {
-  applyBlobs,
-  applyPulls,
-  applyPushes,
-  planBlobs,
-  planProfile,
-  profilesInEither,
-  resolved,
-  type Prefer,
-  type ProfileSync,
-} from '#deployments/sync-apply.ts';
-import { conflictsIn, type Change } from '#deployments/sync.ts';
-import { deployedWorkspace } from '#deployments/upload.ts';
+import { ConfigError, readRegistry, recordTarget, resolveWorkspaceRoot } from '#profile';
 import { discoverDeployments, holdsWorkspace } from '#deployments/discover.ts';
-import { emit, heading, ok, print, style, waiting, warn } from '../output.ts';
+import { emit, heading, ok, print, style, waiting } from '../output.ts';
 import { confirm, isInteractive } from '../prompt.ts';
 import type { GlobalFlags } from '../runtime.ts';
 
 /**
- * `lanes link sync targets` — the workspace and a target's copy of it, reconciled.
+ * `lanes link sync targets` — adopt a deployment this workspace has lost track of.
  *
- * A deploy leaves two copies of every profile: the one in the workspace and the
- * one in the bucket the endpoint reads. They are meant to agree, and when they
- * stop there was no way to find out, let alone to say which side had lost
- * something. The reported case: a local profile was rewritten and lost its
- * cloud target, `auth.authorization`, and six connections, while the bucket
- * still held every one of them and the service went on answering.
+ * **This used to reconcile two copies of every profile, and there is only one
+ * now.** A deploy left the workspace holding one copy and the bucket another,
+ * they were meant to agree, and when they stopped there was no way to say which
+ * side had lost something. The reported case, twice: a local profile was
+ * rewritten and lost its cloud target, `auth.authorization`, and six
+ * connections, while the bucket still held every one of them and the service
+ * went on answering.
  *
- * Union, and refuse where a union is impossible (ADR-044). Nothing here
- * overwrites a value that exists on both sides — that is `--prefer`, asked for
- * explicitly, because silently choosing one copy over the other is the failure
- * this command was written in response to.
+ * ADR-052 removed the second copy rather than the disagreement. A profile lives
+ * in exactly one target's workspace, so the diff engine this command was built
+ * around — `sync-apply.ts`, `sync.ts`, `--prefer local|remote` — had nothing
+ * left to compare and is gone with contract 1.
+ *
+ * What survives is the half that was never about merging: **finding a
+ * deployment the local registry has no pointer to**, and writing that pointer.
+ * A new machine, a reinstall, a workspace file restored from something older —
+ * the endpoint is still serving, and what went missing is the line saying where
+ * it lives. That is one write, and it cannot lose anything, because the bucket
+ * is authoritative for everything except its own address.
+ *
+ * `--prefer` is gone and is refused by name rather than ignored: it decided
+ * which side won a merge, and someone typing it is asking for behaviour this
+ * command no longer has.
  */
 
 export interface SyncFlags extends GlobalFlags {
@@ -47,22 +40,13 @@ export interface SyncFlags extends GlobalFlags {
   readonly prefer?: string | undefined;
 }
 
-function parsePrefer(value: string | undefined): Prefer | undefined {
-  if (value === undefined) return undefined;
-  if (value !== 'local' && value !== 'remote') {
-    throw new ConfigError(`--prefer must be "local" or "remote", not "${value}"`);
-  }
-  return value;
-}
-
 /**
- * Where the target's copy lives, tried cheapest first.
+ * Where the target's workspace is, tried cheapest first.
  *
- * The order is the point. A declared target answers instantly and is right
- * whenever anything is; the index answers instantly and is right when the
- * declaration is what went missing; `--from` is for when the operator knows and
- * the workspace does not; and discovery is the one that works from nothing, at
- * the cost of a `gcloud` call per project.
+ * The order is the point. An existing pointer answers instantly and is right
+ * whenever anything is; `--from` is for when the operator knows and the
+ * workspace does not; and discovery is the one that works from nothing, at the
+ * cost of a `gcloud` call per project.
  */
 async function locateRemote(
   root: string,
@@ -72,26 +56,20 @@ async function locateRemote(
   if (flags.from) {
     if (!(await holdsWorkspace(flags.from))) {
       throw new ConfigError(
-        `${flags.from} does not hold a workspace — no ${'lanes-link.yaml'} in it.\n` +
+        `${flags.from} does not hold a workspace — no lanes-link.yaml in it.\n` +
           '  Check the bucket name, or run with --discover to search for one.',
       );
     }
     return { workspace: flags.from.replace(/\/$/, ''), how: '--from' };
   }
 
-  for (const entry of (await loadWorkspaceProfiles(root)).loaded) {
-    const declared = entry.config.targets[target];
-    const workspace = declared ? deployedWorkspace(declared) : undefined;
-    if (workspace) return { workspace, how: `declared by ${entry.profile}` };
-  }
-
-  const recorded = await findDeployment(root, target);
-  if (recorded) return { workspace: recorded.workspace, how: 'recorded by a previous deploy' };
+  const entry = (await readRegistry(root))[target];
+  if (entry?.workspace) return { workspace: entry.workspace, how: 'already recorded' };
 
   if (flags.discover !== true) {
     throw new ConfigError(
       `Nothing here says where "${target}" lives.\n` +
-        '  No profile declares it, and no deploy recorded it in lanes-link.yaml.\n\n' +
+        '  No pointer to it in lanes-link.yaml, and nothing else records one.\n\n' +
         '  If you know the bucket:  lanes link sync targets --target ' +
         `${target} --from gs://<bucket>\n` +
         `  If you do not:           lanes link sync targets --target ${target} --discover`,
@@ -99,9 +77,7 @@ async function locateRemote(
   }
 
   const candidates = (
-    await waiting('searching your projects for a deployment', () =>
-      discoverDeployments(),
-    )
+    await waiting('searching your projects for a deployment', () => discoverDeployments())
   ).filter((candidate) => candidate.workspace !== undefined);
 
   if (candidates.length === 0) {
@@ -117,8 +93,8 @@ async function locateRemote(
     print(style.dim(`    workspace ${candidate.workspace}`));
   }
 
-  // One is offered rather than chosen: adopting the wrong deployment would
-  // merge a stranger's config into this workspace.
+  // One is offered rather than chosen: adopting the wrong deployment would point
+  // this workspace at a stranger's accounts.
   const first = candidates[0]!;
   if (candidates.length > 1 || !isInteractive()) {
     throw new ConfigError(
@@ -127,136 +103,92 @@ async function locateRemote(
     );
   }
 
-  if (!(await confirm(`  Sync "${target}" against ${first.workspace}?`))) {
+  if (!(await confirm(`  Point "${target}" at ${first.workspace}?`))) {
     throw new ConfigError('Nothing was read or written.');
   }
 
   return { workspace: first.workspace!, how: 'discovered' };
 }
 
-const arrow = (direction: Change['direction']): string =>
-  direction === 'pull' ? style.green('←') : direction === 'push' ? style.cyan('→') : style.yellow('!');
-
-const describe = (change: Change): string => {
-  const path = change.path.length === 0 ? 'the whole profile' : change.path.join('.');
-  if (change.direction === 'pull') return `${path}  ${style.dim('missing locally')}`;
-  if (change.direction === 'push') return `${path}  ${style.dim('missing remotely')}`;
-  return `${path}  ${style.dim(`local ${short(change.local)} ≠ remote ${short(change.remote)}`)}`;
-};
-
-const short = (value: unknown): string => {
-  const text = typeof value === 'string' ? value : JSON.stringify(value);
-  return (text ?? 'nothing').length > 40 ? `${(text ?? '').slice(0, 37)}…` : (text ?? 'nothing');
-};
-
 export async function syncTargets(flags: SyncFlags): Promise<void> {
   const target = flags.target!;
-  const prefer = parsePrefer(flags.prefer);
   const root = resolveWorkspaceRoot();
 
-  const { workspace: remote, how } = await locateRemote(root, target, flags);
-
-  const names = flags.profile ? [flags.profile] : await profilesInEither(root, remote);
-  const plans: ProfileSync[] = [];
-  for (const profile of names) plans.push(await planProfile(root, remote, profile, prefer));
-
-  const blobs = await planBlobs(root, remote);
-  const conflicts = [
-    ...plans.flatMap((plan) => conflictsIn(plan.changes)),
-    ...blobs.filter((blob) => blob.direction === 'conflict'),
-  ];
-
-  const payload = {
-    workspace: root,
-    remote,
-    target,
-    profiles: plans.map((plan) => ({ profile: plan.profile, changes: plan.changes })),
-    blobs,
-    conflicts: conflicts.length,
-    applied: false,
-  };
-
-  const render = (): void => {
-    print(style.dim(`workspace ${style.bold(root)}  target ${style.bold(target)}`));
-    print(style.dim(`remote    ${remote}  (${how})`));
-
-    let anything = false;
-    for (const plan of plans) {
-      if (plan.changes.length === 0) continue;
-      anything = true;
-
-      heading(plan.profile);
-      for (const change of plan.changes) print(`  ${arrow(change.direction)} ${describe(change)}`);
-    }
-
-    if (blobs.length > 0) {
-      anything = true;
-      heading('Skills and manifests');
-      for (const blob of blobs) print(`  ${arrow(blob.direction)} ${blob.key}`);
-    }
-
-    if (!anything) print(ok('already in step — nothing to copy in either direction'));
-  };
-
-  if (conflicts.length > 0 && prefer === undefined) {
-    render();
-    print('');
+  if (flags.prefer !== undefined) {
     throw new ConfigError(
-      `${conflicts.length} conflict(s): both copies hold these, and they disagree.\n` +
-        '  Nothing was written. Re-run with --prefer local or --prefer remote,\n' +
-        '  or edit one side so they agree.',
+      '--prefer decided which of two copies of a profile won a merge, and there is\n' +
+        'only one copy now: the one in the target\'s own workspace (ADR-052).\n' +
+        '  This command adopts a deployment, and adopting cannot overwrite anything.\n' +
+        '  Drop the flag and run it again.',
     );
   }
 
-  if (flags.dryRun === true) {
-    return emit(flags.json, payload, () => {
-      render();
-      print('');
-      print(style.dim('  --dry-run: nothing was written on either side.'));
-    });
-  }
+  const { workspace, how } = await locateRemote(root, target, flags);
 
-  if (flags.json !== true) render();
+  // What is actually there, so an adoption cannot point at an empty bucket and
+  // report success. This is the one read the command makes, and it is also the
+  // check: a workspace that declares this target is a workspace that can serve
+  // it.
+  const remoteRegistry = await readRegistry(workspace);
+  const declaresIt = remoteRegistry[target] !== undefined;
+  const existing = (await readRegistry(root))[target];
+  const already = existing?.workspace === workspace;
 
-  let pulled = 0;
-  let pushed = 0;
-  for (const plan of plans) {
-    const changes = resolved(plan.changes, prefer);
-    pulled += await applyPulls(root, remote, plan.profile, changes);
-    if (await applyPushes(root, remote, plan.profile, changes)) pushed += 1;
-  }
+  const payload = { workspace: root, remote: workspace, target, how, declaresIt, applied: false };
 
-  const copied = await applyBlobs(
-    root,
-    remote,
-    resolvedBlobs(blobs, prefer),
-  );
-
-  // Recorded now that a bucket has been confirmed to hold this target's
-  // workspace: the next recovery does not have to discover it again.
-  await recordDeployment(root, { target, workspace: remote });
-
-  return emit(flags.json, { ...payload, applied: true, pulled, pushed, copied }, () => {
+  const render = (): void => {
+    print(style.dim(`workspace ${style.bold(root)}  target ${style.bold(target)}`));
+    print(style.dim(`remote    ${workspace}  (${how})`));
     print('');
-    if (pulled === 0 && pushed === 0 && copied === 0) return;
 
-    print(ok(`${pulled} key(s) pulled, ${pushed} profile(s) pushed, ${copied} file(s) copied`));
-    print(style.dim(`  recorded ${remote} in lanes-link.yaml, so this is findable next time`));
-    if (pushed > 0) {
-      print(style.dim(`  the endpoint re-reads its config on the next call — or run:`));
-      print(style.dim(`    lanes link status --target ${target}`));
+    if (!declaresIt) {
+      const there = Object.keys(remoteRegistry).sort().join(', ') || 'none';
+      print(
+        style.yellow(
+          `${workspace} does not declare a target called "${target}" (it declares: ${there}).`,
+        ),
+      );
+      print(
+        style.dim(
+          '  Adopting it would write a pointer to a workspace that cannot answer for\n' +
+            '  this target. Check the name, or deploy it there first.',
+        ),
+      );
+      return;
     }
-  });
-}
 
-/** A conflicting file follows `--prefer` like a conflicting key does. */
-function resolvedBlobs(
-  blobs: readonly { key: string; direction: 'pull' | 'push' | 'conflict' }[],
-  prefer: Prefer | undefined,
-): { key: string; direction: 'pull' | 'push' }[] {
-  return blobs.flatMap((blob) => {
-    if (blob.direction !== 'conflict') return [{ key: blob.key, direction: blob.direction }];
-    if (prefer === undefined) return [];
-    return [{ key: blob.key, direction: prefer === 'remote' ? ('pull' as const) : ('push' as const) }];
-  });
+    if (already) {
+      print(ok('already pointed there — nothing to change'));
+      return;
+    }
+
+    heading('Would write');
+    print(`  targets.${target}.workspace: ${workspace}`);
+    print(style.dim('  The bucket keeps everything else; this records where it is.'));
+  };
+
+  if (!declaresIt) {
+    render();
+    throw new ConfigError(`"${target}" is not declared at ${workspace}.`);
+  }
+
+  if (flags.dryRun || already) {
+    render();
+    if (flags.dryRun) print(style.dim('  --dry-run: nothing was written.'));
+    return emit(flags.json, payload, () => {});
+  }
+
+  render();
+
+  // Only the pointer. Everything that describes the target — its adapters, its
+  // deploy block, whose token opens it — is declared where it lives, and reading
+  // it from there is what makes this safe to run on a workspace that has lost
+  // its own copy of anything.
+  await recordTarget(root, target, { workspace });
+
+  print('');
+  print(ok(`"${target}" now points at ${workspace}`));
+  print(style.dim(`  lanes link status --target ${target}   reads it from there`));
+
+  return emit(flags.json, { ...payload, applied: true }, () => {});
 }

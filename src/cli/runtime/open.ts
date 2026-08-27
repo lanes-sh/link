@@ -9,10 +9,10 @@ import {
   KNOWLEDGE_LAYOUT,
   layout,
   listProfiles,
-  undeclaredTarget,
   workspacePath,
   type Config,
   type Resolution,
+  type TargetConfig,
 } from '#profile';
 import { ProviderRegistry, toPolicyDocument } from '#registry';
 import { Dispatcher, createConsoleLogger } from '#dispatch';
@@ -48,6 +48,15 @@ export interface Runtime {
   readonly resolution: Resolution;
   readonly config: Config;
   readonly target: string;
+  /**
+   * The target's adapter set, from the workspace that declares it.
+   *
+   * Here because the config no longer carries it. Every caller that used to
+   * reach `config.targets[target]` — for a `deploy` block, a storage adapter, a
+   * knowledge repository — reads this instead, and reads it without following
+   * the pointer a second time (ADR-052).
+   */
+  readonly declared: TargetConfig;
   readonly state: RuntimeState;
   /** The durable log, for reading. Copies, if any, are write-only and not here. */
   readonly audit: AuditReader;
@@ -133,16 +142,15 @@ export async function openRuntime(
   flags: GlobalFlags,
   options: OpenOptions = {},
 ): Promise<Runtime> {
-  const { resolution, config, target } = await resolveProfile(flags);
-  const declared = config.targets[target];
-  // `resolveProfile` has already checked this, so reaching it means a caller
-  // passed `allowUndeclaredTarget`. Through the shared refusal all the same:
-  // this was a fourth spelling of that sentence with the profile name and the
-  // list of what exists both missing, and the comment on `undeclaredTarget`
-  // says why one copy is the most that survives.
-  if (!declared) throw undeclaredTarget(target, config, resolution.profile);
+  const { resolution, config, target, resolved } = await resolveProfile(flags);
+  // `resolveProfile` returns this for every caller that did not ask to create
+  // the target, and `openRuntime` never does — a runtime for a target that does
+  // not exist yet has nothing to open. The check is what makes that readable at
+  // the type level rather than a comment.
+  if (!resolved) throw new Error(`Target "${target}" has nothing to open yet`);
 
-  const root = resolution.workspaceRoot;
+  const declared = resolved.declared;
+  const root = resolved.workspaceRoot;
   const adapters: TargetInput = { declared, config, root, target };
 
   // Credentials first: an S3 key pair is itself a credential reference, so the
@@ -341,6 +349,7 @@ export async function openRuntime(
     resolution,
     config,
     target,
+    declared,
     state,
     audit,
     credentials,

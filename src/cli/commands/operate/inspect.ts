@@ -5,7 +5,7 @@ import { staleNudge } from '../../release.ts';
 import { openRuntime, resolveProfileOnly, type GlobalFlags, type Runtime } from '../../runtime.ts';
 import type { FetchLike } from '#deployments/knowledge.ts';
 import { credentialAge, reportCapabilityDrift } from './findings.ts';
-import { migratedRenamedProviders } from './migrate.ts';
+import { migratedContract, migratedRenamedProviders } from './migrate.ts';
 
 /**
  * The gate order — check, doctor, plan, start — exists so failures surface in
@@ -75,6 +75,10 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
   try {
     runtime = await openRuntime(flags, { fetch: flags.fetch });
   } catch (refusal) {
+    // Contract first: it is checked before the schema, so a profile carrying
+    // both problems reports the contract one and the rename cannot be seen until
+    // that is settled.
+    if (await migratedContract(flags, refusal)) return;
     if (await migratedRenamedProviders(flags, refusal)) return;
     throw refusal;
   }

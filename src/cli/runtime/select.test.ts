@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -17,20 +17,30 @@ import { openBlobStoreFor } from './select.ts';
 
 const config = (): Config =>
   ({
-    contract: 1,
-    instance: { profile: 'personal', default_target: 'local' },
-    targets: {
-      local: {
-        credentials: { adapter: 'file' },
-        storage: { adapter: 'filesystem' },
-      },
-    },
+    contract: 2,
+    instance: { profile: 'personal' },
     connections: [],
     policy: { allow: [] },
   }) as unknown as Config;
 
-async function workspace(): Promise<string> {
-  return await mkdtemp(join(tmpdir(), 'lanes-link-select-'));
+/**
+ * A workspace whose registry declares the target.
+ *
+ * It used to be an empty directory, because the adapters came off the `Config`
+ * passed in. They come off the workspace now (ADR-052), and `openBlobStoreFor`
+ * resolves them itself — so the file has to exist for there to be a target at
+ * all. `storage` overrides the `local` declaration where a test is about a
+ * declared path.
+ */
+async function workspace(storage?: string): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), 'lanes-link-select-'));
+  await writeFile(
+    join(root, 'lanes-link.yaml'),
+    'contract: 2\ntargets:\n  local:\n' +
+      '    credentials: { adapter: file }\n' +
+      `    storage: { adapter: filesystem${storage ? `, path: ${storage}` : ''} }\n`,
+  );
+  return root;
 }
 
 describe('openBlobStoreFor', () => {
@@ -62,18 +72,16 @@ describe('openBlobStoreFor', () => {
     // declares its own paths keeps them. Removal enumerates whatever the store
     // is rooted at, so assuming `data/<profile>/` would quietly half-remove
     // any profile that declares somewhere else.
-    const root = await workspace();
-    const declared = config();
-    (declared.targets['local'] as { storage: { path?: string } }).storage.path = 'elsewhere/mine';
+    const root = await workspace('elsewhere/mine');
 
-    const store = await openBlobStoreFor(declared, root, 'local');
+    const store = await openBlobStoreFor(config(), root, 'local');
     await store.put('note.txt', new TextEncoder().encode('x'));
 
     expect(existsSync(join(root, 'elsewhere/mine/note.txt'))).toBe(true);
     expect(existsSync(join(root, 'data/personal/note.txt'))).toBe(false);
   });
 
-  test('refuses a target the profile does not declare', async () => {
+  test('refuses a target the workspace does not declare', async () => {
     const root = await workspace();
 
     await expect(openBlobStoreFor(config(), root, 'cloud')).rejects.toThrow(/cloud/);

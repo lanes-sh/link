@@ -14,14 +14,9 @@ import { parseConfig } from './load.ts';
  * directions: prose passes, and a credential pasted into a value does not.
  */
 
-const PROFILE = `contract: 1
+const PROFILE = `contract: 2
 instance:
   profile: personal
-  default_target: local
-targets:
-  local:
-    credentials: { adapter: file, path: ./data/personal/credentials.enc }
-    storage: { adapter: filesystem, path: ./data/personal }
 connections:
   - { id: main, provider: identity, account: Identity }
 policy:

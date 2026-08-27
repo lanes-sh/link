@@ -79,3 +79,19 @@ as long as config lived in the image.
 - **A published image becomes possible**, which would let a deploy skip Cloud Build and Artifact
   Registry entirely. Not done here — publishing, versioning and trust are their own decision — but
   this is the change that unblocks it.
+
+
+## Note (ADR-052)
+
+Unchanged, and now load-bearing rather than an optimisation.
+
+This decision made a bucket a place a workspace could live.
+[ADR-052](052-a-target-owns-its-workspace.md) makes it the place a target's workspace *does*
+live, and the only authority on what that target holds — so `isRemoteWorkspace` and
+`workspaceFiles` are no longer a deployment convenience, they are how the CLI reads a cloud
+target at all.
+
+The guarantee this gave up is unaffected: a revision still does not fully describe what it
+serves, and the config it reads is still versioned by the bucket rather than the image. What
+ADR-052 adds is that migrating that bucket now has to happen in the same command that rolls the
+image, because contract 1 is not read.

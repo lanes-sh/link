@@ -1,10 +1,12 @@
 import { describeKnowledge } from '#deployments/knowledge.ts';
 import {
-  loadProfileConfig,
-  resolveSelection,
-  undeclaredTarget,
-  type Config,
-  type ProfileSelection,
+  isPointer,
+  listProfiles,
+  notInRegistry,
+  openTarget,
+  readRegistry,
+  resolveWorkspaceRoot,
+  type WorkspaceTarget,
 } from '#profile';
 import { ConfigError } from '#profile';
 import { deployedUrl, deploymentIdentity, type DeploymentIdentity } from '../endpoint-url.ts';
@@ -13,18 +15,23 @@ import { announce, emit, heading, ok, print, style, table, waiting, warn } from 
 import type { GlobalFlags } from '../runtime.ts';
 
 /**
- * `lanes link target` — the adapter sets a profile declares, and which one is in play.
+ * `lanes link target` — the targets this workspace knows, and where each lives.
  *
- * A target names *where a profile runs*: a credential store and a blob store,
- * and optionally a deployment. Connections, providers, policy and limits are
- * declared once and apply to every target, so changing one changes where the
- * bytes go and nothing above them.
+ * A target names *a workspace*: a credential store, a blob store, optionally a
+ * deployment, and the profiles that live in it. Under ADR-052 it is declared
+ * once, by the workspace that is it — not once per profile, which is what let
+ * two profiles disagree about whether a running deployment existed.
  *
- * Two answers are worth telling apart and this is the only place that does.
- * `instance.default_target` is what commands run against when nobody says, and
- * it lives in the profile. `LANES_LINK_TARGET` is what *this shell* says, and it
- * wins. When they disagree — the case that sends someone hunting a bug — `list`
- * marks both and names the variable.
+ * So this command no longer takes `--profile`. It never really wanted one: the
+ * question is "what can I pass to --target", and that had the same answer for
+ * every profile in all but the broken cases.
+ *
+ * **`list` does not follow pointers.** A registry entry either declares its
+ * adapters here or names the workspace that does, and following the second kind
+ * is a network read per entry. `list` prints what the registry says, so it stays
+ * instant and works offline; `show` follows one target and reports what is
+ * really there. That split is why a listing can be trusted when the bucket is
+ * unreachable — which is exactly when someone is running it.
  *
  * Each command is a data function plus a printing wrapper, the split
  * `profile.ts` uses and for the same reason: `--json` wants the facts without
@@ -35,9 +42,18 @@ export interface TargetSummary {
   readonly name: string;
   /** Whether this is the one `--target` named, when it named any. */
   readonly isSelected: boolean;
-  readonly credentials: string;
-  readonly storage: string;
-  readonly vault: string;
+  /**
+   * Where the declaration lives: `null` for one this workspace makes itself,
+   * otherwise the workspace it points at.
+   *
+   * The whole listing hangs off this. A pointer's adapters are not read by
+   * `list`, so every field below it is null for one — which is honest rather
+   * than lossy: they are somewhere else, and `show` is the command that goes.
+   */
+  readonly pointsAt: string | null;
+  readonly credentials: string | null;
+  readonly storage: string | null;
+  readonly vault: string | null;
   /**
    * Where memory and skills are kept, when that is not `storage` above.
    *
@@ -47,7 +63,7 @@ export interface TargetSummary {
    * the log and the state and false of the owner's own notes.
    */
   readonly knowledge: string | null;
-  /** Whether a deployment is declared. Free, and always present. */
+  /** Whether a deployment is declared. Unknown, and false, for a pointer. */
   readonly deployed: boolean;
   readonly deployment: DeploymentIdentity | null;
   /** Only when asked for; absent is "not asked", null is "asked, no answer". */
@@ -56,8 +72,6 @@ export interface TargetSummary {
 
 export interface TargetListing {
   readonly root: string;
-  readonly profile: string;
-  readonly path: string;
   /** What `--target` named, when it named anything. */
   readonly selected: string | null;
   /**
@@ -76,61 +90,76 @@ export interface TargetFlags extends GlobalFlags {
 }
 
 /**
- * The profile, its config, and what it declares — in one pass.
+ * The registry, and what each entry says about itself — in one pass.
  *
  * **Deliberately not `resolveProfile`.** That helper resolves the target the way
  * every other command needs it resolved: by refusing a name that is not
- * declared. Here that is exactly backwards. `LANES_LINK_TARGET=clod` is the
- * state in which every other command has just started failing, and this is the
- * command someone runs to find out why — so it has to survive the condition it
- * exists to diagnose. It resolves the name with `askedTarget` and reports
- * whether it landed on anything, rather than throwing. `readProfiles` in
- * `profile.ts` declines to parse configs for the same reason.
+ * declared. Here that is exactly backwards. `--target clod` is the state in
+ * which every other command has just started failing, and this is the command
+ * someone runs to find out why — so it has to survive the condition it exists to
+ * diagnose. It reports whether the name landed on anything rather than throwing.
+ * `readProfiles` in `profile.ts` declines to parse configs for the same reason.
+ *
+ * It reads no profile at all now. The registry is the answer, and it is one file
+ * (ADR-052).
  */
 async function survey(
   flags: TargetFlags,
   options: { urls?: boolean; env?: Record<string, string | undefined> } = {},
-): Promise<{ selection: ProfileSelection; config: Config; listing: TargetListing }> {
-  const selection = await resolveSelection({
-    ...(flags.profile !== undefined ? { profileFlag: flags.profile } : {}),
-    ...(options.env !== undefined ? { env: options.env } : {}),
-  });
-
-  const { config } = await loadProfileConfig(selection.workspaceRoot, selection.profile);
+): Promise<{ root: string; listing: TargetListing }> {
+  const root = resolveWorkspaceRoot(options.env !== undefined ? { env: options.env } : {});
+  const registry = await readRegistry(root);
 
   const selected = flags.target ?? null;
-  const names = Object.keys(config.targets);
+  const names = Object.keys(registry).sort();
 
   const summaries: TargetSummary[] = names.map((name) => {
-    const declared = config.targets[name]!;
-    return {
-      name,
-      isSelected: name === selected,
-      credentials: declared.credentials.adapter,
-      storage: declared.storage.adapter,
-      vault: declared.vault?.adapter ?? 'file',
-      knowledge: declared.knowledge ? describeKnowledge(declared.knowledge) : null,
-      deployed: declared.deploy !== undefined,
-      deployment: deploymentIdentity(declared.deploy),
-    };
+    const entry = registry[name]!;
+    return summarise(name, entry, name === selected);
   });
 
   return {
-    selection,
-    config,
+    root,
     listing: {
-      root: selection.workspaceRoot,
-      profile: selection.profile,
-      path: selection.profilePath,
+      root,
       selected,
       selectedDeclared: selected === null || names.includes(selected),
       // Asking the platform is opt-in: one `gcloud` subprocess per deployable
-      // target, and the profiles that make this command worth running are
+      // target, and the workspaces that make this command worth running are
       // exactly the ones with several. A discovery command that takes ten
       // seconds and needs a cloud CLI installed is one nobody runs twice —
       // `outputs --target X` is already the command that asks.
-      targets: options.urls === true ? await withUrls(config, summaries) : summaries,
+      targets: options.urls === true ? await withUrls(registry, summaries) : summaries,
     },
+  };
+}
+
+/** One entry, rendered without following it. */
+function summarise(name: string, entry: WorkspaceTarget, isSelected: boolean): TargetSummary {
+  if (isPointer(entry)) {
+    return {
+      name,
+      isSelected,
+      pointsAt: entry.workspace,
+      credentials: null,
+      storage: null,
+      vault: null,
+      knowledge: null,
+      deployed: false,
+      deployment: null,
+    };
+  }
+
+  return {
+    name,
+    isSelected,
+    pointsAt: null,
+    credentials: entry.credentials?.adapter ?? null,
+    storage: entry.storage?.adapter ?? null,
+    vault: entry.vault?.adapter ?? 'file',
+    knowledge: null,
+    deployed: entry.deploy !== undefined,
+    deployment: deploymentIdentity(entry.deploy),
   };
 }
 
@@ -144,7 +173,7 @@ export async function readTargets(
 
 /** Every deployable target's address, asked for at once rather than in turn. */
 async function withUrls(
-  config: Config,
+  registry: Record<string, WorkspaceTarget>,
   summaries: readonly TargetSummary[],
 ): Promise<TargetSummary[]> {
   return waiting('asking the platform for addresses', () =>
@@ -154,7 +183,7 @@ async function withUrls(
         // Resolves to null immediately for a target with no deployment, and
         // swallows a missing or unauthenticated `gcloud` — neither is a reason
         // for a listing to fail.
-        url: await deployedUrl(config.targets[summary.name]?.deploy),
+        url: await deployedUrl(registry[summary.name]?.deploy),
       })),
     ),
   );
@@ -164,16 +193,23 @@ export async function targetList(flags: TargetFlags): Promise<void> {
   const { listing } = await survey(flags, { urls: flags.urls === true });
 
   return emit(flags.json, listing, () => {
-    print(style.dim(`${listing.profile}  ${listing.path}`));
+    print(style.dim(listing.root));
     print();
 
     table(
       listing.targets.map((target) => [
         `  ${target.isSelected ? style.cyan('→') : ' '}`,
         style.bold(target.name),
-        style.dim(target.credentials),
-        style.dim(target.storage),
-        deploymentCell(target),
+        // A pointer says where it lives instead of what it is made of. Its
+        // adapters are declared in that workspace and reading them is a network
+        // call `list` deliberately does not make.
+        ...(target.pointsAt !== null
+          ? [style.dim(target.pointsAt), '', '']
+          : [
+              style.dim(target.credentials ?? ''),
+              style.dim(target.storage ?? ''),
+              deploymentCell(target),
+            ]),
       ]),
     );
 
@@ -233,13 +269,15 @@ export function targetUse(name: string | undefined): never {
 /**
  * `lanes link target show [name]` — one target's adapters, and where it answers.
  *
- * The deep counterpart to `list`, and the one that *does* ask the platform: one
- * target, one subprocess, and you named it. Nothing else prints a target's
- * adapter set — `config show` dumps the whole file as JSON — which is what earns
- * this its place beside `outputs`.
+ * The deep counterpart to `list`, and the one that *does* go and look: it
+ * follows a pointer to the workspace that declares the target, then asks the
+ * platform for the address. One target, one hop, one subprocess, and you named
+ * it. Nothing else prints a target's adapter set — `config show` dumps a
+ * profile, which no longer carries one — which is what earns this its place
+ * beside `outputs`.
  */
 export async function targetShow(name: string | undefined, flags: TargetFlags): Promise<void> {
-  const { config, listing } = await survey(flags);
+  const { root, listing } = await survey(flags);
 
   // Positionally or by flag, but one of them: this command's whole subject is a
   // single target, and there is no default left to mean "the one you would have
@@ -247,28 +285,31 @@ export async function targetShow(name: string | undefined, flags: TargetFlags): 
   const wanted = name ?? listing.selected;
   if (!wanted) {
     throw new ConfigError(
-      'Usage: lanes link target show <name> --profile <name>\n' +
+      'Usage: lanes link target show <name>\n' +
         `  Declared here: ${listing.targets.map((one) => one.name).join(', ') || 'none'}`,
     );
   }
 
-  const summary = listing.targets.find((candidate) => candidate.name === wanted);
-  if (!summary) throw undeclaredTarget(wanted, config, listing.profile);
+  const resolved = await openTarget(root, wanted);
+  const summary = summarise(wanted, { ...resolved.declared, ...resolved.entry }, true);
+  const profiles = await listProfiles(resolved.workspaceRoot);
 
   const url = summary.deployment
     ? await waiting('asking the platform for an address', () =>
-        deployedUrl(config.targets[wanted]?.deploy),
+        deployedUrl(resolved.declared.deploy),
       )
     : null;
 
-  return emit(flags.json, { ...summary, url }, () => {
-    print(style.dim(`${listing.profile}  ${listing.path}`));
+  return emit(flags.json, { ...summary, workspace: resolved.workspaceRoot, profiles, url }, () => {
+    print(style.dim(resolved.workspaceRoot));
 
     heading(summary.name);
     table([
-      ['  credentials', summary.credentials],
-      ['  storage', summary.storage],
-      ['  vault', summary.vault],
+      ['  workspace', resolved.workspaceRoot],
+      ['  profiles', profiles.join(', ') || style.dim('none yet')],
+      ['  credentials', summary.credentials ?? ''],
+      ['  storage', summary.storage ?? ''],
+      ['  vault', summary.vault ?? ''],
       ...(summary.knowledge
         ? [['  knowledge', summary.knowledge, style.dim('memory and skills')]]
         : []),

@@ -1,3 +1,4 @@
+import { workspaceYaml } from '#profile/testing.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -25,16 +26,10 @@ import { assetsStore } from './owner/assets.ts';
 const roots: string[] = [];
 const previousHome = process.env['LANES_LINK_HOME'];
 
-const PROFILE = `contract: 1
+const PROFILE = `contract: 2
 
 instance:
   profile: personal
-  default_target: local
-
-targets:
-  local:
-    credentials: { adapter: file,       path: ./data/personal.credentials.enc }
-    storage:     { adapter: filesystem, path: ./data/files }
 
 # Labelled the way the CLI writes them: the provider's own name. A tasks row
 # under any other label is refused, because that is the only signal a config
@@ -56,7 +51,7 @@ async function workspace(): Promise<string> {
   roots.push(root);
 
   await mkdir(join(root, 'profiles'), { recursive: true });
-  await writeFile(join(root, 'lanes-link.yaml'), 'contract: 1\ndefault_profile: personal\n');
+  await writeFile(join(root, 'lanes-link.yaml'), workspaceYaml(['local'], {defaultProfile: 'personal'}));
   await writeFile(join(root, 'profiles', 'personal.yaml'), PROFILE);
 
   process.env['LANES_LINK_HOME'] = root;
