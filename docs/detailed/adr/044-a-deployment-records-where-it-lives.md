@@ -1,6 +1,6 @@
 # ADR-044: A deployment records where it lives, and a workspace can be merged with it
 
-**Status:** accepted · **Follows from** [ADR-023](023-the-workspace-is-not-in-the-image.md) ·
+**Status:** superseded by [ADR-052](052-a-target-owns-its-workspace.md) · **Follows from** [ADR-023](023-the-workspace-is-not-in-the-image.md) ·
 **Relates to** [ADR-029](029-connecting-is-not-deploying.md)
 
 ## Context
@@ -93,3 +93,20 @@ Two copies that have both changed since they agreed cannot be merged without bei
 wins, and `--prefer` is per run rather than per key. A run with conflicts in two directions has
 to be done twice, narrowed with `--profile`. That is the honest cost of refusing to guess, and
 it is preferable to the alternative this replaces, which guessed silently.
+
+
+## Superseded
+
+[ADR-052](052-a-target-owns-its-workspace.md) removed the thing this was an index *to*. A
+profile declares no target, so the six lines this decision protected no longer exist to be lost,
+and the index became the declaration rather than a record beside one.
+
+The reasoning above still holds and is worth keeping: "a record kept inside the thing it
+describes cannot survive the thing being lost" is exactly why the target moved out of the
+profile. What did not survive is the conclusion that the profile must go on declaring it — that
+insistence is what kept two copies of every profile in play, and the incident this decision was
+written from happened twice more before it was dropped.
+
+`sync targets` survives with its merge removed. Adopting a deployment the registry has no
+pointer to is still the recovery this described; choosing between two copies of a profile is not,
+because there is one.

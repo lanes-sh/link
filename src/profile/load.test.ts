@@ -1,16 +1,14 @@
 import { describe, expect, test } from 'bun:test';
+import { parse as parseYaml } from 'yaml';
 import { ConfigError, parseConfig, validateConfig } from './load.ts';
+import { legacyTargetSchema } from './legacy.ts';
+import { workspaceSchema } from './schema.ts';
 
 /** A minimal valid config; each test overrides the part it is about. */
 const VALID = `
-contract: 1
+contract: 2
 instance:
   profile: personal
-  default_target: local
-targets:
-  local:
-    credentials: { adapter: file, path: ./data/personal.credentials.enc }
-    storage: { adapter: filesystem, path: ./data/personal/files }
 connections:
   - id: a
     provider: example
@@ -41,18 +39,28 @@ describe('a valid config', () => {
 
 describe('contract major fails closed', () => {
   test('rejects a newer major outright', () => {
-    expect(() => parseConfig(VALID.replace('contract: 1', 'contract: 2'))).toThrow(
-      /contract 2 is newer than.*Upgrade lanes-link/s,
+    expect(() => parseConfig(VALID.replace('contract: 2', 'contract: 3'))).toThrow(
+      /contract 3 is newer than.*Upgrade lanes-link/s,
     );
   });
 
   test('rejects an older major outright', () => {
-    expect(() => parseConfig(VALID.replace('contract: 1', 'contract: 0'))).toThrow(/older than/);
+    expect(() => parseConfig(VALID.replace('contract: 2', 'contract: 0'))).toThrow(/older than/);
+  });
+
+  // Contract 1 is the shape this release replaced, and it is refused here rather
+  // than read: `profile/legacy.ts` understands it and only the migration uses
+  // that, so a profile still carrying `targets:` fails at the boundary with a
+  // sentence naming the migration (ADR-052).
+  test('rejects contract 1, which the migration handles instead', () => {
+    expect(() => parseConfig(VALID.replace('contract: 2', 'contract: 1'))).toThrow(
+      /contract 1 is older than/,
+    );
   });
 
   test('rejects a missing or non-integer contract', () => {
-    expect(() => parseConfig(VALID.replace('contract: 1\n', ''))).toThrow(/"contract" is required/);
-    expect(() => parseConfig(VALID.replace('contract: 1', 'contract: "1"'))).toThrow(
+    expect(() => parseConfig(VALID.replace('contract: 2\n', ''))).toThrow(/"contract" is required/);
+    expect(() => parseConfig(VALID.replace('contract: 2', 'contract: "2"'))).toThrow(
       /must be an integer/,
     );
   });
@@ -60,9 +68,9 @@ describe('contract major fails closed', () => {
   test('the contract check runs before anything else', () => {
     // A config that is wrong in several ways must report the contract, because
     // under an unknown major we cannot claim to know what the rest means.
-    const broken = VALID.replace('contract: 1', 'contract: 99').replace(
-      'default_target: local',
-      'default_target: nope',
+    const broken = VALID.replace('contract: 2', 'contract: 99').replace(
+      'profile: personal',
+      'profile: "not an identifier"',
     );
     expect(() => parseConfig(broken)).toThrow(/contract 99/);
   });
@@ -229,7 +237,7 @@ describe('referential integrity', () => {
 });
 
 /**
- * The one id that moved out from under a profile — ADR-051.
+ * The one id that moved out from under a profile — ADR-052.
  *
  * A refusal rather than a warning, because the failure it replaces is silent:
  * the row resolves to the built-in, reconcile calls it active, and the operator
@@ -280,16 +288,16 @@ describe('a provider whose id has been renamed', () => {
     // document rather than off whatever command tripped over it, because nothing
     // has resolved anything at this point.
     expect(() => parseConfig(withTasks('personal', 'personal'))).toThrow(
-      /lanes link doctor --fix --profile personal --target local/,
+      /lanes link doctor --fix --profile personal --target <target>/,
     );
   });
 
-  test('a profile with several targets gets a placeholder rather than a guess', () => {
-    const twoTargets = withTasks('personal', 'personal').replace(
-      '    storage: { adapter: filesystem, path: ./data/personal/files }',
-      '    storage: { adapter: filesystem, path: ./data/personal/files }\n  cloud:\n    credentials: { adapter: gcp-secret-manager, project: p }\n    storage: { adapter: gcs, bucket: b }',
-    );
-    expect(() => parseConfig(twoTargets)).toThrow(/--target <local\|cloud>/);
+  test('the target stays a placeholder, because the profile no longer names one', () => {
+    // It used to read the profile's own `targets:` block and name the target
+    // when there was exactly one. A profile declares none (ADR-052) — it lives
+    // in one — so the honest answer is the placeholder, and whoever is reading
+    // this refusal just typed which target they meant.
+    expect(() => parseConfig(withTasks('personal', 'personal'))).toThrow(/--target <target>/);
   });
 
   test('google_tasks itself is fine, which is the whole point', () => {
@@ -302,30 +310,36 @@ describe('a provider whose id has been renamed', () => {
 });
 
 describe('where a target deploys', () => {
-  /** `VALID` with a second target carrying whatever deployment block is under test. */
+  /**
+   * A workspace declaring one deployable target.
+   *
+   * Against `workspaceSchema` rather than `parseConfig`, because that is where a
+   * target lives since contract 2. A profile declares none (ADR-052), so a
+   * `deploy:` block inside one is not a thing the profile loader can be asked
+   * about any more.
+   */
   const withTarget = (block: string) =>
-    VALID.replace(
-      '    storage: { adapter: filesystem, path: ./data/personal/files }',
-      '    storage: { adapter: filesystem, path: ./data/personal/files }\n' +
-        '  cloud:\n' +
-        '    credentials: { adapter: gcp-secret-manager, project: my-project }\n' +
-        '    storage: { adapter: s3, bucket: link-blobs }\n' +
-        block,
-    );
-
-  test('a deploy block names its platform and defaults to the closed door', () => {
-    const { config } = parseConfig(
-      withTarget(
-        '    deploy:\n      platform: cloudrun\n      project: my-project\n' +
-          '      region: europe-west1\n      service: lanes-link\n',
+    workspaceSchema.parse(
+      parseYaml(
+        'contract: 2\ntargets:\n  cloud:\n' +
+          '    credentials: { adapter: gcp-secret-manager, project: my-project }\n' +
+          '    storage: { adapter: s3, bucket: link-blobs }\n' +
+          block,
       ),
     );
 
-    expect(config.targets['cloud']?.deploy).toEqual({
+  test('a deploy block names its platform and defaults to the closed door', () => {
+    const workspace = withTarget(
+      '    deploy:\n      platform: cloudrun\n      project: my-project\n' +
+        '      region: europe-west1\n      service: lanes-link\n',
+    );
+
+    expect(workspace.targets['cloud']?.deploy).toEqual({
       platform: 'cloudrun',
       project: 'my-project',
       region: 'europe-west1',
       service: 'lanes-link',
+      // The closed door is the default, so a target that says nothing gets it.
       access: 'iam',
       // Scaling to zero is the default, and stays the default: a cold start is
       // under three seconds and the platform queues the request behind it.
@@ -333,16 +347,19 @@ describe('where a target deploys', () => {
     });
   });
 
-  test('the pre-deploy "cloudrun" block still loads, as a deploy block', () => {
-    // One shape reaches the rest of the codebase. A config written before the
-    // platform discriminator existed keeps working without an edit.
-    const { config } = parseConfig(
-      withTarget(
-        '    cloudrun:\n      project: my-project\n      region: europe-west1\n      service: lanes-link\n',
+  test('the pre-deploy "cloudrun" block loads only through the legacy reader', () => {
+    // It normalises to one shape, as it always did — but in `legacy.ts` now, on
+    // the one path that reads a contract-1 file at all. Contract 2 has no reason
+    // to carry a spelling nothing has written for two releases.
+    const declared = legacyTargetSchema.parse(
+      parseYaml(
+        'credentials: { adapter: gcp-secret-manager, project: my-project }\n' +
+          'storage: { adapter: s3, bucket: link-blobs }\n' +
+          'cloudrun:\n  project: my-project\n  region: europe-west1\n  service: lanes-link\n',
       ),
     );
 
-    expect(config.targets['cloud']?.deploy).toEqual({
+    expect(declared.deploy).toEqual({
       platform: 'cloudrun',
       project: 'my-project',
       region: 'europe-west1',
@@ -352,48 +369,39 @@ describe('where a target deploys', () => {
     });
   });
 
-  test('declaring both is refused rather than resolved by precedence', () => {
-    // A second place to say where this deploys could only ever disagree with
-    // the first, and silently preferring one rolls a revision into the project
-    // the operator was not reading.
-    expect(() =>
-      parseConfig(
-        withTarget(
-          '    deploy:\n      platform: cloudrun\n      project: a\n      region: r\n      service: s\n' +
-            '    cloudrun:\n      project: b\n      region: r\n      service: s\n',
-        ),
-      ),
-    ).toThrow(/both "deploy" and "cloudrun" are declared/);
+  test('a "cloudrun" block is not read by the current contract', () => {
+    // Not an error, and deliberately so: zod strips a key the schema does not
+    // declare, so a stray one is inert rather than fatal. What it must not do is
+    // quietly *deploy* from it, which is what this pins.
+    const workspace = withTarget(
+      '    cloudrun:\n      project: my-project\n      region: europe-west1\n      service: lanes-link\n',
+    );
+
+    expect(workspace.targets['cloud']?.deploy).toBeUndefined();
   });
 
   test('an unknown platform is refused at load, not at deploy', () => {
     expect(() =>
-      parseConfig(
-        withTarget(
-          '    deploy:\n      platform: app-runner\n      region: eu-west-1\n      service: lanes-link\n',
-        ),
+      withTarget(
+        '    deploy:\n      platform: app-runner\n      region: eu-west-1\n      service: lanes-link\n',
       ),
     ).toThrow(/platform/);
   });
 
   test('an empty service name fails here rather than minutes into a build', () => {
     expect(() =>
-      parseConfig(
-        withTarget(
-          '    deploy:\n      platform: cloudrun\n      project: p\n      region: r\n      service: ""\n',
-        ),
+      withTarget(
+        '    deploy:\n      platform: cloudrun\n      project: p\n      region: r\n      service: ""\n',
       ),
-    ).toThrow(/targets\.cloud\.deploy\.service/);
+    ).toThrow(/service/);
   });
 
   test('a missing project is not refused here — the driver that needs it says so', () => {
     // `project` means something to one platform and nothing to the next, on the
     // same reasoning as `credentials.project`.
     expect(() =>
-      parseConfig(
-        withTarget(
-          '    deploy:\n      platform: cloudrun\n      region: europe-west1\n      service: lanes-link\n',
-        ),
+      withTarget(
+        '    deploy:\n      platform: cloudrun\n      region: europe-west1\n      service: lanes-link\n',
       ),
     ).not.toThrow();
   });
@@ -442,7 +450,7 @@ describe('malformed input', () => {
   });
 
   test('reports unparseable YAML as such', () => {
-    expect(() => parseConfig('contract: 1\n  bad: [indent')).toThrow(/could not parse YAML/);
+    expect(() => parseConfig('contract: 2\n  bad: [indent')).toThrow(/could not parse YAML/);
   });
 
   test('rejects an out-of-range port', () => {
@@ -463,24 +471,26 @@ describe('malformed input', () => {
 });
 
 describe('the knowledge block', () => {
-  /** Insert a `knowledge:` block under the `local` target. */
-  const withKnowledge = (block: string): string =>
-    VALID.replace(
-      '    storage: { adapter: filesystem, path: ./data/personal/files }',
-      `    storage: { adapter: filesystem, path: ./data/personal/files }\n${block}`,
-    );
+  /**
+   * Append a top-level `knowledge:` block.
+   *
+   * On the profile since contract 2, not under a target: it says where *this
+   * profile's* memory and skills live, and a profile lives in exactly one target
+   * (ADR-052), so the per-target spelling could no longer say anything extra.
+   */
+  const withKnowledge = (block: string): string => `${VALID}\n${block.trimStart()}\n`;
 
   test('is absent by default, which is what every existing profile relies on', () => {
     const { config } = parseConfig(VALID);
-    expect(config.targets['local']?.knowledge).toBeUndefined();
+    expect(config.knowledge).toBeUndefined();
   });
 
   test('takes a repository and defaults the ref', () => {
     const { config } = parseConfig(
-      withKnowledge('    knowledge: { adapter: github, repo: my-org/my-notes }'),
+      withKnowledge('knowledge: { adapter: github, repo: my-org/my-notes }'),
     );
 
-    expect(config.targets['local']?.knowledge).toEqual({
+    expect(config.knowledge).toEqual({
       adapter: 'github',
       repo: 'my-org/my-notes',
       token_ref: 'knowledge/token',
@@ -490,27 +500,27 @@ describe('the knowledge block', () => {
   test('keeps a branch and a path when given', () => {
     const { config } = parseConfig(
       withKnowledge(
-        '    knowledge: { adapter: github, repo: my-org/my-notes, branch: trunk, path: context }',
+        'knowledge: { adapter: github, repo: my-org/my-notes, branch: trunk, path: context }',
       ),
     );
 
-    expect(config.targets['local']?.knowledge?.branch).toBe('trunk');
-    expect(config.targets['local']?.knowledge?.path).toBe('context');
+    expect(config.knowledge?.branch).toBe('trunk');
+    expect(config.knowledge?.path).toBe('context');
   });
 
   test('normalises a path so one prefix has one spelling', () => {
     const { config } = parseConfig(
-      withKnowledge('    knowledge: { adapter: github, repo: my-org/my-notes, path: "/context/" }'),
+      withKnowledge('knowledge: { adapter: github, repo: my-org/my-notes, path: "/context/" }'),
     );
 
-    expect(config.targets['local']?.knowledge?.path).toBe('context');
+    expect(config.knowledge?.path).toBe('context');
   });
 
   test('refuses a URL where "owner/name" belongs', () => {
     expect(() =>
       parseConfig(
         withKnowledge(
-          '    knowledge: { adapter: github, repo: "https://github.com/my-org/my-notes" }',
+          'knowledge: { adapter: github, repo: "https://github.com/my-org/my-notes" }',
         ),
       ),
     ).toThrow(/owner\/name/);
@@ -519,7 +529,7 @@ describe('the knowledge block', () => {
   test('refuses a path that walks out of the repository', () => {
     expect(() =>
       parseConfig(
-        withKnowledge('    knowledge: { adapter: github, repo: my-org/my-notes, path: "../.." }'),
+        withKnowledge('knowledge: { adapter: github, repo: my-org/my-notes, path: "../.." }'),
       ),
     ).toThrow(/\.\./);
   });
@@ -530,7 +540,7 @@ describe('the knowledge block', () => {
     expect(() =>
       validateConfig(
         withKnowledge(
-          '    knowledge: { adapter: github, repo: my-org/my-notes, token_ref: github_pat_11ABCDE0Y0abcdefghijkl_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmno }',
+          'knowledge: { adapter: github, repo: my-org/my-notes, token_ref: github_pat_11ABCDE0Y0abcdefghijkl_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789abcdefghijklmno }',
         ),
       ),
     ).toThrow();
@@ -542,11 +552,11 @@ describe('the knowledge block', () => {
     // means only what it can mean.
     const { config } = parseConfig(
       withKnowledge(
-        '    knowledge: { adapter: github, repo: my-org/my-notes, credentials: file, vault: blob }',
+        'knowledge: { adapter: github, repo: my-org/my-notes, credentials: file, vault: blob }',
       ),
     );
 
-    expect(config.targets['local']?.knowledge).not.toHaveProperty('credentials');
-    expect(config.targets['local']?.knowledge).not.toHaveProperty('vault');
+    expect(config.knowledge).not.toHaveProperty('credentials');
+    expect(config.knowledge).not.toHaveProperty('vault');
   });
 });

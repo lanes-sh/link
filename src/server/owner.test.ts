@@ -42,15 +42,10 @@ const vaultStore = await seededVault();
 
 function ownerConfig(profile: string, port: number, policy: string) {
   return parseConfig(`
-contract: 1
+contract: 2
 instance:
   profile: ${profile}
-  default_target: local
   port: ${port}
-targets:
-  local:
-    credentials: { adapter: file, path: ./data/${profile}.credentials.enc }
-    storage: { adapter: filesystem, path: ./data/${profile}/files }
 limits:
   requests_per_minute: 1000
   upstream_calls_per_minute: 1000

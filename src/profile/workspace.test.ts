@@ -1,3 +1,4 @@
+import { workspaceYaml } from '#profile/testing.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -7,7 +8,6 @@ import {
   loadWorkspaceProfiles,
   resolveSelection,
   resolveWorkspaceRoot,
-  targetsByName,
 } from './workspace.ts';
 
 const roots: string[] = [];
@@ -106,7 +106,7 @@ describe('naming a profile', () => {
 describe('profile listing', () => {
   test('lists profiles and ignores example files', async () => {
     const root = await workspace(['personal', 'work'], 'personal');
-    await writeFile(join(root, 'profiles', 'personal.example.yaml'), 'contract: 1\n');
+    await writeFile(join(root, 'profiles', 'personal.example.yaml'), workspaceYaml(['local']));
 
     expect(await listProfiles(root)).toEqual(['personal', 'work']);
   });
@@ -125,7 +125,7 @@ describe('reading every profile at once', () => {
     const root = await mkdtemp(join(tmpdir(), 'lanes-link-ws-'));
     roots.push(root);
 
-    await writeFile(join(root, 'lanes-link.yaml'), 'contract: 1\n');
+    await writeFile(join(root, 'lanes-link.yaml'), workspaceYaml(['local']));
     await mkdir(join(root, 'profiles'), { recursive: true });
     for (const [name, body] of Object.entries(profiles)) {
       await writeFile(join(root, 'profiles', `${name}.yaml`), body);
@@ -133,21 +133,22 @@ describe('reading every profile at once', () => {
     return root;
   }
 
-  const declaring = (profile: string, targets: string[]): string =>
-    `contract: 1\ninstance: { profile: ${profile} }\ntargets:\n` +
-    targets
-      .map(
-        (target) =>
-          `  ${target}:\n` +
-          `    credentials: { adapter: file, path: ./data/${profile}/credentials.enc }\n` +
-          `    storage: { adapter: filesystem, path: ./data/${profile} }\n`,
-      )
-      .join('');
+  /**
+   * A profile, which declares no target.
+   *
+   * It used to take the list of targets it declared, and the tests below asked
+   * which profiles declared each. That question is gone with ADR-052: a target
+   * is declared once by the workspace, so there is no per-profile answer to
+   * disagree about — and it was the disagreement that made a live deployment
+   * look vanished from inside one profile.
+   */
+  const declaring = (profile: string): string =>
+    `contract: 2\ninstance: { profile: ${profile} }\n`;
 
   test('loads each profile with its config', async () => {
     const root = await withTargets({
-      alpha: declaring('alpha', ['local', 'cloud']),
-      beta: declaring('beta', ['local']),
+      alpha: declaring('alpha'),
+      beta: declaring('beta'),
     });
 
     const workspace = await loadWorkspaceProfiles(root);
@@ -161,8 +162,8 @@ describe('reading every profile at once', () => {
     // The endpoint serves what it can open and skips the rest; a listing that
     // dies on the first bad file stops working exactly when it is needed.
     const root = await withTargets({
-      alpha: declaring('alpha', ['local']),
-      broken: 'contract: 1\ntargets: {}\n',
+      alpha: declaring('alpha'),
+      broken: 'contract: 2\ninstance: {}\n',
     });
 
     const workspace = await loadWorkspaceProfiles(root);
@@ -172,23 +173,19 @@ describe('reading every profile at once', () => {
     expect(workspace.unreadable[0]!.reason).not.toContain('\n');
   });
 
-  test('says which profiles declare each target', async () => {
+  test('every profile in the workspace is one this target can open', async () => {
+    // The two tests this replaces asserted the opposite property: which profiles
+    // declared `cloud`, and that a target nobody declared was absent. Neither
+    // question exists now — a profile is in this workspace, so it is one the
+    // endpoint here will open (ADR-052).
     const root = await withTargets({
-      alpha: declaring('alpha', ['local', 'cloud']),
-      beta: declaring('beta', ['local']),
+      alpha: declaring('alpha'),
+      beta: declaring('beta'),
     });
 
-    const byName = targetsByName(await loadWorkspaceProfiles(root));
+    const workspace = await loadWorkspaceProfiles(root);
 
-    expect([...byName.keys()].sort()).toEqual(['cloud', 'local']);
-    expect(byName.get('local')).toEqual(['alpha', 'beta']);
-    // The gap: from inside either profile this is invisible.
-    expect(byName.get('cloud')).toEqual(['alpha']);
-  });
-
-  test('a target no profile declares is simply absent', async () => {
-    const root = await withTargets({ alpha: declaring('alpha', ['local']) });
-
-    expect(targetsByName(await loadWorkspaceProfiles(root)).has('cloud')).toBe(false);
+    expect(workspace.loaded.map((entry) => entry.profile)).toEqual(['alpha', 'beta']);
+    expect(workspace.loaded.every((entry) => entry.config.instance.profile)).toBe(true);
   });
 });

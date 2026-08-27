@@ -1,6 +1,7 @@
-import { ConfigError, resolveSelection } from '#profile';
+import { ConfigError, resolveSelection, resolveTargetWorkspace, resolveWorkspaceRoot } from '#profile';
 import { ConfigDocument } from '../../config-edit.ts';
 import { migrateRenamedProviders, pendingRenames, shapeOf } from '../../config-migrate.ts';
+import { migrateWorkspace, needsMigration } from '../../workspace-migrate.ts';
 import { emit, fail, ok, print, style, warn } from '../../output.ts';
 import { openSecretStoreFor, type GlobalFlags } from '../../runtime.ts';
 
@@ -93,6 +94,89 @@ export async function migratedRenamedProviders(
         print();
         print(`Run the same command with ${style.bold('--fix')} to apply it.`);
       }
+    },
+  );
+
+  return true;
+}
+
+
+/**
+ * Whether a refusal to load was a stale contract, and — with `--fix` — raise it.
+ *
+ * The sibling of `migratedRenamedProviders` above, and asked *before* it: a
+ * contract-1 profile is refused by `assertSupportedContract`, which runs before
+ * the schema, so a file with both problems reports this one and the rename is
+ * invisible until it is fixed.
+ *
+ * Here for the reason this file's header already gives — `doctor` is what
+ * someone runs when something is broken, so it has to be the command that works
+ * when everything else refuses. `update` migrates the local workspace on its own
+ * and most people will never reach this; the ones who do are the ones whose
+ * `--target` is a bucket, which `update` deliberately leaves alone.
+ *
+ * **It will migrate a remote workspace, and says what that costs.** The endpoint
+ * in front of a bucket runs a pinned image, and one built before contract 2
+ * cannot read what this writes. That is a real consequence and it is the
+ * operator's to accept, so the line naming the redeploy is printed whether or
+ * not `--fix` was passed.
+ */
+export async function migratedContract(flags: RenameFlags, refusal: unknown): Promise<boolean> {
+  if (!(refusal instanceof ConfigError)) return false;
+
+  const root = resolveWorkspaceRoot();
+  const target = flags.target ?? '';
+  // Where the profiles actually are. For a pointer that is the bucket, which is
+  // the case this exists for; a target the registry cannot resolve is not a
+  // migration problem and falls through to the original refusal.
+  const where = await resolveTargetWorkspace(root, target).catch(() => null);
+  if (where === null) return false;
+
+  if (!(await needsMigration(where))) return false;
+
+  const migration = await migrateWorkspace(where, { apply: flags.fix === true });
+  const applied = flags.fix === true;
+  const remote = where !== root;
+
+  if (!applied) process.exitCode = 1;
+
+  await emit(
+    flags.json,
+    {
+      ok: applied,
+      workspace: where,
+      target,
+      applied,
+      remote,
+      profiles: migration.profiles,
+      targets: migration.targets,
+      changes: migration.changes,
+    },
+    () => {
+      print(`workspace ${style.bold(where)}  target ${style.bold(target)}`);
+      print();
+      print(
+        applied
+          ? ok('migrated to contract 2 — a target is declared by the workspace, not by each profile')
+          : warn('this workspace is contract 1, and nothing here reads that any more'),
+      );
+      for (const change of migration.changes) print(`  ${change}`);
+
+      if (remote) {
+        print();
+        print(
+          style.dim(
+            applied
+              ? '  The endpoint serving this bucket is running an older image and cannot read\n' +
+                `  what was just written. Roll a new one: lanes link deploy --target ${target}`
+              : `  lanes link deploy --target ${target} migrates it and ships the image that\n` +
+                '  understands it, in one step. Prefer that to --fix here.',
+          ),
+        );
+        return;
+      }
+
+      if (!applied) print(style.dim(`  Fix it with: lanes link doctor --fix --target ${target}`));
     },
   );
 

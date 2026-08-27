@@ -1,4 +1,5 @@
 import {
+  openTarget,
   DATA_DIR,
   WORKSPACE_FILE,
   layout,
@@ -150,7 +151,15 @@ export async function publishWorkspace(input: {
   readonly target: string;
   readonly profile: string;
 }): Promise<string | null> {
-  const declared = input.config.targets[input.target];
+  // Resolution failures are swallowed rather than thrown. The config edit that
+  // called this has already succeeded and is on disk; a target that cannot be
+  // resolved — undeclared, or a pointer to a bucket that is not answering — is
+  // something for `check` and `status` to report, not a reason to fail an edit
+  // that is done. Returning null is "published nowhere", which is exactly what
+  // happened.
+  const declared = await openTarget(input.workspaceRoot, input.target)
+    .then((resolved) => resolved.declared)
+    .catch(() => undefined);
   if (!declared) return null;
 
   const destination = deployedWorkspace(declared);

@@ -1,4 +1,13 @@
-import { listProfiles, loadWorkspaceProfiles, resolveWorkspaceRoot } from '#profile';
+import {
+  isPointer,
+  listProfiles,
+  loadWorkspaceProfiles,
+  notInRegistry,
+  openTarget,
+  readRegistry,
+  resolveWorkspaceRoot,
+  type ResolvedTarget,
+} from '#profile';
 import { oneProfile, visibleCapabilities } from '#server/mcp';
 import { toPolicyDocument } from '#registry';
 import { announce, emit, heading, print, style, table } from '../../output.ts';
@@ -77,7 +86,7 @@ export async function status(flags: StatusFlags): Promise<void> {
     // replaces it. Silently turning a string into an object would be a cost
     // paid by every reader for the benefit of none.
     const local = `http://${runtime.config.instance.host}:${runtime.config.instance.port}/mcp`;
-    const deployment = deploymentIdentity(runtime.config.targets[runtime.target]?.deploy);
+    const deployment = deploymentIdentity(runtime.declared.deploy);
     const endpoint = deployment ? null : local;
 
     return emit(
@@ -152,97 +161,103 @@ export async function status(flags: StatusFlags): Promise<void> {
  * profile narrows it to the detailed view above; naming none is not a missing
  * answer, it is the wider one.
  *
- * **Opens no store and makes no network call.** The view above already declines
- * to probe, for the reasons in this file's header; this one additionally
- * declines to open a target's adapters, so it stays instant and — more to the
- * point — still answers for a target whose stores are unreachable, misdeclared,
- * or gone. A summary that needs the deployment to be healthy cannot report that
- * it is not.
+ * **Opens no profile store.** The view above already declines to probe, for the
+ * reasons in this file's header; this one additionally declines to open a
+ * target's adapters, so it stays fast and — more to the point — still answers
+ * for a target whose stores are unreachable or gone. A summary that needs the
+ * deployment to be healthy cannot report that it is not.
  *
- * That is what makes the row it exists for legible: a target declared by one
- * profile and not its sibling. From inside either profile that state is
- * invisible, and it is what a vanished deployment looks like from the outside.
+ * It does read the target's workspace, which for a pointer is a bucket. That is
+ * the one call it cannot avoid: the profiles it is reporting on live there
+ * (ADR-052). When that read fails it says so under the target's own heading
+ * rather than printing an empty profile list, because "no profiles" and "could
+ * not look" are the two answers this command must never blur.
+ *
+ * The row it used to exist for — a target declared by one profile and not its
+ * sibling — cannot happen now. A target is declared once, by its workspace, so
+ * there is no per-profile disagreement left to surface.
  */
 async function workspaceStatus(flags: StatusFlags): Promise<void> {
   const target = flags.target!;
-  const root = resolveWorkspaceRoot();
-  const workspace = await loadWorkspaceProfiles(root);
+  const localRoot = resolveWorkspaceRoot();
+  const registry = await readRegistry(localRoot);
+  const entry = registry[target];
 
-  const profiles = workspace.loaded.map((entry) => ({
-    name: entry.profile,
-    declares: target in entry.config.targets,
-    connections: entry.config.connections.length,
-    deployment: deploymentIdentity(entry.config.targets[target]?.deploy),
+  if (!entry) throw notInRegistry(target, registry, localRoot);
+
+  let resolved: ResolvedTarget | undefined;
+  let unreachable: string | undefined;
+  try {
+    resolved = await openTarget(localRoot, target);
+  } catch (error) {
+    // The whole message, not its first line. Truncating to `split('\n')[0]` is
+    // exactly what the sync command used to do, and it is why a bucket refusing
+    // for a nameable reason reported an empty one instead — a `ConfigError`
+    // carries its fix on the lines after the first.
+    unreachable = error instanceof Error ? error.message : String(error);
+  }
+
+  const root = resolved?.workspaceRoot ?? (isPointer(entry) ? entry.workspace : localRoot);
+  const workspace = resolved ? await loadWorkspaceProfiles(root) : undefined;
+
+  const profiles = (workspace?.loaded ?? []).map((loaded) => ({
+    name: loaded.profile,
+    connections: loaded.config.connections.length,
   }));
 
-  const declaring = profiles.filter((entry) => entry.declares);
-
-  // Distinct deployments, not the first one found. Two profiles declaring the
-  // same target name against different services is drift worth printing rather
-  // than a tie to break silently — and picking one would make the wrong half of
-  // the workspace look correctly configured.
-  const deployments = [
-    ...new Map(
-      declaring
-        .filter((entry) => entry.deployment !== null)
-        .map((entry) => [JSON.stringify(entry.deployment), entry.deployment!] as const),
-    ).values(),
-  ];
+  const deployment = deploymentIdentity(resolved?.declared.deploy);
 
   return emit(
     flags.json,
-    { workspace: root, target, profiles, deployments, unreadable: workspace.unreadable },
+    {
+      workspace: root,
+      target,
+      remote: resolved?.remote ?? isPointer(entry),
+      reachable: unreachable === undefined,
+      ...(unreachable ? { error: unreachable } : {}),
+      profiles,
+      deployment,
+      unreadable: workspace?.unreadable ?? [],
+    },
     () => {
       print(style.dim(`workspace ${style.bold(root)}  target ${style.bold(target)}`));
 
+      if (unreachable !== undefined) {
+        heading('Unreachable');
+        // The refusal's own wording, and nothing after it. A generic trailer
+        // here read as a second, vaguer diagnosis of a problem the message above
+        // had already named precisely.
+        for (const line of unreachable.split('\n')) print(`  ${style.yellow(line)}`);
+        return;
+      }
+
       heading('Profiles');
-      table(
-        profiles.map((entry) => [
-          `  ${style.bold(entry.name)}`,
-          entry.declares ? style.green(`${target} declared`) : style.yellow('not declared'),
-          style.dim(entry.declares ? `${entry.connections} connection(s)` : '—'),
-        ]),
-      );
-      for (const bad of workspace.unreadable) {
+      if (profiles.length === 0) {
+        print(style.dim('  None yet.'));
+        print(style.dim(`  Create one with: lanes link profile add <name> --target ${target}`));
+      } else {
+        table(
+          profiles.map((profile) => [
+            `  ${style.bold(profile.name)}`,
+            style.dim(`${profile.connections} connection(s)`),
+          ]),
+        );
+      }
+      for (const bad of workspace?.unreadable ?? []) {
         print(`  ${style.bold(bad.profile)}  ${style.yellow(bad.reason)}`);
       }
 
       heading('Endpoint');
-      if (declaring.length === 0) {
-        print(style.yellow(`  No profile declares "${target}".`));
-        print(
-          style.dim(
-            '  If it was deployed once, the deployment still exists and only the\n' +
-              `  declaration is gone — recover it with: lanes link sync targets --target ${target}`,
-          ),
-        );
-        return;
-      }
-
-      if (deployments.length === 0) {
+      if (!deployment) {
         print(style.dim('  No deployment — this target runs wherever the CLI does.'));
         return;
       }
 
-      for (const deployment of deployments) {
-        const { platform, service, region } = deployment;
-        print(`  ${platform} service ${style.bold(service)} in ${region}`);
-      }
-
-      if (deployments.length > 1) {
-        print(
-          style.yellow(
-            `  ${deployments.length} profiles declare "${target}" against different services.`,
-          ),
-        );
-        print(style.dim('  They are separate endpoints sharing a name. Check each profile.'));
-        return;
-      }
-
+      print(`  ${deployment.platform} service ${style.bold(deployment.service)} in ${deployment.region}`);
       print(
         style.dim(
           "  the address is the platform's to assign — run: " +
-            `lanes link outputs --target ${target} --profile ${declaring[0]!.name}`,
+            `lanes link outputs --target ${target} --profile ${profiles[0]?.name ?? '<name>'}`,
         ),
       );
     },

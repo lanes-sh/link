@@ -22,7 +22,9 @@ and personal apart; they share no database and no credential store.
 **Ask which profile is meant when it is ambiguous. Do not default to whichever
 is listed first.** Quietly picking one crosses the line the profile exists to
 draw. There is no "current profile" to switch — the choice is made per call, and
-`lanes link profile list` shows what exists.
+`lanes link profile list --target <name>` shows what exists *in that target*. A
+profile lives in exactly one, so `personal` on `local` and `personal` on `cloud`
+are two profiles that share a name rather than one profile in two places.
 
 **What a command must be told is never inferred — but it is not always both.**
 Nothing resolves from an environment variable or a config default, so a command
@@ -30,12 +32,11 @@ missing what it needs refuses rather than acting somewhere else. Passing a flag 
 command does not read is refused too, which makes "add both to be safe" its own
 failure. Four levels:
 
-- **Neither.** `lanes link profile list`, `lanes link mcp list`,
+- **Neither.** `lanes link target list`, `lanes link mcp list`,
   `lanes link version`.
-- **`--profile` alone.** `lanes link check`, `lanes link config show`,
-  `lanes link policy list`, `lanes link target list --profile <name>`,
-  `lanes link identity list`. Each is target-independent — one declaration in the
-  YAML that applies wherever the profile runs.
+- **`--target` alone.** `lanes link profile list`, `lanes link profile add`,
+  `lanes link profile remove`, `lanes link target show`. A profile lives inside
+  one target's workspace, so listing or creating one names which workspace.
 - **`--target`, with the profiles derived from it.** `lanes link status`,
   `lanes link deploy` and `lanes link sync targets` act on one endpoint serving
   every profile that declares that target. `--profile` is accepted and *narrows*
@@ -222,7 +223,7 @@ granted, and retrying will not reveal it. A call that *is* refused was refused b
 policy on purpose.
 
 Report it plainly and let the owner decide whether to widen the grant —
-`lanes link policy list --profile <name>` shows the rules, `lanes link policy allow <capability> --profile <name> --target <name>`
+`lanes link policy list --profile <name> --target <name>` shows the rules, `lanes link policy allow <capability> --profile <name> --target <name>`
 changes them, and that is their call, not yours. **Do not look for another route
 to the same data.** Every call is audited either way; `lanes link audit tail --profile <name> --target <name>`
 shows what was attempted, refusals included.
@@ -299,10 +300,12 @@ key on — do not treat the absence of JSON as a failure. `status`, `doctor`,
 `config show`, `audit tail` and every `mcp` subcommand do not.
 
 **A profile is created and removed, never switched.** `lanes link profile add
-<name>` writes a new one and takes `--target <name>`, repeated once per target it
-should declare. `lanes link profile remove <name>` takes `--dry-run` and then
-`--yes`; given a `--target` it decommissions that one target's stores and leaves
-the profile file in place. Neither reads `--profile`.
+<name> --target <name>` writes a new one *into that target's workspace* — one
+target, not a list, because a profile lives in exactly one.
+`lanes link profile remove <name> --target <name>` takes `--dry-run` and then
+`--yes`, and removes the profile itself along with its stores: the file is in
+that workspace, so there is nowhere left for it to survive. Neither reads
+`--profile`; both name the profile positionally.
 
 There is no current profile and no default target. `lanes link profile default`
 and `lanes link target use` are gone and now refuse with an explanation — if you
@@ -312,9 +315,9 @@ replacement to find. The choice is made per command, on purpose.
 ## Deploying, and what it decides
 
 `lanes link deploy` builds an image and rolls a revision. Its subject is a
-**target**, and the profiles behind it are every profile declaring that target,
-so one deploy serves all of them — there is no per-profile deploy to run and no
-reason to loop over them.
+**target**, and the profiles behind it are every profile *in* that target's
+workspace, so one deploy serves all of them — there is no per-profile deploy to
+run and no reason to loop over them.
 
 **Always `--dry-run` first, and show what it printed.** It creates cloud
 resources that cost money, it implements no `--json` to inspect instead, and that
@@ -326,9 +329,9 @@ Two things it refuses to guess, and both are the owner's to answer:
 - **Whose bearer token opens the endpoint.** One token reaches every profile
   behind that target, so this decides who gets in. With several candidates and
   nothing recorded, it refuses and prints the command that names one.
-- **A first deploy.** A target no profile declares yet has no set to derive from,
-  so `--profile` is required there. It may be repeated, and the first one named
-  is the primary.
+- **A first deploy.** A target that does not exist yet has no workspace to derive
+  a set from, so `--profile` is required there. It may be repeated, and the first
+  one named is the primary.
 
 **Never pass `--yes`, `--non-interactive`, `--access public` or
 `--service-account` yourself.** Each settles a question about who can reach their
@@ -338,22 +341,23 @@ this file already applies to `--accept-broad-scopes`.
 Deploying is how new code reaches the endpoint. It is not how an account gets
 connected and not how a config change lands; both of those publish themselves.
 
-## When the workspace and the endpoint disagree
+## When a machine has lost track of a deployment
 
-A deployment records where it lives, and a workspace can lose that record — a new
-machine, a reinstall, a profile file restored from something older. The endpoint
-is still serving; what went missing is the config that describes it. The symptom
-is a `lanes link status` that reports nothing deployed for a target you know is
-up.
+A workspace holds a *pointer* to each target it does not itself hold, and a
+machine can lose one — a new laptop, a reinstall, a workspace file restored from
+something older. The endpoint is still serving; what went missing is the line
+saying where it lives. The symptom is a `lanes link status` that reports nothing
+for a target you know is up.
 
-`lanes link sync targets` reconciles the two. `--discover` looks for a deployment
-the workspace has no record of, `--from <location>` names one directly, and
-`--dry-run` reports what it would merge without merging it. Run the dry run and
+`lanes link sync targets` adopts it. `--discover` looks for a deployment the
+workspace has no pointer to, `--from <location>` names one directly, and
+`--dry-run` reports what it would write without writing it. Run the dry run and
 show it.
 
-**`--prefer local` or `--prefer remote` is their answer, not yours.** It decides
-which side wins where the two disagree, and the losing value is the one nobody
-was asked about. Report what differs and let them pick.
+**It cannot lose anything.** Adopting writes one line — the pointer — and the
+workspace at the other end stays authoritative for everything else. There is no
+`--prefer` any more and passing one is refused: it chose a winner when a profile
+existed in two copies that could disagree, and there is one copy now.
 
 ## Registering it, and re-registering it
 

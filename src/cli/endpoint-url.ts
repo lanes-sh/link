@@ -1,4 +1,4 @@
-import type { Config, DeployConfig } from '#profile';
+import type { Config, DeployConfig, TargetConfig } from '#profile';
 
 /**
  * Where this profile's endpoint answers, for the target in play.
@@ -15,8 +15,8 @@ import type { Config, DeployConfig } from '#profile';
  * answer and the other could not see it, which is what a copied line does
  * eventually.
  */
-export async function endpointUrl(config: Config, target: string): Promise<string> {
-  const deployed = await deployedUrl(config.targets[target]?.deploy);
+export async function endpointUrl(config: Config, declared: TargetConfig): Promise<string> {
+  const deployed = await deployedUrl(declared.deploy);
   return deployed ?? localUrl(config);
 }
 

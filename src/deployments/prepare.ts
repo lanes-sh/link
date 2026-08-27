@@ -22,6 +22,8 @@ import { buildRegistryWithWorkspace, ensureProfileToken } from '#cli/runtime.ts'
 
 export interface PrepareInput {
   readonly config: Config;
+  /** The target's adapter set, from the workspace that declares it (ADR-052). */
+  readonly declared: TargetConfig;
   readonly credentials: SecretStore;
   readonly root: string;
   readonly target: string;
@@ -178,7 +180,7 @@ export async function prepareSecrets(input: PrepareInput): Promise<PrepareResult
   const warnings: string[] = [];
 
   await seedProfileToken({ config, credentials, readOnly, blocking });
-  await seedVaultKey({ declared: config.targets[target], credentials, readOnly });
+  await seedVaultKey({ declared: input.declared, credentials, readOnly });
 
   // Connection credentials are written by `connect`, against a real account, in
   // a browser. Nothing here can produce one, and a deploy that stopped for one

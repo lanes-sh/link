@@ -1,3 +1,4 @@
+import { workspaceYaml } from '#profile/testing.ts';
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -19,16 +20,12 @@ import { connectCustom, type ConnectCustomOptions } from './index.ts';
  * `check`, whose whole job is catching that, does not read the directory at all.
  */
 
-const PROFILE = `contract: 1
+const PROFILE = `contract: 2
 
 instance:
   profile: personal
   port: 7337
 
-targets:
-  local:
-    credentials: { adapter: file }
-    storage: { adapter: filesystem }
 `;
 
 const roots: string[] = [];
@@ -40,7 +37,7 @@ async function workspace(): Promise<string> {
   process.env['LANES_LINK_HOME'] = root;
 
   await mkdir(join(root, 'profiles'), { recursive: true });
-  await writeFile(join(root, 'lanes-link.yaml'), 'contract: 1\ndefault_profile: personal\n');
+  await writeFile(join(root, 'lanes-link.yaml'), workspaceYaml(['local'], {defaultProfile: 'personal'}));
   await writeFile(join(root, 'profiles', 'personal.yaml'), PROFILE);
   return root;
 }

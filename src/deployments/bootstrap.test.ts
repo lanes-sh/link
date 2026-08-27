@@ -1,4 +1,7 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, describe, expect, test } from 'bun:test';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Config, TargetConfig } from '#profile';
 import {
   deepWithoutUndefined,
@@ -73,33 +76,47 @@ describe('writing a surveyed target into YAML', () => {
   });
 });
 
-describe('a target the config already answers', () => {
-  const complete = {
-    targets: {
-      cloud: {
-        credentials: { adapter: 'gcp-secret-manager', project: 'p' },
-        storage: { adapter: 'gcs', bucket: 'b' },
-        deploy: {
-          platform: 'cloudrun',
-          project: 'p',
-          region: 'europe-west1',
-          service: 'lanes-link-personal-mcp',
-          access: 'iam',
-        },
-      },
-    },
-    auth: {},
-  } as unknown as Config;
+describe('a target the workspace already answers', () => {
+  const complete = { auth: {} } as unknown as Config;
 
-  const resolve = (flags: Parameters<typeof resolveTarget>[0]['flags']) =>
-    resolveTarget({
+  /**
+   * A workspace whose registry declares `cloud` completely.
+   *
+   * On disk rather than as an object, because `resolveTarget` reads the registry
+   * itself now — the answers it is looking for are the workspace's, not the
+   * profile's (ADR-052), and a hand-built `config.targets` is exactly the shape
+   * that stopped existing.
+   */
+  const roots: string[] = [];
+  async function declared(): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), 'lanes-link-bootstrap-'));
+    roots.push(root);
+    await writeFile(
+      join(root, 'lanes-link.yaml'),
+      'contract: 2\ntargets:\n  cloud:\n' +
+        '    credentials: { adapter: gcp-secret-manager, project: p }\n' +
+        '    storage: { adapter: gcs, bucket: b }\n' +
+        '    deploy:\n      platform: cloudrun\n      project: p\n' +
+        '      region: europe-west1\n      service: lanes-link-personal-mcp\n      access: iam\n',
+    );
+    return root;
+  }
+
+  afterAll(async () => {
+    await Promise.all(roots.map((root) => rm(root, { recursive: true, force: true })));
+  });
+
+  const resolve = async (flags: Parameters<typeof resolveTarget>[0]['flags']) => {
+    const root = await declared();
+    return resolveTarget({
       config: complete,
-      profilePath: '/w/profiles/personal.yaml',
-      workspaceRoot: '/w',
+      profilePath: `${root}/profiles/personal.yaml`,
+      workspaceRoot: root,
       profile: 'personal',
       target: 'cloud',
       flags,
     });
+  };
 
   test('is used as-is when nobody is there to answer', async () => {
     // A test run has no terminal, which is the same situation as a scripted

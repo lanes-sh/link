@@ -1,3 +1,4 @@
+import { workspaceYaml } from '#profile/testing.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -18,11 +19,25 @@ import { openSecretStoreFor, openRuntime, resolveProfile } from './runtime.ts';
 const roots: string[] = [];
 const previousHome = process.env['LANES_LINK_HOME'];
 
-const PROFILE = `contract: 1
+const PROFILE = `contract: 2
 
 instance:
   profile: personal
-  default_target: local
+
+policy:
+  allow: ['*']
+`;
+
+/**
+ * The adapter sets, in the workspace file rather than in the profile.
+ *
+ * Every one of these used to sit under `targets:` inside `personal.yaml`. They
+ * moved out wholesale under ADR-052 — same adapters, same names, declared once
+ * by the workspace that is them — which is exactly the shape this file is here
+ * to exercise.
+ */
+const TARGETS = `contract: 2
+default_profile: personal
 
 targets:
   local:
@@ -49,9 +64,6 @@ targets:
     credentials: { adapter: file,       path: ./data/personal.credentials.enc }
     storage:     { adapter: filesystem, path: ./data/files }
     vault:       { adapter: blob }
-
-policy:
-  allow: ['*']
 `;
 
 async function workspace(): Promise<string> {
@@ -59,7 +71,7 @@ async function workspace(): Promise<string> {
   roots.push(root);
 
   await mkdir(join(root, 'profiles'), { recursive: true });
-  await writeFile(join(root, 'lanes-link.yaml'), 'contract: 1\ndefault_profile: personal\n');
+  await writeFile(join(root, 'lanes-link.yaml'), TARGETS);
   await writeFile(join(root, 'profiles', 'personal.yaml'), PROFILE);
 
   process.env['LANES_LINK_HOME'] = root;
@@ -190,8 +202,10 @@ describe('refusals', () => {
   test('an undeclared target is refused by name', async () => {
     const root = await workspace();
     const { config } = await resolveProfile({ profile: 'personal', target: 'local' });
+    // The listing is the registry's, one target per line with where each lives —
+    // it used to be one profile's `targets:` keys joined by commas (ADR-052).
     await expect(openSecretStoreFor(config, root, 'staging')).rejects.toThrow(
-      /Target "staging" is not declared.*local, s3/s,
+      /Target "staging" is not declared.*local.*s3/s,
     );
   });
 });

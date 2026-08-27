@@ -57,8 +57,11 @@ export async function openKnowledge(
   /** Injected for tests. The repository is the only thing these stores reach. */
   call?: FetchLike,
 ): Promise<KnowledgeStores | undefined> {
-  const { declared, target } = input;
-  const knowledge = declared.knowledge;
+  const { config, target } = input;
+  // On the profile since contract 2: it says where *this profile's* memory and
+  // skills live, and a profile lives in exactly one target (ADR-052), so the
+  // per-target spelling it replaced could no longer say anything extra.
+  const knowledge = config.knowledge;
   if (!knowledge) return undefined;
 
   const token = await requireSecret(

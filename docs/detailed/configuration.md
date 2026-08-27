@@ -37,20 +37,16 @@ both into the profile that owns them. Two consequences worth knowing:
 ## A complete profile
 
 ```yaml
-contract: 1
+contract: 2
 
 instance:
   profile: personal
-  default_target: local
   port: 7337
   host: 127.0.0.1
 
-# Adapter selection is per target. Everything below "targets" is
-# target-independent and declared exactly once.
-targets:
-  local:
-    credentials: { adapter: file,       path: ./data/personal.credentials.enc }
-    storage:     { adapter: filesystem, path: ./data/personal/files }
+# It says nothing about where it runs, and that is the point. A profile lives in
+# exactly one target, and the target is the workspace holding this file — which
+# declares its adapters once, in lanes-link.yaml beside profiles/ (ADR-052).
 
 # The bearer token for the endpoint this profile serves. One "lanes link start"
 # serves every profile in the workspace from one URL, and this token opens it —
@@ -179,16 +175,10 @@ to point at. The Google connections below authorise against the client Lanes ope
 secret is never on this machine.
 
 ```yaml
-contract: 1
+contract: 2
 
 instance:
   profile: personal
-  default_target: local
-
-targets:
-  local:
-    credentials: { adapter: file }
-    storage: { adapter: filesystem, path: ./data }
 
 connections:
   - id: ada_lovelace
@@ -293,8 +283,29 @@ A **deny beats an allow regardless of order in the file**, including the catch-a
 
 ## Targets
 
-One config can run in more than one place. A target names an adapter set; connections, providers,
-policy, and limits are declared once and apply to every target.
+A target names an adapter set — and it is declared by a **workspace**, not by a profile (ADR-052).
+A workspace *is* a target: it holds the profiles that live in it, and says once, in its own
+`lanes-link.yaml`, where their bytes go.
+
+```yaml
+# ~/.lanes-link/lanes-link.yaml
+contract: 2
+
+targets:
+  local:                            # this workspace is the "local" target
+    credentials: { adapter: file }
+    storage: { adapter: filesystem }
+  cloud:
+    workspace: gs://your-bucket     # a pointer; that workspace declares it
+```
+
+An entry is either a **declaration** — `credentials` and `storage`, and whatever else the adapter
+set needs — or a **pointer**, carrying `workspace:` and nothing else. Both is refused: two answers
+to "where do this target's bytes go" is the state that let a rewritten profile report seven
+connections for a bucket holding fifteen.
+
+Following a pointer is a read of that workspace's own file, so `--target cloud` needs the bucket
+reachable. Offline it says so, rather than answering from a local copy that may be hours stale.
 
 | Interface | `local` | `cloud` |
 |---|---|---|
@@ -310,49 +321,17 @@ Credentials follow the target, because each target has its own credential store.
 
 ### More than one deployment
 
-`local` and `cloud` are conventions, not keywords — nothing reserves either name, and a profile may
-declare as many targets as it has places to run. A second deployment is named on the deploy that
-creates it (`lanes link deploy --target staging`), which surveys for what it does not know and
-writes the block below.
+`local` and `cloud` are conventions, not keywords — nothing reserves either name, and a workspace
+may know as many targets as it has places to reach. A second deployment is named on the deploy that
+creates it (`lanes link deploy --target staging`), which surveys for what it does not know, writes
+the declaration into the workspace it creates, and leaves a pointer here.
 
-```yaml
-contract: 1
+`lanes link target list` prints the registry without following any pointer, so it is instant and
+works offline; `lanes link target show <name>` follows one and reports what is really there.
+`lanes link target use` has been removed (ADR-037) — name the target on each command.
 
-instance:
-  profile: personal
-  default_target: local
-
-targets:
-  local:
-    credentials: { adapter: file }
-    storage: { adapter: filesystem }
-
-  cloud:
-    credentials: { adapter: gcp-secret-manager, project: my-project }
-    storage: { adapter: gcs, bucket: your-bucket }
-    vault: { adapter: secret }
-    deploy:
-      platform: cloudrun
-      project: my-project
-      region: europe-west1
-      service: my-service
-      access: public
-
-  staging:
-    credentials: { adapter: gcp-secret-manager, project: my-other-project }
-    storage: { adapter: gcs, bucket: your-other-bucket }
-    vault: { adapter: secret }
-    deploy:
-      platform: cloudrun
-      project: my-other-project
-      region: europe-west1
-      service: my-other-service
-      access: public
-```
-
-`lanes link target list` prints what a profile declares and which target is in play;
-`lanes link target use` has been removed (ADR-037) — name the target on each command. Once two targets declare a
-`deploy` block, a bare `lanes link deploy` asks which you meant rather than picking.
+A profile lives in exactly one target. `personal` on `local` and `personal` on `cloud` are two
+files, in two workspaces, that happen to share a name — which is why every command names both.
 
 Each target's credential store is its own, so a connection authorised against `cloud` is absent from
 `staging` — `lanes link secrets push --from cloud --to staging` copies them across instead of
@@ -373,6 +352,7 @@ Optional, and defaulting to `file`, so a profile that predates it keeps working 
 no vault configuration at all:
 
 ```yaml
+# in that workspace's lanes-link.yaml
 targets:
   cloud:
     vault: { adapter: blob }      # the target's own storage; key defaults to vault.enc

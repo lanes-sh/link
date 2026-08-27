@@ -1,4 +1,13 @@
-import { ConfigError, type Config, type DeployConfig, type TargetConfig } from '#profile';
+import {
+  ConfigError,
+  WORKSPACE_FILE,
+  declaredTarget,
+  readRegistry,
+  recordTarget,
+  type Config,
+  type DeployConfig,
+  type TargetConfig,
+} from '#profile';
 import { VAULT_KEY_ENV, VAULT_KEY_REF } from '#secrets';
 import { ok, print, style } from '#cli/output.ts';
 import { isInteractive } from '#cli/prompt.ts';
@@ -75,7 +84,11 @@ export async function resolveTarget(input: {
   flags: TargetBootstrap;
 }): Promise<TargetConfig> {
   const { config, flags, target } = input;
-  const declared = config.targets[target];
+  // From the workspace registry, not the profile. A profile declares no target
+  // (ADR-052), so the question "what does this workspace already know about
+  // `cloud`" is asked of the one file that answers it.
+  const entry = (await readRegistry(input.workspaceRoot))[target];
+  const declared = entry ? declaredTarget(entry) : undefined;
   const access = parseAccess(flags.access);
 
   const overrides = {
@@ -102,28 +115,35 @@ export async function resolveTarget(input: {
     adapters: declared === undefined,
   });
 
-  const document = await ConfigDocument.open(input.workspaceRoot, input.profile);
+  // The target goes to the workspace registry; the authorization block goes to
+  // the profile. Two files, because they are two different kinds of fact: where
+  // this target's bytes live is true of every profile here, and whether *this*
+  // profile issues its own tokens is true of one.
+  // `withoutUndefined` and its deep sibling type their result `Partial<T>`,
+  // which is stricter than what they do: they drop keys whose value is
+  // `undefined`, and a key that was required was never undefined. The casts say
+  // that, rather than the shape being genuinely unknown here.
+  const entryToWrite = declared
+    ? { ...declared, deploy: withoutUndefined(surveyed.target.deploy!) as DeployConfig }
+    : (deepWithoutUndefined(surveyed.target) as unknown as TargetConfig);
 
-  if (declared) {
-    document.setIn(['targets', target, 'deploy'], withoutUndefined(surveyed.target.deploy!));
-  } else {
-    document.setIn(['targets', target], deepWithoutUndefined(surveyed.target));
-  }
+  await recordTarget(input.workspaceRoot, target, entryToWrite);
 
   // `auth.authorization` is not part of the target and is written all the same:
   // the question that decides it is "will a remote client reach this", which
   // only a deploy is in a position to ask. See `SurveyResult`.
   if (surveyed.authorization) {
+    const document = await ConfigDocument.open(input.workspaceRoot, input.profile);
     document.setIn(['auth', 'authorization'], surveyed.authorization);
+    await document.save();
   }
-  await document.save();
 
   print('');
   print(
     ok(
       declared
-        ? `written to targets.${target}.deploy in ${input.profilePath}`
-        : `written to targets.${target} in ${input.profilePath}`,
+        ? `written to targets.${target}.deploy in ${WORKSPACE_FILE}`
+        : `written to targets.${target} in ${WORKSPACE_FILE}`,
     ),
   );
   if (surveyed.authorization) {

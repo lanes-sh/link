@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { readFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { assertKnownFlags, requireSelection, requirementFor, SELECTION } from './selection.ts';
+import { SELECTION, assertKnownFlags, requirementFor } from './selection.ts';
+import { requireSelection } from './selection-require.ts';
 import { CONNECT_CUSTOM_FLAGS, RESERVED_BY_GRAMMAR } from './commands/connect/custom/spec.ts';
 
 /**
@@ -78,12 +79,23 @@ const nowhere = { LANES_LINK_HOME: '/nonexistent-workspace-for-a-test' };
 
 describe('requiring a selection', () => {
 
-  test('refuses a command that names no profile', async () => {
+  test('refuses a command that names no profile, once it has a target', async () => {
     // `connect` acts on one account, so the profile is the subject and there is
     // nothing to fall back to. `status` used to stand here and no longer can:
     // its subject is the target (ADR-043).
+    //
+    // The target has to be given first, and that is the ordering ADR-052
+    // inverted: a profile lives in one target's workspace, so "which profiles
+    // exist" cannot be answered — or refused usefully — until the target is
+    // known.
+    await expect(
+      requireSelection('connect', undefined, { target: 'local' }, nowhere),
+    ).rejects.toThrow('--profile is required');
+  });
+
+  test('asks for the target before the profile, because the target says where to look', async () => {
     await expect(requireSelection('connect', undefined, {}, nowhere)).rejects.toThrow(
-      '--profile is required',
+      '--target is required',
     );
   });
 
@@ -105,15 +117,19 @@ describe('requiring a selection', () => {
     ).not.toThrow();
   });
 
-  test('asks target-independent commands for a profile only', async () => {
+  test('asks the store-free commands for both, because the target locates the file', async () => {
     // `check` validates a YAML file, `config show` prints the whole of it, and
-    // `policy list` reads a block declared once for every target. Demanding a
-    // target here is the ceremony that teaches people to type `--target local`
-    // without reading it, which is how a required flag stops being a guard.
+    // `policy list` reads a block that is the same wherever the profile runs.
+    // None opens a store — and all three still need a target now, because a
+    // profile lives in exactly one target's workspace and without one there is
+    // no file to read (ADR-052). The flag buys finding it, not opening it.
     for (const command of ['check', 'config show', 'policy list'] as const) {
       const [first, second] = command.split(' ');
+      await expect(requireSelection(first!, second, { profile: 'work' }, nowhere)).rejects.toThrow(
+        '--target is required',
+      );
       await expect(
-        requireSelection(first!, second, { profile: 'work' }, nowhere),
+        requireSelection(first!, second, { profile: 'work', target: 'local' }, nowhere),
       ).resolves.toBeUndefined();
     }
   });
@@ -132,8 +148,17 @@ describe('requiring a selection', () => {
     ).resolves.toBeUndefined();
   });
 
-  test('asks profile add for neither, because there is nothing to select yet', async () => {
-    await expect(requireSelection('profile', 'add', {}, nowhere)).resolves.toBeUndefined();
+  test('asks profile add for a target, because that is where the file goes', async () => {
+    // It named neither while every profile was written into the same directory.
+    // `--target` now decides *which workspace* it is created in (ADR-052), so it
+    // is the one thing the command cannot proceed without. The profile name is
+    // still positional.
+    await expect(requireSelection('profile', 'add', {}, nowhere)).rejects.toThrow(
+      '--target is required',
+    );
+    await expect(
+      requireSelection('profile', 'add', { target: 'local' }, nowhere),
+    ).resolves.toBeUndefined();
   });
 
   test('says nothing when the subcommand itself does not exist', async () => {
@@ -199,7 +224,7 @@ describe('refusing a flag the command does not read', () => {
 });
 
 /**
- * That a command the table calls target-independent can actually be run.
+ * That every command can actually be run in the spelling it demands.
  *
  * The table said `profile` for five commands and their handlers called
  * `resolveProfile`, which requires a target — while `assertKnownFlags` refused
@@ -212,43 +237,72 @@ describe('refusing a flag the command does not read', () => {
  *     error  Unknown flag "--target" for "lanes link check".
  *
  * A requirement and an allowlist that disagree cannot be caught by testing
- * either one, which is why this asserts the pair.
+ * either one, which is why this asserts the pair — and asserts it over the whole
+ * table rather than a list somebody has to remember to extend. ADR-052 moved
+ * eight commands between levels; this is what would have caught it if any of
+ * them had been moved in one place and not the other.
  */
-describe('a target-independent command is runnable in the spelling it demands', () => {
-  const targetIndependent = [
-    ['check', undefined],
-    ['config', 'show'],
-    ['policy', 'list'],
-    ['secrets', 'push'],
-    ['identity', 'list'],
-  ] as const;
+describe('every command is runnable in the spelling it demands', () => {
+  const twoWord = new Set(Object.keys(SELECTION).filter((key) => key.includes(' ')));
 
-  test('the requirement is satisfied by --profile alone', async () => {
-    for (const [first, second] of targetIndependent) {
+  const commands = Object.keys(SELECTION).map((key) => {
+    const [first, second] = key.split(' ');
+    return { key, first: first!, second, requires: SELECTION[key]! };
+  });
+
+  test('what the requirement demands, the allowlist accepts', () => {
+    for (const { key, first, second, requires } of commands) {
+      // A one-word key that also has two-word rows dispatches to those; asking
+      // it for flags is a different question, answered by its own row.
+      if (requires === 'none') continue;
+
+      const flags: Record<string, string> = {};
+      if (requires === 'profile+target') flags['profile'] = 'work';
+      if (requires === 'target' || requires === 'profile+target') flags['target'] = 'local';
+
+      expect(() => assertKnownFlags(first, second, flags), `${key} accepts what it requires`).not.toThrow();
+    }
+  });
+
+  test('and nothing demands a flag it would then refuse', async () => {
+    for (const { key, first, second, requires } of commands) {
+      if (requires === 'none') continue;
+      if (twoWord.has(key) && second === undefined) continue;
+
+      const flags: Record<string, string> = {};
+      if (requires === 'profile+target') flags['profile'] = 'work';
+      if (requires === 'target' || requires === 'profile+target') flags['target'] = 'local';
+
       await expect(
-        requireSelection(first, second, { profile: 'work' }, nowhere),
+        requireSelection(first, second, flags, nowhere),
+        `${key} is satisfied by ${JSON.stringify(flags)}`,
       ).resolves.toBeUndefined();
     }
   });
 
-  test('and --target is refused, rather than being both required and unknown', () => {
-    for (const [first, second] of targetIndependent) {
-      expect(() => assertKnownFlags(first, second, { profile: 'work', target: 'local' })).toThrow(
-        'Unknown flag',
-      );
+  test('the five store-free commands moved to profile+target together', () => {
+    // They read one profile's file and open nothing, which is why they never
+    // needed a target. They need one now to *find* the file (ADR-052) — and the
+    // point of naming them here is that moving four of the five would leave the
+    // fifth quietly unrunnable.
+    for (const key of ['check', 'config show', 'policy list', 'secrets push', 'identity list']) {
+      expect(SELECTION[key], key).toBe('profile+target');
     }
   });
 
   test('profile remove names its profile positionally, like profile add', async () => {
     // Both take the name as an argument, so a `--profile` flag could only name a
     // second one and disagree with it.
-    await expect(requireSelection('profile', 'remove', {}, nowhere)).resolves.toBeUndefined();
+    await expect(
+      requireSelection('profile', 'remove', { target: 'local' }, nowhere),
+    ).resolves.toBeUndefined();
     expect(() => assertKnownFlags('profile', 'remove', { profile: 'work' })).toThrow('Unknown flag');
   });
 
-  test('profile remove keeps the --target that decommissions one target’s stores', () => {
-    // Documented in `usage.ts` and read by `removalPlan`; it was refused here,
-    // so the flag existed everywhere except where it could be typed.
+  test('profile remove takes the --target that says which workspace holds it', () => {
+    // It used to mean "decommission this one target's stores and keep the
+    // profile". It now says where the profile *is* (ADR-052), and is required
+    // rather than optional.
     expect(() =>
       assertKnownFlags('profile', 'remove', { target: 'cloud', 'dry-run': true }),
     ).not.toThrow();
@@ -292,9 +346,14 @@ describe('a target-independent command is runnable in the spelling it demands', 
   });
 
   test('and it needs both a profile and a target, like connect', async () => {
+    // The target first, because it is what says which workspace holds the
+    // profile (ADR-052) — so a command naming neither is refused for the target.
     await expect(requireSelection('connect', 'custom', {}, nowhere)).rejects.toThrow(
-      '--profile is required',
+      '--target is required',
     );
+    await expect(
+      requireSelection('connect', 'custom', { target: 'local' }, nowhere),
+    ).rejects.toThrow('--profile is required');
     await expect(
       requireSelection('connect', 'custom', { profile: 'work', target: 'local' }, nowhere),
     ).resolves.toBeUndefined();

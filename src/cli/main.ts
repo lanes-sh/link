@@ -32,7 +32,8 @@ import { knowledgeShow, knowledgeUse } from './commands/knowledge.ts';
 import { dispatchOwner } from './dispatch-owner.ts';
 import { update } from './commands/update.ts';
 import { all, customFlags, globalFlags, knowledgeFlags, ownerFlags, parseArgv, text } from './argv.ts';
-import { assertKnownFlags, requireSelection } from './selection.ts';
+import { assertKnownFlags } from './selection.ts';
+import { requireSelection } from './selection-require.ts';
 import { PROGRAM, USAGE } from './usage.ts';
 import { version } from './version.ts';
 import { print } from './output.ts';
@@ -125,19 +126,20 @@ export async function run(argv: readonly string[]): Promise<void> {
       switch (second) {
         case 'add':
           if (!rest[0]) {
-            throw new Error(`Usage: ${PROGRAM} profile add <name> --target <name> [--target <name>]`);
+            throw new Error(`Usage: ${PROGRAM} profile add <name> --target <name>`);
           }
           return profileAdd(rest[0], {
-            // Read from argv rather than from `flags`, because this is the one
-            // place a flag is a list: a profile declares every target it can run
-            // on, and the parser keeps only the last value of a repeated flag.
-            targets: all(argv, 'target'),
+            // One target, not a list. A profile declared every target it could
+            // run on under contract 1, which is why this read the repeated flag
+            // out of argv; it lives in exactly one now (ADR-052), so a second
+            // --target would be naming a second place to put the same file.
+            targets: [text(flags, 'target')!],
             nonInteractive: flags['non-interactive'] === true,
             json,
           });
         case 'list':
         case undefined:
-          return profileList({ json });
+          return profileList(text(flags, 'target')!, { json });
         case 'default':
           if (!rest[0]) throw new Error(`Usage: ${PROGRAM} profile default <name>`);
           return profileDefault(rest[0]);

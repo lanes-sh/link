@@ -1,6 +1,6 @@
 {
   "name": "@lanes-sh/link",
-  "version": "0.5.4",
+  "version": "0.6.0",
   "description": "A self-hostable MCP gateway for all your connections, memory, tasks, files, and secrets",
   "license": "Apache-2.0",
   "homepage": "https://lanes.sh/link",
@@ -66,6 +66,7 @@
     "#dispatch": "./src/dispatch/index.ts",
     "#policy": "./src/policy/index.ts",
     "#profile": "./src/profile/index.ts",
+    "#profile/*": "./src/profile/*",
     "#providers/*": "./src/providers/*",
     "#registry": "./src/registry/index.ts",
     "#secrets": "./src/secrets/index.ts",

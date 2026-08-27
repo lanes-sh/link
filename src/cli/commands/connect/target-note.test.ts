@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { Config, Resolution } from '#profile';
+import type { Resolution } from '#profile';
 import { announceConnectTarget } from './target-note.ts';
 
 /**
@@ -35,15 +35,6 @@ function captured(body: () => void): { out: string; err: string } {
   return { out, err };
 }
 
-function targets(names: readonly string[]): Config['targets'] {
-  return Object.fromEntries(
-    names.map((name) => [
-      name,
-      { credentials: { adapter: 'file' }, storage: { adapter: 'filesystem' } },
-    ]),
-  ) as Config['targets'];
-}
-
 describe('announcing the target', () => {
   const resolution: Resolution = {
     workspaceRoot: '/tmp/workspace',
@@ -52,14 +43,12 @@ describe('announcing the target', () => {
     target: 'local',
   };
 
-  const config = { targets: targets(['local', 'cloud']) };
-
   test('writes nothing to stdout for a --json caller', () => {
     // The assertion is the parse. `emit` guards the lines printed at the emit,
     // and this one precedes the browser — so it carries its own guard, and a
     // stray line here would corrupt the document a caller is parsing.
     const { out } = captured(() => {
-      announceConnectTarget({ resolution, config }, true);
+      announceConnectTarget({ resolution }, true);
       process.stdout.write(JSON.stringify({ ok: true }));
     });
 
@@ -67,14 +56,14 @@ describe('announcing the target', () => {
   });
 
   test('names the profile and the target it is about to write into', () => {
-    const { out } = captured(() => announceConnectTarget({ resolution, config }, false));
+    const { out } = captured(() => announceConnectTarget({ resolution }, false));
 
     expect(out).toContain('personal');
     expect(out).toContain('local');
   });
 
   test('goes to stdout, where every other command puts its announce', () => {
-    const { out, err } = captured(() => announceConnectTarget({ resolution, config }, false));
+    const { out, err } = captured(() => announceConnectTarget({ resolution }, false));
 
     expect(out).not.toBe('');
     expect(err).toBe('');

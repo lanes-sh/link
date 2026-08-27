@@ -17,13 +17,24 @@ const roots: string[] = [];
 const previousHome = process.env['LANES_LINK_HOME'];
 const previousTarget = process.env['LANES_LINK_TARGET'];
 
-const PROFILE = `contract: 1
+const PROFILE = `contract: 2
 
 instance:
   profile: personal
   # A comment nobody asked this command to remove.
-  default_target: local
   port: 7337
+
+`;
+
+/**
+ * The registry, which is where these three used to sit inside the profile.
+ *
+ * Same three targets, same adapters — declared once by the workspace rather than
+ * once per profile (ADR-052). `cloud` deploys and `staging` does not, which is
+ * the distinction the listing below is about.
+ */
+const TARGETS = `contract: 2
+default_profile: personal
 
 targets:
   local:
@@ -60,7 +71,7 @@ async function workspace(): Promise<{
   process.env['LANES_LINK_HOME'] = root;
 
   await mkdir(join(root, 'profiles'), { recursive: true });
-  await writeFile(join(root, 'lanes-link.yaml'), 'contract: 1\ndefault_profile: personal\n');
+  await writeFile(join(root, 'lanes-link.yaml'), TARGETS);
   await writeFile(join(root, 'profiles', 'personal.yaml'), PROFILE);
   return { root, env: { LANES_LINK_HOME: root } };
 }

@@ -1,14 +1,4 @@
-import {
-  ConfigError,
-  listProfiles,
-  loadProfileConfig,
-  loadWorkspaceProfiles,
-  noProfileNamed,
-  noTargetInWorkspace,
-  noTargetNamed,
-  resolveWorkspaceRoot,
-  targetsByName,
-} from '#profile';
+import { ConfigError } from '#profile';
 import type { Flags } from './argv.ts';
 import { CONNECT_CUSTOM_FLAGS } from './commands/connect/custom/spec.ts';
 import { nearest } from './nearest.ts';
@@ -39,11 +29,17 @@ import { nearest } from './nearest.ts';
  * What a command must be told before it can act.
  *
  * `target` is not a weaker `profile+target`. It says the command's subject *is*
- * the target, and that the profiles behind it are every profile declaring it
- * rather than one the operator picks (ADR-043). `--profile` stays accepted
+ * the target, and that the profiles behind it are every profile *in* it rather
+ * than one the operator picks (ADR-043, ADR-052). `--profile` stays accepted
  * there, as a filter.
+ *
+ * There is no `profile`-alone level any more. Five commands sat there — the ones
+ * that read a profile's file and open nothing — and it stopped being reachable
+ * when a profile came to live inside one target's workspace: without a target
+ * there is no file to read. The level is gone rather than left empty, so nobody
+ * adds a sixth command to a level that cannot resolve.
  */
-export type Requires = 'none' | 'profile' | 'target' | 'profile+target';
+export type Requires = 'none' | 'target' | 'profile+target';
 
 /**
  * The rule, per command path.
@@ -87,28 +83,33 @@ export const SELECTION: Record<string, Requires> = {
   'mcp list': 'none',
   // The bare forms, which each dispatch to a `case undefined` in `main.ts`.
   // `lanes link profile` is `profile list`, and needs the same as it.
-  profile: 'none',
   mcp: 'none',
-  'profile list': 'none',
-  'profile add': 'none',
   'profile default': 'none',
   'target use': 'none',
   'vault key': 'none',
+  // Listing the registry is what you run to find out what `--target` accepts, so
+  // requiring the answer as input would be circular (ADR-052).
+  target: 'none',
+  'target list': 'none',
 
-  check: 'profile',
-  config: 'profile',
-  policy: 'profile',
-  target: 'profile',
-  'config show': 'profile',
-  'policy list': 'profile',
-  'target list': 'profile',
-  'target show': 'profile',
-  'secrets push': 'profile',
-  'profile remove': 'none',
-  // Target-independent for the same reason `policy list` is: the block is
-  // declared once in the YAML and applies to every target the profile has.
-  identity: 'profile',
-  'identity list': 'profile',
+  // A profile lives in one target's workspace, so listing or creating one names
+  // which workspace. `target show` follows the pointer, which `list` does not.
+  profile: 'target',
+  'profile list': 'target',
+  'profile add': 'target',
+  'profile remove': 'target',
+  'target show': 'target',
+
+  // These read one profile's file and open nothing. The target is what says
+  // which workspace holds it — required to *locate* the profile, not to open it.
+  check: 'profile+target',
+  config: 'profile+target',
+  'config show': 'profile+target',
+  policy: 'profile+target',
+  'policy list': 'profile+target',
+  identity: 'profile+target',
+  'identity list': 'profile+target',
+  'secrets push': 'profile+target',
 
   connect: 'profile+target',
   // Both edit the profile config, and `disconnect` also opens the target's
@@ -205,7 +206,7 @@ const SUBCOMMANDS: Record<string, readonly string[]> = {
  * bogus" is the useful sentence, and a complaint about `--profile` on a command
  * that does not exist sends someone off to fix the wrong thing.
  */
-function dispatchWillRefuse(first: string, second: string | undefined): boolean {
+export function dispatchWillRefuse(first: string, second: string | undefined): boolean {
   const known = SUBCOMMANDS[first];
   if (!known || second === undefined) return false;
   return !known.includes(second);
@@ -228,65 +229,6 @@ export function requirementFor(first: string, second: string | undefined): Requi
   return SELECTION[selectionKey(first, second)] ?? 'profile+target';
 }
 
-/**
- * Refuse before the command runs, naming what it wants and what there is.
- *
- * Async, and it reads the workspace — but only on the way to throwing. The
- * useful half of "which profile did you mean" is the list of them, and the same
- * for targets; a refusal that only restates the flag name leaves someone to go
- * and look it up. Both messages come from `#profile` so this file and the
- * resolver cannot describe the same refusal differently, and both name an
- * exported variable that no longer counts — the shell still configured for the
- * old world is the state hardest to diagnose from the inside.
- */
-export async function requireSelection(
-  first: string,
-  second: string | undefined,
-  flags: Flags,
-  env?: Record<string, string | undefined>,
-): Promise<void> {
-  if (dispatchWillRefuse(first, second)) return;
-
-  const needs = requirementFor(first, second);
-  if (needs === 'none') return;
-
-  // Asked before the profile requirement, because for these there is none. The
-  // refusal has to describe the workspace rather than one profile's targets,
-  // since the command was never going to act on only one.
-  if (needs === 'target') {
-    if (typeof flags['target'] === 'string') return;
-    const root = resolveWorkspaceRoot(env ? { env } : {});
-    throw noTargetInWorkspace(targetsByName(await loadWorkspaceProfiles(root)), root, env);
-  }
-
-  const profile = flags['profile'];
-  if (typeof profile !== 'string') {
-    const root = resolveWorkspaceRoot(env ? { env } : {});
-    throw noProfileNamed(root, await listProfiles(root), env);
-  }
-
-  if (needs !== 'profile+target' || typeof flags['target'] === 'string') return;
-
-  // The profile is known by here, so the target list is the one belonging to it
-  // rather than a guess. A profile that does not exist is a different refusal,
-  // and `resolveSelection` gives it a better one a moment later.
-  const root = resolveWorkspaceRoot(env ? { env } : {});
-  try {
-    const { config } = await loadProfileConfig(root, profile);
-    throw noTargetNamed(config, profile, env);
-  } catch (error) {
-    if (error instanceof ConfigError) throw error;
-    throw new ConfigError(`--target is required for "${[first, second].filter(Boolean).join(' ')}".`);
-  }
-}
-
-/**
- * Flags every command accepts, whatever it does.
- *
- * `--help` short-circuits before dispatch, and `--json` is offered widely enough
- * that listing it per command would be noise. `--quiet` is read by `announce`
- * rather than by any one command.
- */
 const UNIVERSAL = ['help', 'json', 'quiet'];
 
 /**
@@ -367,6 +309,16 @@ const ACCEPTS: Record<string, readonly string[]> = {
  * `parseArgv` returns every `--anything` it sees and no command ever inspected
  * the leftovers. A typo was swallowed the same way on every command in the CLI.
  */
+/**
+ * Commands that name their profile as an argument, and so refuse the flag.
+ *
+ * A `--profile` here could only name a *second* profile and disagree with the
+ * positional one. They needed no exception while both sat at `none`; ADR-052
+ * moved them to `target`, which made them inherit `--profile` from the rule
+ * below.
+ */
+const POSITIONAL_PROFILE = new Set(['profile add', 'profile remove']);
+
 export function assertKnownFlags(first: string, second: string | undefined, flags: Flags): void {
   if (dispatchWillRefuse(first, second)) return;
 
@@ -378,7 +330,7 @@ export function assertKnownFlags(first: string, second: string | undefined, flag
     ...(ACCEPTS[key] ?? []),
     // `target` accepts both: the target is what it acts on, and `--profile`
     // narrows it to one of the profiles behind it.
-    ...(needs !== 'none' ? ['profile'] : []),
+    ...(needs !== 'none' && !POSITIONAL_PROFILE.has(key) ? ['profile'] : []),
     ...(needs === 'target' || needs === 'profile+target' ? ['target'] : []),
   ]);
 

@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { parse as parseYaml } from 'yaml';
+import { workspaceSchema } from './schema.ts';
 import { installRoot } from './workspace.ts';
 import { parseConfig } from './load.ts';
 import { parseManifest } from '#providers/custom/index.ts';
@@ -21,20 +23,31 @@ import { parseManifest } from '#providers/custom/index.ts';
 
 const ROOT = installRoot(import.meta.dir);
 
-/** Every fenced YAML block that looks like a whole profile, not a fragment. */
-async function profileExamples(relative: string): Promise<string[]> {
+/**
+ * Every fenced YAML block that is a whole document, split by which kind.
+ *
+ * Both declare a contract, which is what tells a complete document from an
+ * excerpt illustrating one block. What tells the two apart is `instance:` — a
+ * profile has one and a workspace file does not. That distinction only started
+ * mattering under ADR-052, when the docs gained worked examples of a workspace
+ * registry alongside the profile ones.
+ */
+async function documentExamples(
+  relative: string,
+): Promise<{ profiles: string[]; workspaces: string[] }> {
   const text = await readFile(join(ROOT, relative), 'utf8');
-  const blocks: string[] = [];
+  const profiles: string[] = [];
+  const workspaces: string[] = [];
 
   const fence = /```yaml\n([\s\S]*?)```/g;
   for (const match of text.matchAll(fence)) {
     const body = match[1] ?? '';
-    // A complete profile declares the contract; anything else is an excerpt
-    // illustrating one block, which cannot be parsed on its own.
-    if (/^contract:\s*\d/m.test(body)) blocks.push(body);
+    if (!/^contract:\s*\d/m.test(body)) continue;
+    if (/^instance:/m.test(body)) profiles.push(body);
+    else workspaces.push(body);
   }
 
-  return blocks;
+  return { profiles, workspaces };
 }
 
 describe('documented config examples parse', () => {
@@ -43,11 +56,18 @@ describe('documented config examples parse', () => {
     'docs/detailed/init.md',
     'docs/detailed/deployment-cloudrun.md',
   ])('%s', async (relative) => {
-    const examples = await profileExamples(relative);
-    expect(examples.length).toBeGreaterThan(0);
+    const { profiles, workspaces } = await documentExamples(relative);
+    expect(profiles.length).toBeGreaterThan(0);
 
-    for (const example of examples) {
+    for (const example of profiles) {
       expect(() => parseConfig(example, relative)).not.toThrow();
+    }
+
+    // Validated too, and against the schema that governs them. A workspace
+    // example that does not parse is exactly as broken as a profile one, and
+    // before ADR-052 there were none to catch.
+    for (const example of workspaces) {
+      expect(() => workspaceSchema.parse(parseYaml(example)), relative).not.toThrow();
     }
   });
 });

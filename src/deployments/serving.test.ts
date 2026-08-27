@@ -1,3 +1,4 @@
+import { workspaceYaml } from '#profile/testing.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -15,16 +16,17 @@ import { collidingRefs, collisionRefusal, servingProfiles } from './serving.ts';
 
 const roots: string[] = [];
 
-function profileYaml(name: string, options: { cloud?: boolean; gmail?: string } = {}): string {
+/**
+ * A profile, which says nothing about where it runs.
+ *
+ * The `cloud` option is gone with contract 1: it added a second target block, and
+ * a profile declares none (ADR-052). Which profiles a deploy sends is now a
+ * property of *which workspace they are in*, so the fixtures below vary the
+ * workspace rather than the profiles.
+ */
+function profileYaml(name: string, options: { gmail?: string } = {}): string {
   return (
-    `contract: 1\ninstance: { profile: ${name} }\ntargets:\n` +
-    `  local:\n    credentials: { adapter: file, path: ./data/${name}/credentials.enc }\n` +
-    `    storage: { adapter: filesystem, path: ./data/${name} }\n` +
-    (options.cloud === true
-      ? `  cloud:\n    credentials: { adapter: gcp-secret-manager, project: my-project }\n` +
-        `    storage: { adapter: gcs, bucket: your-bucket }\n    vault: { adapter: secret }\n` +
-        `    deploy: { platform: cloudrun, project: my-project, region: europe-west1, service: s-${name} }\n`
-      : '') +
+    `contract: 2\ninstance: { profile: ${name} }\n` +
     `connections:\n  - { id: main, provider: setup, account: Setup }\n` +
     (options.gmail
       ? `  - { id: ${options.gmail}, provider: gmail, account: ${name}@example.com }\n`
@@ -35,7 +37,7 @@ function profileYaml(name: string, options: { cloud?: boolean; gmail?: string } 
 
 async function workspace(
   profiles: Record<string, string>,
-  workspaceFile = 'contract: 1\n',
+  workspaceFile = workspaceYaml(['local', 'cloud']),
 ): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'lanes-link-serving-'));
   roots.push(root);
@@ -53,16 +55,16 @@ afterAll(async () => {
 });
 
 describe('deciding which profiles a deploy sends', () => {
-  test('every profile declaring the target, when none is named', async () => {
+  test('every profile in the target’s workspace, when none is named', async () => {
     const root = await workspace(
       {
-        personal: profileYaml('personal', { cloud: true }),
-        work: profileYaml('work', { cloud: true }),
+        personal: profileYaml('personal'),
+        work: profileYaml('work'),
         solo: profileYaml('solo'),
       },
       // A recorded primary, so this asserts the set rather than tripping the
       // separate refusal about whose token opens the endpoint.
-      'contract: 1\ndeployments:\n  - { target: cloud, workspace: "gs://your-bucket", primary: personal }\n',
+      `${workspaceYaml(['local', 'cloud'])}    primary: personal\n`,
     );
 
     const serving = await servingProfiles({
@@ -71,14 +73,16 @@ describe('deciding which profiles a deploy sends', () => {
       named: [],
     });
 
-    // `solo` declares only `local`, so the endpoint would never open it.
-    expect(serving.profiles).toEqual(['personal', 'work']);
+    // All three. `solo` used to be excluded for declaring only `local`, which is
+    // a distinction a profile can no longer make: it is in this workspace, so it
+    // is one the endpoint will open (ADR-052).
+    expect(serving.profiles).toEqual(['personal', 'solo', 'work']);
   });
 
   test('--profile narrows the set rather than selecting from nothing', async () => {
     const root = await workspace({
-      personal: profileYaml('personal', { cloud: true }),
-      work: profileYaml('work', { cloud: true }),
+      personal: profileYaml('personal'),
+      work: profileYaml('work'),
     });
 
     const serving = await servingProfiles({
@@ -92,7 +96,7 @@ describe('deciding which profiles a deploy sends', () => {
   });
 
   test('one profile declaring it is the primary without being asked', async () => {
-    const root = await workspace({ personal: profileYaml('personal', { cloud: true }) });
+    const root = await workspace({ personal: profileYaml('personal') });
 
     expect((await servingProfiles({ workspaceRoot: root, target: 'cloud', named: [] })).primary).toBe(
       'personal',
@@ -103,8 +107,8 @@ describe('deciding which profiles a deploy sends', () => {
     // One token opens the endpoint and reaches every profile behind it, so
     // which profile owns it decides who gets in.
     const root = await workspace({
-      personal: profileYaml('personal', { cloud: true }),
-      work: profileYaml('work', { cloud: true }),
+      personal: profileYaml('personal'),
+      work: profileYaml('work'),
     });
 
     await expect(
@@ -115,10 +119,10 @@ describe('deciding which profiles a deploy sends', () => {
   test('and takes the recorded primary once a deploy has named one', async () => {
     const root = await workspace(
       {
-        personal: profileYaml('personal', { cloud: true }),
-        work: profileYaml('work', { cloud: true }),
+        personal: profileYaml('personal'),
+        work: profileYaml('work'),
       },
-      'contract: 1\ndeployments:\n  - { target: cloud, workspace: "gs://your-bucket", primary: work }\n',
+      `${workspaceYaml(['local', 'cloud'])}    primary: work\n`,
     );
 
     const serving = await servingProfiles({ workspaceRoot: root, target: 'cloud', named: [] });
@@ -126,18 +130,20 @@ describe('deciding which profiles a deploy sends', () => {
     expect(serving.profiles).toEqual(['personal', 'work']);
   });
 
-  test('a target nothing declares says a first deploy has to name a profile', async () => {
+  test('an empty workspace says a first deploy has to name a profile', async () => {
     // There is no set to derive, and inventing one would create cloud
-    // resources for a profile nobody chose.
-    const root = await workspace({ personal: profileYaml('personal') });
+    // resources for a profile nobody chose. It used to be "a target no profile
+    // declares"; it is "a target whose workspace holds nothing" now (ADR-052),
+    // which is the same first-deploy state described from the other side.
+    const root = await workspace({});
 
     await expect(
       servingProfiles({ workspaceRoot: root, target: 'cloud', named: [] }),
     ).rejects.toThrow('has to be told which profile');
   });
 
-  test('and points at sync, because a lost declaration looks the same', async () => {
-    const root = await workspace({ personal: profileYaml('personal') });
+  test('and points at sync, because a lost pointer looks the same', async () => {
+    const root = await workspace({});
 
     await expect(
       servingProfiles({ workspaceRoot: root, target: 'cloud', named: [] }),
@@ -150,8 +156,8 @@ describe('two profiles sharing one credential store', () => {
     // `gmail/main` is one secret in one project. The last deploy wins, and
     // nothing downstream can catch it — by then the credential is valid.
     const root = await workspace({
-      personal: profileYaml('personal', { cloud: true, gmail: 'main' }),
-      work: profileYaml('work', { cloud: true, gmail: 'main' }),
+      personal: profileYaml('personal', { gmail: 'main' }),
+      work: profileYaml('work', { gmail: 'main' }),
     });
 
     const found = await collidingRefs(root, ['personal', 'work']);
@@ -160,8 +166,8 @@ describe('two profiles sharing one credential store', () => {
 
   test('different ids are not', async () => {
     const root = await workspace({
-      personal: profileYaml('personal', { cloud: true, gmail: 'main' }),
-      work: profileYaml('work', { cloud: true, gmail: 'desk' }),
+      personal: profileYaml('personal', { gmail: 'main' }),
+      work: profileYaml('work', { gmail: 'desk' }),
     });
 
     expect(await collidingRefs(root, ['personal', 'work'])).toEqual([]);
@@ -169,8 +175,8 @@ describe('two profiles sharing one credential store', () => {
 
   test('one profile alone can never collide with itself', async () => {
     const root = await workspace({
-      personal: profileYaml('personal', { cloud: true, gmail: 'main' }),
-      work: profileYaml('work', { cloud: true, gmail: 'main' }),
+      personal: profileYaml('personal', { gmail: 'main' }),
+      work: profileYaml('work', { gmail: 'main' }),
     });
 
     expect(await collidingRefs(root, ['personal'])).toEqual([]);
@@ -180,8 +186,8 @@ describe('two profiles sharing one credential store', () => {
     // Every profile defaults to `profile/token`, and ADR-009 says one endpoint
     // has one token. Reporting it would fire on every multi-profile deploy.
     const root = await workspace({
-      personal: profileYaml('personal', { cloud: true }),
-      work: profileYaml('work', { cloud: true }),
+      personal: profileYaml('personal'),
+      work: profileYaml('work'),
     });
 
     expect(await collidingRefs(root, ['personal', 'work'])).toEqual([]);

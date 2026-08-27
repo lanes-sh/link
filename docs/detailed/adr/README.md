@@ -59,6 +59,7 @@ Nothing in the codebase depends on it.
 | [049](049-manifests-are-read-through-the-workspace-store.md) | A profile's manifests are read through its store, so a custom provider serves from a deployed endpoint |
 | [050](050-the-owner-layer-is-granted-by-default.md) | The owner layer is granted by default, because nothing behind it is an account |
 | [051](051-tasks-and-assets-are-their-own-stores.md) | A task and a file are each their own store, not a memory entry |
+| [052](052-a-target-owns-its-workspace.md) | A target owns its workspace, and a profile lives in exactly one |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 
