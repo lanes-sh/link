@@ -69,6 +69,20 @@ Your agents can now use it. Memory, tasks, files, skills, and the vault hold you
 rather than an account, so they are already there — nothing to connect, no credentials, no browser.
 Mail and calendar are the next step. **[Full quickstart →](docs/quickstart.md)**
 
+## In the Lanes desktop app
+
+Prefer not to use a terminal? The [Lanes desktop app](https://lanes.sh/desktop) drives this CLI from
+a settings page. **Settings → Integrations → Lanes Link** installs it, holds the profile and target
+every command runs against, connects your accounts, starts and stops the endpoint, and registers it
+with Claude Code or Codex.
+
+![The Lanes Link page in the Lanes desktop app: the CLI status card and its version, the target and profile selectors, the endpoint row with its running state, and the list of connected accounts.](docs/images/lanes-link-desktop.png)
+
+It runs the commands above rather than reimplementing them, so consent and the token stay here where
+they belong, and an endpoint set up in the app is the same one you get from a shell. Available from
+Lanes v0.47.0, as a research preview.
+**[How to use it →](https://lanes.sh/docs/desktop/lanes-link)**
+
 ## What your agent gets
 
 | | | Manage it with |
@@ -166,6 +180,7 @@ than being rebuilt.
 ## Docs
 
 - **[Quickstart](docs/quickstart.md)** — from nothing to a working endpoint
+- **[In the Lanes desktop app](https://lanes.sh/docs/desktop/lanes-link)** — the page that drives it
 - **[Connect your accounts](docs/connect.md)** — every provider, and what each one needs
 - **[Add it to your agent](docs/clients.md)** — Claude Code, Codex, Claude Desktop, claude.ai, ChatGPT
 - **[Deploy to your own cloud](docs/deploy.md)** — five commands to a URL
