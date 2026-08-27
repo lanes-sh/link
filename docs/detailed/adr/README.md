@@ -57,6 +57,8 @@ Nothing in the codebase depends on it.
 | [047](047-a-pasted-token-carries-its-own-scheme.md) | A pasted token may carry its own auth scheme in the stored value, and a vendored write surface may return a credential to the caller where the alternative is losing the capability |
 | [048](048-declaring-a-provider-from-the-fixed-lists.md) | A provider is declared by composing the two fixed lists — one connectivity type, one credential type — and connected in the same command |
 | [049](049-manifests-are-read-through-the-workspace-store.md) | A profile's manifests are read through its store, so a custom provider serves from a deployed endpoint |
+| [050](050-the-owner-layer-is-granted-by-default.md) | The owner layer is granted by default, because nothing behind it is an account |
+| [051](051-tasks-and-assets-are-their-own-stores.md) | A task and a file are each their own store, not a memory entry |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 
@@ -132,3 +134,17 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
   a deployed revision — whose workspace is a bucket URL — silently loaded none of them. ADR-014
   had already answered the same question for skills, and this applies that answer to the other
   directory ADR-030 created.
+
+- **ADR-050** amends ADR-012 by changing what a profile arrives with, not what any of it can do.
+  The grant it makes default is the one `lanes link connect memory` already wrote — the whole
+  namespace, writes included — so nothing is newly expressible. Read it together with ADR-003:
+  default deny exists so that nothing reaches an *account* before its owner says so, and no
+  provider in this list has one. The per-item vault rule from ADR-012 §3 is untouched, and is
+  worth checking against the text if the phrase "granted by default" makes you uneasy.
+
+- **ADR-051** follows from ADR-012 rather than amending it: the discriminator it uses to justify
+  two more providers is the one ADR-012 established, applied to a property that decision did not
+  have to consider. Two things in it are not really about tasks or assets at all — the rename of
+  Google Tasks to `google_tasks`, which the reserved-id check forces, and the redaction keys that
+  had to lengthen with it. Both are recorded there because a redaction key that misses withholds
+  every argument and reads exactly like working redaction, which is not a thing to rediscover.
