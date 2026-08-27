@@ -109,6 +109,24 @@ to want, exactly as several memory connections are, so `id !== 'main'` would ref
 forever to catch a one-release migration. Labelling them all `Tasks` is what the accountless
 providers already do — every memory connection is `Memory`.
 
+**A refusal at load has to name a command, and the command has to exist.** This one was shipped
+saying "set provider to `google_tasks` here", meaning by hand, and that was not enough. The refusal
+is in `validateConfig`, which every command opens the config through, so one stale row takes
+`status`, `start`, `plan` and `doctor` down together — and the only route back was to edit YAML, for
+a state an upgrade put the operator in without asking. `lanes link doctor --fix` is that route, and
+`src/cli/config-migrate.ts` is what it runs: the row, its policy rules, and the stored credential,
+moved together through `ConfigDocument` so the file's comments survive.
+
+The repair inherits the refusal's rule about not guessing, and needs a stronger form of it. Both
+readings are still live, so what decides is **evidence rather than a heuristic**: a credential at
+`tasks/<id>` can only belong to the OAuth connection, because the built-in holds none and never has.
+With no credential stored, `--fix` reports both readings and changes nothing — the second version of
+the mistake the heuristic above already made once.
+
+Deliberately still not automatic. `start` could run this on the way past, as it does the owner-layer
+repair, but that repair adds what a profile lacks while this one rebinds what it already has, and a
+credential moving without anyone asking is the thing ADR-007 keeps on the control plane.
+
 The rename also lengthened every redaction key, and that is worth recording because it fails
 silently. `shortenName` strips the *provider id* from a discovered tool name and Google namespaces
 its operations under the *API* name; while the id was `tasks` those were the same string, so

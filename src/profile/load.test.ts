@@ -274,6 +274,24 @@ describe('a provider whose id has been renamed', () => {
     expect(() => parseConfig(withTasks('work', 'Work'))).toThrow(/set account to Tasks/);
   });
 
+  test('the refusal names the command that applies it, with the selection it needs', () => {
+    // The refusal is at *load*, so it takes every command down with it and the
+    // operator's only way back was to hand-edit YAML. Both flags come off the
+    // document rather than off whatever command tripped over it, because nothing
+    // has resolved anything at this point.
+    expect(() => parseConfig(withTasks('personal', 'personal'))).toThrow(
+      /lanes link doctor --fix --profile personal --target local/,
+    );
+  });
+
+  test('a profile with several targets gets a placeholder rather than a guess', () => {
+    const twoTargets = withTasks('personal', 'personal').replace(
+      '    storage: { adapter: filesystem, path: ./data/personal/files }',
+      '    storage: { adapter: filesystem, path: ./data/personal/files }\n  cloud:\n    credentials: { adapter: gcp-secret-manager, project: p }\n    storage: { adapter: gcs, bucket: b }',
+    );
+    expect(() => parseConfig(twoTargets)).toThrow(/--target <local\|cloud>/);
+  });
+
   test('google_tasks itself is fine, which is the whole point', () => {
     const yaml = VALID.replace(
       '  - id: a\n    provider: example\n    account: Scratch',
