@@ -261,7 +261,14 @@ export function ensureIdentityConnection(document: ConfigDocument): SurfaceRepai
 export async function repairOwnerLayer(
   workspaceRoot: string,
   profiles: readonly string[] | undefined,
+  options: { report?: (line: string) => void } = {},
 ): Promise<void> {
+  // stdout by default, because every caller but one is printing a report a
+  // person reads. `update --json` passes `progress` instead: what it produces is
+  // a document, and a line of prose in front of it corrupts whatever is parsing.
+  // Routed rather than silenced — nothing else here widens a policy without
+  // saying so, and this must not be the exception.
+  const say = options.report ?? print;
   const wanted = profiles === undefined ? undefined : new Set(profiles);
 
   for (const name of await listProfiles(workspaceRoot)) {
@@ -274,13 +281,13 @@ export async function repairOwnerLayer(
 
       await document.save();
 
-      print(ok(`gave ${style.bold(name)} its own owner layer`));
-      for (const change of repairLines(repair)) print(`      ${style.dim(change)}`);
-      print(
+      say(ok(`gave ${style.bold(name)} its own owner layer`));
+      for (const change of repairLines(repair)) say(`      ${style.dim(change)}`);
+      say(
         `      ${style.dim('memory, tasks, assets, skills, vault and setup — your own material, no account behind any of them')}`,
       );
     } catch (error) {
-      print(
+      say(
         warn(
           `could not give ${name} its owner layer: ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`,
         ),
