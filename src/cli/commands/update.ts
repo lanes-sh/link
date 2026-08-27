@@ -1,6 +1,7 @@
 import { homedir } from 'node:os';
 import { join, sep } from 'node:path';
-import { installRoot } from '#profile';
+import { installRoot, resolveWorkspaceRoot } from '#profile';
+import { repairOwnerLayer } from '../config-repair.ts';
 import { emit, fail, ok, print, printErr, progress, style, warn } from '../output.ts';
 import { PACKAGE, release, type ReleaseState } from '../release.ts';
 import { version } from '../version.ts';
@@ -151,6 +152,27 @@ export async function update(flags: UpdateFlags): Promise<void> {
   // unreachable registry is not that state — failing a build because a network
   // was down would make this the flakiest check in it.
   if (flags.check === true && decision.action === 'install') process.exitCode = 1;
+
+  // Whatever the registry said, and before the branch that returns early.
+  //
+  // `start`, `connect` and `deploy` already repair a profile that is missing
+  // part of the owner layer, and for months that was enough. It is not: a
+  // release that adds a surface — `tasks` and `assets` in 0.5.0 — leaves every
+  // existing profile without it until one of those three next runs, and someone
+  // who serves their endpoint from elsewhere may run none of them for weeks. The
+  // page they look at meanwhile offers to *add* what they already have,
+  // which is where this was reported from.
+  //
+  // `update` is the command that means "bring me current", so it is the honest
+  // place for the other half of current. Not on `--check`, which is a question
+  // and must not write, and not conditional on an install having happened: the
+  // profile of someone already on the latest version is exactly the one this was
+  // reported against.
+  if (flags.check !== true) {
+    await repairOwnerLayer(resolveWorkspaceRoot(), undefined, {
+      ...(flags.json === true ? { report: progress } : {}),
+    });
+  }
 
   const report = {
     installed: current.installed,
