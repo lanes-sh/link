@@ -29,7 +29,9 @@ export const BUNQ_HINTS: Record<string, string> = {
   UPDATE_DraftPayment_for_User_MonetaryAccount:
     'Changes a draft that is still pending — status ACCEPTED sends it, REJECTED cancels it. ' +
     'previous_updated_timestamp is required and comes from reading the draft first; it is what stops two ' +
-    'callers acting on the same draft.',
+    'callers acting on the same draft. Those two fields are the entire call — bunq refuses entries and ' +
+    'number_of_required_accepts here as superfluous — so changing what a draft pays means rejecting it and ' +
+    'creating another.',
 
   CREATE_PaymentBatch_for_User_MonetaryAccount:
     'Up to 350 payments in one call. Executes immediately, like a direct payment, and is all-or-nothing: bunq rejects ' +

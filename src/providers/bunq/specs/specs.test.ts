@@ -91,6 +91,52 @@ describe('the vendored spec and the manifest agree', () => {
     expect(leaked).toEqual([]);
   });
 
+  test('the tool that accepts a draft can be called correctly', () => {
+    // Not a missing capability — a present one that could not be used. bunq
+    // describes its update with the schema of its create, whose `required`
+    // names `entries` and `number_of_required_accepts`, and then refuses both
+    // here as superfluous. Every accept and every reject failed, and the two
+    // bodies a model can reach for when a schema demands entries on a draft
+    // that already has them — the array echoed back, or `[]` — both ask bunq to
+    // rewrite what the draft pays on the way to approving it.
+    //
+    // Nothing else looked. `redact` and `hints` are checked against the tools
+    // and the tools against the spec, but no test asked whether a schema
+    // describes a call the vendor would accept.
+    const update = discovered.find(
+      (entry) => entry.name === 'UPDATE_DraftPayment_for_User_MonetaryAccount',
+    )!;
+    const properties = Object.keys((update.inputSchema?.['properties'] ?? {}) as object);
+
+    expect(((update.inputSchema?.['required'] ?? []) as string[]).sort()).toEqual([
+      'itemId',
+      'monetary-accountID',
+      'previous_updated_timestamp',
+      'status',
+      'userID',
+    ]);
+    expect(properties).not.toContain('entries');
+    expect(properties).not.toContain('number_of_required_accepts');
+    // `schedule` is the exclusion argued on risk rather than on the call
+    // failing, so it is the one a revert would restore quietly: bunq accepts it
+    // here, and it would come back as an *optional* property that the assertion
+    // on `required` above cannot see.
+    expect(properties).not.toContain('schedule');
+  });
+
+  test('creating a draft still asks for the payment it is a draft of', () => {
+    // The other half of the same fix: the narrowing is keyed by operation, and
+    // aimed at the wrong one it would leave a tool with no way to say what to
+    // pay — which fails in the same silent shape, one call later.
+    const create = discovered.find(
+      (entry) => entry.name === 'CREATE_DraftPayment_for_User_MonetaryAccount',
+    )!;
+    const required = (create.inputSchema?.['required'] ?? []) as string[];
+
+    expect(required).toContain('entries');
+    expect(required).toContain('number_of_required_accepts');
+  });
+
   test('the committed spec carries no component the paths do not use', () => {
     // Including, before this was filtered, a definition of the session header.
     const spec = require(connector.openapi) as { components: Record<string, unknown> };
