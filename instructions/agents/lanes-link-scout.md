@@ -56,8 +56,8 @@ to every future session.
 stops a write is policy on the endpoint:
 
 ```console
-$ lanes link policy deny memory.write
-$ lanes link policy list
+$ lanes link policy deny memory.write --profile <name> --target <name>
+$ lanes link policy list --profile <name>
 ```
 
 If you are running against a profile that grants writes, that is the owner's

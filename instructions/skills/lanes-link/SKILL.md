@@ -1,6 +1,6 @@
 ---
 name: lanes-link
-description: Use when the user refers to their own accounts, knowledge, procedures, or secrets through Lanes Link — "check my mail", "what do I know about X", "remember this", "which profile am I in" — or asks to connect, register, or set up their Lanes Link MCP server with this agent. Also covers what to do when a Lanes Link call is refused, or when the endpoint is not running.
+description: Use when the user refers to their own accounts, knowledge, procedures, or secrets through Lanes Link — "check my mail", "what do I know about X", "remember this", "which profile am I in" — or asks to connect, register, or set up their Lanes Link MCP server with this agent. Also covers operating the workspace from a shell — adding or removing a profile, checking what a target serves, deploying an endpoint or recovering a lost deployment — and what to do when a Lanes Link call is refused, or when the endpoint is not running.
 ---
 
 # Lanes Link
@@ -24,12 +24,32 @@ is listed first.** Quietly picking one crosses the line the profile exists to
 draw. There is no "current profile" to switch — the choice is made per call, and
 `lanes link profile list` shows what exists.
 
-**Every `lanes link` command names its profile and its target.** Both are required
-flags with no default, no environment variable, and nothing in a config file
-behind them, so a command missing either refuses rather than acting somewhere
-else. When you write one out for the owner, either fill both in or leave them as
-`<name>` for them to complete — never drop them. `lanes link target list
---profile <name>` shows what a profile declares.
+**What a command must be told is never inferred — but it is not always both.**
+Nothing resolves from an environment variable or a config default, so a command
+missing what it needs refuses rather than acting somewhere else. Passing a flag a
+command does not read is refused too, which makes "add both to be safe" its own
+failure. Four levels:
+
+- **Neither.** `lanes link profile list`, `lanes link mcp list`,
+  `lanes link version`.
+- **`--profile` alone.** `lanes link check`, `lanes link config show`,
+  `lanes link policy list`, `lanes link target list --profile <name>`,
+  `lanes link identity list`. Each is target-independent — one declaration in the
+  YAML that applies wherever the profile runs.
+- **`--target`, with the profiles derived from it.** `lanes link status`,
+  `lanes link deploy` and `lanes link sync targets` act on one endpoint serving
+  every profile that declares that target. `--profile` is accepted and *narrows*
+  the answer; it does not choose the subject.
+- **Both.** Everything acting on one account: `lanes link connect`,
+  `lanes link token rotate`, `lanes link secrets set`, `lanes link policy allow`,
+  `lanes link memory list`, `lanes link mcp add`.
+
+`lanes link profile add` and `lanes link profile remove` **reject** `--profile`.
+Both name their profile positionally, so a flag naming a second one could only
+disagree with it.
+
+When you write a command out for the owner, fill in what that command needs or
+leave it as `<name>` for them to complete — never drop a required one.
 
 A `connection` names an account within that profile. One profile may hold
 several of the same kind, and naming a connection belonging to a *different*
@@ -162,8 +182,101 @@ the line.
 **Never pass `--accept-broad-scopes` yourself.** When a provider asks for more than
 it needs, print the scopes and let the owner add the flag. Deciding that is theirs.
 
-A new connection is not served until the endpoint restarts, so a `setup_overview`
-straight after connecting will still not show it. Say so rather than retrying.
+**A new connection is served at once; the tools you were handed are not.**
+Connecting publishes the config to wherever that target's endpoint reads it and
+asks the endpoint to re-read it, so a `setup_overview` straight after connecting
+*does* show the account. What has not changed is the set of tools this session
+was given when it connected — the endpoint does not announce that its tools
+changed, so a capability for a freshly connected account is not callable until
+the client reconnects. Say that, rather than reporting the connection as missing
+or asking them to connect again.
+
+One exception, and it is the one that matters here: the authenticator is built
+once at boot and is not re-read, so a `lanes link token rotate` does need the
+endpoint restarted before the new token opens anything.
+
+## Operating the workspace
+
+If you have a shell, the commands that only *read* are yours to run without
+asking: `lanes link status`, `lanes link check`, `lanes link plan`,
+`lanes link doctor`, `lanes link profile list`, `lanes link target list`,
+`lanes link target show`, `lanes link tools`, `lanes link config show` and
+`lanes link audit tail`. None writes config, opens a browser, or costs anything,
+and running one beats asking the owner to paste its output back. Give each what
+its own level requires — they are not all the same, and the four levels are at
+the top of this file.
+
+**A command that writes runs `--dry-run` first, where it has one.** Show what it
+reported and wait for an answer. `lanes link deploy`, `lanes link sync targets`,
+`lanes link profile remove`, `lanes link secrets push` and `lanes link mcp add`
+all take it. For a write with no dry run — `lanes link token rotate`,
+`lanes link policy allow`, `lanes link secrets set` — say in one sentence what it
+will change, then let them decide. Never a browser sign-in: that belongs to
+whoever owns the account, as above.
+
+**`--json` is not everywhere.** It parses on every command and is read by only
+some, so one that ignores it prints its ordinary output and gives you nothing to
+key on — do not treat the absence of JSON as a failure. `status`, `doctor`,
+`tools`, `outputs`, `sync targets`, `target list`, `target show`, `profile list`,
+`connect` and `setup plan` implement it. `deploy`, `check`, `plan`,
+`config show`, `audit tail` and every `mcp` subcommand do not.
+
+**A profile is created and removed, never switched.** `lanes link profile add
+<name>` writes a new one and takes `--target <name>`, repeated once per target it
+should declare. `lanes link profile remove <name>` takes `--dry-run` and then
+`--yes`; given a `--target` it decommissions that one target's stores and leaves
+the profile file in place. Neither reads `--profile`.
+
+There is no current profile and no default target. `lanes link profile default`
+and `lanes link target use` are gone and now refuse with an explanation — if you
+meet one of those refusals, it is not a broken install, and there is no
+replacement to find. The choice is made per command, on purpose.
+
+## Deploying, and what it decides
+
+`lanes link deploy` builds an image and rolls a revision. Its subject is a
+**target**, and the profiles behind it are every profile declaring that target,
+so one deploy serves all of them — there is no per-profile deploy to run and no
+reason to loop over them.
+
+**Always `--dry-run` first, and show what it printed.** It creates cloud
+resources that cost money, it implements no `--json` to inspect instead, and that
+plan is the only place the consequences are visible while they are still
+avoidable.
+
+Two things it refuses to guess, and both are the owner's to answer:
+
+- **Whose bearer token opens the endpoint.** One token reaches every profile
+  behind that target, so this decides who gets in. With several candidates and
+  nothing recorded, it refuses and prints the command that names one.
+- **A first deploy.** A target no profile declares yet has no set to derive from,
+  so `--profile` is required there. It may be repeated, and the first one named
+  is the primary.
+
+**Never pass `--yes`, `--non-interactive`, `--access public` or
+`--service-account` yourself.** Each settles a question about who can reach their
+accounts. Print what the flag would decide and let them add it — the same rule
+this file already applies to `--accept-broad-scopes`.
+
+Deploying is how new code reaches the endpoint. It is not how an account gets
+connected and not how a config change lands; both of those publish themselves.
+
+## When the workspace and the endpoint disagree
+
+A deployment records where it lives, and a workspace can lose that record — a new
+machine, a reinstall, a profile file restored from something older. The endpoint
+is still serving; what went missing is the config that describes it. The symptom
+is a `lanes link status` that reports nothing deployed for a target you know is
+up.
+
+`lanes link sync targets` reconciles the two. `--discover` looks for a deployment
+the workspace has no record of, `--from <location>` names one directly, and
+`--dry-run` reports what it would merge without merging it. Run the dry run and
+show it.
+
+**`--prefer local` or `--prefer remote` is their answer, not yours.** It decides
+which side wins where the two disagree, and the losing value is the one nobody
+was asked about. Report what differs and let them pick.
 
 ## Registering it, and re-registering it
 
@@ -192,7 +305,7 @@ substitution form. If you have already printed one by accident, say so and offer
 Prefer `lanes link mcp add --profile <name> --target <name>` to writing the command yourself: it checks the
 endpoint is reachable, refuses to silently shadow an existing registration, and
 cannot mistype the token. For a harness it does not know, take the command from
-`lanes link outputs` rather than writing it blind — that command checks whether
+`lanes link outputs --profile <name> --target <name>` rather than writing it blind — that command checks whether
 `lanes` resolves on this machine and prints a longer working form if it does
 not, where guessing gives you an empty substitution, a `Bearer ` header, and a
 401 that reads as a bad token.
@@ -207,9 +320,20 @@ export LANES_LINK_TOKEN="$(lanes link token show --raw --profile <name> --target
 One registration covers every profile. Do not add one per profile; they share a
 URL and a token.
 
+`lanes link mcp list` needs neither flag and reports whether the registration and
+this document are current, out of date, or absent. That is the cheap first
+question when behaviour does not match what this file describes — an out-of-date
+copy means the rules you are reading are not the ones that shipped.
+
+Claude Desktop cannot be handed a URL, so it spawns the endpoint over stdio
+instead. That one is named in the client's own config file rather than registered
+by a command, as `lanes link mcp stdio --profile <name> --target <name>`; both
+flags are required, and nothing may be written to stdout.
+
 ## When it is not running
 
-`lanes link start` runs in the foreground and serves until stopped. Tell the
+`lanes link start --profile <name> --target <name>` runs in the foreground and
+serves until stopped. Tell the
 user the command rather than backgrounding it silently on their behalf.
 Registration works while it is down — the harness simply cannot reach it yet,
 and the first symptom is a failed call much later.
