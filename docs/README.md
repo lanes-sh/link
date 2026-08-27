@@ -29,5 +29,6 @@ each decision was made, not just what to type.
 | [`creating-a-provider.md`](detailed/creating-a-provider.md) | Add your own integration |
 | [`connectivity-coverage.md`](detailed/connectivity-coverage.md) | Which connectivity and credential types compose, which are closed, and what none of them covers |
 | [`local-development.md`](detailed/local-development.md) | Working on Lanes Link itself |
+| [`releasing.md`](detailed/releasing.md) | The development lifecycle: branches, the two release paths, and what to verify |
 | [`adr/`](detailed/adr/) | Architecture decision records |
 | [`init.md`](detailed/init.md) | The original specification, amended to match what was built |
