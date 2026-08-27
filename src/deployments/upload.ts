@@ -64,7 +64,15 @@ export function deployedWorkspace(declared: TargetConfig): string | undefined {
  * between matching it and not is a credential in a bucket.
  */
 export function isWorkspaceConfig(key: string, profiles?: readonly string[]): boolean {
-  if (key === WORKSPACE_FILE) return true;
+  // **Never the workspace file.** It was sent, and it is the one file that must
+  // not be: it holds the *target registry*, and the two workspaces have
+  // different ones. This machine's says `cloud: workspace: gs://…`, so copying
+  // it into that bucket left the bucket pointing at itself — a loop `openTarget`
+  // refuses, on the target it had just deployed (ADR-052).
+  //
+  // The bucket's own registry is written by `deploy`, from the declaration, once
+  // the upload is done.
+  if (key === WORKSPACE_FILE) return false;
 
   // A set rather than one name, because a deploy now sends every profile that
   // declares the target rather than the single one it was told. `undefined`
