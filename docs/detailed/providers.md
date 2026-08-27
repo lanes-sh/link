@@ -243,6 +243,60 @@ calendar but no calendar itself; `tasks` is the only scope Google publishes for 
 write at all. `contacts` asks for nothing broad — both of its scopes are read-only, and the write
 scope permanently deletes. None of the three grants `auth/calendar` or `contacts`.
 
+## `reddit`
+
+Fifteen operations against Reddit's REST API. Setup: [`setup/reddit.md`](setup/reddit.md) — the one
+provider that needs an OAuth client of your own, because Reddit rate-limits per client id and a
+shared one would pool every install into a single hundred-per-minute budget.
+
+The spec at `src/providers/reddit/specs/reddit.v1.json` is **hand-authored**: Reddit publishes no
+OpenAPI document, so unlike the Google specs there is no vendoring script and no upstream to
+re-sync from. It is still a document rather than code — the operations become capabilities
+mechanically, and there is no per-endpoint translation anywhere in the folder.
+
+| Capability | Kind | Bundle | Why |
+|---|---|---|---|
+| `reddit.list_posts` | tool | read | Posts from one subreddit, in a given order. The ordinary read. |
+| `reddit.get_post` | tool | read | One post with its comment tree. Takes the base36 id, not the fullname. |
+| `reddit.search` | tool | read | Full-text search within a subreddit. |
+| `reddit.get_subreddit` | tool | read | Description, subscriber count, and whether posting needs a flair. |
+| `reddit.get_rules` | tool | read | What a submission must satisfy. Most removals are rule violations, not API errors. |
+| `reddit.list_flairs` | tool | read | Flair templates and their ids — the thing `submit_post` usually needs first. |
+| `reddit.whoami` | tool | read | Which account this connection is. Also what `identity` resolves the label from. |
+| `reddit.list_my_subreddits` | tool | read | The subreddits this account subscribes to. |
+| `reddit.submit_post` | tool | write | Create a text or link post. |
+| `reddit.add_comment` | tool | write | Comment on a post, or reply to a comment. |
+| `reddit.edit_text` | tool | write | Replace the body of something this account wrote. |
+| `reddit.vote` | tool | write | Up, down, or clear. |
+| `reddit.delete_thing` | tool | write | Permanent — Reddit has no trash reachable from the API. |
+| `reddit.save_thing` | tool | write | Add to saved items. |
+| `reddit.set_flair` | tool | write | Apply a flair template to your own post. |
+
+**No moderation, no messages, no history.** Reddit publishes thirty scopes and this asks for eight.
+`privatemessages` would put the account's DMs in reach of a tool list whose subject is public
+posting; the `mod*` scopes act on other people's content in subreddits this account moderates,
+which is a different job with a different blast radius. Nothing here needs either, and a scope on
+the consent screen that no tool can spend is a grant asked for and never noticed.
+
+**Two things the tool descriptions say twice**, because an agent gets both wrong on the first
+attempt and the error does not explain either. `add_comment` takes a *fullname* — `t3_<id>` for a
+post, `t1_<id>` for a comment — and a bare id from a URL is rejected generically. And most
+subreddits reject a submission with no `flair_id` without saying that a flair was the problem,
+which is why `list_flairs` is vendored beside `submit_post`. Both are also in `hints`.
+
+**Scope:** `submit`, `edit`, and `vote` are marked broad, and for a different reason from every
+other broad scope here. The rest are broad for how far they reach into a private space; these are
+broad for acting *publicly* under the person's username. They are also the only writes in this
+repository that cannot be taken back — deleting a post leaves the deletion behind, and anything
+quoted or replied to in the meantime stays. `read` is not marked: it reaches only what the account
+can already see, and what Reddit makes readable is public to begin with.
+
+**Redaction** follows Gmail's line, with one addition worth naming: `title` is withheld along with
+the body. It looks like metadata and is not — a Reddit title is usually the whole of the post and
+the body is often empty, so keeping it would defeat withholding the body. For a link post the
+`url` is the submission, so that is withheld too. What survives is where it went and how it was
+marked: `sr`, `flair_id`, `nsfw`, `spoiler`.
+
 ## iCloud — `icloud_mail`, `icloud_calendar`, `icloud_contacts`
 
 One Apple Account, three providers, one app-specific password

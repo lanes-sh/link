@@ -138,7 +138,7 @@ describe('dependency direction', () => {
  * worse. What must not appear is a vendor name the code *branches on* or
  * *prints*.
  */
-const VENDORS = /\b(gmail|icloud|notion|linear|apple|google|dropbox|fastmail)\b/i;
+const VENDORS = /\b(gmail|icloud|notion|linear|apple|google|dropbox|fastmail|reddit)\b/i;
 
 /**
  * Where the rule bites: the machinery a request passes through.

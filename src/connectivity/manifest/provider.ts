@@ -225,6 +225,36 @@ export function defineProvider(input: unknown): ProviderManifest {
     );
   }
 
+  // Two answers to "where does the browser come back to", and a manifest
+  // naming both leaves it to whichever the flow reads first. A broker's
+  // redirect is its own HTTPS origin, with the loopback port carried in
+  // `state`; a fixed redirect is this machine, named exactly. Neither is wrong,
+  // but they cannot both be in force.
+  if (manifest.auth.kind === 'oauth' && manifest.auth.broker && manifest.auth.redirect_uri) {
+    throw new Error(
+      `Provider "${manifest.id}": auth may declare "broker" or "redirect_uri", not both — a brokered flow redirects to the broker and carries the loopback port in state, so a fixed redirect would never be used.`,
+    );
+  }
+
+  // Connector headers are for what the *server* offers as configuration; the
+  // credential is the auth block's, and a manifest setting both would have one
+  // quietly overwrite the other depending on which the transport merged last.
+  //
+  // Checked for every connector that has the field rather than for `mcp` alone.
+  // It was written when `mcp` was the only one, and the reasoning never had
+  // anything to do with which transport carried the header — an `http`
+  // connector naming `Authorization` collides with `auth` in exactly the same
+  // way, and would have validated cleanly.
+  const connectorHeaders =
+    'headers' in manifest.connector ? (manifest.connector.headers ?? {}) : {};
+  for (const name of Object.keys(connectorHeaders)) {
+    if (name.toLowerCase() === 'authorization') {
+      throw new Error(
+        `Provider "${manifest.id}": connector.headers may not set "${name}" — the credential comes from auth, and setting both would leave which one is sent up to merge order.`,
+      );
+    }
+  }
+
   if (manifest.connector.kind === 'mcp') {
     const auth = manifest.auth;
 
@@ -249,18 +279,6 @@ export function defineProvider(input: unknown): ProviderManifest {
       throw new Error(
         `Provider "${manifest.id}": an mcp connector always sends its token as "Authorization: Bearer", so auth.header ("${auth.header}") cannot be honoured. Remove it, or reach this service with an http connector.`,
       );
-    }
-
-    // The third spelling of the same collision. Connector headers are for what
-    // the *server* offers as configuration; the credential is the auth block's,
-    // and a manifest setting both would have one quietly overwrite the other
-    // depending on which the transport merged last.
-    for (const name of Object.keys(manifest.connector.headers ?? {})) {
-      if (name.toLowerCase() === 'authorization') {
-        throw new Error(
-          `Provider "${manifest.id}": connector.headers may not set "${name}" — the credential comes from auth, and setting both would leave which one is sent up to merge order.`,
-        );
-      }
     }
   }
 

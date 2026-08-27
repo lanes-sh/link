@@ -52,6 +52,7 @@ Nothing in the codebase depends on it.
 | [042](042-a-profile-declares-who-its-owner-is.md) | A profile declares who its owner is, so an agent writing on their behalf stops guessing |
 | [043](043-a-target-scoped-command-acts-on-the-target.md) | A command whose subject is the endpoint acts on the target, and every profile declaring it |
 | [044](044-a-deployment-records-where-it-lives.md) | A deployment records where it lives outside any profile, and the two copies of a workspace can be merged |
+| [045](045-a-redirect-the-vendor-matches-exactly.md) | A provider may name the loopback redirect verbatim, for a vendor that matches `redirect_uri` exactly rather than ignoring the port |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 

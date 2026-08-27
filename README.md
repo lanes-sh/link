@@ -110,12 +110,15 @@ One command per account. Run it again to add a second mailbox, a second calendar
 | Linear | `lanes link connect linear` |
 | GitHub | `lanes link connect github` |
 | Slack | `lanes link connect slack` |
+| Reddit | `lanes link connect reddit` |
 | Gmail (IMAP, app password) | `lanes link connect gmail_imap` |
 | Gmail (Google MCP) | `lanes link connect gmail_mcp` |
 | Drive (Google MCP) | `lanes link connect drive_mcp` |
 
 Three things worth knowing up front. `lanes link connect icloud` sets up Mail, Calendar, and
-Contacts together, because one app-specific password covers all three. Google and Slack need no
+Contacts together, because one app-specific password covers all three. Reddit is the one that does
+need an app of your own — it rate-limits per client id, so a shared client would mean strangers
+spending your budget. Google and Slack need no
 OAuth client of your own: both authorise against the one Lanes operates, so there is no console to
 visit — for Google, add `--own-client` if you would rather register your own, or take a service
 account key or an app password over IMAP where you would rather nothing expired. And GitHub takes a
