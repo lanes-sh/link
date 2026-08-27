@@ -277,7 +277,13 @@ async function vendor(): Promise<void> {
     // a reader to think the choice is made here. It is made by the strategy.
     servers: [{ url: 'https://api.bunq.com/v1' }],
     paths,
-    components: { ...spec.components, schemas: trimmedSchemas },
+    // Schemas only. Carrying `...spec.components` kept bunq's `parameters`,
+    // `responses` and `headers` — none of them referenced by a surviving path,
+    // and among them the definition of `X-Bunq-Client-Authentication`, which
+    // `dropProtocolParameters` above exists to make unreachable. A committed
+    // spec is committed so it can be read; dead definitions of the session
+    // header are the opposite of that.
+    components: { schemas: trimmedSchemas },
   };
 
   const directory = import.meta.dir;

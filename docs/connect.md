@@ -51,7 +51,8 @@ reading your sync folder through the filesystem. Full walkthrough:
 **bunq can move money, and nothing asks you to confirm.** Its payment tool executes immediately
 and is not reversible — there is no approval step in the bunq app or anywhere else. Set a spending
 limit on the API key, and if you want an agent to prepare payments rather than make them, deny the
-payment tools and leave draft payments allowed. Read
+two payment tools **and** `UPDATE_DraftPayment` — accepting a draft is itself how a draft is spent,
+so leaving that one allowed lets an agent approve its own. Read
 [`detailed/setup/bunq.md`](detailed/setup/bunq.md) before connecting it; it is the only page here
 that is mostly about what not to do.
 

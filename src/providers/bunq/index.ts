@@ -19,9 +19,10 @@ const specPath = (name: string): string => new URL(`./specs/${name}`, import.met
  * `base_url` carries the version in the **path**, like Sheets and unlike Drive.
  * `https://api.bunq.com` alone 404s on every call.
  *
- * Sandbox is not a second provider. `auth.options.sandbox` moves the strategy —
- * both its handshake and the host of every request it signs — onto
- * `public-api.sandbox.bunq.com`, which is where anything touching this should
+ * Sandbox is not a second provider and not a flag either: the strategy reads
+ * its host from `base_url`, so a manifest in `providers.d/` naming
+ * `public-api.sandbox.bunq.com` handshakes and pays there, borrowing this
+ * strategy through `strategyFor`. That is where anything touching this should
  * be proven before it is pointed at a real account.
  *
  * No `identity` block, and that is not an omission. The generic HTTP identity
@@ -45,7 +46,6 @@ const manifest = defineProvider({
     // No `credential_ref`, so it derives per connection — `bunq/<id>`. bunq
     // issues one API key per account, and a declared ref would mean every
     // connection sharing one, which is the opposite of true here.
-    options: { sandbox: false },
   },
   redact: BUNQ_REDACT,
   hints: BUNQ_HINTS,
@@ -63,7 +63,7 @@ const manifest = defineProvider({
       'If this endpoint will run deployed rather than on this machine, mark the key as a wildcard key in the same screen. bunq refuses to set that over the API, deliberately, so it cannot be done for you.',
       'Copy the key and paste it below. Nothing is sent anywhere until you do — the handshake that registers this device runs immediately afterwards.',
       'You will be asked what to call this connection. bunq has no endpoint that reports whose account a key belongs to, so the label is yours to choose.',
-      'To try this without a real account first, use bunq\'s sandbox: https://public-api.sandbox.bunq.com issues a test key and needs no bank account at all. Declare `options: { sandbox: true }` on a manifest of your own in providers.d/ to point a connection at it.',
+      'To try this without a real account first, use bunq\'s sandbox: https://public-api.sandbox.bunq.com issues a test key and needs no bank account at all. Put a manifest of your own in providers.d/ naming that base_url — see docs/detailed/setup/bunq.md.',
     ],
     troubleshooting:
       'bunq refused the key. The usual causes are a key that was revoked in the app, a request from an address the key ' +

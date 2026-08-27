@@ -18,19 +18,30 @@ export const PRODUCTION = 'https://api.bunq.com/v1';
 export const SANDBOX = 'https://public-api.sandbox.bunq.com/v1';
 
 /**
- * Which bunq this connection talks to.
+ * Which bunq this connection talks to: whatever its manifest says.
  *
- * One provider serves both, because they are the same API and the same tool
- * list — a second provider id would duplicate the manifest, the vendored spec,
- * and every policy rule written against it. The switch is an option on the
- * strategy, and it moves *both* halves: the handshake below and, in
- * `./index.ts`, the host of every request that follows. Moving only one is the
- * failure worth naming — a session opened against the sandbox and spent against
- * production authenticates cleanly and then answers about an account that does
- * not exist.
+ * One provider serves both environments, because they are the same API and the
+ * same tool list — a second provider id would duplicate the manifest, the
+ * vendored spec, and every policy rule written against it. The built-in names
+ * production; a workspace manifest in `providers.d/` naming the sandbox gets
+ * the sandbox, and borrows this strategy through `strategyFor`.
+ *
+ * This used to be a `sandbox: true` option on the strategy, with `authorize`
+ * rewriting the request origin to match. That was a second source of truth for
+ * something `base_url` already states, and the two could disagree — a manifest
+ * pointed at the sandbox but missing the flag (or carrying `sandbox: "true"`,
+ * which is not `true`) would have spent against production while its own
+ * `base_url` said otherwise. Reading the manifest makes the disagreement
+ * impossible rather than documented, and the transport and the handshake now
+ * cannot end up on different hosts because neither chooses.
  */
-export function hostFor(options: Readonly<Record<string, unknown>>): string {
-  return options['sandbox'] === true ? SANDBOX : PRODUCTION;
+export function hostFor(manifest: { connector: { kind: string } }): string {
+  const connector = manifest.connector as { kind: string; base_url?: string };
+  if (connector.kind !== 'http' || !connector.base_url) {
+    throw new Error('The bunq strategy needs an http connector with a base_url.');
+  }
+
+  return connector.base_url.replace(/\/$/, '');
 }
 
 export interface Installation {
@@ -50,7 +61,9 @@ export interface Installation {
  */
 export function baseHeaders(): Record<string, string> {
   return {
-    'content-type': 'application/json',
+    // No `content-type`. Every handshake call below adds it because every one
+    // of them posts JSON, but `authorize` applies this set to reads too, and a
+    // GET that carries no body should not claim one.
     'cache-control': 'no-cache',
     'user-agent': 'lanes-link/1.0',
     'x-bunq-language': 'en_US',
@@ -85,7 +98,11 @@ async function call(
   fetcher: typeof globalThis.fetch,
 ): Promise<unknown> {
   const payload = JSON.stringify(body);
-  const response = await fetcher(url, { method: 'POST', headers, body: payload });
+  const response = await fetcher(url, {
+    method: 'POST',
+    headers: { ...headers, 'content-type': 'application/json' },
+    body: payload,
+  });
   const text = await response.text();
 
   if (!response.ok) {

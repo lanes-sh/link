@@ -56,11 +56,13 @@ credential it already holds.
 
 ## Consequences
 
-**A strategy may rewrite the request, not only its headers.** bunq's sandbox is a different host,
-and `auth.options.sandbox` has to move the handshake and the request together — a session opened
-against one and spent against the other authenticates cleanly and then reports on an account that
-does not exist. `api_key` already had the precedent for rebuilding a request; this widens it from
-the query string to the origin.
+**A strategy reads its host from the manifest, not from an option.** bunq's sandbox is a different
+host, and the first attempt made that a `sandbox: true` option with `authorize` rewriting the
+request origin to match. That is a second source of truth for something `base_url` already states,
+and the two can disagree — a manifest pointed at the sandbox but missing the flag would have spent
+against production. Deriving both the handshake host and the request from `base_url` makes the
+disagreement impossible instead of documented. `auth.options` remains on the seam for a strategy
+that needs configuration `base_url` cannot express; bunq turned out not to be one.
 
 **`verify` earns its place.** It was declared for bunq's response signatures and is used for two
 things: checking them, and noticing a 401. The second is what lets a session that expired early

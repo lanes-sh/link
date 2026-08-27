@@ -879,8 +879,8 @@ answer is a documented setup step. The **session** constraint decided its own st
 it lives in `state` rather than per-instance memory or the credential store, which cannot be
 written on the dispatch path anyway.
 
-Sandbox first still stands, and is now `options: { sandbox: true }` on the strategy rather than a
-second provider.
+Sandbox first still stands, and is a manifest in `providers.d/` naming the sandbox `base_url` —
+the strategy reads its host from there — rather than a second provider or a flag beside it.
 
 **More accounts.** Owner's target stack:
 

@@ -274,7 +274,12 @@ export class Dispatcher {
       // one per outbound request.
       let strategyContext: AuthStrategyContext | undefined;
       const forStrategy = (): AuthStrategyContext =>
-        (strategyContext ??= strategyContextFrom(providerContext, entry.manifest, declared.id));
+        (strategyContext ??= strategyContextFrom({
+          source: providerContext,
+          manifest: entry.manifest,
+          connectionId: declared.id,
+          profile: this.#deps.config.instance.profile,
+        }));
 
       // One closure, handed to both contexts. A provider that authors a
       // capability its transport cannot express still calls the vendor through

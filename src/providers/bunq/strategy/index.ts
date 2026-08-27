@@ -56,9 +56,21 @@ interface Session {
  * matters: `/session-server` allows **one call per thirty seconds**, so two
  * concurrent requests both finding no session would make the second fail. They
  * wait on the first instead.
+ *
+ * Keyed by **profile** as well as provider and connection, and that is not
+ * belt-and-braces. One endpoint process opens a `Runtime` per profile in the
+ * workspace, so `bunq.main` names two different bank accounts as soon as two
+ * profiles each connect bunq without renaming the connection. `state` and
+ * `credentials` are already scoped per profile; a process-wide cache in front
+ * of them is the one place that scoping could be lost, and losing it would send
+ * one profile's session token — signed with the other's key — to a bank.
  */
 const cached = new Map<string, Session>();
 const opening = new Map<string, Promise<string>>();
+
+/** Unique across everything that could hold a different bunq session. */
+const cacheKey = (context: AuthStrategyContext): string =>
+  `${context.profile}.${context.manifest.id}.${context.connectionId}`;
 
 function parse(raw: string | null, connectionId: string): Stored {
   if (!raw) {
@@ -86,12 +98,32 @@ function parse(raw: string | null, connectionId: string): Stored {
   return stored as Stored;
 }
 
+/**
+ * The API key, whether the ref holds one or a whole installed context.
+ *
+ * Re-running `connect` on an installed connection is the ordinary way to
+ * recover from a rotated key or a revoked device, so it has to be the same
+ * conversation as the first run rather than a different failure.
+ */
+function apiKeyFrom(raw: string): string {
+  if (!raw.startsWith('{')) return raw;
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<Stored>;
+    if (typeof parsed.api_key === 'string' && parsed.api_key.length > 0) return parsed.api_key;
+  } catch {
+    // Not JSON after all — a key that happens to start with a brace.
+  }
+
+  return raw;
+}
+
 async function sessionToken(
   context: AuthStrategyContext,
   stored: Stored,
   fetcher: typeof globalThis.fetch,
 ): Promise<string> {
-  const key = `${context.manifest.id}.${context.connectionId}`;
+  const key = cacheKey(context);
   const fresh = (session: Session | null): boolean =>
     session !== null && Date.now() - session.createdAt < SESSION_MAX_AGE_MS;
 
@@ -110,7 +142,7 @@ async function sessionToken(
   const attempt = (async () => {
     context.log.debug('opening a bunq session');
     const token = await createSession(
-      hostFor(context.options),
+      hostFor(context.manifest),
       stored.installation_token,
       stored.api_key,
       stored.private_key,
@@ -153,10 +185,18 @@ export function createBunqStrategy(fetcher: typeof globalThis.fetch = globalThis
       if (!write) throw new Error('The bunq strategy can only be set up where credentials are writable.');
 
       const ref = `${context.manifest.id}/${context.connectionId}`;
-      const apiKey = (await context.credentials.get(ref))?.trim();
-      if (!apiKey) throw new Error(`No bunq API key was stored at ${ref}.`);
+      const held = (await context.credentials.get(ref))?.trim();
+      if (!held) throw new Error(`No bunq API key was stored at ${ref}.`);
 
-      const host = hostFor(context.options);
+      // What is at the ref depends on whether this connection has been set up
+      // before. First time it is the key the operator pasted; on a re-connect
+      // it is the whole context this function wrote last time. Reading it as a
+      // key either way would send a JSON blob to `/device-server` as `secret`,
+      // and bunq would reject it with a wrong-key error naming nothing the
+      // operator did.
+      const apiKey = apiKeyFrom(held);
+
+      const host = hostFor(context.manifest);
       const keys = generateKeypair();
 
       const installation = await createInstallation(host, keys.publicKey, fetcher);
@@ -169,13 +209,13 @@ export function createBunqStrategy(fetcher: typeof globalThis.fetch = globalThis
         fetcher,
       );
 
-      const stored: Stored = {
+      const installed: Stored = {
         api_key: apiKey,
         private_key: keys.privateKey,
         installation_token: installation.token,
         server_public_key: installation.serverPublicKey,
       };
-      await write(ref, JSON.stringify(stored));
+      await write(ref, JSON.stringify(installed));
     },
 
     async authorize(request, context) {
@@ -187,18 +227,10 @@ export function createBunqStrategy(fetcher: typeof globalThis.fetch = globalThis
       const token = await sessionToken(context, stored, fetcher);
       const body = request.method === 'GET' || request.method === 'HEAD' ? '' : await request.clone().text();
 
-      // The host, not just the headers. `sandbox` has to move the request as
-      // well as the handshake — see `hostFor`. The manifest's `base_url` names
-      // production, so this is the only place the two can be kept in step.
-      const host = hostFor(context.options);
-      const url = new URL(request.url);
-      const target = new URL(host);
-      const rewritten =
-        url.origin === target.origin
-          ? request.url
-          : `${target.origin}${url.pathname}${url.search}`;
-
-      const authorised = new Request(rewritten, {
+      // The URL is left exactly as the transport built it. It comes from the
+      // manifest's `base_url`, which is also where the handshake got its host,
+      // so there is nothing here that could put the two on different bunqs.
+      const authorised = new Request(request.url, {
         method: request.method,
         headers: new Headers(request.headers),
         ...(body === '' ? {} : { body }),
@@ -209,7 +241,6 @@ export function createBunqStrategy(fetcher: typeof globalThis.fetch = globalThis
         // Never overwrite what the transport set from the operation itself.
         if (!authorised.headers.has(key)) authorised.headers.set(key, value);
       }
-      authorised.headers.set('x-bunq-client-request-id', crypto.randomUUID());
       authorised.headers.set('x-bunq-client-authentication', token);
       authorised.headers.set('x-bunq-client-signature', signBody(body, stored.private_key));
 
@@ -232,7 +263,7 @@ export function createBunqStrategy(fetcher: typeof globalThis.fetch = globalThis
      * a payment that *did* happen look like one that did not.
      */
     async verify(response, context) {
-      const key = `${context.manifest.id}.${context.connectionId}`;
+      const key = cacheKey(context);
 
       if (response.status === 401) {
         cached.delete(key);

@@ -32,8 +32,10 @@ export const BUNQ_HINTS: Record<string, string> = {
     'callers acting on the same draft.',
 
   CREATE_PaymentBatch_for_User_MonetaryAccount:
-    'Up to 350 payments in one call, each entry shaped like a direct payment. Executes immediately, like a direct payment, ' +
-    'and is all-or-nothing: bunq rejects the whole batch if any entry is invalid.',
+    'Up to 350 payments in one call. Executes immediately, like a direct payment, and is all-or-nothing: bunq rejects ' +
+    'the whole batch if any entry is invalid. `payments` must be an ARRAY of { amount, counterparty_alias, description } ' +
+    'objects, each shaped exactly like a direct payment — bunq\'s specification declares the field as an object rather ' +
+    'than an array, which is wrong, so the schema here cannot tell you that and this line has to.',
 
   List_all_Payment_for_User_MonetaryAccount:
     'Newest first, one page at a time. bunq pages with `count`, `older_id` and `newer_id` rather than an offset, ' +

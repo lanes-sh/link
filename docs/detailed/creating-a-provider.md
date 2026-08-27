@@ -90,17 +90,17 @@ setup:
 # A vendor whose authentication is a protocol rather than a value. The strategy
 # is code and lives with the provider that owns it, so this names one that is
 # already registered rather than supplying it — which is also how you point a
-# connection at a vendor's sandbox.
+# connection at a vendor's sandbox. Copy the vendored spec in beside this file:
+# a relative `openapi` resolves against the manifest's own directory.
 id: bunq_sandbox
 name: bunq (sandbox)
 connector:
   kind: http
   base_url: https://public-api.sandbox.bunq.com/v1
-  openapi: ../../../src/providers/bunq/specs/bunq.v1.json
+  openapi: ./bunq.v1.json
 auth:
   kind: strategy
   strategy: bunq
-  options: { sandbox: true }
 ```
 
 Then `lanes link connect mything`. The same schema validates a built-in, so the list in

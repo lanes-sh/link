@@ -32,14 +32,16 @@ export async function runStrategySetup(
   manifest: ProviderManifest,
   /** The provisional id. `connect` renames the connection afterwards and the credential follows. */
   connectionId: string,
-  /** Structurally the CLI `Runtime`, named as the three parts this actually reaches. */
+  /** Structurally the CLI `Runtime`, named as the parts this actually reaches. */
   runtime: {
     readonly registry: ProviderRegistry;
     readonly credentials: SecretStore;
     readonly state: RuntimeState;
+    readonly resolution: { readonly profile: string };
   },
 ): Promise<void> {
   const { registry, credentials, state } = runtime;
+  const profile = runtime.resolution.profile;
   if (manifest.auth.kind !== 'strategy') return;
 
   const strategy = strategyFor(manifest, registry);
@@ -49,8 +51,8 @@ export async function runStrategySetup(
   // value landed in and the one the handshake will rewrite.
   const ref = credentialRefForConnection(manifest, connectionId)!;
 
-  const context = strategyContextFrom(
-    {
+  const context = strategyContextFrom({
+    source: {
       credentials: scopeSecrets(credentials, [ref]),
       state: createScopedStore(state, scopeNamespace(manifest.id, connectionId)),
       log: {
@@ -62,10 +64,23 @@ export async function runStrategySetup(
     },
     manifest,
     connectionId,
-    // Writable *only* here. See `strategyContextFrom` — the dispatch path
-    // passes nothing, so a per-request handshake cannot persist anything.
-    async (reference, value) => credentials.set(reference, value),
-  );
+    profile,
+    // Writable *only* here — the dispatch path passes nothing, so a per-request
+    // handshake cannot persist anything.
+    //
+    // Scoped to the same single ref the reads are. Handing over the raw store
+    // would leave the write side of this boundary open while the read side is
+    // shut, which is the asymmetry that makes a boundary decorative: a strategy
+    // could not *read* `google/main` and could quietly overwrite it.
+    write: async (reference, value) => {
+      if (reference !== ref) {
+        throw new Error(
+          `The ${manifest.name} strategy tried to write ${reference}, which is not its connection's credential (${ref}).`,
+        );
+      }
+      await credentials.set(reference, value);
+    },
+  });
 
   progress(style.dim(`  Registering this device with ${manifest.name}…`));
   await strategy.setup(context);

@@ -110,7 +110,12 @@ describe('defineProviderWithStrategy', () => {
 });
 
 describe('strategyContextFrom', () => {
-  const context = strategyContextFrom(providerContext, declared, 'main');
+  const context = strategyContextFrom({
+    source: providerContext,
+    manifest: declared,
+    connectionId: 'main',
+    profile: 'personal',
+  });
 
   test('passes the manifest options through, so a strategy is configurable as data', () => {
     expect(context.options).toEqual({ sandbox: true });
@@ -118,6 +123,9 @@ describe('strategyContextFrom', () => {
 
   test('carries the connection it is acting for', () => {
     expect(context.connectionId).toBe('main');
+    // One process serves every profile, so a strategy caching anything in
+    // memory needs this to build a key that cannot collide.
+    expect(context.profile).toBe('personal');
     expect(context.credentials).toBe(providerContext.credentials);
     expect(context.state).toBe(providerContext.state);
   });
@@ -129,7 +137,14 @@ describe('strategyContextFrom', () => {
   });
 
   test('an auth kind without options still yields an object rather than undefined', () => {
-    expect(strategyContextFrom(providerContext, manifestFor({ kind: 'bearer' }), 'main').options).toEqual({});
+    const bearer = strategyContextFrom({
+      source: providerContext,
+      manifest: manifestFor({ kind: 'bearer' }),
+      connectionId: 'main',
+      profile: 'personal',
+    });
+
+    expect(bearer.options).toEqual({});
   });
 });
 

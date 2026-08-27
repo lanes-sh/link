@@ -49,9 +49,18 @@ grants the payment tool. To keep an agent to drafts only:
 ```
 lanes link policy deny 'bunq.CREATE_Payment_for_User_MonetaryAccount'
 lanes link policy deny 'bunq.CREATE_PaymentBatch_for_User_MonetaryAccount'
+lanes link policy deny 'bunq.UPDATE_DraftPayment_for_User_MonetaryAccount'
 ```
 
-That leaves reading and draft-making intact, and every payment then waits for
+**All three.** The first two are the obvious ones. The third is the one that
+makes the other two mean anything: `UPDATE_DraftPayment` with
+`status: ACCEPTED` *is* how a draft becomes a payment, so an agent left holding
+it can create a draft and approve its own draft, and the human checkpoint the
+first two lines were bought for does not exist. Denying it costs you nothing an
+agent should have — accepting, rejecting and cancelling a draft are all things
+to do in the bunq app, which is the entire point of a draft.
+
+That leaves reading and draft-*making* intact, and every payment then waits for
 you in the app.
 
 **The vendored spec.** Nothing outside the eleven operations above exists as a
@@ -63,7 +72,15 @@ and ordering cards are all reachable in bunq's API and deliberately absent here.
 bunq runs a public sandbox that needs no bank account. Everything below works
 against it, and nothing that happens there is real.
 
-Declare a manifest of your own in `<workspace>/data/<profile>/providers.d/`:
+Copy the vendored spec next to a manifest of your own, in
+`<workspace>/data/<profile>/providers.d/`. A relative `openapi:` resolves
+against the manifest's own directory, so keeping the two together is what makes
+the path work wherever the workspace is:
+
+```console
+$ cd <workspace>/data/<profile>/providers.d
+$ cp "$(dirname "$(readlink -f "$(which lanes)")")"/../src/providers/bunq/specs/bunq.v1.json .
+```
 
 ```yaml
 id: bunq_sandbox
@@ -71,17 +88,22 @@ name: bunq (sandbox)
 connector:
   kind: http
   base_url: https://public-api.sandbox.bunq.com/v1
-  openapi: ../../../src/providers/bunq/specs/bunq.v1.json
+  openapi: ./bunq.v1.json
 auth:
   kind: strategy
   strategy: bunq
-  options: { sandbox: true }
 ```
 
-`options.sandbox` moves both halves — the handshake *and* every request the
-strategy signs. Setting only one would open a session against the sandbox and
-spend it against production, which authenticates cleanly and then answers about
-an account that does not exist.
+There is no sandbox flag. The strategy reads its host from `base_url`, so this
+manifest handshakes and pays against the sandbox and the built-in `bunq` does
+neither. That is deliberate: a flag beside `base_url` is a second thing to keep
+true, and getting it wrong would open a session against the sandbox and spend it
+against production — which authenticates cleanly and then answers about an
+account that does not exist.
+
+`strategy: bunq` names code the built-in provider carries; borrowing it is not
+borrowing the credential, since this manifest's own id derives
+`bunq_sandbox/<connection>`.
 
 A sandbox key comes from bunq's tinker flow; see
 [doc.bunq.com](https://doc.bunq.com/).

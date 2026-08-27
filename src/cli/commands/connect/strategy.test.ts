@@ -59,6 +59,7 @@ function harness(setup?: AuthStrategy['setup']) {
     registry,
     credentials: createMemoryCredentials({ 'acme/pending': 'pasted-api-key' }),
     state: createMemoryState(),
+    resolution: { profile: 'personal' },
   };
 }
 
@@ -103,6 +104,25 @@ describe('runStrategySetup', () => {
     await runStrategySetup(strategyManifest, 'other', bench);
 
     expect(await bench.seen[1]!.state.get('session')).toBeNull();
+  });
+
+  test('carries the profile, so a process-wide cache cannot collide across profiles', async () => {
+    const bench = harness();
+    await runStrategySetup(strategyManifest, 'pending', bench);
+
+    expect(bench.seen[0]!.profile).toBe('personal');
+  });
+
+  test('the writer refuses a ref that is not this connection\'s credential', async () => {
+    // The read side is an allowlist; without this the write side is not, and a
+    // strategy could overwrite a credential it is not allowed to read.
+    const bench = harness(async (context) => {
+      await context.write!('google/main', 'not mine');
+    });
+
+    expect(runStrategySetup(strategyManifest, 'pending', bench)).rejects.toThrow(
+      /tried to write google\/main/,
+    );
   });
 
   test('a provider with no strategy is left alone', async () => {

@@ -145,7 +145,15 @@ export async function ensureStaticCredential(input: {
   const { manifest, connectionId, credentials, replace, provisional } = input;
   const prompter = input.prompter ?? terminalPrompter;
   const auth = manifest.auth;
-  if (auth.kind === 'none' || auth.kind === 'oauth' || auth.kind === 'strategy') return;
+  // `strategy` used to be excluded here, from when no strategy existed and the
+  // kind was unreachable. It is exactly the wrong exclusion: a strategy
+  // provider's credential is *more* of a pasted value than most — bunq's API
+  // key is the input its handshake runs on — and skipping the prompt left
+  // `lanes link connect bunq` storing nothing and then failing inside the
+  // handshake with "no API key was stored", on the interactive path the setup
+  // documentation describes. Everything below is generic: the ref derives, the
+  // prompts come from the manifest.
+  if (auth.kind === 'none' || auth.kind === 'oauth') return;
 
   const ref = credentialRefForConnection(manifest, connectionId)!;
   const stored = await credentials.has(ref);

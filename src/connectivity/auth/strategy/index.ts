@@ -102,15 +102,20 @@ export function strategyFor(
  * built, and `connect` — which has no provider context, because the connection
  * does not exist yet — assembles the same three from the runtime.
  */
-export function strategyContextFrom(
-  source: Pick<ProviderContext, 'credentials' | 'state' | 'log'>,
-  manifest: ProviderManifest,
-  connectionId: string,
-  write?: (ref: string, value: string) => Promise<void>,
-): AuthStrategyContext {
+export function strategyContextFrom(input: {
+  /** Dispatch hands over the `ProviderContext` it built; `connect` assembles the three itself. */
+  readonly source: Pick<ProviderContext, 'credentials' | 'state' | 'log'>;
+  readonly manifest: ProviderManifest;
+  readonly connectionId: string;
+  readonly profile: string;
+  readonly write?: ((ref: string, value: string) => Promise<void>) | undefined;
+}): AuthStrategyContext {
+  const { source, manifest, connectionId, profile, write } = input;
+
   return {
     manifest,
     connectionId,
+    profile,
     credentials: source.credentials,
     state: source.state,
     log: source.log,

@@ -18,10 +18,14 @@ let counter = 0;
 /** A fresh connection per test: the session cache is per process and keyed by it. */
 const nextConnection = () => `c${++counter}`;
 
-const manifest = {
-  id: 'bunq',
-  auth: { kind: 'strategy', strategy: 'bunq' },
-} as unknown as ProviderManifest;
+const manifestFor = (baseUrl: string) =>
+  ({
+    id: 'bunq',
+    connector: { kind: 'http', base_url: baseUrl },
+    auth: { kind: 'strategy', strategy: 'bunq' },
+  }) as unknown as ProviderManifest;
+
+const manifest = manifestFor(PRODUCTION);
 
 interface Bench {
   readonly context: AuthStrategyContext;
@@ -33,9 +37,10 @@ interface Bench {
 }
 
 function bench(
-  options: Record<string, unknown> = {},
+  baseUrl: string = PRODUCTION,
   seed: 'raw-key' | 'installed' | 'none' = 'installed',
   connectionId = nextConnection(),
+  profile = 'personal',
 ): Bench {
   const calls: Bench['calls'] = [];
   const secrets = new Map<string, string>();
@@ -62,8 +67,9 @@ function bench(
     state,
     status: 200,
     context: {
-      manifest,
+      manifest: manifestFor(baseUrl),
       connectionId,
+      profile,
       credentials: {
         async get(reference: string) {
           return secrets.get(reference) ?? null;
@@ -97,7 +103,7 @@ function bench(
         },
       },
       log: { debug() {}, info() {}, warn() {}, error() {} },
-      options,
+      options: {},
     } as unknown as AuthStrategyContext,
   };
 
@@ -127,7 +133,12 @@ function stub(target: Bench): typeof globalThis.fetch {
     if (path.endsWith('/device-server')) return Response.json({ Response: [{ Id: { id: 2 } }] });
     if (path.endsWith('/session-server')) {
       return Response.json({
-        Response: [{ Id: { id: 3 } }, { Token: { token: `session-${target.calls.length}` } }],
+        Response: [
+          { Id: { id: 3 } },
+          // Stamped with the profile, so a token that crossed a profile
+          // boundary is visible rather than coincidentally equal.
+          { Token: { token: `session-${target.context.profile}-${target.calls.length}` } },
+        ],
       });
     }
 
@@ -135,8 +146,8 @@ function stub(target: Bench): typeof globalThis.fetch {
   }) as unknown as typeof globalThis.fetch;
 }
 
-const payment = () =>
-  new Request('https://api.bunq.com/v1/user/1/monetary-account/2/payment', {
+const payment = (host: string = PRODUCTION) =>
+  new Request(`${host}/user/1/monetary-account/2/payment`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ amount: { value: '10.00', currency: 'EUR' } }),
@@ -148,14 +159,14 @@ describe('setup', () => {
     // renames afterwards, so a session opened here would be stranded under the
     // old id — and `/session-server` allows one call per thirty seconds, which
     // makes a stranded session a refused first call rather than a wasted one.
-    const target = bench({}, 'raw-key');
+    const target = bench(PRODUCTION, 'raw-key');
     await createBunqStrategy(stub(target)).setup!(target.context);
 
     expect(target.calls.map((c) => c.path)).toEqual(['/v1/installation', '/v1/device-server']);
   });
 
   test('replaces the pasted key with the whole context, under the one ref a connection may read', async () => {
-    const target = bench({}, 'raw-key');
+    const target = bench(PRODUCTION, 'raw-key');
     await createBunqStrategy(stub(target)).setup!(target.context);
 
     const stored = JSON.parse(target.secrets.get(`bunq/${target.context.connectionId}`)!);
@@ -170,7 +181,7 @@ describe('setup', () => {
   });
 
   test('sends the public key to installation and never the private one', async () => {
-    const target = bench({}, 'raw-key');
+    const target = bench(PRODUCTION, 'raw-key');
     await createBunqStrategy(stub(target)).setup!(target.context);
 
     const sent = JSON.stringify(target.calls);
@@ -179,7 +190,7 @@ describe('setup', () => {
   });
 
   test('signs device-server and session-server, but not installation', async () => {
-    const target = bench({}, 'raw-key');
+    const target = bench(PRODUCTION, 'raw-key');
     await createBunqStrategy(stub(target)).setup!(target.context);
 
     // Installation cannot be signed: bunq has no key to check it against yet.
@@ -188,14 +199,25 @@ describe('setup', () => {
   });
 
   test('refuses where credentials are not writable, rather than half-installing', async () => {
-    const target = bench({}, 'raw-key');
+    const target = bench(PRODUCTION, 'raw-key');
     const context = { ...target.context, write: undefined } as unknown as AuthStrategyContext;
 
     expect(createBunqStrategy(stub(target)).setup!(context)).rejects.toThrow(/can only be set up/);
   });
 
+  test('re-running on an installed connection reuses the key rather than sending the blob', async () => {
+    // The recovery path for a rotated key or a revoked device. The ref already
+    // holds the whole context this function wrote last time; reading it as a
+    // key would post a JSON blob to /device-server as `secret`.
+    const target = bench(PRODUCTION, 'installed');
+    await createBunqStrategy(stub(target)).setup!(target.context);
+
+    const device = target.calls.find((c) => c.path.endsWith('/device-server'))!;
+    expect(JSON.parse(device.body).secret).toBe('api-key-from-the-app');
+  });
+
   test('a bunq error is passed through with its body, not flattened', async () => {
-    const target = bench({}, 'raw-key');
+    const target = bench(PRODUCTION, 'raw-key');
     const failing = (async () =>
       new Response('{"Error":[{"error_description":"Insufficient authorisation"}]}', {
         status: 403,
@@ -209,7 +231,7 @@ describe('setup', () => {
 
 describe('authorize', () => {
   test('signs the body and carries the session, verifiably', async () => {
-    const target = bench();
+    const target = bench(PRODUCTION);
     const request = await createBunqStrategy(stub(target)).authorize(payment(), target.context);
     const body = await request.clone().text();
 
@@ -219,7 +241,7 @@ describe('authorize', () => {
   });
 
   test('the body survives the rewrite — a signature over a lost body is worthless', async () => {
-    const target = bench();
+    const target = bench(PRODUCTION);
     const request = await createBunqStrategy(stub(target)).authorize(payment(), target.context);
 
     expect(JSON.parse(await request.text())).toEqual({
@@ -228,7 +250,7 @@ describe('authorize', () => {
   });
 
   test('a GET signs the empty string and still sends the header', async () => {
-    const target = bench();
+    const target = bench(PRODUCTION);
     const get = new Request('https://api.bunq.com/v1/user');
     const request = await createBunqStrategy(stub(target)).authorize(get, target.context);
 
@@ -237,7 +259,7 @@ describe('authorize', () => {
   });
 
   test('gives every request its own request id, so a retry is not de-duplicated as the original', async () => {
-    const target = bench();
+    const target = bench(PRODUCTION);
     const strategy = createBunqStrategy(stub(target));
     const first = await strategy.authorize(payment(), target.context);
     const second = await strategy.authorize(payment(), target.context);
@@ -248,7 +270,7 @@ describe('authorize', () => {
   });
 
   test('opens one session and reuses it', async () => {
-    const target = bench();
+    const target = bench(PRODUCTION);
     const strategy = createBunqStrategy(stub(target));
     await strategy.authorize(payment(), target.context);
     await strategy.authorize(payment(), target.context);
@@ -259,7 +281,7 @@ describe('authorize', () => {
   test('two concurrent first calls still open only one session', async () => {
     // `/session-server` allows one call per thirty seconds, so the second of a
     // simultaneous pair would be refused outright.
-    const target = bench();
+    const target = bench(PRODUCTION);
     const strategy = createBunqStrategy(stub(target));
     await Promise.all([
       strategy.authorize(payment(), target.context),
@@ -270,7 +292,7 @@ describe('authorize', () => {
   });
 
   test('reuses a session another instance persisted, rather than opening its own', async () => {
-    const target = bench();
+    const target = bench(PRODUCTION);
     target.state.set(
       'bunq:session',
       JSON.stringify({ token: 'from-another-instance', createdAt: Date.now() }),
@@ -283,7 +305,7 @@ describe('authorize', () => {
   });
 
   test('an expired session is replaced', async () => {
-    const target = bench();
+    const target = bench(PRODUCTION);
     target.state.set(
       'bunq:session',
       JSON.stringify({ token: 'stale', createdAt: Date.now() - 7 * 24 * 60 * 60 * 1000 }),
@@ -294,19 +316,20 @@ describe('authorize', () => {
     expect(request.headers.get('x-bunq-client-authentication')).not.toBe('stale');
   });
 
-  test('sandbox moves the request as well as the handshake', async () => {
-    const target = bench({ sandbox: true });
-    const request = await createBunqStrategy(stub(target)).authorize(payment(), target.context);
+  test('a sandbox manifest handshakes and pays against the sandbox', async () => {
+    // Both halves from one source. When this was a `sandbox` flag beside
+    // `base_url` the two could disagree, and the failure was silent: a session
+    // opened against one bunq and spent against the other authenticates
+    // cleanly and then answers about an account that does not exist.
+    const target = bench(SANDBOX);
+    const request = await createBunqStrategy(stub(target)).authorize(payment(SANDBOX), target.context);
 
-    // Both halves, which is the failure worth pinning: a session opened
-    // against one bunq and spent against the other authenticates cleanly and
-    // then answers about an account that does not exist.
     expect(request.url).toStartWith(new URL(SANDBOX).origin);
     expect(target.calls[0]!.url).toBe(`${SANDBOX}/session-server`);
   });
 
-  test('production leaves the request where the manifest put it', async () => {
-    const target = bench();
+  test('a production manifest stays on production', async () => {
+    const target = bench(PRODUCTION);
     const request = await createBunqStrategy(stub(target)).authorize(payment(), target.context);
 
     expect(request.url).toStartWith(new URL(PRODUCTION).origin);
@@ -314,7 +337,7 @@ describe('authorize', () => {
   });
 
   test('a connection holding only the pasted key says so, rather than failing upstream', async () => {
-    const target = bench({}, 'raw-key');
+    const target = bench(PRODUCTION, 'raw-key');
 
     expect(
       createBunqStrategy(stub(target)).authorize(payment(), target.context),
@@ -322,7 +345,7 @@ describe('authorize', () => {
   });
 
   test('a connection with nothing stored names the command that fixes it', async () => {
-    const target = bench({}, 'none');
+    const target = bench(PRODUCTION, 'none');
 
     expect(createBunqStrategy(stub(target)).authorize(payment(), target.context)).rejects.toThrow(
       /lanes link connect bunq/,
@@ -330,9 +353,28 @@ describe('authorize', () => {
   });
 });
 
+describe('two profiles in one process', () => {
+  test('do not share a session, even with a connection of the same name', async () => {
+    // One endpoint opens a Runtime per profile in the same process. Before the
+    // cache key carried the profile, `bunq.main` named both of these — so the
+    // second profile would send the first's session token, signed with its own
+    // key, to a bank.
+    const personal = bench(PRODUCTION, 'installed', 'main', 'personal');
+    const work = bench(PRODUCTION, 'installed', 'main', 'work');
+
+    const a = await createBunqStrategy(stub(personal)).authorize(payment(), personal.context);
+    const b = await createBunqStrategy(stub(work)).authorize(payment(), work.context);
+
+    expect(a.headers.get('x-bunq-client-authentication')).not.toBe(
+      b.headers.get('x-bunq-client-authentication'),
+    );
+    expect(work.calls.filter((c) => c.path.endsWith('/session-server'))).toHaveLength(1);
+  });
+});
+
 describe('verify', () => {
   test('a 401 drops the session, so the next call opens a new one', async () => {
-    const target = bench();
+    const target = bench(PRODUCTION);
     const strategy = createBunqStrategy(stub(target));
 
     const first = await strategy.authorize(payment(), target.context);
@@ -347,7 +389,7 @@ describe('verify', () => {
   });
 
   test('an ordinary response with no signature is left alone', async () => {
-    const target = bench();
+    const target = bench(PRODUCTION);
     const strategy = createBunqStrategy(stub(target));
     await strategy.authorize(payment(), target.context);
 
@@ -355,7 +397,7 @@ describe('verify', () => {
   });
 
   test('a bad signature is logged, not thrown — the answer has already arrived', async () => {
-    const target = bench();
+    const target = bench(PRODUCTION);
     const strategy = createBunqStrategy(stub(target));
     await strategy.authorize(payment(), target.context);
 

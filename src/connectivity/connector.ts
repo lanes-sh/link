@@ -159,6 +159,17 @@ export interface AuthStrategy {
 export interface AuthStrategyContext {
   readonly manifest: ProviderManifest;
   readonly connectionId: string;
+  /**
+   * Which profile this is acting for.
+   *
+   * Nothing about authenticating one request needs it. What needs it is any
+   * strategy that keeps something in process memory: one endpoint serves every
+   * profile in the workspace from one process, so `<provider>.<connection>` is
+   * not a unique key — two profiles each holding a bunq connection called
+   * `main` would share whatever it named. `state` and `credentials` are already
+   * scoped per profile and a cache in front of them must be too.
+   */
+  readonly profile: string;
   /** Read-only, scoped to this connection — the same boundary providers get. */
   readonly credentials: ProviderContext['credentials'];
   /**
