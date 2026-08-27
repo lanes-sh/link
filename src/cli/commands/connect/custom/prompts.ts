@@ -114,9 +114,10 @@ function documentation(answers: CustomAnswers): Record<string, unknown> {
     ...(app
       ? {
           steps: [
-            `Register an OAuth client at ${value}. Its redirect URI is a loopback address — ` +
-              'http://127.0.0.1/callback on a port chosen per run — so register whichever loopback ' +
-              'form the vendor accepts.',
+            `Register an OAuth client at ${value}. Its redirect URI is a loopback address on a port ` +
+              'chosen per run, which most authorization servers accept. One that matches the whole ' +
+              'URL will refuse the grant with redirect_uri_mismatch — declare the URL it was given ' +
+              'with --redirect-uri if so.',
           ],
         }
       : {}),

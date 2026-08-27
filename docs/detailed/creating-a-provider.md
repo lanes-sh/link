@@ -6,6 +6,11 @@ A provider declares *how to reach a vendor*, not *what the vendor can do*
 ([ADR-008](adr/008-connectors.md)). Capabilities are discovered — from the vendor's own MCP server,
 or from an OpenAPI document — so there is nothing per-endpoint to write.
 
+`lanes link connect custom <id> --connector <kind> --auth <method>` writes one of these for you and
+connects it in the same command, asking for anything it needs
+([ADR-048](adr/048-declaring-a-provider-from-the-fixed-lists.md)). This page is what it writes, and
+what to edit afterwards.
+
 Drop one of these in `<workspace>/data/<profile>/providers.d/*.yaml` and it registers with no code and no rebuild — for that profile, which is the only one that can reach it ([ADR-030](adr/030-a-profile-owns-its-skills-and-manifests.md)):
 
 ```yaml

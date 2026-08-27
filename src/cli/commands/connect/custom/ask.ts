@@ -1,6 +1,6 @@
 import { style } from '../../../output.ts';
 import type { Prompter } from '../../../prompt.ts';
-import { parseAuthMethod, parseConnectorKind } from './derive.ts';
+import { parseAuthMethod, parseConnectorKind, refuseIllegalPair } from './derive.ts';
 import {
   AUTH_FIELDS,
   AUTH_METHODS,
@@ -59,6 +59,12 @@ export async function collect(
   // non-interactive run missing either cannot list the rest yet. Saying so beats
   // guessing at a list that would be wrong.
   if (!connector || !auth) return { missing, command: commandFor(missing) };
+
+  // Before a single field is asked for. The pair is decided by the two answers
+  // above, so a combination that cannot work is knowable here — and asking six
+  // questions about a mailbox that will be refused for its credential type is
+  // worse than refusing straight away.
+  refuseIllegalPair(connector, auth);
 
   const fields = [...CONNECTOR_FIELDS[connector], ...AUTH_FIELDS[auth], ...EXTRA];
   const values: Record<string, string | readonly string[]> = {};

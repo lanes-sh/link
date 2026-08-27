@@ -2,6 +2,7 @@ import type { BlobStore } from '#stores/blobs';
 import type { ProviderDefinition } from '#connectivity';
 import { ConfigError } from '#profile';
 import { ProviderRegistry } from '#registry';
+import { RESERVED_BY_GRAMMAR } from '../commands/connect/custom/spec.ts';
 import { loadProfileProviders } from '#providers/custom/index.ts';
 import { loadProfileSkills, type LoadedSkill } from '#providers/skills/store.ts';
 import { exampleProvider } from '#providers/example/provider.ts';
@@ -142,6 +143,17 @@ export async function buildRegistryWithWorkspace(
     if (registry.has(manifest.id)) {
       throw new ConfigError(
         `${path}: provider "${manifest.id}" is already built in. Rename it, or remove the file to use the built-in.`,
+      );
+    }
+    // An id the CLI's own grammar has taken. `connect custom` refuses to create
+    // one, and this is the other half: a file written by hand — or before that
+    // command existed — would otherwise register cleanly, be unreachable
+    // forever, and say nothing about why.
+    if ((RESERVED_BY_GRAMMAR as readonly string[]).includes(manifest.id)) {
+      throw new ConfigError(
+        `${path}: provider "${manifest.id}" cannot be reached — "${manifest.id}" is the second word ` +
+          `of \`lanes link connect ${manifest.id}\`, which is the command that declares one. ` +
+          'Rename it.',
       );
     }
     registry.register(manifest, 'workspace');

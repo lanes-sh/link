@@ -1,13 +1,13 @@
 import { relative } from 'node:path';
 import { RESERVED_PROVIDER_IDS } from '#connectivity';
-import { isRemoteWorkspace } from '#profile';
+import { isRemoteWorkspace, resolveWorkspaceRoot } from '#profile';
 import { parseManifest } from '#providers/custom/index.ts';
 import { PROVIDER_MANIFESTS } from '#providers/index.ts';
-import { emit, fail, ok, print, progress, style } from '../../../output.ts';
+import { announce, emit, ok, progress } from '../../../output.ts';
 import { nonInteractivePrompter, terminalPrompter, type Prompter } from '../../../prompt.ts';
 import { resolveProfile, type GlobalFlags } from '../../../runtime.ts';
 import { PROGRAM } from '../../../usage.ts';
-import { connect, runConnect, type ConnectOptions } from '../index.ts';
+import { runConnect, type ConnectOptions } from '../index.ts';
 import { renderOutcome, type ConnectOutcome } from '../outcome.ts';
 import { collect, type Blocked } from './ask.ts';
 import { deriveDeclaration, deriveManifest } from './derive.ts';
@@ -54,7 +54,9 @@ export interface ConnectCustomOptions extends GlobalFlags, CustomFlags {
   readonly acceptBroadScopes?: boolean | undefined;
   /** Injected by tests, so the declaration can be checked without a runtime. */
   readonly prompter?: Prompter | undefined;
-  readonly connectWith?: ((target: string, options: ConnectOptions) => Promise<ConnectOutcome>) | undefined;
+  readonly connectWith?:
+    | ((target: string, options: ConnectOptions, announced?: boolean) => Promise<ConnectOutcome>)
+    | undefined;
 }
 
 export async function connectCustom(
@@ -63,21 +65,30 @@ export async function connectCustom(
 ): Promise<void> {
   if (!providerId) throw new Error(`Usage: ${PROGRAM} connect custom <provider-id>`);
 
-  const { resolution, target } = await resolveProfile(options);
-  const { workspaceRoot, profile } = resolution;
-
+  // Both of these are answerable without reading anything, so they come before
+  // the profile is resolved: loading a config from a bucket is a network call,
+  // and refusing afterwards means having made it to say no.
   refuseUnusableId(providerId);
 
   // A manifest is read from the workspace and written to the filesystem, and a
   // bucket only does the first. Not a limitation of this command: a deployed
   // revision never rewrites its own config (ADR-007), so a declaration is
   // authored where the operator is and carried up by the publish that follows.
-  if (isRemoteWorkspace(workspaceRoot)) {
+  const root = resolveWorkspaceRoot();
+  if (isRemoteWorkspace(root)) {
     throw new Error(
-      `This workspace is ${workspaceRoot}, and a manifest is written to a local filesystem.\n` +
+      `This workspace is ${root}, and a manifest is written to a local filesystem.\n` +
         `  Declare it in the workspace you deploy from, and \`${PROGRAM} deploy\` carries it up.`,
     );
   }
+
+  const { resolution, target } = await resolveProfile(options);
+  const { workspaceRoot, profile } = resolution;
+
+  // Before it acts, because writing the manifest *is* acting and `usage.ts`
+  // promises every command says where. `runConnect` is told it has been said, so
+  // the line does not appear twice.
+  if (options.json !== true) announce(resolution);
 
   const path = manifestPath(workspaceRoot, profile, providerId);
   const rerun = `${PROGRAM} connect custom ${providerId} --profile ${profile} --target ${target}`;
@@ -106,6 +117,21 @@ export async function connectCustom(
     await checkOpenapiReachable(derived.connector.openapi, workspaceRoot, profile);
   }
 
+  // A connection is labelled with the account it belongs to, and a provider that
+  // cannot report one has to be told. Interactively `settleIdentity` asks; with
+  // nobody to ask it throws — but only after the credential has been stored, so
+  // the operator gets two failed runs instead of one refusal. Checked here
+  // because this command is the one that knows no identity block was derived.
+  if (options.nonInteractive && !derived.identity && derived.auth.kind !== 'none' && !options.displayName) {
+    throw new Error(
+      `${derived.name} has no way to report whose account a connection is, so on a run with nobody ` +
+        'to ask it has to be named.\n  Nothing was written. Add --display-name "<label>"' +
+        (derived.connector.kind === 'http'
+          ? ', or --identity-url and --identity-field if the API can answer for itself.'
+          : '.'),
+    );
+  }
+
   const shown = relative(workspaceRoot, path);
   const existing = await readExistingManifest(path);
   const differences = existing ? manifestDiff(deriveManifest(collected), existing) : [];
@@ -129,25 +155,42 @@ export async function connectCustom(
   // a browser, and knowing the file landed is worth having before that.
   progress(ok(changes[0]!));
 
+  // Named field by field rather than spread, because the two commands share a
+  // flag name that means different things. `--auth` here is the credential type
+  // in the manifest — `none`, `basic`, `api-key` — and on `connect` it names
+  // which *route* in, for a provider offering two. Spreading sent `--auth none`
+  // straight through, and `connect` refused a provider it had just been handed
+  // with "--auth accepts: oauth".
   const handOff = options.connectWith ?? runConnect;
-  const outcome = await handOff(providerId, {
-    ...options,
-    ...(options.id ? { id: options.id } : {}),
-    ...(options.displayName ? { displayName: options.displayName } : {}),
-    ...(options.replace ? { replace: options.replace } : {}),
-    ...(options.nonInteractive ? { nonInteractive: options.nonInteractive } : {}),
-    ...(options.acceptBroadScopes ? { acceptBroadScopes: options.acceptBroadScopes } : {}),
-    ...(options.json ? { json: options.json } : {}),
-  });
+  const outcome = await handOff(
+    providerId,
+    {
+      profile: options.profile,
+      target: options.target,
+      quiet: options.quiet ?? false,
+      ...(options.id ? { id: options.id } : {}),
+      ...(options.displayName ? { displayName: options.displayName } : {}),
+      ...(options.replace ? { replace: options.replace } : {}),
+      ...(options.nonInteractive ? { nonInteractive: options.nonInteractive } : {}),
+      ...(options.acceptBroadScopes ? { acceptBroadScopes: options.acceptBroadScopes } : {}),
+      ...(options.json ? { json: options.json } : {}),
+    },
+    true,
+  );
 
   // The manifest first, because it is the change this command made and the rest
-  // is what `connect` made. On a failure it stays in the list: the file is real,
-  // it is the operator's now, and the retry is plain `connect` — which is what
-  // `then` says.
+  // is what `connect` made. It stays in the list on a failure too: the file is
+  // real, it is the operator's now, and the retry is plain `connect` — which is
+  // what `then` already says.
   const merged: ConnectOutcome = { ...outcome, changes: [...changes, ...outcome.changes] };
 
   if (!merged.ok) process.exitCode = 1;
-  return emit(options.json, merged, () => renderOutcome(merged));
+
+  // `--json` gets the manifest in `changes`, because that list is what a caller
+  // counts and matches on. The human rendering does not, because they were told
+  // above — before the connect, which is where it mattered — and the same
+  // sentence twice reads as two things having happened.
+  return emit(options.json, merged, () => renderOutcome(outcome));
 }
 
 /**
@@ -240,6 +283,3 @@ function refuse(outcome: ConnectOutcome, json: boolean | undefined): void | Prom
   process.exitCode = 1;
   return emit(json, outcome, () => renderOutcome(outcome));
 }
-
-/** Re-exported so `main.ts` has one import for the command either way. */
-export { connect };

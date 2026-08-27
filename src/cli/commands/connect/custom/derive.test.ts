@@ -281,6 +281,59 @@ describe('what the manifest carries without being asked', () => {
 
     expect(manifest.setup?.steps.join(' ')).toMatch(/port chosen per run/);
   });
+
+  test('and names the flag for a vendor that matches the whole redirect URL', () => {
+    // `connect` listens on a port the kernel picks. A server that pins the URL
+    // refuses with `redirect_uri_mismatch`, which says nothing about what to do.
+    const manifest = deriveManifest(
+      answers('http', 'oauth', { ...endpoints, 'setup-docs': 'https://example.com/apps' }),
+    );
+
+    expect(manifest.setup?.steps.join(' ')).toMatch(/--redirect-uri/);
+  });
+
+  test('a fixed redirect is written when it is given', () => {
+    const manifest = deriveManifest(
+      answers('http', 'oauth', { ...endpoints, 'redirect-uri': 'http://127.0.0.1:8765/callback' }),
+    );
+
+    expect(manifest.auth).toMatchObject({ redirect_uri: 'http://127.0.0.1:8765/callback' });
+  });
+});
+
+describe('headers the vendor requires of a client', () => {
+  test('are written for the two connectors that have the field', () => {
+    for (const connector of ['mcp', 'http'] as const) {
+      const manifest = deriveManifest(
+        answers(connector, 'none', { header: ['User-Agent: thing:1.0 (by someone)'] }),
+      );
+
+      expect(manifest.connector).toMatchObject({
+        headers: { 'User-Agent': 'thing:1.0 (by someone)' },
+      });
+    }
+  });
+
+  test('a value with a colon in it survives, because only the first one separates', () => {
+    const manifest = deriveManifest(
+      answers('http', 'none', { header: ['X-Trace: a:b:c'] }),
+    );
+
+    expect(manifest.connector).toMatchObject({ headers: { 'X-Trace': 'a:b:c' } });
+  });
+
+  test('Authorization is refused here, where somebody is choosing', () => {
+    // `defineProvider` refuses it too, with the rule. This one says what to use.
+    expect(() =>
+      deriveManifest(answers('http', 'none', { header: ['Authorization: Bearer nope'] })),
+    ).toThrow(/--auth bearer/);
+  });
+
+  test('something that is not a header says what one looks like', () => {
+    expect(() => deriveManifest(answers('http', 'none', { header: ['nonsense'] }))).toThrow(
+      /Write it as "Name: value"/,
+    );
+  });
 });
 
 describe('a default is followed, not frozen into the file', () => {

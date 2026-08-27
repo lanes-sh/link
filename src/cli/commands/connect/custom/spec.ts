@@ -73,6 +73,21 @@ export interface FieldSpec {
  * out of the written file, so a later change to a default reaches manifests
  * already on disk instead of being frozen into each one.
  */
+/**
+ * The one field `mcp` and `http` share, and the only one worth a flag.
+ *
+ * Repeatable. What the *vendor* requires of a client rather than what a caller
+ * wants from it: a `User-Agent` on a host that throttles the default one
+ * hardest, or the header an mcp server offers for asking it to expose fewer
+ * tools. `Authorization` is refused — that one belongs to `auth`.
+ */
+const HEADER: FieldSpec = {
+  flag: 'header',
+  label: 'Header sent on every request',
+  required: false,
+  hint: 'Name: value, repeatable. For what the vendor requires of a client, e.g. a User-Agent',
+};
+
 export const CONNECTOR_FIELDS: Record<ConnectorKind, readonly FieldSpec[]> = {
   mcp: [
     {
@@ -81,6 +96,7 @@ export const CONNECTOR_FIELDS: Record<ConnectorKind, readonly FieldSpec[]> = {
       required: true,
       hint: 'The URL the server speaks Streamable HTTP on, e.g. https://mcp.example.com/mcp',
     },
+    HEADER,
   ],
   http: [
     { flag: 'base-url', label: 'Base URL', required: true, hint: 'e.g. https://api.example.com/v1' },
@@ -96,6 +112,7 @@ export const CONNECTOR_FIELDS: Record<ConnectorKind, readonly FieldSpec[]> = {
       required: false,
       hint: 'Globs on operationId, path or tag. A large spec is a tool list no agent can reason over',
     },
+    HEADER,
   ],
   imap: [
     { flag: 'host', label: 'IMAP host', required: true, hint: 'e.g. imap.example.com' },
@@ -146,6 +163,12 @@ export const AUTH_FIELDS: Record<AuthMethod, readonly FieldSpec[]> = {
     { flag: 'token-url', label: 'Token URL', required: false, hint: 'Declared with authorize-url or not at all' },
     { flag: 'client-app', label: 'OAuth app name', required: false, hint: 'Which oauth_apps entry holds the client. Defaults to the provider id' },
     { flag: 'registration', label: 'Registration', required: false, choices: ['dynamic', 'manual'] },
+    {
+      flag: 'redirect-uri',
+      label: 'Redirect URI',
+      required: false,
+      hint: 'Only for a vendor that matches the whole URL — connect otherwise uses a port the kernel picks',
+    },
   ],
 };
 
@@ -192,6 +215,7 @@ export interface CustomFlags {
   readonly smtpPort?: string | undefined;
   readonly root?: string | undefined;
   readonly exclude?: readonly string[] | undefined;
+  readonly header?: readonly string[] | undefined;
   readonly authHeader?: string | undefined;
   readonly authQuery?: string | undefined;
   readonly scopes?: readonly string[] | undefined;
@@ -199,6 +223,7 @@ export interface CustomFlags {
   readonly tokenUrl?: string | undefined;
   readonly clientApp?: string | undefined;
   readonly registration?: string | undefined;
+  readonly redirectUri?: string | undefined;
   readonly identityUrl?: string | undefined;
   readonly identityField?: string | undefined;
   readonly setupDocs?: string | undefined;
