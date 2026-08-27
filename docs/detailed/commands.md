@@ -59,6 +59,60 @@ $ lanes link connect gmail --profile personal --target local --id work
 `--target` never points at a running endpoint: `connect --target cloud` runs consent locally and
 writes the token into the deployment's store.
 
+### `lanes link disconnect <provider>.<id>`
+
+Remove one account, and delete the credential it authorised. The counterpart to `connect`, and the
+two edits it takes: the entry leaves `connections:` in the profile, and the credential leaves the
+target's store.
+
+The key must be exact. `connect gmail` can create an account and choose the id; there is nothing to
+choose here, and a bare `gmail` with two accounts declared would be a command guessing which one to
+throw away — so it refuses and names them.
+
+```console
+$ lanes link disconnect gmail.side --profile personal --target local
+$ lanes link disconnect gmail.side --profile personal --target local --yes --json
+$ lanes link disconnect gmail.side --profile personal --target local --keep-credential
+```
+
+**Three things it deliberately does not do.**
+
+It does not delete the state record. Reconcile marks an undeclared connection `disabled` rather than
+deleting it so the audit log keeps meaning something, and reaching past that to erase the record
+would undo the one guarantee the log offers. The next reconcile marks it, and the command says so.
+
+It does not delete a credential something else still resolves to. A reference is per connection for
+an OAuth provider (`<provider>/<id>`), and *shared* for a manifest declaring `credential_ref` —
+deleting that one while a sibling resolves to it would take the sibling's credential with it, and
+the sibling would then report `unauthorized` for a `connect` nobody ran. When that happens the
+credential is kept and the output names what still needs it.
+
+It does not touch the owner layer. `memory`, `skills`, `vault`, `setup` and `identity` hold no
+credential and are granted by a policy line this command does not touch, so removing the connection
+alone would leave the policy granting against nothing — wrong, not merely untidy. It refuses and
+points at the file, where both lines are next to each other.
+
+### `lanes link relabel <provider>.<id> <name>`
+
+Rename what an account is called. The label is what `status` and any surface built on it shows; it
+is not an identifier, so nothing addresses the connection by it and changing one breaks nothing.
+
+```console
+$ lanes link relabel gmail.main "Work mail" --profile personal --target local
+$ lanes link relabel gmail.main Work mail --profile personal --target local
+```
+
+Both forms work: an unquoted multi-word name is joined, because quoting is what someone remembers
+second and refusing it teaches nothing.
+
+`connect` writes this field from the identity the provider reports at connect time, which is right
+for `gmail.main` and useless for a provider with no such endpoint — a bunq key belongs to an account
+bunq will not name. This is how that gets a name a person recognises. Allowed for the owner layer,
+unlike `disconnect`: a display name is harmless, and "Memory" is the operator's word for their own
+store.
+
+The state store keeps the old name until the next reconcile, which updates it.
+
 ### `lanes link connect custom <id>`
 
 Declare a service that is not built in, and connect it. The provider is composed from two fixed
