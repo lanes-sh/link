@@ -42,6 +42,43 @@ the built-in `GITHUB_TOKEN` cannot be added to its bypass list. Doing it anyway 
 App key or a personal access token with write access to `main` — a larger credential than the npm
 token this project deliberately does not have.
 
+## How a pull request is merged
+
+**Squash, with one exception.** Every pull request into `develop` is squashed: one change becomes
+one commit, and the commit message is the one written for the change rather than a merge line
+naming a branch nobody can see any more. `gh pr merge <n> --squash --delete-branch`.
+
+**The release pull request, `develop` → `main`, is a merge commit.** Not a preference — squashing it
+makes the closing fast-forward impossible. A squash writes a *new* commit onto `main` whose parent
+is `main`'s old tip, so `develop`'s tip stops being an ancestor of `main`. The trees are then
+identical and the branches have still diverged:
+
+```console
+$ git merge --squash develop && git commit -m "squashed"
+$ git rev-parse main^{tree} develop^{tree}      # the same tree
+$ git merge-base --is-ancestor develop main     # false
+$ git push origin origin/main:refs/heads/develop
+ ! [rejected]  (non-fast-forward)
+```
+
+The only way out of that is a force-push of `develop`, which the ruleset blocks and which would
+rewrite reviewed history to fix a cosmetic choice. A merge commit keeps `develop`'s tip an ancestor,
+which is exactly what the fast-forward needs. `gh pr merge <n> --admin --merge`.
+
+A proposed `release/next` pull request may be squashed — it holds one commit, and `develop`'s tip
+is already an ancestor of `main` by then, so nothing depends on how that one lands.
+
+**Rebase-merging is disabled**, in the repository settings and in the ruleset's
+`allowed_merge_methods`. It rewrites the commits onto `main` under new hashes, which breaks the
+ancestry the same way a squash does while looking like it preserved history.
+
+| Pull request | Method |
+|---|---|
+| anything → `develop` | squash |
+| `develop` → `main` (the release) | merge commit |
+| `release/next` → `main` | squash or merge commit |
+| any pull request | never rebase — the method is disabled |
+
 ## Ordinary work
 
 ```console
@@ -52,7 +89,11 @@ $ bun test && bun run typecheck      # the baseline, before changing anything
 ```
 
 Then the change, then the same two commands, then a pull request into `develop`. `ci` runs both
-gates again where a reviewer can see them. Merge when it is green.
+gates again where a reviewer can see them. Squash it when it is green:
+
+```console
+$ gh pr merge <n> --squash --delete-branch
+```
 
 That is the whole of ordinary work. A release is a separate act, taken deliberately, described
 below.
@@ -129,9 +170,10 @@ $ git push origin develop
 Two `-m` arguments, not one: passing the whole note as a single string runs the subject and the
 first body line together into one 60-character subject, which is what happened to `Release 0.3.1`.
 
-Then PR `develop` → `main`, wait for `ci`, and merge. `main` requires an approval, so a solo
-release is `gh pr merge <n> --admin --merge`. **That merge is the irreversible step** — it publishes,
-and the registry does not give a version back.
+Then PR `develop` → `main`, wait for `ci`, and merge it **as a merge commit** — `gh pr merge <n>
+--admin --merge`, the `--admin` because `main` requires an approval and the `--merge` because a
+squash here would strand `develop` (see [above](#how-a-pull-request-is-merged)). **That merge is the
+irreversible step** — it publishes, and the registry does not give a version back.
 
 ### Why the version goes on `develop` and not on a release branch
 
@@ -158,8 +200,13 @@ $ git rev-list --count origin/main..origin/develop     # 0
 $ git rev-list --count origin/develop..origin/main     # 0
 ```
 
-This is the operator's step to remember: the workflow is designed around `main` alone and says
-nothing about `develop`.
+**A release is not finished until both of those read `0`.** The workflow is designed around `main`
+alone and says nothing about `develop`, so this is the operator's step to remember — and the reason
+the pull request above is a merge commit rather than a squash.
+
+If the second count is not `0`, something published from `main` that `develop` never saw — usually
+the propose path's patch bump. Fast-forward again. If the *first* is not `0`, `develop` has moved on
+since the release, which is ordinary.
 
 ## Verifying a release actually shipped
 
