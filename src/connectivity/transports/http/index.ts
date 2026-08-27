@@ -26,7 +26,68 @@ export interface HttpConnectorOptions {
   readonly openapi: string;
   readonly include?: readonly string[];
   readonly exclude?: readonly string[];
+  /** Sent on every request. Never `Authorization` — the manifest refuses it. */
+  readonly headers?: Readonly<Record<string, string>>;
   readonly fetch?: typeof globalThis.fetch;
+}
+
+/**
+ * The one body encoding that is not JSON often enough to be worth knowing about.
+ *
+ * A form-encoded write is not a legacy curiosity: it is what a large share of
+ * APIs that predate JSON request bodies still require, and one of them refusing
+ * `application/json` is not a negotiation — the request fails outright, with an
+ * error about the parameters rather than about the encoding.
+ */
+const FORM_ENCODED = 'application/x-www-form-urlencoded';
+
+/**
+ * What the *document* says the body is, rather than what we would prefer.
+ *
+ * `mcp-from-openapi` records the declared media type on each body entry of the
+ * mapper, so this needs nothing threaded through `target` — the mapper is
+ * already cached there, which is what lets a cold instance encode correctly
+ * without re-reading the spec.
+ *
+ * JSON is the default because an operation with no declared request body has no
+ * media type to read, and because it is what this connector always sent.
+ */
+function bodyContentType(mapper: readonly ParameterMapper[]): string {
+  for (const entry of mapper) {
+    if (entry.type !== 'body') continue;
+    const declared = entry.serialization?.contentType;
+    if (declared) return declared;
+  }
+
+  return 'application/json';
+}
+
+/**
+ * Arrays repeat rather than join, for the reason the query string does above.
+ *
+ * A nested object is JSON inside the field, which is the only thing a
+ * form-encoded body can do with one — there is no standard spelling of nesting
+ * here, and every API that accepts one accepts it as a string.
+ */
+function encodeBody(body: Readonly<Record<string, unknown>>, contentType: string): string {
+  if (!contentType.startsWith(FORM_ENCODED)) return JSON.stringify(body);
+
+  const form = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(body)) {
+    if (value === undefined || value === null) continue;
+
+    if (Array.isArray(value)) {
+      for (const element of value) {
+        if (element !== undefined && element !== null) form.append(key, String(element));
+      }
+      continue;
+    }
+
+    form.set(key, typeof value === 'object' ? JSON.stringify(value) : String(value));
+  }
+
+  return form.toString();
 }
 
 /**
@@ -148,6 +209,12 @@ export function createHttpConnector(options: HttpConnectorOptions): Connector {
 
       const url = new URL(options.baseUrl.replace(/\/$/, '') + buildPath(template, args, mapper));
       const headers = new Headers({ accept: 'application/json' });
+
+      // After `accept`, which is a default worth overriding, and before the
+      // operation's own header parameters, which are narrower than a header
+      // declared once for the whole connector.
+      for (const [key, value] of Object.entries(options.headers ?? {})) headers.set(key, value);
+
       const body = collect(args, mapper, 'body');
 
       for (const [key, value] of Object.entries(collect(args, mapper, 'query'))) {
@@ -174,7 +241,11 @@ export function createHttpConnector(options: HttpConnectorOptions): Connector {
       }
 
       const hasBody = Object.keys(body).length > 0;
-      if (hasBody) headers.set('content-type', 'application/json');
+      const contentType = bodyContentType(mapper);
+      // Last, so it beats a connector-wide header. Which encoding an operation
+      // uses is the document's to state, and a blanket `content-type` that
+      // silently changed it would be a bug nobody could see from the manifest.
+      if (hasBody) headers.set('content-type', contentType);
 
       // Auth is attached by core, from the manifest's auth kind or its strategy.
       // A connector never sees a raw credential.
@@ -182,7 +253,7 @@ export function createHttpConnector(options: HttpConnectorOptions): Connector {
         new Request(url.href, {
           method,
           headers,
-          ...(hasBody ? { body: JSON.stringify(body) } : {}),
+          ...(hasBody ? { body: encodeBody(body, contentType) } : {}),
           signal: context.provider.signal,
         }),
       );

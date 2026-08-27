@@ -66,6 +66,27 @@ export interface OAuthFlowOptions {
    * on the way back. What changes is only the address the vendor is told.
    */
   readonly relayRedirect?: string;
+  /**
+   * A redirect this machine listens on, named to the vendor exactly as written.
+   *
+   * The third answer to "where does the browser come back to", and the one the
+   * comment above did not anticipate. `relayRedirect` exists for a vendor that
+   * will take no loopback address at all; this is for a vendor that takes one
+   * happily but matches it *exactly*, port included — so the kernel-chosen port
+   * below can never match a URL registered in a console months earlier.
+   *
+   * That is not a rare shape. It is the reason `providers/github/index.ts`
+   * gives for using a pasted token rather than OAuth: "an OAuth App matches its
+   * callback URL exactly, including the port, and `connect` listens on a port
+   * the kernel picks."
+   *
+   * The whole URL rather than just a port, because the two must be identical
+   * strings and only one of them is ours to choose. A console that accepts
+   * `localhost` but not `127.0.0.1` — or insists on a trailing path — decides
+   * the spelling, and a manifest that could only name a number would have to
+   * guess the rest right.
+   */
+  readonly fixedRedirect?: string;
   /** What the completion page names as connected. A provider's display name. */
   readonly connectionLabel?: string;
   /** How long to wait for the operator to finish in the browser. */
@@ -130,48 +151,80 @@ export async function runOAuthFlow(options: OAuthFlowOptions): Promise<OAuthToke
     rejectCode = reject;
   });
 
-  const server = Bun.serve({
-    hostname: '127.0.0.1',
-    port: 0, // let the OS choose; nothing outside this machine names this port
-    fetch(request) {
-      const url = new URL(request.url);
-      if (url.pathname !== '/callback') return new Response('Not found', { status: 404 });
+  // A fixed redirect is only fixed if we listen where it says. Parsed rather
+  // than configured separately so the two cannot disagree: the port the vendor
+  // was told is by construction the port this binds.
+  const fixed = options.fixedRedirect ? new URL(options.fixedRedirect) : undefined;
+  const fixedPort = fixed ? Number(fixed.port) : undefined;
 
-      const error = url.searchParams.get('error');
-      if (error) {
-        rejectCode(
-          new OAuthError(
-            error === 'access_denied'
-              ? 'Authorization was declined in the browser.'
-              : `Authorization failed: ${error}`,
-          ),
+  if (fixed && !fixedPort) {
+    throw new OAuthError(
+      `The redirect "${options.fixedRedirect}" names no port, so there is nothing for this machine to listen on. Register a redirect with an explicit port, such as http://127.0.0.1:8765/callback.`,
+    );
+  }
+
+  // Bun.serve throws synchronously when a port is taken. With a kernel-chosen
+  // port that cannot happen; with a fixed one it is the ordinary failure — a
+  // previous run still holding the socket, or another program on the port the
+  // vendor was told about. The raw EADDRINUSE names neither the provider nor
+  // the redirect, so it reads as a crash rather than as something to fix.
+  const server = ((): ReturnType<typeof Bun.serve> => {
+    try {
+    return Bun.serve({
+      hostname: '127.0.0.1',
+      // Zero lets the OS choose, which is right whenever nothing outside this
+      // machine names the port. A fixed redirect is exactly the case where
+      // something does.
+      port: fixedPort ?? 0,
+      fetch(request) {
+        const url = new URL(request.url);
+        if (url.pathname !== '/callback') return new Response('Not found', { status: 404 });
+
+        const error = url.searchParams.get('error');
+        if (error) {
+          rejectCode(
+            new OAuthError(
+              error === 'access_denied'
+                ? 'Authorization was declined in the browser.'
+                : `Authorization failed: ${error}`,
+            ),
+          );
+          return failedPage('You can close this tab.');
+        }
+
+        const returnedState = url.searchParams.get('state');
+        if (!returnedState || !stateMatches(state, returnedState)) {
+          // A mismatched state means this callback did not come from the
+          // request we started. Refuse it rather than redeeming whatever code
+          // it carries.
+          rejectCode(new OAuthError('State mismatch — ignoring an unexpected callback.'));
+          return failedPage('Unexpected callback.');
+        }
+
+        const code = url.searchParams.get('code');
+        if (!code) {
+          rejectCode(new OAuthError('The callback carried no authorization code.'));
+          return failedPage('No code returned.');
+        }
+
+        resolveCode(code);
+        return connectedPage(options.connectionLabel);
+      },
+    });
+    } catch (cause) {
+      if (fixedPort) {
+        throw new OAuthError(
+          `Port ${fixedPort} is already in use, so the callback for this connection cannot be served. The redirect registered with the provider names that port exactly, so it cannot simply be moved — free the port and try again.`,
         );
-        return failedPage('You can close this tab.');
       }
-
-      const returnedState = url.searchParams.get('state');
-      if (!returnedState || !stateMatches(state, returnedState)) {
-        // A mismatched state means this callback did not come from the
-        // request we started. Refuse it rather than redeeming whatever code
-        // it carries.
-        rejectCode(new OAuthError('State mismatch — ignoring an unexpected callback.'));
-        return failedPage('Unexpected callback.');
-      }
-
-      const code = url.searchParams.get('code');
-      if (!code) {
-        rejectCode(new OAuthError('The callback carried no authorization code.'));
-        return failedPage('No code returned.');
-      }
-
-      resolveCode(code);
-      return connectedPage(options.connectionLabel);
-    },
-  });
+      throw cause;
+    }
+  })();
 
   // Where the vendor is told to send the browser. The relay bounces it back
   // here; without one it comes here directly, which is every other provider.
-  const redirectUri = options.relayRedirect ?? `http://127.0.0.1:${server.port}/callback`;
+  const redirectUri =
+    options.relayRedirect ?? options.fixedRedirect ?? `http://127.0.0.1:${server.port}/callback`;
 
   /**
    * The CSRF binding, and — behind a relay — the only way home.

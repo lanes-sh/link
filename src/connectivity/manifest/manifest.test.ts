@@ -287,3 +287,88 @@ describe('an assertion alternative', () => {
     ).toThrow(/no way to learn what key to ask for/);
   });
 });
+
+describe('the two answers to "where does the browser come back to"', () => {
+  const httpProvider = (auth: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+    defineProvider({
+      id: 'vendor_api',
+      name: 'Vendor',
+      connector: { kind: 'http', base_url: 'https://api.example.com', openapi: 'specs/vendor.json' },
+      auth,
+      ...extra,
+    });
+
+  const oauth = (extra: Record<string, unknown>) => ({
+    kind: 'oauth',
+    registration: 'manual',
+    app: 'vendor',
+    authorize_url: 'https://accounts.example.com/authorize',
+    token_url: 'https://accounts.example.com/token',
+    ...extra,
+  });
+
+  test('a fixed loopback redirect is accepted on its own', () => {
+    expect(() =>
+      httpProvider(
+        oauth({ redirect_uri: 'http://127.0.0.1:8765/callback' }),
+        {
+          setup: {
+            summary: 'Register a client.',
+            prompts: [{ key: 'client_id', label: 'Client id', scope: 'shared', credential_ref: 'vendor/client_id' }],
+          },
+        },
+      ),
+    ).not.toThrow();
+  });
+
+  test('declaring a broker as well is refused', () => {
+    // Both are answers to the same question and the flow reads one of them. A
+    // brokered redirect is the broker's own origin, with the loopback port
+    // carried in `state`; a fixed redirect is this machine, named exactly.
+    expect(() =>
+      httpProvider(
+        oauth({
+          redirect_uri: 'http://127.0.0.1:8765/callback',
+          broker: { url: 'https://broker.example.com/v1/auth', operator: 'Someone' },
+        }),
+      ),
+    ).toThrow(/"broker" or "redirect_uri", not both/);
+  });
+});
+
+describe('connector headers may not carry the credential', () => {
+  // The rule was written when `mcp` was the only connector with headers, but
+  // the reasoning never had anything to do with which transport carried them:
+  // a manifest setting both leaves which one is sent up to merge order.
+  test('an http connector naming Authorization is refused', () => {
+    expect(() =>
+      defineProvider({
+        id: 'vendor_api',
+        name: 'Vendor',
+        connector: {
+          kind: 'http',
+          base_url: 'https://api.example.com',
+          openapi: 'specs/vendor.json',
+          headers: { Authorization: 'Bearer nope' },
+        },
+        auth: { kind: 'bearer' },
+      }),
+    ).toThrow(/may not set "Authorization"/);
+  });
+
+  test('any other header is fine', () => {
+    expect(() =>
+      defineProvider({
+        id: 'vendor_api',
+        name: 'Vendor',
+        connector: {
+          kind: 'http',
+          base_url: 'https://api.example.com',
+          openapi: 'specs/vendor.json',
+          headers: { 'User-Agent': 'vendor:1.0 (by someone)' },
+        },
+        auth: { kind: 'bearer' },
+      }),
+    ).not.toThrow();
+  });
+});

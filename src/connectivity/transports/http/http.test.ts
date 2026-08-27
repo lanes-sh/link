@@ -419,3 +419,158 @@ describe('array query parameters are repeated, not joined', () => {
     expect(url.search).not.toContain('open%2Cclosed');
   });
 });
+
+describe('a body is encoded the way the document declares', () => {
+  // A form-encoded write is not a legacy curiosity — it is what a large share
+  // of APIs that predate JSON request bodies still require. Sending JSON to one
+  // fails outright, and the error names the missing parameters rather than the
+  // encoding, so it reads as a bad request rather than a wrong content type.
+  const FORMS = {
+    openapi: '3.0.3',
+    info: { title: 'Acme', version: '1.0.0' },
+    servers: [{ url: 'https://api.acme.test/v1' }],
+    paths: {
+      '/submit': {
+        post: {
+          operationId: 'submitForm',
+          requestBody: {
+            required: true,
+            content: {
+              'application/x-www-form-urlencoded': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    title: { type: 'string' },
+                    tags: { type: 'array', items: { type: 'string' } },
+                  },
+                  required: ['title'],
+                },
+              },
+            },
+          },
+          responses: { '200': { description: 'ok' } },
+        },
+      },
+    },
+  };
+
+  async function formConnector(record: { request?: Request }) {
+    const root = await mkdtemp(join(tmpdir(), 'lanes-link-openapi-'));
+    roots.push(root);
+    const path = join(root, 'forms.json');
+    await writeFile(path, JSON.stringify(FORMS));
+    return createHttpConnector({
+      baseUrl: 'https://api.acme.test/v1',
+      openapi: path,
+      fetch: (async (request: Request) => {
+        record.request = request;
+        return new Response('{}', { status: 200 });
+      }) as unknown as typeof fetch,
+    });
+  }
+
+  test('a form-encoded operation is sent as a form, not as JSON', async () => {
+    const record: { request?: Request } = {};
+    const connector = await formConnector(record);
+    const [capability] = await connector.discover(CONTEXT);
+
+    await connector.invoke(capability!, { title: 'hello' }, contextWith(record));
+
+    expect(record.request!.headers.get('content-type')).toBe('application/x-www-form-urlencoded');
+    expect(await record.request!.text()).toBe('title=hello');
+  });
+
+  test('an array repeats, for the reason a query parameter does', async () => {
+    const record: { request?: Request } = {};
+    const connector = await formConnector(record);
+    const [capability] = await connector.discover(CONTEXT);
+
+    await connector.invoke(capability!, { title: 'hi', tags: ['a', 'b'] }, contextWith(record));
+
+    const sent = new URLSearchParams(await record.request!.text());
+    expect(sent.getAll('tags')).toEqual(['a', 'b']);
+  });
+
+  test('an operation declaring JSON is unchanged', async () => {
+    const record: { request?: Request } = {};
+    const connector = createHttpConnector({
+      baseUrl: 'https://api.acme.test/v1',
+      openapi: await specFile(),
+      fetch: (async (request: Request) => {
+        record.request = request;
+        return new Response('{}', { status: 200 });
+      }) as unknown as typeof fetch,
+    });
+
+    const capabilities = await connector.discover(CONTEXT);
+    const createPayment = capabilities.find((c) => c.name === 'createPayment')!;
+
+    await connector.invoke(createPayment, { amount: 5, to: 'someone' }, contextWith(record));
+
+    expect(record.request!.headers.get('content-type')).toBe('application/json');
+    expect(await record.request!.json()).toEqual({ amount: 5, to: 'someone' });
+  });
+});
+
+describe('headers declared on the connector', () => {
+  // Nothing else in this program sets a `User-Agent`, so every install looks
+  // identical to a host that rate-limits by client. A service that asks callers
+  // to identify themselves throttles the default agent hardest, which reads as
+  // an outage rather than as a refusal.
+  async function connectorWithHeaders(
+    record: { request?: Request },
+    headers: Record<string, string>,
+  ) {
+    return createHttpConnector({
+      baseUrl: 'https://api.acme.test/v1',
+      openapi: await specFile(),
+      headers,
+      fetch: (async (request: Request) => {
+        record.request = request;
+        return new Response('{}', { status: 200 });
+      }) as unknown as typeof fetch,
+    });
+  }
+
+  test('a declared header is sent on every request', async () => {
+    const record: { request?: Request } = {};
+    const connector = await connectorWithHeaders(record, { 'User-Agent': 'acme:1.0 (by someone)' });
+    const capabilities = await connector.discover(CONTEXT);
+    const listAccounts = capabilities.find((c) => c.name === 'listAccounts')!;
+
+    await connector.invoke(listAccounts, {}, contextWith(record));
+
+    expect(record.request!.headers.get('user-agent')).toBe('acme:1.0 (by someone)');
+  });
+
+  test('it may override `accept`, which is only a default', async () => {
+    const record: { request?: Request } = {};
+    const connector = await connectorWithHeaders(record, { accept: 'text/plain' });
+    const capabilities = await connector.discover(CONTEXT);
+
+    await connector.invoke(
+      capabilities.find((c) => c.name === 'listAccounts')!,
+      {},
+      contextWith(record),
+    );
+
+    expect(record.request!.headers.get('accept')).toBe('text/plain');
+  });
+
+  test('it may not override a content type the document derived', async () => {
+    // Which encoding an operation uses is the document's to state. A blanket
+    // header that silently changed it would be a bug nobody could see from the
+    // manifest — the request would go out well-formed and mean something else.
+    const record: { request?: Request } = {};
+    const connector = await connectorWithHeaders(record, { 'content-type': 'text/plain' });
+    const capabilities = await connector.discover(CONTEXT);
+
+    await connector.invoke(
+      capabilities.find((c) => c.name === 'createPayment')!,
+      { amount: 1, to: 'someone' },
+      contextWith(record),
+    );
+
+    expect(record.request!.headers.get('content-type')).toBe('application/json');
+  });
+});

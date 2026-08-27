@@ -180,6 +180,7 @@ function build(
         ...(manifest.connector.operations?.exclude?.length
           ? { exclude: manifest.connector.operations.exclude }
           : {}),
+        ...(manifest.connector.headers ? { headers: manifest.connector.headers } : {}),
       });
   }
 }
