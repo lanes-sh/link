@@ -42,16 +42,24 @@ export async function migratedRenamedProviders(
 ): Promise<boolean> {
   if (!(refusal instanceof ConfigError)) return false;
 
-  const selection = await resolveSelection({ profileFlag: flags.profile });
-  const document = await ConfigDocument.open(selection.workspaceRoot, selection.profile);
+  // **The target's workspace, not this machine's.** `resolveSelection` defaults
+  // to the local root, which is where this looked before ADR-052 — and there was
+  // only one place a profile could be. The row that needs renaming is in the
+  // file the *named target* holds, so a bucket's stale row was invisible from
+  // here while the refusal kept naming this command as the fix.
+  const target = flags.target ?? '';
+  const localRoot = resolveWorkspaceRoot();
+  const root = await resolveTargetWorkspace(localRoot, target).catch(() => localRoot);
+
+  const selection = await resolveSelection({ profileFlag: flags.profile, root });
+  const document = await ConfigDocument.open(root, selection.profile);
   if (pendingRenames(document).length === 0) return false;
 
   // Shape-only, because the check this document fails runs after the schema.
   // Throws when it is malformed beyond a rename, which is a better sentence
   // than the referential one it would otherwise be reported under.
   const config = shapeOf(document);
-  const target = flags.target ?? '';
-  const credentials = await openSecretStoreFor(config, selection.workspaceRoot, target);
+  const credentials = await openSecretStoreFor(config, root, target);
 
   const migration = await migrateRenamedProviders(document, credentials, {
     apply: flags.fix === true,
@@ -70,6 +78,7 @@ export async function migratedRenamedProviders(
       ok: applied && migration.blocked.length === 0,
       profile: selection.profile,
       target,
+      workspace: root,
       applied,
       rows: migration.rows,
       changes: migration.changes,

@@ -69,6 +69,24 @@ describe('recording where a target lives', () => {
     expect(registry['cloud']?.workspace).toBe('gs://second-bucket');
   });
 
+  test('a declaration replaces a pointer, so a bucket never points at itself', async () => {
+    // `deploy` writes the bucket's own registry after the upload. Merging there
+    // left this machine's `workspace:` on the entry — and a bucket pointing at
+    // itself is a loop `openTarget` refuses, on the target just deployed.
+    const root = await workspace('contract: 2\n');
+    await recordTarget(root, 'cloud', { workspace: 'gs://your-bucket', primary: 'personal' });
+    await recordTarget(root, 'cloud', {
+      credentials: { adapter: 'gcp-secret-manager', project: 'p' },
+      storage: { adapter: 'gcs', bucket: 'your-bucket' },
+    });
+
+    const entry = (await readRegistry(root))['cloud']!;
+    expect(entry.workspace).toBeUndefined();
+    expect(entry.storage?.bucket).toBe('your-bucket');
+    // The deploy record is the one thing that crosses either way.
+    expect(entry.primary).toBe('personal');
+  });
+
   test('the deploy record survives a declaration becoming a pointer', async () => {
     // A redeploy that does not ask who the primary is must not silently unset
     // it — and handing the target over to its own workspace is exactly when the
