@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { SecretRef } from '#secrets';
 import type { Capability } from './capability.ts';
+import type { AuthStrategy } from './connector.ts';
 import type { ProviderContext } from './context.ts';
 import { bundleSchema, defineProvider, type ProviderManifest } from './manifest/index.ts';
 
@@ -31,6 +32,16 @@ export interface ProviderDefinition<
   readonly connectionSchema: ConnectionSchema;
 
   readonly capabilities: readonly Capability[];
+
+  /**
+   * Pluggable auth, for a vendor whose handshake no manifest field can describe.
+   *
+   * Carried here rather than in a registry the runtime searches, because a
+   * strategy belongs to exactly one provider and nothing else may use it. The
+   * manifest declares *that* there is one and names it; this is the code, and
+   * `strategyFor` checks the two agree.
+   */
+  readonly authStrategy?: AuthStrategy;
 
   /**
    * Which credential refs a connection may read. Core turns this into the
@@ -159,5 +170,49 @@ export function defineProviderWithCapabilities(input: {
     configSchema: z.unknown(),
     connectionSchema: z.unknown(),
     capabilities: input.capabilities,
+  };
+}
+
+/**
+ * A manifest-based provider whose authentication is code rather than a field.
+ *
+ * The sibling of `defineProviderWithCapabilities`, and rarer. That one exists
+ * where a vendor's API can do something its *document* cannot express; this one
+ * where a vendor's **handshake** can. Everything else about the provider stays
+ * declared — the connector kind, the operations, the redaction — and the
+ * strategy only ever sees a request on its way out and a response on its way
+ * back.
+ *
+ * ADR-008 puts a number on how much this is allowed to be: roughly 150 lines,
+ * for auth, once. A strategy that grows a second job is the 612-line problem
+ * returning by a different door.
+ */
+export function defineProviderWithStrategy(input: {
+  readonly manifest: ProviderManifest;
+  readonly strategy: AuthStrategy;
+  readonly capabilities?: readonly Capability[];
+}): ProviderDefinition {
+  const { manifest, strategy } = input;
+
+  if (manifest.auth.kind !== 'strategy') {
+    throw new Error(
+      `Provider "${manifest.id}" carries an auth strategy but declares auth.kind "${manifest.auth.kind}". Declare { kind: 'strategy', strategy: '${strategy.id}' }.`,
+    );
+  }
+
+  if (manifest.auth.strategy !== strategy.id) {
+    throw new Error(
+      `Provider "${manifest.id}" declares auth strategy "${manifest.auth.strategy}" but carries "${strategy.id}".`,
+    );
+  }
+
+  return {
+    manifest,
+    // Permissive for the same reason `defineProviderWithCapabilities` is: a
+    // manifest provider's connection is already described by its manifest.
+    configSchema: z.unknown(),
+    connectionSchema: z.unknown(),
+    capabilities: input.capabilities ?? [],
+    authStrategy: strategy,
   };
 }

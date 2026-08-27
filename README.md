@@ -114,6 +114,7 @@ One command per account. Run it again to add a second mailbox, a second calendar
 | Gmail (IMAP, app password) | `lanes link connect gmail_imap` |
 | Gmail (Google MCP) | `lanes link connect gmail_mcp` |
 | Drive (Google MCP) | `lanes link connect drive_mcp` |
+| bunq | `lanes link connect bunq` |
 
 Three things worth knowing up front. `lanes link connect icloud` sets up Mail, Calendar, and
 Contacts together, because one app-specific password covers all three. Reddit is the one that does
@@ -123,7 +124,9 @@ OAuth client of your own: both authorise against the one Lanes operates, so ther
 visit — for Google, add `--own-client` if you would rather register your own, or take a service
 account key or an app password over IMAP where you would rather nothing expired. And GitHub takes a
 token you paste rather than a browser sign-in, because it will not register a client for us; that
-is the one console visit left here.
+is the one console visit left here. bunq is the one that can move money, and it says so: its
+payment tool executes immediately and is not reversible. Set a spending limit on the API key in the
+bunq app, and read [docs/detailed/setup/bunq.md](docs/detailed/setup/bunq.md) before connecting it.
 
 Full guide — what each one gives your agent, what it needs, and adding your own:
 **[docs/connect.md](docs/connect.md)**.

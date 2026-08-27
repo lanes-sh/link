@@ -16,6 +16,7 @@ import { ALREADY, NOTHING, renderOutcome, where, type ConnectOutcome } from './o
 import { nextAfterEdit, publishRuntimeEdit } from '#cli/publish.ts';
 import { ensureStaticCredential } from './setup.ts';
 import { settleIdentity } from './settle.ts';
+import { runStrategySetup } from './strategy.ts';
 import { announceConnectTarget } from './target-note.ts';
 
 /**
@@ -256,6 +257,9 @@ async function runConnect(
         prompter,
       });
     }
+
+    // 1b. The vendor's own handshake — see `./strategy.ts`, including why here.
+    await runStrategySetup(manifest, provisionalId, runtime);
 
     // 2. Ask the provider whose account that was.
     //

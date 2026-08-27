@@ -1,4 +1,5 @@
 import type { ProviderDefinition, ProviderManifest } from '#connectivity';
+import { bunq } from './bunq/index.ts';
 import { calendar } from './google/calendar/index.ts';
 import { contacts } from './google/contacts/index.ts';
 import { docs } from './google/docs/index.ts';
@@ -69,6 +70,7 @@ export const PROVIDERS: readonly (ProviderManifest | ProviderDefinition)[] = [
   icloudCalendar,
   icloudContacts,
   icloudDrive,
+  bunq,
 ];
 
 /** The manifest half of an entry, whichever shape it arrived in. */
@@ -97,6 +99,7 @@ export {
   tasks,
 } from './google/index.ts';
 export { icloudCalendar, icloudContacts, icloudDrive, icloudMail } from './icloud/index.ts';
+export { bunq } from './bunq/index.ts';
 export { github } from './github/index.ts';
 export { linear } from './linear/index.ts';
 export { notion } from './notion/index.ts';

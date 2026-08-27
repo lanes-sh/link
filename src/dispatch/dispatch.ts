@@ -6,8 +6,14 @@ import type { RuntimeState } from '#stores/state';
 import type { PolicyDocument } from '#policy';
 import { RateLimiter, evaluate } from '#policy';
 import type { BlobStore } from '#stores/blobs';
-import type { AnyConnector, CapabilityResult, ConnectorContext, Logger } from '#connectivity';
-import { isToolResult } from '#connectivity';
+import type {
+  AnyConnector,
+  AuthStrategyContext,
+  CapabilityResult,
+  ConnectorContext,
+  Logger,
+} from '#connectivity';
+import { isToolResult, strategyContextFrom, strategyFor } from '#connectivity';
 import type { Config } from '#profile';
 import { buildProviderContext, createProviderLogger } from './context.ts';
 import { stageAttachment, type StagedAttachment, type StageRequest } from './staging.ts';
@@ -252,13 +258,33 @@ export class Dispatcher {
         },
       };
 
+      // A provider whose authentication is code rather than a manifest field.
+      // The strategy stands in for the credential resolver completely: it holds
+      // whatever session the vendor issues, signs the outbound request, and
+      // checks the reply. Looked up once, because both halves of the connector
+      // context come from the same one.
+      const strategy =
+        entry.manifest.auth.kind === 'strategy'
+          ? strategyFor(entry.manifest, this.#deps.registry)
+          : undefined;
+
+      // Derived from the provider context — which is handed the closure below,
+      // so it cannot exist yet. Both are only ever *called* after this block
+      // finishes, and memoising keeps one context per invocation rather than
+      // one per outbound request.
+      let strategyContext: AuthStrategyContext | undefined;
+      const forStrategy = (): AuthStrategyContext =>
+        (strategyContext ??= strategyContextFrom(providerContext, entry.manifest, declared.id));
+
       // One closure, handed to both contexts. A provider that authors a
       // capability its transport cannot express still calls the vendor through
       // the same authorizer the transport would have used.
       const authorize = (outbound: Request): Promise<Request> =>
-        this.#deps.authorizeRequest
-          ? this.#deps.authorizeRequest(providerId, declared.id, outbound)
-          : Promise.resolve(outbound);
+        strategy
+          ? strategy.authorize(outbound, forStrategy())
+          : this.#deps.authorizeRequest
+            ? this.#deps.authorizeRequest(providerId, declared.id, outbound)
+            : Promise.resolve(outbound);
 
       const providerContext = buildProviderContext({
         manifest: entry.manifest,
@@ -288,10 +314,18 @@ export class Dispatcher {
         });
       }
 
+      // Only where the strategy asks for it. A vendor that signs its replies
+      // expects them verified, and the transport clones the response so the
+      // check costs the caller nothing.
+      const verifyResponse = strategy?.verify?.bind(strategy);
+
       const connectorContext: ConnectorContext = {
         manifest: entry.manifest,
         provider: providerContext,
         authorize,
+        ...(verifyResponse
+          ? { verify: (response: Response) => verifyResponse(response, forStrategy()) }
+          : {}),
       };
 
       // The connector owns argument validation: a local provider validates
