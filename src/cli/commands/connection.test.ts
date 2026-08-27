@@ -31,6 +31,10 @@ import { connectionsSharingCredential, removeConnection, renameConnection } from
 
 const WHERE = { profile: 'personal', target: 'local' } as const;
 
+// Only the accounts. The owner layer is not declared here: a fresh profile
+// arrives with `memory.main` and its siblings already granted (ADR-050), and
+// declaring one of them a second time is a duplicate the parser refuses — which
+// would fail every test in this file for a reason none of them is about.
 const CONNECTIONS = `
   - id: main
     provider: gmail
@@ -38,9 +42,6 @@ const CONNECTIONS = `
   - id: side
     provider: gmail
     account: second@example.com
-  - id: main
-    provider: memory
-    account: Memory
 `;
 
 const roots: string[] = [];
@@ -154,8 +155,9 @@ describe('disconnect', () => {
     const root = await workspace();
     const path = join(root, 'profiles', 'personal.yaml');
     const text = await Bun.file(path).text();
-    // `memory` and `setup` the template already declares; declaring one twice is
-    // a config the parser refuses, which would fail this for the wrong reason.
+    // The template already declares every reserved id but `identity`; declaring
+    // one twice is a config the parser refuses, which would fail this for the
+    // wrong reason.
     if (!text.includes(`provider: ${provider}`)) {
       await Bun.write(
         path,
