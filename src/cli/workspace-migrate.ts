@@ -6,6 +6,7 @@ import {
   layout,
   listProfiles,
   readWorkspaceFile,
+  isRemoteWorkspace,
   workspaceFiles,
   isLegacyProfile,
   legacyConfigSchema,
@@ -13,8 +14,8 @@ import {
   type LegacyTarget,
   type WorkspaceTarget,
 } from '#profile';
-import { deployedWorkspace } from '#deployments/upload.ts';
 import { ConfigDocument } from './config-edit.ts';
+import { hoist, summarise } from './migrate-plan.ts';
 
 /**
  * Contract 1 → 2: the target moves out of the profile and into the workspace.
@@ -169,123 +170,6 @@ export async function migrateWorkspace(
 }
 
 /**
- * Every profile's target blocks, folded into one registry.
- *
- * Two refusals rather than guesses, because both are cases where one target
- * would need two different answers and picking either silently is the class of
- * bug this whole change is about.
- */
-async function hoist(
-  legacy: readonly { profile: string; targets: Record<string, LegacyTarget> }[],
-  workspaceRoot: string,
-): Promise<Record<string, WorkspaceTarget>> {
-  const registry: Record<string, WorkspaceTarget> = {};
-  const seenFrom: Record<string, string> = {};
-
-  for (const { profile, targets } of legacy) {
-    for (const [name, declared] of Object.entries(targets)) {
-      const entry = toEntry(name, declared, profile, workspaceRoot);
-      const previous = registry[name];
-
-      if (previous === undefined) {
-        registry[name] = entry;
-        seenFrom[name] = profile;
-        continue;
-      }
-
-      if (JSON.stringify(previous) !== JSON.stringify(entry)) {
-        throw new ConfigError(
-          `Profiles "${seenFrom[name]}" and "${profile}" both declare target "${name}", and they ` +
-            `do not agree.\n` +
-            `  A target is declared once by the workspace it lives in (ADR-052), so one of these\n` +
-            `  has to win and this cannot pick.\n\n` +
-            `    ${seenFrom[name]}: ${summarise(previous)}\n` +
-            `    ${profile}: ${summarise(entry)}\n\n` +
-            `  Edit one of them to match the other, then run this again.`,
-        );
-      }
-    }
-  }
-
-  return registry;
-}
-
-/**
- * One contract-1 target block as a registry entry.
- *
- * A block whose storage names a bucket becomes a pointer: that bucket is a
- * workspace, it holds the profiles served there, and under ADR-052 it is the
- * thing that declares the target. The adapters are not copied into the pointer —
- * they travel to the bucket on the next `deploy`, which is the only command that
- * can write there and roll an image that understands what it wrote.
- *
- * Per-profile paths are dropped when they are the layout defaults, which is the
- * ordinary case: `./data/<profile>` and `./data/<profile>/credentials.enc` are
- * exactly what `layout.ts` derives, so a workspace-level target that omits them
- * addresses the same bytes. A genuinely custom path cannot be hoisted — one
- * target cannot hold a different path per profile — and is refused by name.
- */
-function toEntry(
-  name: string,
-  declared: LegacyTarget,
-  profile: string,
-  workspaceRoot: string,
-): WorkspaceTarget {
-  const remote = deployedWorkspace(declared);
-  if (remote) return { workspace: remote };
-
-  const storagePath = declared.storage.path;
-  const credentialsPath = declared.credentials.path;
-
-  const defaultStorage = `./${layout.blobs(profile)}`;
-  const defaultCredentials = `./${layout.credentials(profile)}`;
-
-  refuseCustomPath(name, profile, workspaceRoot, 'storage.path', storagePath, defaultStorage);
-  refuseCustomPath(
-    name,
-    profile,
-    workspaceRoot,
-    'credentials.path',
-    credentialsPath,
-    defaultCredentials,
-  );
-
-  const { path: _storage, ...storage } = declared.storage;
-  const { path: _credentials, ...credentials } = declared.credentials;
-
-  return {
-    credentials,
-    storage,
-    ...(declared.audit ? { audit: declared.audit } : {}),
-    ...(declared.vault ? { vault: declared.vault } : {}),
-    ...(declared.deploy ? { deploy: declared.deploy } : {}),
-  };
-}
-
-function refuseCustomPath(
-  target: string,
-  profile: string,
-  workspaceRoot: string,
-  field: string,
-  value: string | undefined,
-  expected: string,
-): void {
-  if (value === undefined) return;
-  // Both spellings of the same directory: `./data/personal` and `data/personal`
-  // resolve identically and the template has written each at different times.
-  if (value === expected || value === expected.replace(/^\.\//, '')) return;
-
-  throw new ConfigError(
-    `Profile "${profile}" declares target "${target}" with a custom ${field}:\n` +
-      `    ${value}\n` +
-      `  A target is declared once for the whole workspace now (ADR-052), so it cannot hold a\n` +
-      `  different path per profile. The default it would get is ${expected}.\n\n` +
-      `  Move the data there and delete the line, or keep this profile in a workspace of its\n` +
-      `  own: LANES_LINK_HOME=${workspaceRoot}/<somewhere> lanes link profile add ${profile} --target ${target}`,
-  );
-}
-
-/**
  * Write the registry into the workspace file, creating it when absent.
  *
  * The whole object is assembled in plain JS and set once. Setting `targets` and
@@ -349,12 +233,6 @@ function describe(
       ? { name, kind: 'pointer' as const, where: entry.workspace }
       : { name, kind: 'declared' as const },
   );
-}
-
-function summarise(entry: WorkspaceTarget): string {
-  if (entry.workspace !== undefined) return `points at ${entry.workspace}`;
-  const parts = [entry.credentials?.adapter, entry.storage?.adapter].filter(Boolean);
-  return `${parts.join(' + ')}${entry.deploy ? `, deploys ${entry.deploy.service}` : ''}`;
 }
 
 /**
