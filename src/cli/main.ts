@@ -1,4 +1,5 @@
 import { connect } from './commands/connect/index.ts';
+import { connectCustom } from './commands/connect/custom/index.ts';
 import {
   attachFile,
   auditTail,
@@ -29,7 +30,7 @@ import { secretsList, secretsPush, secretsSet } from './commands/secrets.ts';
 import { knowledgeShow, knowledgeUse } from './commands/knowledge.ts';
 import { dispatchOwner } from './dispatch-owner.ts';
 import { update } from './commands/update.ts';
-import { all, globalFlags, knowledgeFlags, ownerFlags, parseArgv, text } from './argv.ts';
+import { all, customFlags, globalFlags, knowledgeFlags, ownerFlags, parseArgv, text } from './argv.ts';
 import { assertKnownFlags, requireSelection } from './selection.ts';
 import { PROGRAM, USAGE } from './usage.ts';
 import { version } from './version.ts';
@@ -75,18 +76,41 @@ export async function run(argv: readonly string[]): Promise<void> {
 
   switch (first) {
     case 'connect':
-      if (!second) throw new Error(`Usage: ${PROGRAM} connect <provider>`);
-      return connect(second, {
-        ...global,
-        id: text(flags, 'id'),
-        displayName: text(flags, 'display-name'),
-        replace: flags['replace'] === true,
-        nonInteractive: flags['non-interactive'] === true,
-        acceptBroadScopes: flags['accept-broad-scopes'] === true,
-        ownClient: flags['own-client'] === true,
-        auth: text(flags, 'auth'),
-        json,
-      });
+      // A nested switch rather than an `if`, so `selection.test.ts` sees
+      // `connect custom` when it reads this file for `case` labels: it matches
+      // on eight-space indentation, and a command invisible to that check is a
+      // command that can default quietly.
+      switch (second) {
+        case 'custom':
+          return connectCustom(rest[0], {
+            ...global,
+            ...customFlags(flags, argv),
+            id: text(flags, 'id'),
+            displayName: text(flags, 'display-name'),
+            replace: flags['replace'] === true,
+            nonInteractive: flags['non-interactive'] === true,
+            acceptBroadScopes: flags['accept-broad-scopes'] === true,
+            json,
+          });
+
+        // Not a `case` label, so it adds no row to `SELECTION`: there is no
+        // command here to classify, only a usage error.
+        case undefined:
+          throw new Error(`Usage: ${PROGRAM} connect <provider>`);
+
+        default:
+          return connect(second, {
+            ...global,
+            id: text(flags, 'id'),
+            displayName: text(flags, 'display-name'),
+            replace: flags['replace'] === true,
+            nonInteractive: flags['non-interactive'] === true,
+            acceptBroadScopes: flags['accept-broad-scopes'] === true,
+            ownClient: flags['own-client'] === true,
+            auth: text(flags, 'auth'),
+            json,
+          });
+      }
 
     case 'setup':
       if (second !== 'plan' && second !== undefined) {

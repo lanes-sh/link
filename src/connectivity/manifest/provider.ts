@@ -91,6 +91,22 @@ export function defineProvider(input: unknown): ProviderManifest {
 
   const manifest = parsed.data;
 
+  // Declared in the union and not implemented, which is a worse state than
+  // either. `refuseStrategy` throws, but it throws at *dispatch* — so a manifest
+  // declaring one validates here, connects, stores a credential, discovers its
+  // capabilities and is granted a policy rule, and then fails on every single
+  // call. That is the failure shape the mcp rule below calls unacceptable,
+  // reached by another door. Nothing is registered, so nothing legitimate is
+  // refused; when the first strategy exists, this rule narrows to unknown names.
+  if (manifest.auth.kind === 'strategy') {
+    throw new Error(
+      `Provider "${manifest.id}": auth strategy "${manifest.auth.strategy}" is not registered. ` +
+        'Strategies are the only place per-vendor code belongs, and there is none for this one — ' +
+        'the connection would authorise and then fail on every call. ' +
+        'See docs/detailed/creating-a-provider.md.',
+    );
+  }
+
   if (manifest.auth.kind === 'oauth' && manifest.auth.registration === 'manual') {
     if (!manifest.auth.app) {
       throw new Error(

@@ -108,7 +108,8 @@ describe('what an mcp connector may authenticate with', () => {
     expect(() => mcp({ kind: 'api_key' })).toThrow(/must be "none", "oauth", or "bearer"/);
     expect(() => mcp({ kind: 'header', header: 'X-Token' })).toThrow(/nowhere else on the request/);
     expect(() => mcp({ kind: 'basic' })).toThrow(/must be "none", "oauth", or "bearer"/);
-    expect(() => mcp({ kind: 'strategy', strategy: 'bunq' })).toThrow(/"strategy"/);
+    // `strategy` is refused too, but earlier and for every connector — see
+    // below. Asserting it here would read as an mcp rule, which it is not.
   });
 
   test('bearer may not rename its header here, though the schema allows it', () => {
@@ -370,5 +371,55 @@ describe('connector headers may not carry the credential', () => {
         auth: { kind: 'bearer' },
       }),
     ).not.toThrow();
+  });
+});
+
+describe('an auth strategy nothing implements', () => {
+  const withAuth = (auth: Record<string, unknown>) =>
+    defineProvider({
+      id: 'thing',
+      name: 'Thing',
+      connector: { kind: 'http', base_url: 'https://api.example.com', openapi: './thing.json' },
+      auth,
+    });
+
+  /**
+   * The gap this closes.
+   *
+   * `refuseStrategy` throws, and loudly — but it throws when a capability is
+   * *invoked*. So a manifest declaring a strategy validated here, connected,
+   * stored a credential, discovered its capabilities and was granted a policy
+   * rule, and then failed on every call with nothing earlier to read. Every
+   * other "validates and then cannot work" pairing is caught in this function;
+   * this one was not.
+   */
+  test('is refused where every other unusable pairing is refused', () => {
+    expect(() => withAuth({ kind: 'strategy', strategy: 'bunq' })).toThrow(
+      /strategy "bunq" is not registered/,
+    );
+  });
+
+  test('the refusal says what would have happened, not just that it is refused', () => {
+    expect(() => withAuth({ kind: 'strategy', strategy: 'bunq' })).toThrow(
+      /fail on every call/,
+    );
+  });
+
+  test('and it is refused whatever it is bolted to', () => {
+    // Not a property of one transport: there is no code to run, whichever
+    // connector would have called it.
+    for (const connector of [
+      { kind: 'mcp', endpoint: 'https://mcp.example.com/mcp' },
+      { kind: 'http', base_url: 'https://api.example.com', openapi: './x.json' },
+    ]) {
+      expect(() =>
+        defineProvider({
+          id: 'thing',
+          name: 'Thing',
+          connector,
+          auth: { kind: 'strategy', strategy: 'bunq' },
+        }),
+      ).toThrow(/strategy/);
+    }
   });
 });

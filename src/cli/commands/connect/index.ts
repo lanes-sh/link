@@ -18,6 +18,7 @@ import { ensureStaticCredential } from './setup.ts';
 import { settleIdentity } from './settle.ts';
 import { runStrategySetup } from './strategy.ts';
 import { announceConnectTarget } from './target-note.ts';
+import { unknownProvider } from './unknown.ts';
 
 /**
  * `lanes link connect <provider>` — the one command that adds an account.
@@ -92,7 +93,14 @@ export async function connect(target: string, options: ConnectOptions): Promise<
   return emit(options.json, outcome, () => renderOutcome(outcome));
 }
 
-async function runConnect(
+/**
+ * Exported for `connect custom`, which declares a provider and then connects it.
+ *
+ * Narrow on purpose — no extra parameters, no second entry point into the five
+ * steps. The manifest is written before this is called, because the registry
+ * that reads `providers.d/` is built by `openRuntime` on the first line.
+ */
+export async function runConnect(
   target: string,
   options: ConnectOptions,
   /** A family member — the account this belongs to has already said where it goes. */
@@ -134,17 +142,13 @@ async function runConnect(
     }
 
     if (!entry) {
-      const available = registry.list();
-      const builtin = available.filter((c) => c.origin === 'builtin').map((c) => c.manifest.id);
-      const custom = available.filter((c) => c.origin === 'workspace').map((c) => c.manifest.id);
-
-      throw new Error(
-        `Unknown provider "${providerId}".\n` +
-          `  built in: ${builtin.join(', ')}\n` +
-          (custom.length > 0
-            ? `  yours:    ${custom.join(', ')}\n`
-            : `  add your own: a manifest in ${runtime.resolution.workspaceRoot}/providers/\n`),
-      );
+      throw unknownProvider({
+        providerId,
+        registry,
+        workspaceRoot: runtime.resolution.workspaceRoot,
+        profile: runtime.resolution.profile,
+        target: runtime.target,
+      });
     }
 
     const manifest = entry.manifest;

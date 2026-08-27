@@ -1,9 +1,9 @@
-import { readdir, readFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { defineProvider, type ProviderManifest } from '#connectivity';
-import { ConfigError, layout } from '#profile';
+import { ConfigError, isRemoteWorkspace, layout, readWorkspaceFile, workspaceFiles } from '#profile';
 import { findSecrets, formatSecretFindings } from '#profile';
+import type { BlobStore } from '#stores/blobs';
 
 /**
  * Provider manifests supplied by the operator.
@@ -21,41 +21,66 @@ import { findSecrets, formatSecretFindings } from '#profile';
  * personal's to read. The path comes from `layout` for the same reason every
  * other profile-owned path does: one place that knows the on-disk shape.
  * ADR-030.
+ *
+ * **Read through the workspace's store, not through `node:fs`.** A deployed
+ * revision is handed `LANES_LINK_HOME=gs://<bucket>`, and `join` collapses that
+ * to `gs:/bucket/…` — so a `readdir` threw ENOENT and the catch below reported
+ * the same empty list it reports for a workspace that simply has no manifests.
+ * The manifest was uploaded, the read grant covered it, and nothing looked at
+ * it: a custom provider worked locally and silently did not exist once
+ * deployed. Skills were already read through a `BlobStore` for exactly this
+ * reason; manifests now are too. ADR-046.
  */
 
 export interface LoadedManifest {
   readonly manifest: ProviderManifest;
+  /** Where this came from, for a refusal to name. A path, or a bucket URL. */
   readonly path: string;
 }
 
 export async function loadProfileProviders(
   workspaceRoot: string,
   profile: string,
+  /** Injected for tests. A bucket is the case this exists to cover. */
+  store?: BlobStore,
 ): Promise<LoadedManifest[]> {
-  const directory = join(workspaceRoot, layout.providers(profile));
+  const files = store ?? workspaceFiles(workspaceRoot);
+  const directory = layout.providers(profile);
 
-  let entries: string[];
+  let keys: string[];
   try {
-    entries = await readdir(directory);
+    keys = (await files.list(`${directory}/`)).map((entry) => entry.key);
   } catch {
     return []; // No custom providers is the normal case.
   }
 
   const loaded: LoadedManifest[] = [];
 
-  for (const name of entries.sort()) {
+  for (const key of keys.sort()) {
+    const name = key.slice(directory.length + 1);
+
+    // A manifest is a file in this directory, not below it. An OpenAPI document
+    // a manifest points at may well sit in a subdirectory, and it is not one.
+    if (name.length === 0 || name.includes('/')) continue;
     if (!name.endsWith('.yaml') && !name.endsWith('.yml')) continue;
     if (name.endsWith('.example.yaml')) continue;
 
-    const path = join(directory, name);
-    loaded.push({ manifest: await parseManifestFile(path), path });
+    const text = await readWorkspaceFile(files, key);
+    if (text === null) continue; // Listed, then gone. Not worth failing over.
+
+    const where = describe(workspaceRoot, key);
+    loaded.push({
+      manifest: resolveSpecPath(parseManifest(text, where), workspaceRoot, key),
+      path: where,
+    });
   }
 
   return loaded;
 }
 
-export async function parseManifestFile(path: string): Promise<ProviderManifest> {
-  return resolveSpecPath(parseManifest(await readFile(path, 'utf8'), path), path);
+/** Where a manifest came from, in the spelling this workspace uses. */
+function describe(workspaceRoot: string, key: string): string {
+  return isRemoteWorkspace(workspaceRoot) ? `${workspaceRoot}/${key}` : join(workspaceRoot, key);
 }
 
 /**
@@ -69,15 +94,34 @@ export async function parseManifestFile(path: string): Promise<ProviderManifest>
  *
  * Resolved against the manifest's own directory, the way one file referencing
  * another normally works.
+ *
+ * A bucket-hosted workspace has no such directory to resolve against: the
+ * generator wants a filesystem path or a URL, and `gs://…/spec.json` is
+ * neither. Refused here rather than at the first call, where it arrives as a
+ * discovery failure the runtime swallows — leaving a provider with no
+ * capabilities and nothing saying why.
  */
-function resolveSpecPath(manifest: ProviderManifest, source: string): ProviderManifest {
+function resolveSpecPath(
+  manifest: ProviderManifest,
+  workspaceRoot: string,
+  key: string,
+): ProviderManifest {
   const connector = manifest.connector;
   if (connector.kind !== 'http') return manifest;
   if (/^https?:/i.test(connector.openapi) || isAbsolute(connector.openapi)) return manifest;
 
+  if (isRemoteWorkspace(workspaceRoot)) {
+    throw new ConfigError(
+      `${describe(workspaceRoot, key)}: openapi "${connector.openapi}" is a relative path, ` +
+        `but this workspace is ${workspaceRoot}. A document in a bucket cannot be opened as a ` +
+        'file — publish the spec at a URL and name that instead.',
+    );
+  }
+
+  const directory = dirname(join(workspaceRoot, key));
   return {
     ...manifest,
-    connector: { ...connector, openapi: resolve(dirname(source), connector.openapi) },
+    connector: { ...connector, openapi: resolve(directory, connector.openapi) },
   };
 }
 
@@ -111,5 +155,3 @@ export function parseManifest(text: string, source = '<manifest>'): ProviderMani
     throw new ConfigError(`${source}: ${(error as Error).message}`);
   }
 }
-
-/** A starting point, written out by `lanes link provider new`. */

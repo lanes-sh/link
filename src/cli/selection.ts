@@ -10,6 +10,7 @@ import {
   targetsByName,
 } from '#profile';
 import type { Flags } from './argv.ts';
+import { CONNECT_CUSTOM_FLAGS } from './commands/connect/custom/spec.ts';
 import { nearest } from './nearest.ts';
 
 /**
@@ -110,6 +111,12 @@ export const SELECTION: Record<string, Requires> = {
   'identity list': 'profile',
 
   connect: 'profile+target',
+  // Its own row rather than an inheritance from `connect`. Both need the same
+  // two things, but the row is what makes `selectionKey` return the two-word
+  // key — and that is what keeps thirty declaration flags off
+  // `connect <provider>`, where a mistyped one would otherwise be accepted and
+  // ignored, which is the defect this whole file exists for.
+  'connect custom': 'profile+target',
   setup: 'profile+target',
   token: 'profile+target',
   audit: 'profile+target',
@@ -280,6 +287,11 @@ const UNIVERSAL = ['help', 'json', 'quiet'];
  * universal set plus whatever `SELECTION` says it must be told.
  */
 const ACCEPTS: Record<string, readonly string[]> = {
+  // Imported rather than written out. Thirty-odd entries here would take this
+  // file past the size budget for a data literal, and the command's own
+  // `spec.ts` already derives most of them from the per-kind field tables — so
+  // a flag added there cannot be forgotten here.
+  'connect custom': CONNECT_CUSTOM_FLAGS,
   // `own-client` is the older spelling of one of the routes `auth` names, kept
   // because it is in scripts and a year of documentation (ADR-038).
   connect: [

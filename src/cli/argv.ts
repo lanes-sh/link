@@ -1,6 +1,7 @@
 import type { GlobalFlags } from './runtime.ts';
 import type { OwnerFlags } from './commands/owner.ts';
 import type { KnowledgeFlags } from './commands/knowledge.ts';
+import type { CustomFlags } from './commands/connect/custom/spec.ts';
 
 /**
  * Turning argv into a command path and a flag bag.
@@ -140,5 +141,51 @@ export function knowledgeFlags(flags: Flags): KnowledgeFlags {
     replace: flags['replace'] === true,
     yes: flags['yes'] === true,
     json: flags['json'] === true,
+  };
+}
+
+/**
+ * `lanes link connect custom`'s flags.
+ *
+ * Here for the reason `ownerFlags` and `knowledgeFlags` are: the kebab-case
+ * spellings belong in the one place that parses argv. The list flags go through
+ * `all(argv, …)` rather than through `flags`, because `parseArgv` keeps only the
+ * last value of a repeated flag — so `--scopes a --scopes b` would silently
+ * become `b`, and a scope quietly dropped is a token that works until it does
+ * not.
+ *
+ * Which of these are read at all depends on the connectivity type and the
+ * credential type chosen; that is `custom/spec.ts`'s to know. This only spells
+ * them.
+ */
+export function customFlags(flags: Flags, argv: readonly string[]): CustomFlags {
+  return {
+    connector: text(flags, 'connector'),
+    auth: text(flags, 'auth'),
+    name: text(flags, 'name'),
+    description: text(flags, 'description'),
+    endpoint: text(flags, 'endpoint'),
+    baseUrl: text(flags, 'base-url'),
+    openapi: text(flags, 'openapi'),
+    operations: all(argv, 'operations'),
+    service: text(flags, 'service'),
+    host: text(flags, 'host'),
+    port: text(flags, 'port'),
+    smtpHost: text(flags, 'smtp-host'),
+    smtpPort: text(flags, 'smtp-port'),
+    root: text(flags, 'root'),
+    exclude: all(argv, 'exclude'),
+    authHeader: text(flags, 'auth-header'),
+    authQuery: text(flags, 'auth-query'),
+    scopes: all(argv, 'scopes'),
+    authorizeUrl: text(flags, 'authorize-url'),
+    tokenUrl: text(flags, 'token-url'),
+    clientApp: text(flags, 'client-app'),
+    registration: text(flags, 'registration'),
+    identityUrl: text(flags, 'identity-url'),
+    identityField: text(flags, 'identity-field'),
+    setupDocs: text(flags, 'setup-docs'),
+    replaceManifest: flags['replace-manifest'] === true,
+    yes: flags['yes'] === true,
   };
 }

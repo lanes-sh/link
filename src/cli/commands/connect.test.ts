@@ -128,6 +128,79 @@ describe('resolveAccount', () => {
   });
 
   /**
+   * The hole this closes.
+   *
+   * `accessToken` is `bearerTokenAsStored`, which throws for a stored
+   * `api_key`, `header` or `basic` credential — under a comment asserting the
+   * branch is unreachable. It is unreachable on an mcp connector, which is the
+   * only place `defineProvider` guarantees a bearer-shaped credential, and
+   * perfectly reachable on an http one. `resolveAccount`'s catch-all turned the
+   * throw into `null`, so an API-key provider with an `identity:` block was
+   * asked to name its account by hand on every reconnect — and a different
+   * answer each time is a new connection row rather than a repair, which is how
+   * `main2` and `main3` came to exist in the first place.
+   */
+  describe('an identity probe for a credential that is not a bearer token', () => {
+    const apiKeyProvider = manifest({
+      kind: 'http',
+      url: 'https://api.example.com/me',
+      field: 'email',
+    });
+
+    test('uses the authorizer, which knows every method', async () => {
+      let sent: Request | undefined;
+
+      const account = await resolveAccount(apiKeyProvider, {
+        accessToken: async () => {
+          throw new Error('a stored API key cannot be sent as a bearer token');
+        },
+        authorize: async (request) => {
+          const authorised = new Request(request, { headers: new Headers(request.headers) });
+          authorised.headers.set('x-api-key', 'k');
+          return authorised;
+        },
+        fetch: (async (request: Request) => {
+          sent = request;
+          return new Response(JSON.stringify({ email: 'me@example.com' }));
+        }) as unknown as typeof fetch,
+      });
+
+      expect(account).toBe('me@example.com');
+      expect(sent?.headers.get('x-api-key')).toBe('k');
+      expect(sent?.headers.get('authorization')).toBeNull();
+    });
+
+    test('and without one, this is the silent null it used to be', async () => {
+      // Pinned rather than left implicit: the fallback is still best-effort, and
+      // the fix is that a caller *can* supply the authorizer, not that the
+      // absence became an error. A label is never worth failing a connect over.
+      const account = await resolveAccount(apiKeyProvider, {
+        accessToken: async () => {
+          throw new Error('a stored API key cannot be sent as a bearer token');
+        },
+        fetch: (async () => new Response('{}')) as unknown as typeof fetch,
+      });
+
+      expect(account).toBeNull();
+    });
+
+    test('an oauth provider is untouched, and still sends its token', async () => {
+      // The reason `settle.ts` supplies `authorize` for three kinds and not for
+      // all of them: `requestAuthorizer` may refresh, and connect-time
+      // deliberately does not.
+      const account = await resolveAccount(apiKeyProvider, {
+        accessToken: async () => 'tok',
+        fetch: (async (_url: string, init?: RequestInit) => {
+          expect((init?.headers as Record<string, string>)['authorization']).toBe('Bearer tok');
+          return new Response(JSON.stringify({ email: 'me@example.com' }));
+        }) as unknown as typeof fetch,
+      });
+
+      expect(account).toBe('me@example.com');
+    });
+  });
+
+  /**
    * Where the vendor's idea of a user is scoped to something smaller than the
    * vendor. Slack's is: `auth.test` answers with a workspace-local handle, so
    * the same person in two workspaces returns the same `user`, and one account
