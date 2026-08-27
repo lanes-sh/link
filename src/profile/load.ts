@@ -40,6 +40,25 @@ export interface LoadedConfig {
  *  4. Referential integrity, which needs a well-formed document to check.
  */
 export function validateConfig(raw: unknown, source = '<config>'): Config {
+  const config = validateConfigShape(raw, source);
+  assertReferentialIntegrity(config, source);
+  return config;
+}
+
+/**
+ * The first three steps, without the fourth.
+ *
+ * Only one caller, and it is the repair: `migrateRenamedProviders` has to open
+ * the credential store of a config that referential integrity has just refused,
+ * because whether a credential is stored is the evidence deciding which of two
+ * readings a row gets. A shape-valid document is enough to name a target's
+ * adapter, and nothing here trusts the part that failed.
+ *
+ * Not exported as a way to *load* a config. Everything that acts on one goes
+ * through `validateConfig`, and the split exists so that the one command whose
+ * job is to fix a refusal is not blocked by it.
+ */
+export function validateConfigShape(raw: unknown, source = '<config>'): Config {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new ConfigError(`${source}: expected a YAML mapping at the top level`);
   }
@@ -59,7 +78,6 @@ export function validateConfig(raw: unknown, source = '<config>'): Config {
     throw new ConfigError(`${source}:\n${formatZodIssues(parsed.error)}`);
   }
 
-  assertReferentialIntegrity(parsed.data, source);
   return parsed.data;
 }
 
@@ -138,15 +156,85 @@ function formatZodIssues(error: z.ZodError): string {
  * are, and keying on `id !== 'main'` would refuse a valid profile forever to
  * catch a one-release migration. Labelling both `Tasks` is consistent with what
  * the accountless providers already do — every memory connection is `Memory`.
+ *
+ * **The refusal names a command, because it is a refusal at load.** Every
+ * command opens the config, so this one takes `status`, `start` and `doctor`
+ * down together and leaves hand-editing YAML as the only way back — for a state
+ * an upgrade put the operator in, without asking. `doctor --fix` is that way
+ * back, and it is named here because this is the only place anyone sees.
  */
-function renamedProvider(connection: { provider: string; account: string }): string | null {
-  if (connection.provider !== 'tasks' || connection.account === 'Tasks') return null;
+export interface ProviderRename {
+  /** What a row naming the old id should say instead. */
+  readonly to: string;
+  /** The account label that means this row is the built-in, not a vendor one. */
+  readonly keeps: string;
+  /** What the plain noun now names, for the sentence below. */
+  readonly becomes: string;
+  /** What it used to name. */
+  readonly was: string;
+  /** The built-in, in the operator's words. */
+  readonly noun: string;
+}
+
+/**
+ * Provider ids that have moved, and everything two places need to agree on.
+ *
+ * `renamedProviderFor` refuses a row still naming the old id; `#cli`'s
+ * `migrateRenamedProviders` rewrites one. A rename landing in one and not the
+ * other is a refusal with no fix, or a fix nothing asks for — which is why the
+ * pair reads from one table rather than each knowing the rename itself.
+ *
+ * `keeps` is the single spelling `newProfileTemplate` and `ensureReservedConnection`
+ * write for the built-in's row. Keep it in step with `RESERVED_SURFACES` there.
+ */
+export const RENAMED_PROVIDERS: Readonly<Record<string, ProviderRename>> = {
+  tasks: {
+    to: 'google_tasks',
+    keeps: 'Tasks',
+    becomes: 'the built-in task list',
+    was: 'Google Tasks',
+    noun: 'task list',
+  },
+};
+
+/**
+ * The repair, spelled with the selection it will refuse without.
+ *
+ * Both flags come off the document being validated rather than off the command
+ * that is running: nothing has resolved anything yet, and the profile is written
+ * in the file. A profile declaring one target names it; one declaring several
+ * cannot be guessed at, and a placeholder is more honest than picking.
+ */
+function repairCommand(config: Config): string {
+  const targets = Object.keys(config.targets);
+  const target = targets.length === 1 ? targets[0] : `<${targets.join('|') || 'target'}>`;
+  return `lanes link doctor --fix --profile ${config.instance.profile} --target ${target}`;
+}
+
+/** The rename a row is owed, or `null` when it is owed none. */
+export function renamedProviderFor(connection: {
+  provider: string;
+  account: string;
+}): ProviderRename | null {
+  const moved = RENAMED_PROVIDERS[connection.provider];
+  if (!moved || connection.account === moved.keeps) return null;
+  return moved;
+}
+
+function renamedProvider(
+  connection: { provider: string; account: string },
+  repair: string,
+): string | null {
+  const moved = renamedProviderFor(connection);
+  if (!moved) return null;
 
   return (
-    `"tasks" is now the built-in task list, and this row is labelled ` +
-    `"${connection.account}" rather than "Tasks".\n` +
-    '  If it was Google Tasks: set provider to google_tasks here, and rename any "tasks.*" policy rule.\n' +
-    '  If it is your own task list: set account to Tasks.'
+    `"${connection.provider}" is now ${moved.becomes}, and this row is labelled ` +
+    `"${connection.account}" rather than "${moved.keeps}".\n` +
+    `  If it was ${moved.was}: set provider to ${moved.to} here, and rename any ` +
+    `"${connection.provider}.*" policy rule.\n` +
+    `  If it is your own ${moved.noun}: set account to ${moved.keeps}.\n` +
+    `  ${repair} applies the first, where a stored credential proves it.`
   );
 }
 
@@ -186,7 +274,7 @@ function assertReferentialIntegrity(config: Config, source: string): void {
     }
     connectionKeys.add(key);
 
-    const renamed = renamedProvider(connection);
+    const renamed = renamedProvider(connection, repairCommand(config));
     if (renamed) problems.push(`connections[${index}]: ${renamed}`);
   });
 

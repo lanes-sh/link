@@ -952,6 +952,18 @@ the command that fixes it.
 $ lanes link doctor --profile personal --target local
 ```
 
+`--fix` applies the one repair `doctor` can make on its own: a provider this project renamed under
+you, where the profile still names the old id. That refusal happens at config load, so it takes
+every other command down with it — `doctor` is the one that still answers, and it moves the
+connection row, its policy rules and the stored credential together. Everything else `doctor`
+reports is a decision only you can make, and `--fix` does not touch it.
+
+```console
+$ lanes link doctor --fix --profile personal --target local
+```
+
+Without `--fix` it prints what it would move and writes nothing.
+
 ### `lanes link plan`
 
 What reconcile would change, and nothing else. Reconcile disables undeclared connections, which

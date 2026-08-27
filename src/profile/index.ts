@@ -38,10 +38,14 @@ export {
 
 export {
   ConfigError,
+  RENAMED_PROVIDERS,
   loadConfigFile,
   parseConfig,
+  renamedProviderFor,
   validateConfig,
+  validateConfigShape,
   type LoadedConfig,
+  type ProviderRename,
 } from './load.ts';
 
 export {

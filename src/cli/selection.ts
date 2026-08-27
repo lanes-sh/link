@@ -320,6 +320,10 @@ const ACCEPTS: Record<string, readonly string[]> = {
   // the list that decides whether it may be typed.
   'profile remove': ['dry-run', 'yes', 'target'],
   disconnect: ['yes', 'keep-credential'],
+  // The one repair `doctor` can apply rather than only name. Narrow on purpose:
+  // it undoes a provider rename this project shipped, and every other finding
+  // there is something only the operator can decide.
+  doctor: ['fix'],
   relabel: [],
   'target list': ['urls', 'target'],
   'target show': ['target'],
