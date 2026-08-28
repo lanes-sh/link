@@ -156,6 +156,10 @@ State, the audit log, memory, tasks, assets, skills, and your own provider manif
 one of them on an instance recycle without reporting anything, so the deploy configures the bucket
 for you rather than leaving it to a flag.
 
+A bucket it creates has Autoclass on, so an asset you have not opened in a year costs archive rates
+without you writing a lifecycle rule — and reading it back is free and immediate, which is the part
+that makes a cheaper class safe to sit under your own files.
+
 ---
 
 **Full reference:** [`detailed/deployment-cloudrun.md`](detailed/deployment-cloudrun.md) covers cold

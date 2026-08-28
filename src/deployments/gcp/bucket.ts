@@ -50,6 +50,31 @@ export function bucketGrants(bucket: string, profiles: readonly string[]): Condi
     `resource.name.startsWith("projects/_/buckets/${bucket}/objects/${path}")`;
   const objectIs = (path: string): string =>
     `resource.name == "projects/_/buckets/${bucket}/objects/${path}"`;
+  /**
+   * The bucket itself, which is a different resource from anything in it.
+   *
+   * **`storage.objects.list` is checked against the bucket, never against an
+   * object**, so no condition written in terms of `objects/…` can ever grant it
+   * — including a prefixed listing, which is one call with a filter rather than
+   * a walk of matching resources. Google says so outright: IAM conditions cannot
+   * restrict listing by prefix.
+   *
+   * This was invisible until the day the narrowing actually applied. The
+   * `reads-its-config` binding had been sitting at `expression=true` since the
+   * first deploy, and `true` matches the bucket resource as readily as an object
+   * — so listing worked, and every deploy that thought it had replaced that
+   * binding had in fact only added one beside it. The first deploy that removed
+   * the old one rolled a revision that could not list its own workspace, exited
+   * 1, and took the endpoint's listing with it: `objects.list` had never been
+   * granted by anything else.
+   *
+   * Only `storage.objects.list` can come of it. Every other permission in
+   * `objectViewer` is either evaluated against an object — where the prefixes
+   * below still decide — or is a project-level permission a binding on a bucket
+   * does not reach. So the concession is the names of the objects in this
+   * bucket, and reads stay scoped to the config.
+   */
+  const theBucket = `resource.name == "projects/_/buckets/${bucket}"`;
 
   const manifestPrefixes = profiles.map((profile) =>
     objectsUnder(`${layout.providers(profile)}/`),
@@ -73,7 +98,7 @@ export function bucketGrants(bucket: string, profiles: readonly string[]): Condi
       // and each profile's own manifests, so name exactly those.
       role: 'roles/storage.objectViewer',
       title: 'reads-its-config',
-      expression: `${objectsUnder('profiles/')} || ${objectIs('lanes-link.yaml')}${manifests ? ` || ${manifests}` : ''}`,
+      expression: `${theBucket} || ${objectsUnder('profiles/')} || ${objectIs('lanes-link.yaml')}${manifests ? ` || ${manifests}` : ''}`,
     },
   ];
 }
@@ -108,6 +133,17 @@ export async function bucketSteps(input: {
         // served publicly; uniform access removes per-object ACLs as a way to
         // get that wrong.
         '--uniform-bucket-level-access',
+        // Autoclass rather than a lifecycle rule, because no one fixed class is
+        // right for this bucket: it holds the config the endpoint reads on every
+        // boot next to assets and audit rows nobody opens again. Inside an
+        // Autoclass bucket there are no retrieval and no early-deletion fees,
+        // which is what makes ARCHIVE safe as the floor rather than a bet on
+        // never reading the thing again — a read pulls the object back to
+        // Standard at no charge. Objects under 128 KiB never leave Standard, so
+        // this costs the config and the log nothing and saves on attachments.
+        '--enable-autoclass',
+        '--autoclass-terminal-storage-class',
+        'ARCHIVE',
       ],
       tolerateFailure: true,
     },
