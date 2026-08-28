@@ -2,10 +2,11 @@
  * Running an instance and looking at it — everything that is neither
  * `connect` nor the owner layer.
  *
- * Seven files, one per verb group, because every private helper here served
+ * Eight files, one per verb group, because every private helper here served
  * exactly one command and nothing crossed between them:
  *
  *   inspect.ts   check, plan, doctor — the gate order, cheapest failure first
+ *   auth.ts      whether each connection can still authenticate, by asking
  *   status.ts    connections, reachable capabilities, endpoint
  *   outputs.ts   what an agent harness needs, and proving the short form works
  *   desktop.ts   opening the Lanes app, on the page that drives this CLI
@@ -19,6 +20,7 @@
  */
 
 export { check, doctor, plan } from './operate/inspect.ts';
+export { auth, classifyOAuth, type AuthFlags, type AuthVerdict, type ConnectionAuth } from './operate/auth.ts';
 export { status } from './operate/status.ts';
 export { outputs, type OutputsFlags } from './operate/outputs.ts';
 export { tools, type ToolsFlags } from './operate/tools.ts';

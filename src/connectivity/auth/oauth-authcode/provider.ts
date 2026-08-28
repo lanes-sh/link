@@ -1,5 +1,6 @@
 import type { SecretStore } from '#secrets';
 import type { ProviderManifest } from '#connectivity';
+import { ReauthRequired } from '../reauth.ts';
 
 /**
  * The SDK's `OAuthClientProvider`, backed by our `SecretStore`.
@@ -69,6 +70,20 @@ export class CredentialOAuthProvider {
     return `${this.#options.manifest.id}/${this.#options.connectionId}`;
   }
 
+  /**
+   * Which connection this provider speaks for, as `provider.id`.
+   *
+   * Public because a refusal has to name it: `refresh.ts` builds the same key
+   * for a `ReauthRequired`, and a caller holding several connections needs to
+   * know which one to send someone to rather than parsing it back out of a
+   * sentence. Note the separator differs from `#tokensRef` on purpose — that
+   * one is a credential ref (`gmail/main`), this one is the addressing form
+   * (`gmail.main`).
+   */
+  get connectionId(): string {
+    return this.#options.connectionId;
+  }
+
   // --- OAuthClientProvider ----------------------------------------------
 
   get redirectUrl(): string | undefined {
@@ -131,7 +146,8 @@ export class CredentialOAuthProvider {
 
   async redirectToAuthorization(authorizationUrl: URL): Promise<void> {
     if (!this.#options.openBrowser) {
-      throw new Error(
+      throw new ReauthRequired(
+        `${this.#options.manifest.id}.${this.#options.connectionId}`,
         `Connection ${this.#options.manifest.id}.${this.#options.connectionId} needs re-authorisation, ` +
           `which requires a browser. Connect ${this.#options.manifest.id}.${this.#options.connectionId} again for this profile and target.`,
       );
