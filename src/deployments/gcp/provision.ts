@@ -1,4 +1,4 @@
-import { VAULT_DOCUMENT_REF } from '#secrets';
+import { VAULT_DOCUMENT_REF, type SecretRef } from '#secrets';
 import type { DeployStep, ProvisionInput } from '../driver.ts';
 import { encodeRef } from '../adapters/gcp-secret-manager.ts';
 import { requireProject } from './gcloud.ts';
@@ -42,6 +42,109 @@ const REQUIRED_SERVICES = [
   'iam.googleapis.com',
   'cloudresourcemanager.googleapis.com',
 ];
+
+/**
+ * Who the grant is for, and on what.
+ *
+ * A named type because these two functions are now called from two places that
+ * must not disagree — see the note on `secretGrantSteps`.
+ */
+export interface SecretGrant {
+  readonly project: string;
+  readonly serviceAccount: string;
+  readonly refs: readonly SecretRef[];
+}
+
+/** Read, named one secret at a time, so the grant needs no condition to be scoped. */
+export function readSteps({ project, serviceAccount, refs }: SecretGrant): DeployStep[] {
+  return refs.map((ref) => ({
+    title: `let the revision read ${ref}`,
+    argv: [
+      'secrets',
+      'add-iam-policy-binding',
+      encodeRef(ref),
+      '--project',
+      project,
+      '--member',
+      `serviceAccount:${serviceAccount}`,
+      '--role',
+      'roles/secretmanager.secretAccessor',
+      // Bindings are printed as the whole policy otherwise, which is pages
+      // of YAML per deploy and buries everything after it.
+      '--condition',
+      'None',
+    ],
+    tolerateFailure: true,
+  }));
+}
+
+/**
+ * Write, two steps each, and the first is what keeps the second narrow: the
+ * secret is created here so the revision only ever needs to *add a version*,
+ * never `secrets.create`, which is a project-level permission that would let it
+ * mint credential references of its own.
+ */
+export function rotateSteps({ project, serviceAccount, refs }: SecretGrant): DeployStep[] {
+  return refs.flatMap((ref) => {
+    const id = encodeRef(ref);
+    return [
+      {
+        title: `create the secret ${id}, so the revision never needs secrets.create`,
+        argv: ['secrets', 'create', id, '--project', project, '--replication-policy', 'automatic'],
+        tolerateFailure: true,
+      },
+      {
+        title: `let the revision rewrite ${ref}, and nothing else in the store`,
+        argv: [
+          'secrets',
+          'add-iam-policy-binding',
+          id,
+          '--project',
+          project,
+          '--member',
+          `serviceAccount:${serviceAccount}`,
+          '--role',
+          'roles/secretmanager.secretVersionAdder',
+          '--condition',
+          'None',
+        ],
+        tolerateFailure: true,
+      },
+    ];
+  });
+}
+
+/**
+ * Both halves for one connection's credentials, for a caller that is not a deploy.
+ *
+ * **This exists because the grant was a deploy-time snapshot of a set that
+ * changes between deploys.** `provisionSteps` walks the config's connections and
+ * binds each secret it finds; `connect` then adds a connection, writes its
+ * credential, and binds nothing. The revision can read the new secret — an older
+ * deployment's project-wide `secretAccessor` covers it, and a current one does
+ * not — but it cannot add a version, so the first OAuth refresh 403s. The
+ * connection works for exactly as long as its initial access token lasts, which
+ * is about an hour, and then stops for a reason nothing on the connection says.
+ *
+ * So the same steps are reachable from `connect`, over one connection's refs
+ * rather than the whole config's. Deliberately the *same functions* rather than
+ * a second implementation: `reconcile.ts` makes the same argument for planning
+ * and applying, and it holds harder here, because a second spelling of a grant
+ * is not a wrong answer on screen, it is a permission that is missing in one
+ * path and present in the other.
+ */
+export function secretGrantSteps(
+  grant: Omit<SecretGrant, 'refs'> & {
+    readonly readable: readonly SecretRef[];
+    readonly rotatable: readonly SecretRef[];
+  },
+): DeployStep[] {
+  const { project, serviceAccount } = grant;
+  return [
+    ...readSteps({ project, serviceAccount, refs: grant.readable }),
+    ...rotateSteps({ project, serviceAccount, refs: grant.rotatable }),
+  ];
+}
 
 export function provisionSteps(input: ProvisionInput): Promise<DeployStep[]> {
   const cloudrun = requireProject(input.deploy, input.target);
@@ -116,27 +219,7 @@ export function provisionSteps(input: ProvisionInput): Promise<DeployStep[]> {
     // Affordable because the serving path reads by explicit ref: `list()` is a
     // CLI call, and `secretAccessor` never carried `secrets.list` anyway.
     // `readableRefs` derives the set from config and manifests at deploy time.
-    for (const ref of input.readable ?? []) {
-      steps.push({
-        title: `let the revision read ${ref}`,
-        argv: [
-          'secrets',
-          'add-iam-policy-binding',
-          encodeRef(ref),
-          '--project',
-          project,
-          '--member',
-          `serviceAccount:${serviceAccount}`,
-          '--role',
-          'roles/secretmanager.secretAccessor',
-          // Bindings are printed as the whole policy otherwise, which is pages
-          // of YAML per deploy and buries everything after it.
-          '--condition',
-          'None',
-        ],
-        tolerateFailure: true,
-      });
-    }
+    steps.push(...readSteps({ project, serviceAccount, refs: input.readable ?? [] }));
   }
 
   // What a revision rewrites in its own credential store, named one secret at a
@@ -165,32 +248,8 @@ export function provisionSteps(input: ProvisionInput): Promise<DeployStep[]> {
       ]
     : [];
 
-  for (const ref of writable) {
-    const id = encodeRef(ref);
-
-    steps.push({
-      title: `create the secret ${id}, so the revision never needs secrets.create`,
-      argv: ['secrets', 'create', id, '--project', project, '--replication-policy', 'automatic'],
-      tolerateFailure: true,
-    });
-
-    steps.push({
-      title: `let the revision rewrite ${ref}, and nothing else in the store`,
-      argv: [
-        'secrets',
-        'add-iam-policy-binding',
-        id,
-        '--project',
-        project,
-        '--member',
-        `serviceAccount:${serviceAccount}`,
-        '--role',
-        'roles/secretmanager.secretVersionAdder',
-        '--condition',
-        'None',
-      ],
-      tolerateFailure: true,
-    });
+  if (serviceAccount) {
+    steps.push(...rotateSteps({ project, serviceAccount, refs: writable }));
   }
 
   // Any target that addresses a bucket, which deployed means all of them:
@@ -241,8 +300,18 @@ export function provisionSteps(input: ProvisionInput): Promise<DeployStep[]> {
       // what the revision owns from what declares what it is. Anchored to the
       // profile segment rather than matched loosely: `contains("/providers.d/")`
       // would also catch a blob whose own key happened to spell it.
+      //
+      // The dot is a character class, not `\.`, and that is the fix rather than
+      // a style: this string is a *CEL string literal* holding a regex, so it is
+      // unescaped once by CEL before the regex engine ever sees it. `\.` is not
+      // a CEL escape sequence, so the whole expression failed to compile —
+      // `token recognition error at: '"^projects/_/buckets/...providers\.'` —
+      // and both bindings below carry `tolerateFailure`, so a deploy printed two
+      // warnings and carried on with the scoping silently not applied. `[.]` is
+      // the same regex and survives a layer of string unescaping unchanged,
+      // which is what keeps the next person from reintroducing it.
       const providerManifests =
-        `resource.name.matches("^projects/_/buckets/${bucket}/objects/data/[^/]+/providers\\.d/")`;
+        `resource.name.matches("^projects/_/buckets/${bucket}/objects/data/[^/]+/providers[.]d/")`;
 
       steps.push({
         title: 'let the revision write its own data, but not the manifests in it',

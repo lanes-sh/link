@@ -122,15 +122,19 @@ const READS = {
   'a provider manifest': `${layout.providers(PROFILE)}/acme.yaml`,
 };
 
-async function writeCondition(): Promise<string> {
+/** The CEL of the one conditioned binding whose title carries `name`. */
+async function conditionTitled(name: string): Promise<string> {
   const steps = await provisionSteps({ deploy: cloudrun, declared: target, target: 'cloud' });
-  const step = steps.find((candidate) => candidate.argv.join(' ').includes('owns-its-data'));
+  const step = steps.find((candidate) => candidate.argv.join(' ').includes(name));
 
   // `title=…,expression=…`; only the expression is evaluable.
   const condition = step!.argv[step!.argv.indexOf('--condition') + 1]!;
   const marker = 'expression=';
   return condition.slice(condition.indexOf(marker) + marker.length);
 }
+
+const writeCondition = (): Promise<string> => conditionTitled('owns-its-data');
+const readCondition = (): Promise<string> => conditionTitled('reads-its-config');
 
 /**
  * Evaluate the shipped condition for one resource name.
@@ -164,6 +168,32 @@ describe('what the revision is granted, against what it writes', () => {
         what,
         key,
         permitted: true,
+      });
+    }
+  });
+
+  test('the condition is CEL a real API will accept, not just JavaScript', async () => {
+    // `permits` above runs the expression as JavaScript, which is what makes it
+    // an honest evaluator of *meaning*. It is a dishonest evaluator of *syntax*,
+    // and the gap is precisely one character wide.
+    //
+    // A CEL string literal is unescaped by CEL before the regex engine sees it,
+    // and CEL's escape table is not JavaScript's: `\.` is a no-op in a JS regex
+    // and a hard parse error in CEL. So `matches("…providers\\.d/")` evaluated
+    // correctly here and shipped an expression that Google answered with
+    // `HTTPError 400: Condition expression compilation failed`. Both bindings
+    // that carry it are `tolerateFailure`, so the deploy printed a warning and
+    // carried on with the read-scoping never applied — a security control that
+    // looked applied for as long as nobody read the warnings.
+    //
+    // The rule rather than the instance: no backslash at all. Every regex these
+    // conditions need can be written with a character class, `[.]` for a literal
+    // dot, which survives a layer of string unescaping unchanged and cannot
+    // acquire this bug back.
+    for (const condition of [await writeCondition(), await readCondition()]) {
+      expect({ condition, backslashes: condition.includes('\\') }).toEqual({
+        condition,
+        backslashes: false,
       });
     }
   });
