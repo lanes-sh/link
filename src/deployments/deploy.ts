@@ -157,6 +157,7 @@ export async function deploy(flags: DeployFlags): Promise<void> {
     target,
     rotatable,
     readable,
+    profiles: serving,
   });
 
   // Where the running instance will read its config. The bucket the target
