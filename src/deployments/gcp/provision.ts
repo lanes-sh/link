@@ -1,6 +1,7 @@
 import { VAULT_DOCUMENT_REF, type SecretRef } from '#secrets';
 import type { DeployStep, ProvisionInput } from '../driver.ts';
 import { encodeRef } from '../adapters/gcp-secret-manager.ts';
+import { layout } from '#profile';
 import { requireProject } from './gcloud.ts';
 
 /**
@@ -296,22 +297,34 @@ export function provisionSteps(input: ProvisionInput): Promise<DeployStep[]> {
         `resource.name == "projects/_/buckets/${bucket}/objects/${path}"`;
 
       // A provider manifest is configuration that happens to live inside the
-      // profile's directory (ADR-030), so `data/` alone no longer separates
-      // what the revision owns from what declares what it is. Anchored to the
-      // profile segment rather than matched loosely: `contains("/providers.d/")`
-      // would also catch a blob whose own key happened to spell it.
+      // profile's directory (ADR-030), so `data/` alone no longer separates what
+      // the revision owns from what declares what it is.
       //
-      // The dot is a character class, not `\.`, and that is the fix rather than
-      // a style: this string is a *CEL string literal* holding a regex, so it is
-      // unescaped once by CEL before the regex engine ever sees it. `\.` is not
-      // a CEL escape sequence, so the whole expression failed to compile —
-      // `token recognition error at: '"^projects/_/buckets/...providers\.'` —
-      // and both bindings below carry `tolerateFailure`, so a deploy printed two
-      // warnings and carried on with the scoping silently not applied. `[.]` is
-      // the same regex and survives a layer of string unescaping unchanged,
-      // which is what keeps the next person from reintroducing it.
+      // **One `startsWith` per profile, because Cloud Storage IAM conditions
+      // cannot express anything else.** Their CEL is a restricted subset —
+      // `resource.type`, `resource.name` with `startsWith`/`endsWith`/`==`, and
+      // the date functions — and it has no `matches`. This was a regex, and it
+      // was refused twice over: first because it spelled the dot `\.`, which is
+      // not a CEL escape, so the string literal would not parse; then, with that
+      // fixed, because `matches` is `undeclared` in this dialect.
+      //
+      // Both bindings carry `tolerateFailure`, so each attempt printed a warning
+      // and left whatever conditions the bucket already had. On a real
+      // deployment that was `expression=true` on the read binding — every object
+      // in the bucket, the exact opposite of the narrowing the step title claims,
+      // and the state ADR-007 says must not exist.
+      //
+      // Enumerating the served profiles is expressible in the subset that does
+      // exist, and it makes `grants.test.ts` honest as a side effect: that file
+      // evaluates these as JavaScript, where `startsWith` means what it means
+      // here and `matches` quietly did not.
+      const manifestPrefixes = (input.profiles ?? []).map((profile) =>
+        objectsUnder(`${layout.providers(profile)}/`),
+      );
+      // No profiles leaves the carve-out off rather than guessing at one: the
+      // revision keeps write on its own data, as it did before this existed.
       const providerManifests =
-        `resource.name.matches("^projects/_/buckets/${bucket}/objects/data/[^/]+/providers[.]d/")`;
+        manifestPrefixes.length > 0 ? `(${manifestPrefixes.join(' || ')})` : null;
 
       steps.push({
         title: 'let the revision write its own data, but not the manifests in it',
@@ -327,7 +340,7 @@ export function provisionSteps(input: ProvisionInput): Promise<DeployStep[]> {
           '--role',
           'roles/storage.objectAdmin',
           '--condition',
-          `title=owns-its-data,expression=${objectsUnder('data/')} && !${providerManifests}`,
+          `title=owns-its-data,expression=${objectsUnder('data/')}${providerManifests ? ` && !${providerManifests}` : ''}`,
         ],
         tolerateFailure: true,
       });
@@ -348,7 +361,7 @@ export function provisionSteps(input: ProvisionInput): Promise<DeployStep[]> {
           // The config the revision reads is the workspace file, the profiles
           // beside it, and each profile's own manifests, so name exactly those.
           '--condition',
-          `title=reads-its-config,expression=${objectsUnder('profiles/')} || ${objectIs('lanes-link.yaml')} || ${providerManifests}`,
+          `title=reads-its-config,expression=${objectsUnder('profiles/')} || ${objectIs('lanes-link.yaml')}${providerManifests ? ` || ${providerManifests}` : ''}`,
         ],
         tolerateFailure: true,
       });

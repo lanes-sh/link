@@ -92,6 +92,20 @@ export interface ProvisionInput {
    * what a target with no profile to walk still needs.
    */
   readonly readable?: readonly string[];
+  /**
+   * The profiles this revision serves, so the bucket conditions can name each
+   * one's provider manifests.
+   *
+   * Needed because Cloud Storage IAM conditions cannot express "any profile
+   * segment": their CEL is a restricted subset with no `matches`, so the only
+   * way to carve out `data/<profile>/providers.d/` is to enumerate the profiles
+   * and write one `startsWith` each. `deploy.ts` already resolved the list.
+   *
+   * Absent leaves the carve-out off entirely rather than guessing, which is the
+   * safe direction: the revision keeps write on its own data and the manifests
+   * inside it, exactly as it did before the carve-out existed.
+   */
+  readonly profiles?: readonly string[];
 }
 
 export interface SurveyInput {

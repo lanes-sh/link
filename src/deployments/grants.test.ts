@@ -124,7 +124,12 @@ const READS = {
 
 /** The CEL of the one conditioned binding whose title carries `name`. */
 async function conditionTitled(name: string): Promise<string> {
-  const steps = await provisionSteps({ deploy: cloudrun, declared: target, target: 'cloud' });
+  const steps = await provisionSteps({
+    deploy: cloudrun,
+    declared: target,
+    target: 'cloud',
+    profiles: [PROFILE],
+  });
   const step = steps.find((candidate) => candidate.argv.join(' ').includes(name));
 
   // `title=…,expression=…`; only the expression is evaluable.
@@ -172,29 +177,49 @@ describe('what the revision is granted, against what it writes', () => {
     }
   });
 
-  test('the condition is CEL a real API will accept, not just JavaScript', async () => {
+  test('the condition uses only what Cloud Storage IAM actually implements', async () => {
     // `permits` above runs the expression as JavaScript, which is what makes it
-    // an honest evaluator of *meaning*. It is a dishonest evaluator of *syntax*,
-    // and the gap is precisely one character wide.
+    // an honest evaluator of *meaning*. It was a dishonest evaluator of
+    // *availability*, and this expression was refused twice on that gap.
     //
-    // A CEL string literal is unescaped by CEL before the regex engine sees it,
-    // and CEL's escape table is not JavaScript's: `\.` is a no-op in a JS regex
-    // and a hard parse error in CEL. So `matches("…providers\\.d/")` evaluated
-    // correctly here and shipped an expression that Google answered with
-    // `HTTPError 400: Condition expression compilation failed`. Both bindings
-    // that carry it are `tolerateFailure`, so the deploy printed a warning and
-    // carried on with the read-scoping never applied — a security control that
-    // looked applied for as long as nobody read the warnings.
+    // Cloud Storage IAM conditions take a restricted CEL subset: `resource.type`,
+    // `resource.name` with `startsWith`, `endsWith` and `==`, and the date
+    // functions. No `matches`. JavaScript has one, so a regex condition
+    // evaluated perfectly here and came back from Google as `undeclared
+    // reference to 'matches'`.
     //
-    // The rule rather than the instance: no backslash at all. Every regex these
-    // conditions need can be written with a character class, `[.]` for a literal
-    // dot, which survives a layer of string unescaping unchanged and cannot
-    // acquire this bug back.
+    // Before that it was refused for a second reason — the regex was written
+    // `providers\\.d/`, and `\\.` is not a CEL escape, so the string literal
+    // failed to parse. Two spellings, two errors, and the same silence either
+    // way: both bindings carry `tolerateFailure`, so a deploy printed a warning
+    // and left whatever conditions the bucket already had. On a real deployment
+    // that meant `expression=true` on the read binding — every object in the
+    // bucket, which is precisely the narrowing the step title claims to make.
+    //
+    // So this asserts the subset rather than the instance.
+    const allowed = /^(resource\.name\.(startsWith|endsWith)\(|resource\.name ==|resource\.type)/;
     for (const condition of [await writeCondition(), await readCondition()]) {
-      expect({ condition, backslashes: condition.includes('\\') }).toEqual({
+      // No escape can survive CEL's unescaping wrong if there is none.
+      expect({ condition, backslash: condition.includes('\\') }).toEqual({
         condition,
-        backslashes: false,
+        backslash: false,
       });
+
+      const calls = condition.match(/[a-z_]+(\.[a-z_]+)*\s*\(/gi) ?? [];
+      const unsupported = calls
+        .map((call) => call.replace(/\s*\($/, ''))
+        .filter((name) => !/^resource\.name\.(startsWith|endsWith)$/.test(name));
+      expect({ condition, unsupported }).toEqual({ condition, unsupported: [] });
+
+      // And every clause is one of the shapes the subset names.
+      for (const clause of condition.split(/\s*(?:\|\||&&)\s*/)) {
+        const bare = clause.replace(/^[!(]+/, '').replace(/\)+$/, '');
+        if (bare.startsWith('title=') || bare.startsWith('expression=')) continue;
+        expect({ clause: bare, allowed: allowed.test(bare) }).toEqual({
+          clause: bare,
+          allowed: true,
+        });
+      }
     }
   });
 
@@ -218,7 +243,7 @@ describe('what the revision is granted, against what it writes', () => {
 
 describe('the vault, which is the one thing a revision writes back to its store', () => {
   const provision = (declared: TargetConfig) =>
-    provisionSteps({ deploy: cloudrun, declared, target: 'cloud' });
+    provisionSteps({ deploy: cloudrun, declared, target: 'cloud', profiles: [PROFILE] });
 
   test('the document secret is created here, so the revision never needs secrets.create', async () => {
     // `secrets.create` is project-level: a revision holding it could mint
