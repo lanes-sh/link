@@ -1,53 +1,24 @@
 import { ownerPrincipal } from '#auth';
 import type { DiscoveredCapability } from '#connectivity';
-import { BROKERED } from '#connectivity/auth/index.ts';
 import { allowedConnections } from '#policy';
 import { toPolicyDocument } from '#registry';
 import { capabilityDiff, discoveryProbe } from '../../runtime/discovery.ts';
 import type { openRuntime } from '../../runtime.ts';
 
 /**
- * The two things `doctor` has to work out rather than simply read.
+ * The one thing `doctor` has to work out rather than simply read.
  *
  * Everything else in `inspect.ts` is a lookup — is the token there, does the
- * credential resolve, does the connection name a provider that exists — and
- * these two are analyses: one dates a credential from what the OAuth provider
- * stamped on it, and the other diffs what an upstream now offers against what
- * the endpoint is serving. They are the length in that file, and they are the
- * part that changes for reasons the gate order has nothing to do with.
- */
-
-/**
- * How old a stored OAuth credential is.
+ * connection name a provider that exists — and this is an analysis: it diffs
+ * what an upstream now offers against what the endpoint is serving. It is the
+ * length in that file, and it is the part that changes for reasons the gate
+ * order has nothing to do with.
  *
- * Derived from the `expires_at` the OAuth provider stamps when saving tokens.
- * Returns null for anything that is not a token blob — an app password has no
- * meaningful age, and guessing one would produce a confusing warning.
+ * `credentialAge` used to sit beside it and date a credential from the OAuth
+ * provider's stamp. It is gone: dating a credential answers "when did this last
+ * refresh", which is not the question anyone was asking. `operate/auth.ts`
+ * asks the real one by attempting the renewal.
  */
-export async function credentialAge(
-  credentials: { get(ref: string): Promise<string | null> },
-  ref: string,
-): Promise<{ days: number; brokered: boolean } | null> {
-  const raw = await credentials.get(ref);
-  if (!raw) return null;
-
-  try {
-    const parsed = JSON.parse(raw) as {
-      expires_at?: number;
-      expires_in?: number;
-      authorized_via?: string;
-    };
-    if (typeof parsed.expires_at !== 'number') return null;
-
-    const issued = parsed.expires_at - (parsed.expires_in ?? 3600) * 1000;
-    return {
-      days: Math.floor((Date.now() - issued) / 86_400_000),
-      brokered: parsed.authorized_via === BROKERED,
-    };
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Capabilities the upstream has grown since you connected.

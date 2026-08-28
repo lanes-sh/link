@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { defineProvider } from '#connectivity';
 import type { SecretRef, SecretStore } from '#secrets';
 import { refreshDirectly } from './refresh.ts';
+import { ReauthRequired } from '../reauth.ts';
 import type { CredentialOAuthProvider } from './provider.ts';
 
 /**
@@ -43,6 +44,7 @@ function stubProvider(initial: Record<string, unknown>) {
   let blob = { ...initial };
   return {
     provider: {
+      connectionId: 'main',
       tokens: async () => blob,
       saveTokens: async (next: Record<string, unknown>) => void (blob = { ...next }),
     } as unknown as CredentialOAuthProvider,
@@ -186,5 +188,91 @@ describe('refreshDirectly', () => {
       refreshDirectly(manifest(), provider, 'https://oauth2.example.com/token', store(), fetch),
     ).rejects.toThrow(/No refresh token stored/);
     expect(calls).toEqual([]);
+  });
+});
+
+/**
+ * Telling "this credential is dead" apart from "the server is unwell".
+ *
+ * Both used to throw the same `Error` with the same sentence, which meant
+ * anything reporting connection health had to either match on that text or
+ * treat an outage as a reason to send someone through a consent screen. The
+ * message is unchanged — what is new is the type, and that a 5xx no longer
+ * claims it.
+ */
+describe('refreshDirectly, on a refusal', () => {
+  const tokenUrl = 'https://oauth2.example.com/token';
+  const ownClient = store({ 'vendor/client_id': 'id', 'vendor/client_secret': 'secret' });
+
+  test('a 4xx from the token endpoint is a re-authorisation, and names the connection', async () => {
+    const { fetch } = recording(400, { error: 'invalid_grant' });
+    const { provider } = stubProvider({ refresh_token: 'rt' });
+
+    const refusal = await refreshDirectly(manifest(null), provider, tokenUrl, ownClient, fetch).catch(
+      (error: unknown) => error,
+    );
+
+    expect(refusal).toBeInstanceOf(ReauthRequired);
+    expect((refusal as ReauthRequired).connectionKey).toBe('vendor_mail.main');
+    expect((refusal as Error).message).toContain('could not be refreshed (400)');
+  });
+
+  test('a 5xx is not, because the server being unwell says nothing about the grant', async () => {
+    const { fetch } = recording(503, { error: 'unavailable' });
+    const { provider } = stubProvider({ refresh_token: 'rt' });
+
+    const refusal = await refreshDirectly(manifest(null), provider, tokenUrl, ownClient, fetch).catch(
+      (error: unknown) => error,
+    );
+
+    expect(refusal).toBeInstanceOf(Error);
+    expect(refusal).not.toBeInstanceOf(ReauthRequired);
+    // The sentence is unchanged from what it always said. Only the type moved.
+    expect((refusal as Error).message).toContain('could not be refreshed (503)');
+  });
+
+  test('a 429 is not either — "not now" is not "never again"', async () => {
+    const { fetch } = recording(429, { error: 'rate_limited' });
+    const { provider } = stubProvider({ refresh_token: 'rt' });
+
+    const refusal = await refreshDirectly(manifest(null), provider, tokenUrl, ownClient, fetch).catch(
+      (error: unknown) => error,
+    );
+
+    expect(refusal).not.toBeInstanceOf(ReauthRequired);
+  });
+
+  test('the broker refusing this credential is a re-authorisation', async () => {
+    const { fetch } = recording(400, { success: false, error: 'invalid_grant' });
+    const { provider } = stubProvider({ refresh_token: 'rt', authorized_via: 'broker' });
+
+    const refusal = await refreshDirectly(manifest(), provider, tokenUrl, store(), fetch).catch(
+      (error: unknown) => error,
+    );
+
+    expect(refusal).toBeInstanceOf(ReauthRequired);
+  });
+
+  test('the broker being down is not', async () => {
+    const { fetch } = recording(502, { success: false, error: 'bad_gateway' });
+    const { provider } = stubProvider({ refresh_token: 'rt', authorized_via: 'broker' });
+
+    const refusal = await refreshDirectly(manifest(), provider, tokenUrl, store(), fetch).catch(
+      (error: unknown) => error,
+    );
+
+    expect(refusal).not.toBeInstanceOf(ReauthRequired);
+  });
+
+  test('no refresh token stored is a re-authorisation — there is nothing to renew with', async () => {
+    const { fetch } = recording(200, {});
+    const { provider } = stubProvider({});
+
+    const refusal = await refreshDirectly(manifest(null), provider, tokenUrl, ownClient, fetch).catch(
+      (error: unknown) => error,
+    );
+
+    expect(refusal).toBeInstanceOf(ReauthRequired);
+    expect((refusal as Error).message).toContain('No refresh token stored');
   });
 });

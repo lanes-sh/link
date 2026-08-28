@@ -5,6 +5,7 @@ import {
   attachFile,
   auditTail,
   auditVerify,
+  auth,
   check,
   configShow,
   dashboard,
@@ -282,6 +283,11 @@ export async function run(argv: readonly string[]): Promise<void> {
       return plan(global);
     case 'doctor':
       return doctor({ ...global, json, fix: flags['fix'] === true });
+
+    // Beside `doctor` because it answers half of what `doctor` used to guess at,
+    // and answers it by asking rather than by dating a credential.
+    case 'auth':
+      return auth({ ...global, json, connection: text(flags, 'connection') });
     case 'status':
       return status({ ...global, json });
     case 'outputs':

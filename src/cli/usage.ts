@@ -129,6 +129,8 @@ ${style.bold('Inspection')}
   ${PROGRAM} doctor [--json]            credentials resolve, stores reachable
   ${PROGRAM} doctor --fix               apply a repair it can make itself, such as
                                         a provider this project renamed under you
+  ${PROGRAM} auth [--json]              whether each connection can still sign in
+  ${PROGRAM} auth --connection <key>    just this one
   ${PROGRAM} tools [--json]             what the endpoint advertises to a client
   ${PROGRAM} plan                       what reconcile would change
   ${PROGRAM} audit tail [--limit N] [--denied-only] [--format md]

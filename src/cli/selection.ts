@@ -129,6 +129,7 @@ export const SELECTION: Record<string, Requires> = {
   secrets: 'profile+target',
   plan: 'profile+target',
   doctor: 'profile+target',
+  auth: 'profile+target',
   // Target-scoped: see the note above. `--profile` narrows each to one profile.
   status: 'target',
   outputs: 'profile+target',
@@ -267,6 +268,9 @@ const ACCEPTS: Record<string, readonly string[]> = {
   // it undoes a provider rename this project shipped, and every other finding
   // there is something only the operator can decide.
   doctor: ['fix'],
+  // A filter, not a second subject: it narrows the answer to one connection so
+  // a caller can re-ask about the row it just repaired. Same shape as `attach`.
+  auth: ['connection'],
   relabel: [],
   'target list': ['urls', 'target'],
   'target show': ['target'],

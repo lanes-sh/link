@@ -383,7 +383,8 @@ Failures surface in the cheapest place first:
 
 ```console
 $ lanes link check --profile personal     # static: schema, validation rules, no external calls
-$ lanes link doctor --profile personal --target local    # read-only external: credentials resolve, database reachable
+$ lanes link doctor --profile personal --target local     # external: credentials still authenticate, database reachable
+$ lanes link auth --profile personal --target local       # just the credentials, per connection, as JSON
 $ lanes link plan --profile personal --target local      # what reconcile would change; no mutation
 $ lanes link start --profile personal --target local     # apply reconcile, then serve locally
 $ lanes link deploy --profile personal --target local    # apply to the cloud target
