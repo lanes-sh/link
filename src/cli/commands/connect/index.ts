@@ -16,6 +16,7 @@ import { chooseAuthMethod } from './method.ts';
 import { preflight } from './requirements.ts';
 import { ALREADY, NOTHING, renderOutcome, where, type ConnectOutcome } from './outcome.ts';
 import { nextAfterEdit, publishRuntimeEdit } from '#cli/publish.ts';
+import { bindNewCredential } from './bind-credential.ts';
 import { ensureStaticCredential } from './setup.ts';
 import { settleIdentity } from './settle.ts';
 import { runStrategySetup } from './strategy.ts';
@@ -356,6 +357,9 @@ export async function runConnect(
       ? ['that is your own memory, tasks, assets, skills and vault — no account, nothing stored until you use them']
       : [];
 
+    // 7. Bind the credential to the revision that serves it — `bind-credential.ts`.
+    const bound = await bindNewCredential(runtime, providerId, connectionId, account);
+    if (bound.failed) notes.push(bound.failed);
     if (changes.length === 0 && granted.length === 0) {
       return {
         ...NOTHING,
@@ -364,6 +368,7 @@ export async function runConnect(
         account,
         label,
         ...where(runtime),
+        ...(notes.length > 0 ? { notes } : {}),
         discovered: discovered.length,
         next: ALREADY,
       };

@@ -42,7 +42,10 @@
     "!src/**/*.test.ts",
     "instructions",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "bun.lock",
+    "bunfig.toml",
+    ".dockerignore"
   ],
   "scripts": {
     "test": "bun test",

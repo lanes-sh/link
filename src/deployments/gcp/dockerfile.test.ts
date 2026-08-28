@@ -16,6 +16,7 @@ import { readFile } from 'node:fs/promises';
 
 const DOCKERFILE = new URL('./Dockerfile', import.meta.url).pathname;
 const GITIGNORE = new URL('../../../.gitignore', import.meta.url).pathname;
+const MANIFEST = new URL('../../../package.json', import.meta.url).pathname;
 
 /** The sources of every `COPY`, minus the destination and any flags. */
 function copySources(dockerfile: string): string[] {
@@ -93,6 +94,37 @@ describe('the deployed image', () => {
 
     expect(copySources(dockerfile)).not.toContain('data/');
     expect(dockerfile).not.toMatch(/^COPY\s+\.\s/m);
+  });
+
+  test('copies only what an npm install actually receives', async () => {
+    // The check `.gitignore` cannot make. A fresh clone and a published package
+    // are two different definitions of "the files are there", and this Dockerfile
+    // ships inside the package — `files` carries `src`, and the Dockerfile lives
+    // under it — so `lanes link deploy` builds from whatever npm sent.
+    //
+    // `bun.lock` and `bunfig.toml` were not in `files`. Every test above passed:
+    // both are tracked, neither is gitignored, the allowlist named them. Deploy
+    // from a checkout worked, which is where it is always tested. Deploy from a
+    // bun-global install — the only install method this CLI documents — died at
+    // `COPY package.json bun.lock bunfig.toml ./` with `stat bun.lock: file does
+    // not exist`, after pulling the base image and pushing a build context, so
+    // the failure arrived minutes in and named a file sitting in the repository.
+    const sources = copySources(await readFile(DOCKERFILE, 'utf8'));
+    const files: string[] = JSON.parse(await readFile(MANIFEST, 'utf8')).files;
+
+    // npm ships these whatever `files` says, so they need no entry.
+    const always = ['package.json', 'README.md', 'LICENSE', 'LICENCE'];
+
+    const missing = sources.filter((source) => {
+      const bare = source.replace(/\/$/, '');
+      if (always.includes(bare)) return false;
+      return !files.some((entry) => {
+        const listed = entry.replace(/^\.\//, '').replace(/\/$/, '');
+        return listed === bare || bare.startsWith(`${listed}/`);
+      });
+    });
+
+    expect({ missing, files }).toEqual({ missing: [], files });
   });
 
   test('the workspace root is not baked in', async () => {
