@@ -290,7 +290,11 @@ describe('first-run provisioning', () => {
     // — but by the anchored pattern only. A blanket `startsWith(".../data/")`
     // here would hand the revision read on every credential-adjacent object in
     // the profile, which is the narrowing this condition exists to make.
-    expect(condition).toContain('providers\\.d/');
+    // `[.]`, not `\\.`: this is a regex inside a CEL *string literal*, which CEL
+    // unescapes before the regex engine sees it, and `\\.` is not one of its
+    // escapes. The expression that produced failed to compile at Google, and the
+    // binding carries `tolerateFailure`, so the narrowing silently did not apply.
+    expect(condition).toContain('providers[.]d/');
     expect(condition).not.toMatch(/startsWith\("[^"]*\/objects\/data\/"\)/);
   });
 
@@ -314,7 +318,7 @@ describe('first-run provisioning', () => {
     expect(write).not.toContain('profiles/');
     expect(write).not.toContain('lanes-link.yaml');
     expect(write).toContain('!resource.name.matches(');
-    expect(write).toContain('providers\\.d/');
+    expect(write).toContain('providers[.]d/');
 
     expect(conditions.some((condition) => condition.includes('reads-its-config'))).toBe(true);
   });

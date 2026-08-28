@@ -4,6 +4,7 @@ import { announce, announceProfile, emit, fail, ok, print, warn } from '../../ou
 import { staleNudge } from '../../release.ts';
 import { openRuntime, resolveProfileOnly, type GlobalFlags, type Runtime } from '../../runtime.ts';
 import type { FetchLike } from '#deployments/knowledge.ts';
+import { unboundRotatableRefs } from '#deployments/bind.ts';
 import { credentialAge, reportCapabilityDrift } from './findings.ts';
 import { migratedContract, migratedRenamedProviders } from './migrate.ts';
 
@@ -274,6 +275,37 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
         message: 'runtime state differs from config — run: lanes link plan',
         fix: forSelection('lanes link plan'),
       });
+    }
+
+    // Whether the revision can still rewrite what it serves.
+    //
+    // A *problem*, not a warning: an unbound credential is a connection that
+    // works until its access token expires and then stops, and every other
+    // report on this machine calls it healthy in the meantime — `status` and
+    // `setup_overview` read the state store, and the state store knows nothing
+    // about IAM. This is the only place that asks the thing that decides.
+    //
+    // Skipped entirely for a local target, where credentials are a file this
+    // process owns and there is no revision to grant anything to.
+    const rotation = await unboundRotatableRefs({
+      deploy: runtime.declared.deploy,
+      target: runtime.target,
+      connections: runtime.config.connections,
+      manifestFor: runtime.manifestFor,
+    });
+    if (rotation.unbound.length > 0) {
+      problems.push({
+        kind: 'unbound_credentials',
+        message:
+          `the deployed endpoint can read ${rotation.unbound.join(', ')} but not rotate ` +
+          `${rotation.unbound.length === 1 ? 'it' : 'them'} — so ${rotation.unbound.length === 1 ? 'that connection' : 'those connections'} ` +
+          'will fail about an hour after each use, when the token refresh tries to persist. ' +
+          'A connection made since the last deploy is the usual cause',
+        fix: forSelection('lanes link deploy'),
+      });
+    }
+    if (rotation.unavailable) {
+      warnings.push({ kind: 'rotation_uncheckable', message: rotation.unavailable });
     }
 
     if (problems.length > 0) process.exitCode = 1;
