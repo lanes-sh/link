@@ -1,11 +1,12 @@
-import { credentialRefFor, formatPlan, planIsNoop, planReconcile } from '#registry';
+import { formatPlan, planIsNoop, planReconcile } from '#registry';
 import { DEFAULT_SURFACES } from '../../config-repair.ts';
 import { announce, announceProfile, emit, fail, ok, print, warn } from '../../output.ts';
 import { staleNudge } from '../../release.ts';
 import { openRuntime, resolveProfileOnly, type GlobalFlags, type Runtime } from '../../runtime.ts';
 import type { FetchLike } from '#deployments/knowledge.ts';
 import { unboundRotatableRefs } from '#deployments/bind.ts';
-import { credentialAge, reportCapabilityDrift } from './findings.ts';
+import { reportCapabilityDrift } from './findings.ts';
+import { probeConnections } from './auth.ts';
 import { migratedContract, migratedRenamedProviders } from './migrate.ts';
 
 /**
@@ -65,7 +66,16 @@ export interface DoctorFinding {
   readonly fix?: string;
 }
 
-/** Read-only external checks: credentials resolve, stores reachable. */
+/**
+ * External checks: credentials still authenticate, stores reachable.
+ *
+ * Not read-only, and that changed when the credential check stopped guessing
+ * from a stored date and started attempting the renewal. A refresh that
+ * succeeds persists the new token, which on a deployed target is a secret-store
+ * write. It is the same write serving a request makes, and it warms the token
+ * for the next real call — but `check` and `plan` above are still the two that
+ * touch nothing.
+ */
 export async function doctor(flags: DoctorFlags): Promise<void> {
   // The one check that cannot use a runtime, because it answers for the profiles
   // that cannot open one. A provider rename left in the config refuses at load,
@@ -108,47 +118,56 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
       });
     }
 
-    for (const connection of runtime.config.connections) {
-      const key = `${connection.provider}.${connection.id}`;
-      const ref = credentialRefFor(connection, runtime.manifestFor(connection.provider));
-      if (!ref) {
-        checks.push(`${key} needs no credential`);
-        continue;
-      }
-      if (await runtime.credentials.has(ref)) {
-        const staleness = await credentialAge(runtime.credentials, ref);
+    // Whether each credential still works, asked rather than dated.
+    //
+    // This used to warn from the *age* of a stored credential, on the theory
+    // that a Google app left in "Testing" expires refresh tokens at seven days.
+    // The heuristic was wrong in both directions — it dated a credential from
+    // its last refresh, so an untouched healthy connection read as stale and a
+    // grant revoked an hour ago read as fresh — and its own guard made it worse:
+    // it skipped brokered credentials because "the hosted client is in
+    // production", which `providers/google/shared/oauth.ts` now says outright is
+    // not so. The hosted client is under review and carries the same weekly
+    // expiry, so the warning was silenced for exactly the population that has
+    // the problem.
+    //
+    // `probeConnections` answers it by attempting the renewal, which is the only
+    // thing that actually knows. Same classifier as `lanes link auth`, so the two
+    // cannot drift apart again.
+    const probed = await probeConnections(runtime, runtime.config.connections, forSelection);
 
-        // A Google project left in "Testing" expires refresh tokens after seven
-        // days. That is a policy setting rather than a fault, but it presents
-        // as an authentication failure mid-task — so say it before the call
-        // fails rather than after.
-        //
-        // Only for a client the operator registered. The hosted one is in
-        // production and does not expire refresh tokens weekly, so this warning
-        // would simply be false there — and a warning that is wrong once is a
-        // warning that gets scrolled past every time after.
-        if (staleness !== null && !staleness.brokered && staleness.days >= 7) {
+    for (const result of probed) {
+      switch (result.verdict) {
+        case 'reauth':
           warnings.push({
-            kind: 'stale_credential',
-            key,
+            kind: 'needs_reauth',
+            key: result.key,
             message:
-              `${key} credential is ${staleness.days} days old — a Google app in "Testing" expires at 7. ` +
-              `Run: lanes link connect ${key}`,
-            fix: forSelection(`lanes link connect ${key}`),
+              `${result.key} is signed out and cannot renew itself — run: lanes link connect ${result.key}` +
+              (result.detail ? `\n      ${result.detail}` : ''),
+            fix: forSelection(`lanes link connect ${result.key}`),
           });
-        } else {
-          const age = staleness
-            ? ` (${staleness.days}d old${staleness.brokered ? ', hosted client' : ''})`
-            : '';
-          checks.push(`${key} credential resolves${age}`);
-        }
-      } else {
-        problems.push({
-          kind: 'missing_credential',
-          key,
-          message: `${key} has no stored credential — run: lanes link connect ${key}`,
-          fix: forSelection(`lanes link connect ${key}`),
-        });
+          break;
+        case 'missing':
+          problems.push({
+            kind: 'missing_credential',
+            key: result.key,
+            message: `${result.key} has no stored credential — run: lanes link connect ${result.key}`,
+            fix: forSelection(`lanes link connect ${result.key}`),
+          });
+          break;
+        case 'none':
+          checks.push(`${result.key} needs no credential`);
+          break;
+        case 'unknown':
+          warnings.push({
+            kind: 'auth_uncheckable',
+            key: result.key,
+            message: `${result.key} could not be checked${result.detail ? `: ${result.detail}` : ''}`,
+          });
+          break;
+        default:
+          checks.push(`${result.key} credential resolves`);
       }
     }
 

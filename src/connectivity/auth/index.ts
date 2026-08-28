@@ -19,6 +19,7 @@
 
 export { credentialResolver, type ResolvedCredential } from './resolve.ts';
 export { requestAuthorizer } from './authorize.ts';
+export { ReauthRequired, statusMeansGrantIsDead } from './reauth.ts';
 export { basicCredential } from './basic/index.ts';
 export { bearerToken, bearerTokenAsStored } from './token.ts';
 export {

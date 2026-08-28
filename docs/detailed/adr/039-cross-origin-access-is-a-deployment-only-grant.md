@@ -30,8 +30,8 @@ and never a `401`.
 
 **The wrapper goes at `serve()`, not in the router.** That is where the policy is decided, and the
 two belong together: cross-origin access is a property of the address this endpoint is bound to,
-exactly as `allowedHostnames` and the dashboard are. Three lines in one function, all derived from
-the same `loopback`, rather than an invariant spread across two files.
+exactly as `allowedHostnames` is. Both derived from the same `loopback`, in one function, rather
+than an invariant spread across two files.
 
 It is also what makes the ordering safe. A preflight answered in the wrapper never reaches the
 rebinding guard inside the router — and does not need to, because a policy exists only off loopback,
@@ -60,7 +60,7 @@ close the gap.
 |---|---|---|
 | the authorization surface — both discovery documents, `/register`, `/token`, `/authorize` | `*`, always | unauthenticated by design; that is what makes discovery work at all. Never narrowed, because a client that cannot read these cannot find out that it needs a token |
 | `/mcp`, `/attachments` | `*` unless `auth.allowed_origins` names origins | see below |
-| `/health`, `/reload`, the dashboard | nothing | no browser client needs them, and where the answer is not obvious the cheaper mistake is refusing |
+| `/health`, `/reload` | nothing | no browser client needs them, and where the answer is not obvious the cheaper mistake is refusing |
 
 **The wildcard on the credentialed surface is the decision worth arguing, so here is the argument.**
 An allowlist there was the first design, and default deny made it feel obviously right. What it

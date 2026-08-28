@@ -60,6 +60,7 @@ Nothing in the codebase depends on it.
 | [050](050-the-owner-layer-is-granted-by-default.md) | The owner layer is granted by default, because nothing behind it is an account |
 | [051](051-tasks-and-assets-are-their-own-stores.md) | A task and a file are each their own store, not a memory entry |
 | [052](052-a-target-owns-its-workspace.md) | A target owns its workspace, and a profile lives in exactly one |
+| [053](053-the-page-a-person-reads-is-the-app.md) | The page a person reads is the desktop app, and the endpoint stops serving one |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 
@@ -142,6 +143,14 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
   default deny exists so that nothing reaches an *account* before its owner says so, and no
   provider in this list has one. The per-item vault rule from ADR-012 §3 is untouched, and is
   worth checking against the text if the phrase "granted by default" makes you uneasy.
+
+- **ADR-053** amends ADR-018 without disturbing it. That decision's argument — a deployed
+  instance has no door a browser can come through — is why the dashboard was local-only, and it
+  is untouched. What changed is that the local-only page was the only surface a person could
+  read, and the desktop app now reads the same facts through this CLI rather than through the
+  endpoint, so the constraint no longer costs anyone the surface. Read it for the break as much
+  as the deletion: `lanes link dashboard` refuses `--profile` and `--target` now, which is
+  ADR-037's rule applied to a command that stopped having anything to select.
 
 - **ADR-051** follows from ADR-012 rather than amending it: the discriminator it uses to justify
   two more providers is the one ADR-012 established, applied to a property that decision did not

@@ -81,6 +81,11 @@ with Claude Code or Codex.
 It runs the commands above rather than reimplementing them, so consent and the token stay here where
 they belong, and an endpoint set up in the app is the same one you get from a shell. Available from
 Lanes v0.47.0, as a research preview.
+
+```console
+$ lanes link desktop     # opens the app on that page, installing it if it is not there
+```
+
 **[How to use it →](https://lanes.sh/docs/desktop/lanes-link)**
 
 ## What your agent gets

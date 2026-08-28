@@ -5,9 +5,10 @@ import {
   attachFile,
   auditTail,
   auditVerify,
+  auth,
   check,
   configShow,
-  dashboard,
+  desktop,
   doctor,
   outputs,
   plan,
@@ -282,6 +283,11 @@ export async function run(argv: readonly string[]): Promise<void> {
       return plan(global);
     case 'doctor':
       return doctor({ ...global, json, fix: flags['fix'] === true });
+
+    // Beside `doctor` because it answers half of what `doctor` used to guess at,
+    // and answers it by asking rather than by dating a credential.
+    case 'auth':
+      return auth({ ...global, json, connection: text(flags, 'connection') });
     case 'status':
       return status({ ...global, json });
     case 'outputs':
@@ -289,10 +295,19 @@ export async function run(argv: readonly string[]): Promise<void> {
 
     // Beside `outputs` for the same reason `tools` is: it answers the next
     // question a person has rather than the next one an agent has. `outputs`
-    // hands a harness a URL and a token; this opens the one page a person can
-    // read, and only a local endpoint serves it.
+    // hands a harness a URL and a token; this opens the app a person drives all
+    // of this from.
+    //
+    // Two spellings, one behaviour, as `skill` is for `mcp skill`. `dashboard`
+    // is what this was called when it opened a page the endpoint served, and
+    // that name is in a year of notes; `desktop` is what it does now (ADR-053).
+    // Both are in `USAGE`, unlike the `skill` alias, because nobody has learned
+    // the new one yet.
+    //
+    // No `...global`: this resolves nothing, so there is nothing to select.
     case 'dashboard':
-      return dashboard({ ...global, print: flags['print'] === true });
+    case 'desktop':
+      return desktop({ print: flags['print'] === true, yes: flags['yes'] === true });
 
     // Beside `outputs` because it answers the next question. `outputs` says
     // where the endpoint is; this says what it would hand a client that asked

@@ -1,4 +1,5 @@
 import type { ProviderManifest } from '#connectivity';
+import { ReauthRequired, statusMeansGrantIsDead } from '../reauth.ts';
 import type { SecretStore } from '#secrets';
 import { credentialRefForConnection } from '../../manifest/credential-ref.ts';
 import { parseAssertionKey, signAssertion } from './key.ts';
@@ -170,7 +171,17 @@ export async function resolveAssertionToken(input: {
   const body = (await response.json().catch(() => ({}))) as TokenResponse;
 
   if (!response.ok || !body.access_token) {
-    throw new Error(refusalMessage(manifest, stored, body, response.status));
+    const message = refusalMessage(manifest, stored, body, response.status);
+
+    // A key is refused for the same two reasons a refresh token is: the grant
+    // behind it is gone, or the token endpoint is unwell. The remedy differs
+    // from a consent screen — it is an admin grant in a console, or `connect
+    // --replace` — but "the owner has to re-authorise this connection" is the
+    // same claim, and `refusalMessage` already writes the specific sentence.
+    if (statusMeansGrantIsDead(response.status)) {
+      throw new ReauthRequired(`${manifest.id}.${connectionId}`, message);
+    }
+    throw new Error(message);
   }
 
   minted.set(cacheKey, {

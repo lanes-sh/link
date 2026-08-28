@@ -116,8 +116,6 @@ export interface HarnessOptions {
    * serving the old generation" case is reached; absent means nothing new.
    */
   reopen?: () => Promise<ReadonlyMap<string, ProfileRuntime>>;
-  /** Serve `/dashboard`, as `lanes link start` does and a container never does. */
-  dashboard?: boolean;
 }
 
 /**
@@ -178,10 +176,6 @@ export function wireProfiles(options: HarnessOptions): WiredProfiles {
       dispatcher,
       policy,
       ...(options.refreshSkills ? { refreshSkills: () => options.refreshSkills!(registry) } : {}),
-      // As `profileRuntimes` supplies them for real. A harness that claims to
-      // be the real wiring and omits a field leaves that field untested.
-      target: 'local',
-      connections: () => state.connections.list(),
     }),
   );
 
@@ -260,7 +254,6 @@ export function startHarness(options: HarnessOptions): Harness {
     primary: options.profile,
     authenticator: gate ? new AuthenticatorChain([bearer, gate.authenticator]) : bearer,
     ...(gate ? { authorization: gate.surface } : {}),
-    ...(options.dashboard ? { dashboard: true } : {}),
     log,
   });
 

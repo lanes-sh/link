@@ -129,13 +129,18 @@ export const SELECTION: Record<string, Requires> = {
   secrets: 'profile+target',
   plan: 'profile+target',
   doctor: 'profile+target',
+  auth: 'profile+target',
   // Target-scoped: see the note above. `--profile` narrows each to one profile.
   status: 'target',
   outputs: 'profile+target',
   tools: 'profile+target',
-  // It reads which target it is rendering for before it decides anything: a
-  // deployed one has no page to open, and the refusal has to name it.
-  dashboard: 'profile+target',
+  // It resolves nothing and opens nothing — it hands macOS a URL (ADR-053).
+  // `target list` is the precedent for a `'none'` command that still takes a
+  // flag of its own. Both spellings need a row: `selection.test.ts` reads
+  // `main.ts` for `case` labels, and a label with no row here falls through to
+  // the `profile+target` default.
+  dashboard: 'none',
+  desktop: 'none',
   attach: 'profile+target',
   start: 'profile+target',
   deploy: 'target',
@@ -267,6 +272,9 @@ const ACCEPTS: Record<string, readonly string[]> = {
   // it undoes a provider rename this project shipped, and every other finding
   // there is something only the operator can decide.
   doctor: ['fix'],
+  // A filter, not a second subject: it narrows the answer to one connection so
+  // a caller can re-ask about the row it just repaired. Same shape as `attach`.
+  auth: ['connection'],
   relabel: [],
   'target list': ['urls', 'target'],
   'target show': ['target'],
@@ -281,7 +289,10 @@ const ACCEPTS: Record<string, readonly string[]> = {
   'mcp add': ['name', 'scope', 'token-env', 'dry-run', 'force', 'no-skill'],
   'mcp skill': ['print', 'force'],
   'mcp list': ['name', 'scope'],
-  dashboard: ['print'],
+  // `--yes` because it installs the app when nothing answers the scheme, and
+  // that is the one prompt in this CLI that puts an application on the machine.
+  dashboard: ['print', 'yes'],
+  desktop: ['print', 'yes'],
   skill: ['print', 'force'],
   deploy: ['dry-run', 'iam', 'access', 'service-account', 'tag', 'yes', 'non-interactive'],
   'secrets push': ['from', 'to', 'overwrite', 'dry-run'],

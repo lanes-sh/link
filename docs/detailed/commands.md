@@ -231,18 +231,52 @@ command to adapt.
 $ lanes link outputs --profile personal --target local --show
 ```
 
-### `lanes link dashboard`
+### `lanes link desktop`
 
-Open the page a local endpoint serves. Local only — a deployed instance has no door a browser can
-come through ([ADR-018](adr/018-the-gate-is-in-the-application.md)).
+Open the Lanes desktop app on its Lanes Link page — Settings → Integrations → Lanes Link — which
+drives this CLI from a window instead of a prompt. `lanes link dashboard` is the same command under
+its older name, from when it opened a page the endpoint served
+([ADR-053](adr/053-the-page-a-person-reads-is-the-app.md)).
+
+**If the app is not there, it offers to install it** with
+`brew install --cask lanes-sh/lanes/lanes`, then opens it. It asks first: this is the only command
+here that puts an application on the machine rather than a file in your own workspace. `--yes`
+answers ahead of time, and a run with no terminal is refused rather than assumed.
+
+macOS only, because the app is. Elsewhere it says so and prints the link it would have opened.
 
 | | |
 |---|---|
-| `--print` | print the URL instead of opening a browser |
+| `--print` | print the link instead of opening it |
+| `--yes` | install the app without asking, if it is missing |
+
+It takes neither `--profile` nor `--target`, and refuses them: it resolves nothing, and the app
+holds its own selection. If you have `lanes link dashboard --profile … --target …` in a script, drop
+the flags.
 
 ```console
-$ lanes link dashboard --profile personal --target local
+$ lanes link desktop
+ok    opened Lanes → Settings → Integrations → Lanes Link
+        needs Lanes 0.48.0 or newer; an older app ignores the link.
+
+$ lanes link desktop --print
+lanes://settings?page=integrations-link
 ```
+
+The first run on a machine without it:
+
+```console
+$ lanes link desktop
+warn  the Lanes app is not installed
+  brew install --cask lanes-sh/lanes/lanes
+Install it now? [Y/n]
+  installing, which takes a minute the first time…
+ok    installed Lanes
+ok    opened Lanes → Settings → Integrations → Lanes Link
+```
+
+Without Homebrew it cannot finish the job, so it hands over both routes: the line above, and
+`https://lanes.sh/desktop` to download the app directly.
 
 ### `lanes link mcp add [claude|codex]`
 

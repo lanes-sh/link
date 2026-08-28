@@ -37,7 +37,9 @@ ${style.bold('Everyday')}
                                         from the credential store, or say what is missing
   ${PROGRAM} start [--only]             reconcile and serve every profile on one endpoint
   ${PROGRAM} outputs [--show] [--json]  the endpoint an agent needs
-  ${PROGRAM} dashboard [--print]        open the local endpoint's page in a browser
+  ${PROGRAM} desktop [--print] [--yes]  open the Lanes app on its Lanes Link page,
+                                        installing it first if it is not there
+  ${PROGRAM} dashboard                  the older spelling of the line above
   ${PROGRAM} mcp add [claude|codex]     register this endpoint, and install the agent skill
   ${PROGRAM} mcp add --no-skill         register only, leaving the agent's own files alone
   ${PROGRAM} mcp list                   where it is registered, and whether the skill is current
@@ -129,6 +131,8 @@ ${style.bold('Inspection')}
   ${PROGRAM} doctor [--json]            credentials resolve, stores reachable
   ${PROGRAM} doctor --fix               apply a repair it can make itself, such as
                                         a provider this project renamed under you
+  ${PROGRAM} auth [--json]              whether each connection can still sign in
+  ${PROGRAM} auth --connection <key>    just this one
   ${PROGRAM} tools [--json]             what the endpoint advertises to a client
   ${PROGRAM} plan                       what reconcile would change
   ${PROGRAM} audit tail [--limit N] [--denied-only] [--format md]
