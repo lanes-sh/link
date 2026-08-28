@@ -285,8 +285,10 @@ const ACCEPTS: Record<string, readonly string[]> = {
   'mcp add': ['name', 'scope', 'token-env', 'dry-run', 'force', 'no-skill'],
   'mcp skill': ['print', 'force'],
   'mcp list': ['name', 'scope'],
-  dashboard: ['print'],
-  desktop: ['print'],
+  // `--yes` because it installs the app when nothing answers the scheme, and
+  // that is the one prompt in this CLI that puts an application on the machine.
+  dashboard: ['print', 'yes'],
+  desktop: ['print', 'yes'],
   skill: ['print', 'force'],
   deploy: ['dry-run', 'iam', 'access', 'service-account', 'tag', 'yes', 'non-interactive'],
   'secrets push': ['from', 'to', 'overwrite', 'dry-run'],

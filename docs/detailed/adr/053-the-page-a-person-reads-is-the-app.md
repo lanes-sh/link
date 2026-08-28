@@ -81,6 +81,21 @@ it needed.
 any other platform the command refuses with the platform named and prints the URL it would have
 opened. `--print` does the same everywhere, which is what a machine with no desktop wants.
 
+**It installs the app rather than describing how.** A command whose whole job is "open this" and
+which answers "it is not installed" has stopped one step short, and the step it stopped short of is
+one line. So it offers `brew install --cask lanes-sh/lanes/lanes` and opens the app afterwards.
+The symmetry is deliberate: the app installs *this* CLI from its settings page, with a button.
+
+It asks first, and that is not a formality. Everything else this CLI installs is a file in the
+workspace it already owns; this puts an application on the machine, which is the largest side
+effect any command here has and the one a person is most entitled to decline. `--yes` is for the
+run that already decided, and a pipe with nobody at it is refused rather than assumed — the same
+three-state split ADR-041 made for `knowledge use`, for the same reason: installing something
+because no one was there to say no is the wrong way to resolve an unanswerable prompt.
+
+Homebrew is the mechanism because an install a command performs has to be one an upgrade later
+finds. Without brew the command cannot finish, so it hands over both routes and stops.
+
 **A cross-repository contract with no compiler behind it.** `integrations-link` is a page id in
 the app's `src/settings/nav.ts`. A test there pins the spelling, and this repository pins it in
 `desktop.test.ts`, because the app opens Settings on its current page rather than refusing an id

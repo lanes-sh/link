@@ -472,6 +472,10 @@ $ lanes link desktop                # opens the app on that page
 $ lanes link desktop --print        # prints the link instead
 ```
 
+You do not have to install Lanes first. If nothing on the machine answers a `lanes://` link, the
+command says so, offers `brew install --cask lanes-sh/lanes/lanes`, and opens the app once it
+lands. It asks before installing, and `--yes` answers ahead of time.
+
 `lanes link dashboard` is the same command — it used to open a page this endpoint served, and
 [ADR-053](adr/053-the-page-a-person-reads-is-the-app.md) retired that page in favour of the app.
 Neither spelling takes `--profile` or `--target` any more; the app holds its own selection.

@@ -301,7 +301,7 @@ export async function run(argv: readonly string[]): Promise<void> {
     // No `...global`: this resolves nothing, so there is nothing to select.
     case 'dashboard':
     case 'desktop':
-      return desktop({ print: flags['print'] === true });
+      return desktop({ print: flags['print'] === true, yes: flags['yes'] === true });
 
     // Beside `outputs` because it answers the next question. `outputs` says
     // where the endpoint is; this says what it would hand a client that asked

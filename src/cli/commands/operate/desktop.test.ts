@@ -100,14 +100,106 @@ describe('refusals', () => {
     await expect(attempt).rejects.toThrow(/lanes:\/\/settings\?page=integrations-link/);
   });
 
-  test('says the app is missing rather than reporting success', async () => {
-    // `open` exits non-zero when nothing is registered for the scheme, and that
-    // exit code is the whole reason this command awaits its spawn instead of
-    // reusing the fire-and-forget opener in `oauth.ts`.
-    const attempt = desktop({}, { env: {}, platform: 'darwin', open: async () => false });
+  test('hands over the whole job when Homebrew is missing too', async () => {
+    // The one path where the command cannot finish what it started, so it gives
+    // both routes rather than a prompt it could not act on.
+    const attempt = desktop(
+      {},
+      { env: {}, platform: 'darwin', open: async () => false, brew: () => null },
+    );
 
-    await expect(attempt).rejects.toThrow(/not installed/);
+    await expect(attempt).rejects.toThrow(/neither is Homebrew/);
+    await expect(attempt).rejects.toThrow(/brew install --cask lanes-sh\/lanes\/lanes/);
     await expect(attempt).rejects.toThrow(/lanes\.sh\/desktop/);
+  });
+});
+
+describe('installing the app', () => {
+  /** A darwin machine with brew, where nothing answers the scheme until installed. */
+  function machine(over: Partial<Parameters<typeof desktop>[1]> = {}) {
+    let installed = false;
+    const calls = { installs: 0, confirms: 0 };
+    return {
+      calls,
+      deps: {
+        env: {},
+        platform: 'darwin' as const,
+        brew: () => '/opt/homebrew/bin/brew',
+        open: async () => installed,
+        install: async () => {
+          calls.installs++;
+          installed = true;
+          return null;
+        },
+        interactive: true,
+        confirm: async () => {
+          calls.confirms++;
+          return true;
+        },
+        ...over,
+      },
+    };
+  }
+
+  test('asks first, then installs and opens', async () => {
+    const { calls, deps } = machine();
+    const lines = await captured(() => desktop({}, deps));
+
+    expect(calls.confirms).toBe(1);
+    expect(calls.installs).toBe(1);
+    const out = lines.join('');
+    expect(out).toContain('not installed');
+    expect(out).toContain('installed Lanes');
+    expect(out).toContain('Settings → Integrations → Lanes Link');
+    // The version hint belongs to the "an app was already here" path. After an
+    // install the version is whatever the tap just handed over.
+    expect(out).not.toContain('older app ignores the link');
+  });
+
+  test('--yes skips the prompt', async () => {
+    const { calls, deps } = machine();
+    await captured(() => desktop({ yes: true }, deps));
+
+    expect(calls.confirms).toBe(0);
+    expect(calls.installs).toBe(1);
+  });
+
+  test('declining installs nothing', async () => {
+    const { calls, deps } = machine({ confirm: async () => false });
+
+    await captured(async () => {
+      await expect(desktop({}, deps)).rejects.toThrow(/Not installed/);
+    });
+    expect(calls.installs).toBe(0);
+  });
+
+  test('a pipe with nobody at it is refused, not assumed', async () => {
+    // Installing an application because no one was there to say no is the wrong
+    // way to resolve an unanswerable prompt.
+    const { calls, deps } = machine({ interactive: false });
+
+    await captured(async () => {
+      await expect(desktop({}, deps)).rejects.toThrow(/--yes/);
+    });
+    expect(calls.installs).toBe(0);
+  });
+
+  test('a failed install reports what brew said', async () => {
+    const { deps } = machine({ install: async () => 'Error: Cask not found.' });
+
+    await captured(async () => {
+      await expect(desktop({}, deps)).rejects.toThrow(/Cask not found/);
+    });
+  });
+
+  test('says so when the scheme is not registered yet', async () => {
+    // LaunchServices registers a cask's bundle as it lands, but not always
+    // before the next process asks.
+    const { deps } = machine({ install: async () => null, open: async () => false });
+
+    await captured(async () => {
+      await expect(desktop({}, deps)).rejects.toThrow(/nothing answers a lanes:\/\/ link yet/);
+    });
   });
 });
 
