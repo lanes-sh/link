@@ -2,7 +2,8 @@ import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readTargets, targetList, targetUse } from './target.ts';
+import { readTargets, resolvedEntry, targetList, targetUse } from './target.ts';
+import type { ResolvedTarget, TargetConfig, WorkspaceTarget } from '#profile';
 
 /**
  * `lanes link target` — what a profile declares, and which one is in play.
@@ -219,6 +220,61 @@ targets:
 
     expect(cloud.pointsAt).toBe('gs://your-bucket');
     expect(cloud.lastDeployVersion).toBe('0.6.6');
+  });
+});
+
+/**
+ * `show` is the command that follows the pointer, so what it reports is what is
+ * on the other end of it.
+ *
+ * `openTarget` merges the local pointer over the remote declaration — so a
+ * redeploy from a second machine does not lose the first one's record of who
+ * opens the endpoint — and the merged entry therefore carries `workspace:`
+ * beside the adapters. `isPointer` answers yes to anything with a `workspace:`.
+ * The result was that `target show cloud` reported no adapters, no deployment,
+ * and "this target runs wherever the CLI does" about a target with a live Cloud
+ * Run service in front of it, and the deploy record it is now asked to print
+ * would have gone the same way.
+ */
+describe('showing a target this workspace only points at', () => {
+  const declared = {
+    credentials: { adapter: 'gcp-secret-manager', project: 'my-project' },
+    storage: { adapter: 'gcs', bucket: 'your-bucket' },
+    vault: { adapter: 'secret' },
+    deploy: {
+      platform: 'cloudrun',
+      project: 'my-project',
+      region: 'europe-west1',
+      service: 'my-service',
+    },
+  } as TargetConfig;
+
+  /** What `openTarget` hands back for a remote target: pointer over declaration. */
+  const resolved = {
+    target: 'cloud',
+    workspaceRoot: 'gs://your-bucket',
+    declared,
+    entry: {
+      workspace: 'gs://your-bucket',
+      ...declared,
+      primary: 'personal',
+      last_deploy: '2026-08-28T09:00:00.000Z',
+      last_deploy_version: '0.6.7',
+    } as WorkspaceTarget,
+    remote: true,
+  } as ResolvedTarget;
+
+  test('the adapters and the deployment come through, rather than reading as a pointer', () => {
+    const entry = resolvedEntry(resolved);
+
+    expect(entry.workspace).toBeUndefined();
+    expect(entry.storage?.bucket).toBe('your-bucket');
+    expect(entry.deploy?.service).toBe('my-service');
+  });
+
+  test('and so does the deploy record, which is the reason to run it', () => {
+    expect(resolvedEntry(resolved).last_deploy_version).toBe('0.6.7');
+    expect(resolvedEntry(resolved).primary).toBe('personal');
   });
 });
 

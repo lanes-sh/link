@@ -6,6 +6,7 @@ import {
   openTarget,
   readRegistry,
   resolveWorkspaceRoot,
+  type ResolvedTarget,
   type WorkspaceTarget,
 } from '#profile';
 import { ConfigError } from '#profile';
@@ -182,6 +183,27 @@ function summarise(name: string, entry: WorkspaceTarget, isSelected: boolean): T
   };
 }
 
+/**
+ * The entry `show` renders: the declaration on the far end, plus the deploy record.
+ *
+ * **Without the `workspace:` key**, and that is the whole of it. `openTarget`
+ * merges the local pointer over the remote declaration so a redeploy from a
+ * second machine does not lose the first one's record — which leaves an entry
+ * carrying `workspace:` *and* adapters, and `isPointer` answers yes to anything
+ * with a `workspace:`. So `summarise` took the pointer branch and returned nulls
+ * for every adapter and `deployed: false`, and `target show cloud` said "No
+ * deployment — this target runs wherever the CLI does" about a target with a
+ * live Cloud Run service in front of it.
+ *
+ * This is the command that *follows* the pointer, so the pointer is the one
+ * thing it is not reporting: `resolved.workspaceRoot` is already printed on the
+ * line above, from the same object.
+ */
+export function resolvedEntry(resolved: ResolvedTarget): WorkspaceTarget {
+  const { workspace: _followed, ...record } = resolved.entry;
+  return { ...resolved.declared, ...record };
+}
+
 /** What `--json` and the tests want, without the rendering. */
 export async function readTargets(
   flags: TargetFlags,
@@ -310,7 +332,7 @@ export async function targetShow(name: string | undefined, flags: TargetFlags): 
   }
 
   const resolved = await openTarget(root, wanted);
-  const summary = summarise(wanted, { ...resolved.declared, ...resolved.entry }, true);
+  const summary = summarise(wanted, resolvedEntry(resolved), true);
   const profiles = await listProfiles(resolved.workspaceRoot);
 
   const url = summary.deployment
