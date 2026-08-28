@@ -223,7 +223,7 @@ Four bindings, each narrower than it looks:
 | `roles/secretmanager.secretAccessor` | **one binding per secret it reads** | Read at boot and while serving: OAuth refresh tokens, the endpoint's own bearer token, the vault key. |
 | `roles/secretmanager.secretVersionAdder` | **one binding per secret it rotates** | The vault document, and each connection's OAuth token. Add a version, never create — see below. |
 | `roles/storage.objectAdmin` | **conditioned** on `data/`, less each profile's `providers.d/` | What the endpoint owns and writes: state, the log, attachments, memory, and skills (writable under policy, ADR-014). Manifests are carved back out — they are config, and ADR-007 says a revision never rewrites its own. |
-| `roles/storage.objectViewer` | `profiles/`, `lanes-link.yaml`, and each `providers.d/` | Reading its own config. Deliberately *not* admin — see below. |
+| `roles/storage.objectViewer` | the bucket itself, plus `profiles/`, `lanes-link.yaml`, and each `providers.d/` | Reading its own config. Deliberately *not* admin — see below. The bucket is named as well because listing is granted there and nowhere else. |
 
 `deploy` creates the account and all of them on a first run; `--dry-run` shows them, and
 `--service-account` names a different one.
@@ -253,6 +253,22 @@ configuration. That used to be enforced by the config being baked into a read-on
 stopped being true when the workspace moved into the bucket (ADR-023). The condition is where that
 guarantee went: the revision may write what it owns and may only read what declares what it is. A
 blanket `objectAdmin` would silently undo it, which is why `driver.test.ts` asserts the shape.
+
+**Why the read grant also names the bucket.** `storage.objects.list` is checked against the
+*bucket*, never against an object — a prefixed listing is one call to the bucket carrying a filter,
+not a walk of matching resources — so no condition written in terms of `objects/…` can grant it, and
+Google says as much: IAM conditions cannot restrict object listing by prefix. The condition
+therefore admits `projects/_/buckets/<bucket>` as well as the three config paths.
+
+The only permission that can follow from it is `storage.objects.list`. Everything else in
+`objectViewer` is evaluated against an object, where the prefixes still decide, or is project-level
+and out of a bucket binding's reach. So the concession is the *names* of what is in the bucket;
+reading any of it stays where ADR-007 puts it.
+
+This was invisible for as long as the read binding sat at `expression=true`, which matches the
+bucket as readily as an object. The first deploy that actually removed that binding rolled a
+revision that could not list its own workspace, and `grants.test.ts` had not caught it because it
+evaluates the conditions against object keys — a listing has no object in it. It does now.
 
 **Why the Secret Manager write grant is per secret.** The line is not read versus write — the
 revision plainly writes — it is *rotating what exists* versus *bringing something into existence*.

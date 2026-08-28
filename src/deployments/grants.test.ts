@@ -76,6 +76,12 @@ const AREAS: Record<string, [string | undefined, string]> = {
 
 const WRITES: Record<string, string> = {};
 
+/** The URL the store asks for a listing, captured from the adapter itself. */
+let LISTED = '';
+
+/** What IAM evaluates a listing against: the bucket, not anything in it. */
+const BUCKET_RESOURCE = `projects/_/buckets/${BUCKET}`;
+
 beforeAll(async () => {
   // Keeps `ApplicationDefaultCredentials` off the network and out of the
   // operator's own gcloud credentials: with this set it returns the override
@@ -104,6 +110,11 @@ beforeAll(async () => {
       await storage(area).put(key, new Uint8Array([1]));
       WRITES[what] = new URL(captured[0]!).searchParams.get('name')!;
     }
+
+    // And one listing, which is the call that has no object in it at all.
+    captured.length = 0;
+    await storage(layout.state(PROFILE)).list('connections.v1/');
+    LISTED = captured[0]!;
   } finally {
     globalThis.fetch = real;
   }
@@ -155,7 +166,11 @@ const readCondition = (): Promise<string> => conditionTitled('reads-its-config')
  * `resource.name == "…"` still compares equal by coercion.
  */
 function permits(condition: string, key: string): boolean {
-  const full = `${OBJECTS}${key}`;
+  return permitsResource(condition, `${OBJECTS}${key}`);
+}
+
+/** The same, for a resource name that is not an object under this bucket. */
+function permitsResource(condition: string, full: string): boolean {
   const name = Object.assign(new String(full), {
     contains: (needle: string) => full.includes(needle),
     matches: (pattern: string) => new RegExp(pattern).test(full),
@@ -163,6 +178,54 @@ function permits(condition: string, key: string): boolean {
 
   return new Function('resource', `return ${condition};`)({ name }) === true;
 }
+
+/**
+ * The permission no object prefix can carry.
+ *
+ * `storage.objects.list` is checked against the **bucket**, never against an
+ * object — a prefixed listing is one call to the bucket with a filter on it,
+ * not a walk of matching resources — so a condition written in terms of
+ * `objects/…` cannot grant it. Google documents the consequence outright: IAM
+ * conditions cannot restrict object listing by prefix.
+ *
+ * It stayed hidden for as long as the read binding said `expression=true`,
+ * which matches the bucket as readily as an object. The deploy that finally
+ * removed that binding rolled a revision which could not list its own
+ * workspace, exited 1 during the health check, and left the endpoint in front
+ * of it unable to list anything either — every `tasks`, `memory` and `assets`
+ * call 403'd, because listing had never been granted by anything else.
+ */
+describe('listing, which is checked against the bucket rather than an object', () => {
+  test('the store asks the bucket for it, with the prefix as a query parameter', async () => {
+    // Taken off the adapter rather than asserted about it: this is the fact
+    // that decides which resource IAM evaluates, and it is not visible in any
+    // object name.
+    const url = new URL(LISTED);
+
+    expect(url.pathname).toBe(`/storage/v1/b/${BUCKET}/o`);
+    expect(url.searchParams.get('prefix')).toContain('connections.v1/');
+  });
+
+  test('so the read grant has to admit the bucket itself, and does', async () => {
+    expect(permitsResource(await readCondition(), BUCKET_RESOURCE)).toBe(true);
+  });
+
+  test('and nothing else does, which is why removing that clause takes listing with it', async () => {
+    // The write grant is every other binding this deploy makes on the bucket.
+    // If this one ever passes, the clause above has a second source and the
+    // test above stops being load-bearing.
+    expect(permitsResource(await writeCondition(), BUCKET_RESOURCE)).toBe(false);
+  });
+
+  test('admitting the bucket does not admit an object outside the config', async () => {
+    // The whole concession is the *names* of what is in the bucket. Reads stay
+    // where ADR-007 puts them.
+    const condition = await readCondition();
+
+    expect(permitsResource(condition, `${OBJECTS}data/${PROFILE}/memory/main/note.md`)).toBe(false);
+    expect(permitsResource(condition, `${OBJECTS}data/${PROFILE}/credentials.enc`)).toBe(false);
+  });
+});
 
 describe('what the revision is granted, against what it writes', () => {
   test('every object the endpoint writes falls inside the write grant', async () => {
