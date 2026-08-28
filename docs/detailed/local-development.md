@@ -65,6 +65,27 @@ Three things it deliberately will not do:
 The warning above is the point of the feature as much as the redirect is — an override left
 exported in a shell is otherwise invisible.
 
+## Opening a different Lanes build
+
+`lanes link desktop` opens `lanes://settings?page=integrations-link`, and macOS routes a scheme to
+exactly one bundle. The released app registers `lanes`; a local debug build of the app registers
+`lanes-dev` and Lanes Stage registers `lanes-stage`, so testing against either means naming it:
+
+```console
+$ LANES_LINK_APP_SCHEME=lanes-dev bun run lanes link desktop
+```
+
+A debug build has to be a real `.app` before LaunchServices will route to it — the raw binary a
+`bun run app` produces has no `Info.plist` and never sees a URL click. The app repository's
+`docs/development/deep-links.md` has the `tauri build --debug --bundles app` and `lsregister` steps.
+
+`--print` needs none of that, and is the cheaper check when what you are testing is this side:
+
+```console
+$ bun run lanes link desktop --print
+lanes://settings?page=integrations-link
+```
+
 ## Layout
 
 Dependencies run one way: infrastructure interfaces → provider SDK → core → mcp → server/cli.

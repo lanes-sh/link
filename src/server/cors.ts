@@ -217,9 +217,9 @@ function withCors(response: Response, headers: Record<string, string>): Response
  *
  * Wrapped at `serve()` rather than inside the router, which is also where the
  * policy is decided: cross-origin access is a property of the address this is
- * bound to, exactly as `allowedHostnames` and the dashboard are, and putting all
- * three in one function is what makes the loopback exclusion legible instead of
- * an invariant spread across two files.
+ * bound to, exactly as `allowedHostnames` is, and putting both in one function
+ * is what makes the loopback exclusion legible instead of an invariant spread
+ * across two files.
  *
  * It is what makes the ordering safe, too. A preflight answered here never
  * reaches the rebinding guard inside `inner` — and does not need to, because a

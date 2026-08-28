@@ -453,6 +453,7 @@ the API rather than a clone.
 | `LANES_LINK_CREDENTIAL_KEY` | base64 32-byte key for the encrypted credential store. |
 | `LANES_LINK_VAULT_KEY` | base64 32-byte key for the vault. **A different key, deliberately** — one master secret reused across purposes turns any single compromise into a total one. |
 | `LANES_LINK_TOKEN` | Convention only: where `lanes link mcp add codex` tells the harness to read the bearer token from. |
+| `LANES_LINK_APP_SCHEME` | Which Lanes build `lanes link desktop` opens. `lanes` by default; `lanes-dev` and `lanes-stage` reach a local debug or Stage build, which register their own URL schemes. |
 
 The two encryption keys are never interchangeable and never shared. `docs/detailed/security.md` explains why
 credentials and vault items are different kinds of secret.

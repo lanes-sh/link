@@ -2,9 +2,10 @@
  * The Lanes design tokens, and the pieces every page this repository serves is
  * built from.
  *
- * Three surfaces render HTML — the authorization consent screen, the page a
- * connect flow lands on, and the dashboard — and until this file existed each
- * carried its own approximation of the brand. They had drifted: two greens and
+ * Two surfaces render HTML — the authorization consent screen and the page a
+ * connect flow lands on. There were three until ADR-053 retired the dashboard,
+ * and until this file existed each carried its own approximation of the brand.
+ * They had drifted: two greens and
  * two ambers that are not tokens at all, nine different alphas standing in for
  * one border colour, a destructive red with a dark variant the token does not
  * have, and the system font stack where Geist belongs.
@@ -154,8 +155,8 @@ a { color: inherit; }
  *
  * The font stylesheet and the faces it names are the only two origins any of
  * them reaches; `default-src 'none'` closes the rest. No `script-src`, because
- * these pages have no script — the dashboard, which has one listener, extends
- * this rather than replacing it.
+ * a page here has no script by default — the consent screen, which has one
+ * listener for its submit spinner, extends this rather than replacing it.
  */
 export const PAGE_CSP =
   "frame-ancestors 'none'; default-src 'none'; " +
@@ -165,10 +166,10 @@ export const PAGE_CSP =
 /**
  * Headers every page here answers with.
  *
- * `frame-ancestors` in both spellings: one of these pages asks for the endpoint
- * token and another lists the owner's accounts, and framing either is the cheap
- * half of a UI-redress attack. The URLs carry a `client_id`, a `redirect_uri`,
- * or a one-time key, none of which belongs in a Referer.
+ * `frame-ancestors` in both spellings: one of these pages is a consent screen
+ * with a submit button, and framing it is the cheap half of a UI-redress
+ * attack. The URLs carry a `client_id` and a `redirect_uri`, neither of which
+ * belongs in a Referer.
  */
 export const PAGE_HEADERS: Readonly<Record<string, string>> = {
   'content-type': 'text/html; charset=utf-8',
