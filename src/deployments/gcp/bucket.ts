@@ -108,6 +108,17 @@ export async function bucketSteps(input: {
         // served publicly; uniform access removes per-object ACLs as a way to
         // get that wrong.
         '--uniform-bucket-level-access',
+        // Autoclass rather than a lifecycle rule, because no one fixed class is
+        // right for this bucket: it holds the config the endpoint reads on every
+        // boot next to assets and audit rows nobody opens again. Inside an
+        // Autoclass bucket there are no retrieval and no early-deletion fees,
+        // which is what makes ARCHIVE safe as the floor rather than a bet on
+        // never reading the thing again — a read pulls the object back to
+        // Standard at no charge. Objects under 128 KiB never leave Standard, so
+        // this costs the config and the log nothing and saves on attachments.
+        '--enable-autoclass',
+        '--autoclass-terminal-storage-class',
+        'ARCHIVE',
       ],
       tolerateFailure: true,
     },

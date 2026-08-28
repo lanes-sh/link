@@ -300,6 +300,20 @@ and every file kept as an asset. A deployment on the filesystem adapter is one t
 did — and for assets that is the only copy, since the point of keeping one is that the endpoint can
 reach it from anywhere.
 
+That mix is also why the deploy creates the bucket with **Autoclass**, terminal class `ARCHIVE`. The
+same bucket holds the config read on every boot and an attachment nobody opens twice, so no single
+storage class is right for it and a lifecycle rule would be a guess written by hand. Autoclass moves
+each object on its own access pattern — untouched for thirty days it cools to Nearline, and it keeps
+sinking to Archive from there — and inside such a bucket there are no retrieval fees and no
+early-deletion fees, so a read pulls the object back to Standard at no charge. That is what makes
+the colder floor safe rather than a bet on never needing the file again. Objects under 128 KiB never
+leave Standard at all, so the config, the state and the log rows are untouched by this; the saving
+is on assets and attachments.
+
+It applies to a bucket the deploy creates. A bucket from an earlier deploy is left exactly as it is
+— the create step finds it present and moves on — so turning Autoclass on for an existing one is a
+change you make yourself, in the console or with `gcloud storage buckets update`.
+
 ### The vault key, which the deploy now mints
 
 The vault document is sealed before it reaches Secret Manager, under `LANES_LINK_VAULT_KEY` — a
