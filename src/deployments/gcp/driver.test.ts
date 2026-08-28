@@ -333,6 +333,20 @@ describe('first-run provisioning', () => {
     expect(steps.flatMap((step) => step.argv)).toContain('buckets');
   });
 
+  test('the bucket is created with Autoclass, so cold assets stop costing Standard rates', async () => {
+    // The bucket holds the config read on every boot next to assets and audit
+    // rows nobody opens again, and it is created once — a class chosen here is
+    // the class those objects keep, because nothing revisits an existing bucket.
+    const create = (await provision({ adapter: 'gcs', bucket: 'lanes-link-blobs' })).find(
+      (step) => step.argv[0] === 'storage' && step.argv[2] === 'create',
+    )!;
+
+    expect(create.argv).toContain('--enable-autoclass');
+    expect(create.argv[create.argv.indexOf('--autoclass-terminal-storage-class') + 1]).toBe(
+      'ARCHIVE',
+    );
+  });
+
   test('no bucket is created for a target that declares no object storage', async () => {
     // Creating one it will never open is a resource nobody asked for and
     // nobody deletes.
