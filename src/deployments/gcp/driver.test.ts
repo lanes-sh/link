@@ -219,6 +219,7 @@ describe('first-run provisioning', () => {
       declared: target(storage),
       target: 'cloud',
       readable,
+      profiles: ['personal'],
     });
 
   test('every step tolerates failure, because the second deploy finds them all present', async () => {
@@ -290,11 +291,12 @@ describe('first-run provisioning', () => {
     // — but by the anchored pattern only. A blanket `startsWith(".../data/")`
     // here would hand the revision read on every credential-adjacent object in
     // the profile, which is the narrowing this condition exists to make.
-    // `[.]`, not `\\.`: this is a regex inside a CEL *string literal*, which CEL
-    // unescapes before the regex engine sees it, and `\\.` is not one of its
-    // escapes. The expression that produced failed to compile at Google, and the
-    // binding carries `tolerateFailure`, so the narrowing silently did not apply.
-    expect(condition).toContain('providers[.]d/');
+    // One `startsWith` per served profile, not `matches`: Cloud Storage IAM
+    // conditions have no `matches`, and refused the whole expression. The
+    // binding carries `tolerateFailure`, so the narrowing silently did not apply
+    // and the bucket kept whatever condition was already on it.
+    expect(condition).toContain('/objects/data/personal/providers.d/');
+    expect(condition).not.toContain('matches(');
     expect(condition).not.toMatch(/startsWith\("[^"]*\/objects\/data\/"\)/);
   });
 
@@ -317,8 +319,9 @@ describe('first-run provisioning', () => {
     // is why the expression carries a negation at all.
     expect(write).not.toContain('profiles/');
     expect(write).not.toContain('lanes-link.yaml');
-    expect(write).toContain('!resource.name.matches(');
-    expect(write).toContain('providers[.]d/');
+    expect(write).toContain('!(resource.name.startsWith(');
+    expect(write).toContain('/objects/data/personal/providers.d/');
+    expect(write).not.toContain('matches(');
 
     expect(conditions.some((condition) => condition.includes('reads-its-config'))).toBe(true);
   });
