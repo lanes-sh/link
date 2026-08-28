@@ -43,7 +43,6 @@
     "instructions",
     "README.md",
     "LICENSE",
-    "bun.lock",
     "bunfig.toml",
     ".dockerignore"
   ],

@@ -18,9 +18,31 @@ WORKDIR /app
 # The manifest first, so a source-only change reuses the install layer. One
 # package now, rather than fifteen manifests copied ahead of the install to
 # satisfy workspace resolution.
-COPY package.json bun.lock bunfig.toml ./
+#
+# `bun.lock*`, not `bun.lock`, and the star is the whole point: **npm strips a
+# root lockfile out of a published tarball whatever `files` says.** Verified
+# against npm 12, which is what `release.yml` installs before publishing; npm
+# 11.6 still packs it, so a local `npm pack` says the opposite and the gap only
+# shows up in what people actually install.
+#
+# This image is built from whichever tree `lanes link deploy` is run against, and
+# there are two of them. From a checkout the lockfile is present and pins the
+# whole transitive set. From a bun-global install — the only install method this
+# CLI documents — it cannot be there at all, and naming it outright made deploy
+# impossible for every one of those users: the build pulled the base image,
+# pushed a context, and then died on `stat bun.lock: file does not exist`.
+COPY package.json bunfig.toml bun.lock* ./
 
-RUN bun install --frozen-lockfile
+# Not `--frozen-lockfile || bun install`: that swallows a genuine
+# lockfile-versus-manifest disagreement in a checkout build, which is the one
+# thing the frozen flag is for. The branch says which tree it is building and
+# holds the guarantee that tree can offer.
+#
+# What the fallback gives up is narrower than it looks. Every runtime dependency
+# in `package.json` is an exact version, so the direct set is identical either
+# way; the lockfile pins what those depend on in turn, and a published package
+# has never been able to carry one.
+RUN if [ -f bun.lock ]; then bun install --frozen-lockfile; else bun install; fi
 
 COPY src/ src/
 

@@ -72,7 +72,7 @@ describe('the deployed image', () => {
     // that true as `.gitignore` changes.
     const sources = copySources(await readFile(DOCKERFILE, 'utf8'));
 
-    expect([...sources].sort()).toEqual(['bun.lock', 'bunfig.toml', 'package.json', 'src/']);
+    expect([...sources].sort()).toEqual(['bun.lock*', 'bunfig.toml', 'package.json', 'src/']);
   });
 
   test("does not copy the workspace, which is the operator's and not the image's", async () => {
@@ -96,35 +96,75 @@ describe('the deployed image', () => {
     expect(dockerfile).not.toMatch(/^COPY\s+\.\s/m);
   });
 
-  test('copies only what an npm install actually receives', async () => {
-    // The check `.gitignore` cannot make. A fresh clone and a published package
-    // are two different definitions of "the files are there", and this Dockerfile
-    // ships inside the package — `files` carries `src`, and the Dockerfile lives
-    // under it — so `lanes link deploy` builds from whatever npm sent.
+  test('requires nothing an npm install cannot receive', async () => {
+    // The check `.gitignore` cannot make, and the one that had to be rewritten.
     //
-    // `bun.lock` and `bunfig.toml` were not in `files`. Every test above passed:
-    // both are tracked, neither is gitignored, the allowlist named them. Deploy
-    // from a checkout worked, which is where it is always tested. Deploy from a
-    // bun-global install — the only install method this CLI documents — died at
-    // `COPY package.json bun.lock bunfig.toml ./` with `stat bun.lock: file does
-    // not exist`, after pulling the base image and pushing a build context, so
-    // the failure arrived minutes in and named a file sitting in the repository.
+    // A fresh clone and a published package are two different definitions of
+    // "the file is there", and this Dockerfile ships inside the package — `files`
+    // carries `src`, and it lives under it — so `lanes link deploy` builds from
+    // whatever npm sent. `bun.lock` and `bunfig.toml` were not in `files` at all;
+    // every other test here passed, because both are tracked and neither is
+    // gitignored, and deploy from a bun-global install died at `COPY`.
+    //
+    // Adding them to `files` fixed one of the two and *looked* like it fixed
+    // both. **npm removes a root lockfile from a tarball whatever `files`
+    // says** — npm 12, which `release.yml` installs, strips `bun.lock`; npm 11.6
+    // packs it. So a local `npm pack` confirmed a fix that had not shipped, and
+    // the published 0.6.3 tarball had no lockfile in it.
+    //
+    // Which is why this asserts the *rule* rather than shelling out to whichever
+    // npm happens to be on the machine — a test whose answer depends on that is
+    // the same trap one layer down. A source npm strips has to be written as a
+    // glob, so the build tolerates its absence; everything else has to be
+    // shipped by `files`.
     const sources = copySources(await readFile(DOCKERFILE, 'utf8'));
     const files: string[] = JSON.parse(await readFile(MANIFEST, 'utf8')).files;
 
     // npm ships these whatever `files` says, so they need no entry.
     const always = ['package.json', 'README.md', 'LICENSE', 'LICENCE'];
+    // …and removes these however hard you ask, but only at the package root.
+    const stripped = ['bun.lock', 'bun.lockb', 'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml'];
 
-    const missing = sources.filter((source) => {
+    const problems: string[] = [];
+    for (const source of sources) {
       const bare = source.replace(/\/$/, '');
-      if (always.includes(bare)) return false;
-      return !files.some((entry) => {
+      if (bare.endsWith('*')) {
+        // Optional by construction. Only worth writing that way for something
+        // that can actually be missing.
+        const named = bare.slice(0, -1);
+        if (!stripped.includes(named)) problems.push(`${source} is optional but always ships`);
+        continue;
+      }
+      if (stripped.includes(bare)) {
+        problems.push(`${bare} is stripped from every tarball — copy it as "${bare}*"`);
+        continue;
+      }
+      if (always.includes(bare)) continue;
+      const shipped = files.some((entry) => {
         const listed = entry.replace(/^\.\//, '').replace(/\/$/, '');
         return listed === bare || bare.startsWith(`${listed}/`);
       });
-    });
+      if (!shipped) problems.push(`${bare} is copied but not in "files"`);
+    }
 
-    expect({ missing, files }).toEqual({ missing: [], files });
+    expect({ problems, sources, files }).toEqual({ problems: [], sources, files });
+  });
+
+  test('installs against the lockfile when there is one, and says so when there is not', async () => {
+    // The fallback must not be `--frozen-lockfile || bun install`: that turns a
+    // real lockfile-versus-manifest disagreement in a checkout build into a
+    // silent unpinned install, which is the one thing the frozen flag is for.
+    // Instructions only. The comment above the RUN line names the anti-pattern
+    // in order to rule it out, and a scan of the whole file reads that as the
+    // thing itself.
+    const instructions = (await readFile(DOCKERFILE, 'utf8'))
+      .split('\n')
+      .filter((line) => !line.trimStart().startsWith('#'))
+      .join('\n');
+
+    expect(instructions).toContain('--frozen-lockfile');
+    expect(instructions).not.toMatch(/--frozen-lockfile\s*\|\|/);
+    expect(instructions).toMatch(/if \[ -f bun\.lock \]/);
   });
 
   test('the workspace root is not baked in', async () => {
