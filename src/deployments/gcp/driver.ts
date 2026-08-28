@@ -13,6 +13,7 @@ import { encodeRef } from '../adapters/gcp-secret-manager.ts';
 import {
   captureGcloud,
   gcloudPath,
+  gcloudPolicy,
   requireProject,
   runGcloud,
   serviceUrl,
@@ -176,7 +177,11 @@ export const cloudRunDriver: DeployDriver = {
   },
 
   provision(input: ProvisionInput): Promise<DeployStep[]> {
-    return provisionSteps(input);
+    // The policy reader is what lets a deploy take away the bindings it
+    // supersedes rather than only add the ones it means. It reads; it changes
+    // nothing, and a `--dry-run` that skipped it would print a plan missing
+    // exactly the steps this deploy exists to make visible.
+    return provisionSteps(input, gcloudPolicy);
   },
 
   plan: deployPlan,

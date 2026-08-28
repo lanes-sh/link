@@ -43,6 +43,8 @@ targets:
   cloud:
     credentials: { adapter: gcp-secret-manager, project: my-project }
     storage: { adapter: gcs, bucket: your-bucket }
+    last_deploy: "2026-08-28T09:00:00.000Z"
+    last_deploy_version: "0.6.6"
     deploy:
       platform: cloudrun
       project: my-project
@@ -132,6 +134,17 @@ describe('what a profile declares', () => {
     expect(cloud.deployed).toBe(true);
     expect(cloud.deployment).toMatchObject({ service: 'my-service', region: 'europe-west1' });
 
+    // What rolled it, read off the registry rather than off the endpoint. The
+    // image is built from the installed package, so the release that ran the
+    // deploy is the code up there — and this answers offline, with the service
+    // scaled to zero, from a machine that has never deployed it.
+    expect(cloud.lastDeployVersion).toBe('0.6.6');
+    expect(cloud.lastDeploy).toBe('2026-08-28T09:00:00.000Z');
+
+    // A target nothing has deployed since the field existed says so rather than
+    // implying a version.
+    expect(listing.targets.find((target) => target.name === 'staging')!.lastDeployVersion).toBeNull();
+
     // Declared with no deployment: the distinction `deployed` exists to carry.
     const staging = listing.targets.find((target) => target.name === 'staging')!;
     expect(staging.deployed).toBe(false);
@@ -178,6 +191,34 @@ describe('what a profile declares', () => {
     );
 
     expect(listing.selected).toBeNull();
+  });
+});
+
+describe('a pointer, which is what a deployed target looks like from here', () => {
+  test('carries the deploy record, so the version is readable with the bucket offline', async () => {
+    // The one part of a pointer entry that is not somewhere else. `list`
+    // deliberately follows no pointer — that is a network read per entry — so if
+    // the record were only in the bucket, the question "which release is up
+    // there" would need the bucket to answer it, on the command that exists to
+    // work when the bucket does not.
+    const { root, env } = await workspace();
+    await writeFile(
+      join(root, 'lanes-link.yaml'),
+      `contract: 2
+
+targets:
+  cloud:
+    workspace: gs://your-bucket
+    primary: personal
+    last_deploy: "2026-08-28T09:00:00.000Z"
+    last_deploy_version: "0.6.6"
+`,
+    );
+
+    const cloud = (await readTargets({ profile: 'personal' }, { env })).targets[0]!;
+
+    expect(cloud.pointsAt).toBe('gs://your-bucket');
+    expect(cloud.lastDeployVersion).toBe('0.6.6');
   });
 });
 

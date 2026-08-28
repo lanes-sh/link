@@ -66,6 +66,16 @@ export interface TargetSummary {
   /** Whether a deployment is declared. Unknown, and false, for a pointer. */
   readonly deployed: boolean;
   readonly deployment: DeploymentIdentity | null;
+  /**
+   * When this target was last deployed, and which CLI release rolled it.
+   *
+   * The one part of a pointer entry that is *not* somewhere else: `deploy`
+   * writes the record on both ends, so this machine can answer "what is running
+   * up there" without following the pointer or waking the endpoint. Null means
+   * nothing has deployed this target since the field existed.
+   */
+  readonly lastDeploy: string | null;
+  readonly lastDeployVersion: string | null;
   /** Only when asked for; absent is "not asked", null is "asked, no answer". */
   readonly url?: string | null;
 }
@@ -136,6 +146,13 @@ async function survey(
 
 /** One entry, rendered without following it. */
 function summarise(name: string, entry: WorkspaceTarget, isSelected: boolean): TargetSummary {
+  // Both shapes carry it: the deploy record is written to the target's own
+  // workspace *and* to the pointer here, which is what keeps it readable offline.
+  const record = {
+    lastDeploy: entry.last_deploy ?? null,
+    lastDeployVersion: entry.last_deploy_version ?? null,
+  };
+
   if (isPointer(entry)) {
     return {
       name,
@@ -147,6 +164,7 @@ function summarise(name: string, entry: WorkspaceTarget, isSelected: boolean): T
       knowledge: null,
       deployed: false,
       deployment: null,
+      ...record,
     };
   }
 
@@ -160,6 +178,7 @@ function summarise(name: string, entry: WorkspaceTarget, isSelected: boolean): T
     knowledge: null,
     deployed: entry.deploy !== undefined,
     deployment: deploymentIdentity(entry.deploy),
+    ...record,
   };
 }
 
@@ -328,6 +347,15 @@ export async function targetShow(name: string | undefined, flags: TargetFlags): 
       ['  region', summary.deployment.region],
       ...(summary.deployment.project ? [['  project', summary.deployment.project]] : []),
       ['  address', url ?? style.dim('not answering — is it deployed?')],
+      // The release that rolled it, which is the version of this CLI running up
+      // there: the image is built from the installed package. Recorded by
+      // `deploy` once the rollout succeeded, so a target deployed by an older
+      // CLI than this one says so rather than saying nothing.
+      ['  last deploy', summary.lastDeploy ?? style.dim('not recorded')],
+      [
+        '  version',
+        summary.lastDeployVersion ?? style.dim('not recorded — deploy again to record it'),
+      ],
     ]);
   });
 }

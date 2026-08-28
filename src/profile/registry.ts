@@ -42,7 +42,7 @@ export interface ResolvedTarget {
   readonly workspaceRoot: string;
   /** The adapter set, from whichever workspace declares it. */
   readonly declared: TargetConfig;
-  /** The declaring entry, for `primary` and `last_deploy`. */
+  /** The declaring entry, for `primary` and the deploy record. */
   readonly entry: WorkspaceTarget;
   /** Whether the local workspace reached this through a pointer. */
   readonly remote: boolean;
@@ -107,10 +107,11 @@ export async function openTarget(root: string, target: string): Promise<Resolved
   const declared = declaredTarget(remoteEntry);
   if (!declared) throw incompleteTarget(target, workspaceRoot);
 
-  // The local entry's `primary` and `last_deploy` are what `deploy` wrote on the
-  // machine that ran it; the declaring workspace is authoritative for everything
-  // else. Merged this way round so a redeploy from a second machine does not
-  // silently lose the first one's record of who opens the endpoint.
+  // The local entry's `primary`, `last_deploy` and `last_deploy_version` are what
+  // `deploy` wrote on the machine that ran it; the declaring workspace is
+  // authoritative for everything else. Merged this way round so a redeploy from a
+  // second machine does not silently lose the first one's record of who opens the
+  // endpoint.
   return {
     target,
     workspaceRoot,

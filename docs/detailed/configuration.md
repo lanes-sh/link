@@ -307,6 +307,32 @@ connections for a bucket holding fifteen.
 Following a pointer is a read of that workspace's own file, so `--target cloud` needs the bucket
 reachable. Offline it says so, rather than answering from a local copy that may be hours stale.
 
+### What a deploy writes back
+
+`lanes link deploy` stamps three fields onto the entry, on **both** ends — the target's own
+workspace file and the pointer here:
+
+```yaml
+contract: 2
+
+targets:
+  cloud:
+    workspace: gs://your-bucket
+    primary: personal                              # whose token opens the endpoint (ADR-009)
+    last_deploy: "2026-08-28T09:00:00.000Z"
+    last_deploy_version: "0.6.6"                   # the release that rolled the revision
+```
+
+`last_deploy_version` is the CLI release that ran the deploy, which is the code the endpoint is
+running: the image is built from the installed package, so the two cannot differ. It is written
+*after* the rollout, so a build that failed leaves the previous version in place rather than
+claiming one that never served a request.
+
+Keeping it on the pointer as well as in the bucket is what makes it readable offline —
+`lanes link target list` deliberately follows no pointer, and `lanes link target show <name>` prints
+it beside `last_deploy`. Nothing reads these three; they are a record, and every command works
+without them.
+
 | Interface | `local` | `cloud` |
 |---|---|---|
 | SecretStore | encrypted file | Google Secret Manager |
