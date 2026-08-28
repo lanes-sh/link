@@ -20,20 +20,6 @@ import { allowedConnections } from '#policy';
  * still a leak.
  */
 
-/**
- * A connection's reconciled state, as much of it as a reader needs.
- *
- * Structural rather than the store's own `ConnectionRecord`: `server` does not
- * import `stores` (`src/architecture.test.ts`), and what a surface that reports
- * wants from a connection is its key and whether it is working — not the
- * timestamps and credential expiry the repository keeps behind it.
- */
-export interface ConnectionState {
-  readonly provider: string;
-  readonly id: string;
-  readonly status: string;
-}
-
 /** Everything one profile contributes to the endpoint. */
 export interface ProfileRuntime {
   readonly config: Config;
@@ -49,25 +35,6 @@ export interface ProfileRuntime {
    * how often to ask (ADR-014).
    */
   refreshSkills?(): Promise<void>;
-  /**
-   * Which target's adapters this profile was opened against.
-   *
-   * Not derivable from `config`: a target is *selected* per run, and the config
-   * only says which one is the default. Optional for the same reason the one
-   * below is — a runtime built to answer "what is visible" was never opened
-   * against anything.
-   */
-  readonly target?: string | undefined;
-  /**
-   * Reconciled connection state, for a surface that reports rather than
-   * dispatches.
-   *
-   * Optional exactly as `refreshSkills` is: only a served endpoint holds the
-   * state handle this reads through, and nothing on the dispatch path asks —
-   * a capability's visibility is decided by policy, not by whether the
-   * credential behind it currently works.
-   */
-  connections?(): Promise<readonly ConnectionState[]>;
 }
 
 export interface BuildServerOptions {

@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { approvalPage, completionPage } from './callback-page.ts';
-import { dashboardPage, dashboardSignInPage } from './dashboard-page.ts';
 
 /**
  * Every page this repository serves, held to the design system.
@@ -39,7 +38,7 @@ const DECLARED = [
 ];
 
 /** Every module that contributes CSS to a served page. */
-const SURFACES = ['callback-page.ts', 'dashboard-page.ts', 'dashboard-shell.ts'];
+const SURFACES = ['callback-page.ts'];
 
 const read = (name: string) => readFile(join(SRC, name), 'utf8');
 
@@ -160,18 +159,6 @@ describe('what a browser actually receives', () => {
         target: 'local',
       }),
     ],
-    ['sign-in', dashboardSignInPage(401)],
-    [
-      'dashboard',
-      dashboardPage({
-        profile: 'personal',
-        profiles: ['personal'],
-        target: 'local',
-        targets: ['local'],
-        connections: [],
-        ownClients: [],
-      }),
-    ],
   ];
 
   for (const [name, response] of PAGES) {
@@ -197,9 +184,8 @@ describe('what a browser actually receives', () => {
       expect(csp).toContain("default-src 'none'");
       expect(csp).toContain('https://fonts.googleapis.com');
       expect(csp).toContain('https://fonts.gstatic.com');
-      // Script is allowed exactly where there is one: the two dashboard pages
-      // have a copy button, the consent screen has a submit spinner, and the
-      // page a connect flow lands on has neither.
+      // Script is allowed exactly where there is one: the consent screen has a
+      // submit spinner, and the page a connect flow lands on has nothing.
       expect(csp.includes('script-src')).toBe(name !== 'completion');
     });
   }

@@ -247,13 +247,15 @@ const MAX_LINES = 400;
  * the seam the budget exists to point at: they were not too long, they were
  * two things.
  *
- * `server/endpoint.ts` is the one entry here that no single change earned. It
- * was 371 lines on `main` and under the budget on all four branches that were
- * open at once; it crossed at 416 only when they were integrated, gaining the
- * target-aware authorization surface from one and the dashboard route from
- * another. The seam is the second of those — the dashboard is a whole surface
- * reached over the same port, and `server/dashboard.ts` already holds most of
- * it. Cut there rather than by line count.
+ * `server/endpoint.ts` came off this list, and how is the point. It was the one
+ * entry no single change earned: 371 lines on `main` and under the budget on all
+ * four branches that were open at once, crossing at 416 only when they were
+ * integrated, gaining the target-aware authorization surface from one and the
+ * dashboard route from another. The note here named the second as the seam — the
+ * dashboard was a whole surface reached over the same port — and said to cut
+ * there rather than by line count. ADR-053 cut there by deleting it, and the
+ * file came back under on its own. An exemption that names a seam is a debt
+ * with an address, which is the only kind that gets paid.
  *
  * `server/harness.ts` is the one with a seam already
  * visible: `startStdioHarness` and `StdioHarness` are 135 lines serving the
@@ -310,7 +312,6 @@ const KNOWN_LONG = new Set([
   'deployments/adapters/gcp-secret-manager.ts',
   'profile/schema.ts',
   'providers/memory/provider.ts',
-  'server/endpoint.ts',
   'server/harness.ts',
 ]);
 

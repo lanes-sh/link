@@ -133,9 +133,13 @@ export const SELECTION: Record<string, Requires> = {
   status: 'target',
   outputs: 'profile+target',
   tools: 'profile+target',
-  // It reads which target it is rendering for before it decides anything: a
-  // deployed one has no page to open, and the refusal has to name it.
-  dashboard: 'profile+target',
+  // It resolves nothing and opens nothing — it hands macOS a URL (ADR-053).
+  // `target list` is the precedent for a `'none'` command that still takes a
+  // flag of its own. Both spellings need a row: `selection.test.ts` reads
+  // `main.ts` for `case` labels, and a label with no row here falls through to
+  // the `profile+target` default.
+  dashboard: 'none',
+  desktop: 'none',
   attach: 'profile+target',
   start: 'profile+target',
   deploy: 'target',
@@ -282,6 +286,7 @@ const ACCEPTS: Record<string, readonly string[]> = {
   'mcp skill': ['print', 'force'],
   'mcp list': ['name', 'scope'],
   dashboard: ['print'],
+  desktop: ['print'],
   skill: ['print', 'force'],
   deploy: ['dry-run', 'iam', 'access', 'service-account', 'tag', 'yes', 'non-interactive'],
   'secrets push': ['from', 'to', 'overwrite', 'dry-run'],

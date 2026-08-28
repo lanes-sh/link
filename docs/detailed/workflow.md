@@ -460,33 +460,28 @@ Credentials follow the target, because each target has its own credential store.
 copies and never deletes, and skips a reference the destination already holds unless you pass
 `--overwrite` — the deployed copy may be the newer one.
 
-## The dashboard
+## The desktop app
 
-Everything under *Inspection* below, on one page, for a local endpoint:
+Everything on this page has a window version. The [Lanes desktop app](https://lanes.sh/desktop)
+has a Lanes Link page under **Settings → Integrations → Lanes Link**: it holds the profile and
+target every command runs against, connects accounts, starts and stops the endpoint, and registers
+it with Claude Code or Codex.
 
 ```console
-$ lanes link dashboard              # opens a browser
-$ lanes link dashboard --print      # prints the URL instead
+$ lanes link desktop                # opens the app on that page
+$ lanes link desktop --print        # prints the link instead
 ```
 
-It shows the connections and their reconciled state, every provider nothing is connected to, the
-profiles this endpoint serves, and the targets the profile declares — with the one whose adapters
-are open marked, and the others shown as declared but not served here.
+`lanes link dashboard` is the same command — it used to open a page this endpoint served, and
+[ADR-053](adr/053-the-page-a-person-reads-is-the-app.md) retired that page in favour of the app.
+Neither spelling takes `--profile` or `--target` any more; the app holds its own selection.
 
-**It renders commands; it does not run them.** A card for an unconnected provider carries the exact
-`lanes link connect …` line, spelled with `--profile` and `--target` so the shell you paste it into
-cannot resolve a different one than the page was describing. Connecting still happens in a terminal,
-because the browser consent belongs to whoever owns the browser and the callback listener is the
-CLI's ([ADR-005](adr/005-oauth-connection-flow.md)).
+It **runs** these commands rather than reimplementing them, which is the part worth knowing. Consent
+and the token stay here, an endpoint set up in the app is the same one you get from a shell, and
+anything the app cannot do yet is a command in this document. macOS only, as the app is; the CLI
+runs anywhere.
 
-**Local only.** A browser navigation carries no `Authorization` header, and Cloud Run's own gate
-admits only a Google-signed identity token that no browser will mint either — so a deployed instance
-has no door this page could sit behind, and the container entrypoint never mounts it
-([ADR-018](adr/018-the-gate-is-in-the-application.md)). Against a deployed target the command says
-so and points at `lanes link status --target <name>`.
-
-The link the command opens carries a one-time key, which the endpoint exchanges for a session cookie
-and drops from the URL — so the token is not left in the address bar, the history, or a Referer.
+**[How to use it →](https://lanes.sh/docs/desktop/lanes-link)**
 
 ## Inspection
 

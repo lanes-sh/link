@@ -28,7 +28,6 @@ export {
   visibleCapabilities,
   visibleToolCount,
   type BuildServerOptions,
-  type ConnectionState,
   type MergedCapability,
   type ProfileRuntime,
 } from './visibility.ts';
