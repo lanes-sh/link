@@ -1,5 +1,6 @@
 import { ConfigError, type DeployConfig } from '#profile';
 import type { CommandResult } from '../driver.ts';
+import type { PolicyBinding, PolicyReader } from './iam.ts';
 
 /**
  * Shelling out to `gcloud`.
@@ -176,3 +177,36 @@ export async function openBillingAccounts(): Promise<{ id: string; name: string 
     })
     .filter((account) => account.id.length > 0);
 }
+
+/**
+ * The IAM policies a deploy is about to edit, read before it edits them.
+ *
+ * Read rather than remembered. `add-iam-policy-binding` adds a binding beside an
+ * existing one whenever the condition differs, so a deploy that changes a
+ * condition leaves the old one granting whatever it granted — and nothing in
+ * this repository knows what the last deploy wrote (`docs/detailed/init.md`
+ * rules out the state file that would). IAM is what actually decides, so IAM is
+ * what gets asked.
+ *
+ * Every failure answers `null`, which plans no removals at all: a missing
+ * `gcloud`, a bucket that does not exist yet on a first deploy, and a policy
+ * this login may not read are all "could not look", and none of them is a reason
+ * to guess at what to take away.
+ */
+async function readPolicy(argv: readonly string[]): Promise<PolicyBinding[] | null> {
+  const result = await captureGcloud(argv);
+  if (!result.ok) return null;
+
+  try {
+    return (JSON.parse(result.stdout) as { bindings?: PolicyBinding[] }).bindings ?? [];
+  } catch {
+    return null;
+  }
+}
+
+export const gcloudPolicy: PolicyReader = {
+  bucket: (bucket) =>
+    readPolicy(['storage', 'buckets', 'get-iam-policy', `gs://${bucket}`, '--format', 'json']),
+  project: (project) =>
+    readPolicy(['projects', 'get-iam-policy', project, '--format', 'json']),
+};

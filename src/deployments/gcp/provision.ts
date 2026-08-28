@@ -1,8 +1,9 @@
 import { VAULT_DOCUMENT_REF, type SecretRef } from '#secrets';
 import type { DeployStep, ProvisionInput } from '../driver.ts';
 import { encodeRef } from '../adapters/gcp-secret-manager.ts';
-import { layout } from '#profile';
+import { bucketSteps } from './bucket.ts';
 import { requireProject } from './gcloud.ts';
+import type { PolicyReader } from './iam.ts';
 
 /**
  * The project-level things a Cloud Run deploy needs to already exist.
@@ -56,6 +57,44 @@ export interface SecretGrant {
   readonly refs: readonly SecretRef[];
 }
 
+/**
+ * Bring each secret into existence, so the bindings below have something to
+ * attach to and the revision never needs `secrets.create` itself.
+ *
+ * That second half is the reason this is a step rather than left to whoever
+ * writes the value: `secretmanager.secrets.create` is a project-level
+ * permission, and a revision holding it could mint credential references of its
+ * own. So the container is created here and the revision only ever adds a
+ * version.
+ *
+ * The first half is why *read* grants need it too, which they did not have. A
+ * binding cannot attach to a secret that does not exist — `gcloud` answers
+ * `NOT_FOUND`, every step here tolerates failure, and the deploy carries on. On
+ * a first deploy that is exactly what happened to the endpoint's own bearer
+ * token: `prepareSecrets` mints it *after* provisioning, so the secret appeared
+ * a step too late to be bound and the revision could not read the one value it
+ * refuses to start without. A second deploy fixed it, which is why this survived
+ * — the failure only ever showed up once per project.
+ */
+export function createSteps(input: {
+  readonly project: string;
+  readonly refs: readonly SecretRef[];
+}): DeployStep[] {
+  return input.refs.map((ref) => ({
+    title: `create the secret ${encodeRef(ref)}, so the revision never needs secrets.create`,
+    argv: [
+      'secrets',
+      'create',
+      encodeRef(ref),
+      '--project',
+      input.project,
+      '--replication-policy',
+      'automatic',
+    ],
+    tolerateFailure: true,
+  }));
+}
+
 /** Read, named one secret at a time, so the grant needs no condition to be scoped. */
 export function readSteps({ project, serviceAccount, refs }: SecretGrant): DeployStep[] {
   return refs.map((ref) => ({
@@ -80,39 +119,32 @@ export function readSteps({ project, serviceAccount, refs }: SecretGrant): Deplo
 }
 
 /**
- * Write, two steps each, and the first is what keeps the second narrow: the
- * secret is created here so the revision only ever needs to *add a version*,
- * never `secrets.create`, which is a project-level permission that would let it
- * mint credential references of its own.
+ * Write, named one secret at a time, and never `secrets.create` — the container
+ * is made by `createSteps` so this grant can stay at "add a version".
  */
 export function rotateSteps({ project, serviceAccount, refs }: SecretGrant): DeployStep[] {
-  return refs.flatMap((ref) => {
-    const id = encodeRef(ref);
-    return [
-      {
-        title: `create the secret ${id}, so the revision never needs secrets.create`,
-        argv: ['secrets', 'create', id, '--project', project, '--replication-policy', 'automatic'],
-        tolerateFailure: true,
-      },
-      {
-        title: `let the revision rewrite ${ref}, and nothing else in the store`,
-        argv: [
-          'secrets',
-          'add-iam-policy-binding',
-          id,
-          '--project',
-          project,
-          '--member',
-          `serviceAccount:${serviceAccount}`,
-          '--role',
-          'roles/secretmanager.secretVersionAdder',
-          '--condition',
-          'None',
-        ],
-        tolerateFailure: true,
-      },
-    ];
-  });
+  return refs.map((ref) => ({
+    title: `let the revision rewrite ${ref}, and nothing else in the store`,
+    argv: [
+      'secrets',
+      'add-iam-policy-binding',
+      encodeRef(ref),
+      '--project',
+      project,
+      '--member',
+      `serviceAccount:${serviceAccount}`,
+      '--role',
+      'roles/secretmanager.secretVersionAdder',
+      '--condition',
+      'None',
+    ],
+    tolerateFailure: true,
+  }));
+}
+
+/** The union of two ref lists, deduplicated and ordered, so nothing is created twice. */
+function union(...lists: readonly (readonly SecretRef[])[]): SecretRef[] {
+  return [...new Set(lists.flat())].sort();
 }
 
 /**
@@ -142,12 +174,74 @@ export function secretGrantSteps(
 ): DeployStep[] {
   const { project, serviceAccount } = grant;
   return [
+    ...createSteps({ project, refs: union(grant.readable, grant.rotatable) }),
     ...readSteps({ project, serviceAccount, refs: grant.readable }),
     ...rotateSteps({ project, serviceAccount, refs: grant.rotatable }),
   ];
 }
 
-export function provisionSteps(input: ProvisionInput): Promise<DeployStep[]> {
+/**
+ * The project-wide secret read that per-secret bindings replaced.
+ *
+ * `roles/secretmanager.secretAccessor` on the whole project is what this deploy
+ * used to grant, and removing it from the code did not remove it from anybody's
+ * project: `add-iam-policy-binding` never took it away, and IAM unions what is
+ * there. It kept working, which is the problem — a connection made after a
+ * deploy could still be *read* by the revision through this binding while its
+ * per-secret grant was missing, so the connection authorised, answered, and
+ * reported `active` until the first token refresh needed a write. An hour of
+ * looking healthy, and then a 403 nowhere near its cause.
+ *
+ * Only ever removed when this run granted read per secret. With no `readable`
+ * set there is nothing to fall back to, and taking away the only grant the
+ * revision has would be an outage caused by tidying.
+ */
+async function projectReadRemoval(input: {
+  readonly project: string;
+  readonly member: string;
+  readonly readable: readonly SecretRef[];
+  readonly policy: PolicyReader | undefined;
+}): Promise<DeployStep[]> {
+  if (input.readable.length === 0 || !input.policy) return [];
+
+  const current = await input.policy.project(input.project);
+  const present = (current ?? []).some(
+    (binding) =>
+      binding.role === 'roles/secretmanager.secretAccessor' &&
+      (binding.members ?? []).includes(input.member),
+  );
+  if (!present) return [];
+
+  return [
+    {
+      title: 'drop the project-wide secret read the per-secret grants replaced',
+      argv: [
+        'projects',
+        'remove-iam-policy-binding',
+        input.project,
+        '--member',
+        input.member,
+        '--role',
+        'roles/secretmanager.secretAccessor',
+        // Irrespective of any condition: every shape of this binding is one an
+        // earlier version of this file wrote, and all of them are superseded.
+        '--all',
+      ],
+      tolerateFailure: true,
+      removes: true,
+    },
+  ];
+}
+
+export async function provisionSteps(
+  input: ProvisionInput,
+  /**
+   * How to read the policies this deploy is about to change, so it can take away
+   * what it supersedes as well as add what it means. Absent plans no removals —
+   * see `PolicyReader`.
+   */
+  policy?: PolicyReader,
+): Promise<DeployStep[]> {
   const cloudrun = requireProject(input.deploy, input.target);
   const { project, region, service_account: serviceAccount } = cloudrun;
   const steps: DeployStep[] = [];
@@ -206,6 +300,25 @@ export function provisionSteps(input: ProvisionInput): Promise<DeployStep[]> {
       tolerateFailure: true,
     });
 
+    // What a revision rewrites in its own credential store, named one secret at
+    // a time. Two kinds, and they arrive from different places:
+    //
+    //   - the vault document, because `vault.put` is a capability an agent may
+    //     hold under policy (ADR-022);
+    //   - each connection's OAuth token, because a refresh persists and serving
+    //     a request is what triggers it (ADR-026).
+    //
+    // The second was missing, and the shape of the miss is worth keeping in
+    // mind: nothing here was wrong, it was incomplete, and being incomplete
+    // looked exactly like being finished. Reading mail 403'd an hour after every
+    // deploy.
+    const rotatable = [
+      ...(input.declared.vault?.adapter === 'secret'
+        ? [input.declared.vault.ref ?? VAULT_DOCUMENT_REF]
+        : []),
+      ...(input.rotatable ?? []),
+    ];
+
     // Read, named one secret at a time, for the same reason the write side is:
     // a resource-level grant needs no condition to be scoped.
     //
@@ -220,37 +333,19 @@ export function provisionSteps(input: ProvisionInput): Promise<DeployStep[]> {
     // Affordable because the serving path reads by explicit ref: `list()` is a
     // CLI call, and `secretAccessor` never carried `secrets.list` anyway.
     // `readableRefs` derives the set from config and manifests at deploy time.
-    steps.push(...readSteps({ project, serviceAccount, refs: input.readable ?? [] }));
-  }
+    const readable = input.readable ?? [];
 
-  // What a revision rewrites in its own credential store, named one secret at a
-  // time. Two kinds, and they arrive from different places:
-  //
-  //   - the vault document, because `vault.put` is a capability an agent may
-  //     hold under policy (ADR-022);
-  //   - each connection's OAuth token, because a refresh persists and serving a
-  //     request is what triggers it (ADR-026).
-  //
-  // The second was missing, and the shape of the miss is worth keeping in mind:
-  // nothing here was wrong, it was incomplete, and being incomplete looked
-  // exactly like being finished. Reading mail 403'd an hour after every deploy.
-  //
-  // Two steps each, and the first is what keeps the second narrow: the secret is
-  // created here so the revision only ever needs to *add a version*, never
-  // `secrets.create`, which is a project-level permission that would let it mint
-  // credential refs of its own. The binding is on the one secret, so it needs no
-  // condition to be scoped — a resource-level grant already is.
-  const writable = serviceAccount
-    ? [
-        ...(input.declared.vault?.adapter === 'secret'
-          ? [input.declared.vault.ref ?? VAULT_DOCUMENT_REF]
-          : []),
-        ...(input.rotatable ?? []),
-      ]
-    : [];
-
-  if (serviceAccount) {
-    steps.push(...rotateSteps({ project, serviceAccount, refs: writable }));
+    steps.push(...createSteps({ project, refs: union(readable, rotatable) }));
+    steps.push(...readSteps({ project, serviceAccount, refs: readable }));
+    steps.push(...rotateSteps({ project, serviceAccount, refs: rotatable }));
+    steps.push(
+      ...(await projectReadRemoval({
+        project,
+        member: `serviceAccount:${serviceAccount}`,
+        readable,
+        policy,
+      })),
+    );
   }
 
   // Any target that addresses a bucket, which deployed means all of them:
@@ -263,110 +358,17 @@ export function provisionSteps(input: ProvisionInput): Promise<DeployStep[]> {
     input.declared.storage.adapter === 'gcs' || input.declared.storage.adapter === 's3';
   const bucket = usesBucket ? input.declared.storage.bucket : undefined;
   if (bucket) {
-    steps.push({
-      title: `create the bucket gs://${bucket}`,
-      argv: [
-        'storage',
-        'buckets',
-        'create',
-        `gs://${bucket}`,
-        '--project',
+    steps.push(
+      ...(await bucketSteps({
+        bucket,
         project,
-        '--location',
         region,
-        // Blobs here are read and written by one instance at a time and never
-        // served publicly; uniform access removes per-object ACLs as a way to
-        // get that wrong.
-        '--uniform-bucket-level-access',
-      ],
-      tolerateFailure: true,
-    });
-
-    if (serviceAccount) {
-      // Two conditioned bindings rather than one blanket objectAdmin, because
-      // the bucket now holds the config as well as the data.
-      //
-      // ADR-007 says a deployed instance never mutates its own configuration.
-      // That used to be enforced by the image being read-only, which stopped
-      // being true when the workspace moved into the bucket (ADR-023). This is
-      // where the guarantee went: the revision may write what it owns and may
-      // only read what declares what it is.
-      const objectsUnder = (path: string): string =>
-        `resource.name.startsWith("projects/_/buckets/${bucket}/objects/${path}")`;
-      const objectIs = (path: string): string =>
-        `resource.name == "projects/_/buckets/${bucket}/objects/${path}"`;
-
-      // A provider manifest is configuration that happens to live inside the
-      // profile's directory (ADR-030), so `data/` alone no longer separates what
-      // the revision owns from what declares what it is.
-      //
-      // **One `startsWith` per profile, because Cloud Storage IAM conditions
-      // cannot express anything else.** Their CEL is a restricted subset —
-      // `resource.type`, `resource.name` with `startsWith`/`endsWith`/`==`, and
-      // the date functions — and it has no `matches`. This was a regex, and it
-      // was refused twice over: first because it spelled the dot `\.`, which is
-      // not a CEL escape, so the string literal would not parse; then, with that
-      // fixed, because `matches` is `undeclared` in this dialect.
-      //
-      // Both bindings carry `tolerateFailure`, so each attempt printed a warning
-      // and left whatever conditions the bucket already had. On a real
-      // deployment that was `expression=true` on the read binding — every object
-      // in the bucket, the exact opposite of the narrowing the step title claims,
-      // and the state ADR-007 says must not exist.
-      //
-      // Enumerating the served profiles is expressible in the subset that does
-      // exist, and it makes `grants.test.ts` honest as a side effect: that file
-      // evaluates these as JavaScript, where `startsWith` means what it means
-      // here and `matches` quietly did not.
-      const manifestPrefixes = (input.profiles ?? []).map((profile) =>
-        objectsUnder(`${layout.providers(profile)}/`),
-      );
-      // No profiles leaves the carve-out off rather than guessing at one: the
-      // revision keeps write on its own data, as it did before this existed.
-      const providerManifests =
-        manifestPrefixes.length > 0 ? `(${manifestPrefixes.join(' || ')})` : null;
-
-      steps.push({
-        title: 'let the revision write its own data, but not the manifests in it',
-        argv: [
-          'storage',
-          'buckets',
-          'add-iam-policy-binding',
-          `gs://${bucket}`,
-          '--member',
-          `serviceAccount:${serviceAccount}`,
-          // objectAdmin, not objectViewer: state, the log, attachments, memory
-          // and skills are all written by the running endpoint.
-          '--role',
-          'roles/storage.objectAdmin',
-          '--condition',
-          `title=owns-its-data,expression=${objectsUnder('data/')}${providerManifests ? ` && !${providerManifests}` : ''}`,
-        ],
-        tolerateFailure: true,
-      });
-
-      steps.push({
-        title: 'let the revision read its config, and only read it',
-        argv: [
-          'storage',
-          'buckets',
-          'add-iam-policy-binding',
-          `gs://${bucket}`,
-          '--member',
-          `serviceAccount:${serviceAccount}`,
-          '--role',
-          'roles/storage.objectViewer',
-          // `expression=true` was here, which is every object in the bucket —
-          // the step title and ADR-023 both claim a narrowing this did not do.
-          // The config the revision reads is the workspace file, the profiles
-          // beside it, and each profile's own manifests, so name exactly those.
-          '--condition',
-          `title=reads-its-config,expression=${objectsUnder('profiles/')} || ${objectIs('lanes-link.yaml')}${providerManifests ? ` || ${providerManifests}` : ''}`,
-        ],
-        tolerateFailure: true,
-      });
-    }
+        serviceAccount,
+        profiles: input.profiles ?? [],
+        policy,
+      })),
+    );
   }
 
-  return Promise.resolve(steps);
+  return steps;
 }

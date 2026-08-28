@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { CommandResult, DeployDriver, DeployStep } from './driver.ts';
-import { isAlreadyThere, isUnready, runSteps } from './steps.ts';
+import { expectedOutcome, isAlreadyGone, isAlreadyThere, isUnready, runSteps } from './steps.ts';
 
 /**
  * Waiting out an API that was enabled a moment ago.
@@ -100,6 +100,43 @@ describe('a step that has already happened', () => {
     ]) {
       expect(isAlreadyThere(message)).toBe(false);
     }
+  });
+});
+
+describe('a step that takes something away', () => {
+  const removal: DeployStep = {
+    title: 'drop the superseded binding',
+    argv: ['storage', 'buckets', 'remove-iam-policy-binding'],
+    tolerateFailure: true,
+    removes: true,
+  };
+
+  test('the shapes gcloud uses to say there was nothing there', () => {
+    // The second deploy after the one that removed it finds nothing to remove,
+    // exactly as the second deploy after a create finds the thing present.
+    for (const message of [
+      'ERROR: (gcloud.projects.remove-iam-policy-binding) Policy binding with the specified principal and role not found!',
+      'ERROR: (gcloud.secrets.get-iam-policy) NOT_FOUND: Secret [x] not found.',
+      'ERROR: (gcloud.storage.buckets.remove-iam-policy-binding) HTTPError 404: The specified bucket does not exist.',
+    ]) {
+      expect(isAlreadyGone(message)).toBe(true);
+      expect(expectedOutcome(removal, message)).toBe('already gone');
+    }
+  });
+
+  test('and a step that was adding something reads NOT_FOUND as the failure it is', () => {
+    // The distinction is what the step *does*, not the message. A binding step
+    // answered NOT_FOUND means the secret it was binding is not there — which is
+    // a deploy rolling a revision that cannot read its own token, and it has to
+    // stay visible.
+    const binding: DeployStep = {
+      title: 'let the revision read profile/token',
+      argv: ['secrets', 'add-iam-policy-binding'],
+      tolerateFailure: true,
+    };
+
+    expect(expectedOutcome(binding, 'NOT_FOUND: Secret [profile__token] not found.')).toBeNull();
+    expect(expectedOutcome(removal, 'PERMISSION_DENIED: The caller does not have permission')).toBeNull();
   });
 });
 

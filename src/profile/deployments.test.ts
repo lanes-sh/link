@@ -92,10 +92,20 @@ describe('recording where a target lives', () => {
     // it — and handing the target over to its own workspace is exactly when the
     // rest of the entry is being replaced wholesale.
     const root = await workspace();
-    await recordTarget(root, 'cloud', { workspace: 'gs://your-bucket', primary: 'personal' });
+    await recordTarget(root, 'cloud', {
+      workspace: 'gs://your-bucket',
+      primary: 'personal',
+      last_deploy_version: '0.6.5',
+    });
     await recordTarget(root, 'cloud', { workspace: 'gs://your-bucket' });
 
-    expect((await readRegistry(root))['cloud']?.primary).toBe('personal');
+    const entry = (await readRegistry(root))['cloud']!;
+    expect(entry.primary).toBe('personal');
+    // The version travels with the rest of the record. `deploy` writes the
+    // declaration before the rollout and the version after it, so the second
+    // write is a partial one — and losing what the first said would leave the
+    // registry claiming a target nobody has ever deployed.
+    expect(entry.last_deploy_version).toBe('0.6.5');
   });
 
   test('two targets are two entries', async () => {

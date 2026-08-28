@@ -63,6 +63,9 @@ function pick(previous: WorkspaceTarget | undefined): Partial<WorkspaceTarget> {
   return {
     ...(previous.primary ? { primary: previous.primary } : {}),
     ...(previous.last_deploy ? { last_deploy: previous.last_deploy } : {}),
+    ...(previous.last_deploy_version
+      ? { last_deploy_version: previous.last_deploy_version }
+      : {}),
   };
 }
 
