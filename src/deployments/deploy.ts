@@ -1,15 +1,16 @@
 import {
   ConfigError,
-  recordTarget,
   resolveTargetWorkspace,
   resolveWorkspaceRoot,
   type DeployConfig,
 } from '#profile';
 import { announce, fail, heading, ok, print, style, warn } from '#cli/output.ts';
 import { staleNudge } from '#cli/release.ts';
+import { version } from '#cli/version.ts';
 import { confirm, isInteractive } from '#cli/prompt.ts';
 import { openSecretStoreFor, resolveProfile, type GlobalFlags } from '#cli/runtime.ts';
 import { resolveTarget, vaultEnv } from './bootstrap.ts';
+import { recordDeployment, type DeploymentRecord } from './record.ts';
 import { printSteps, runSteps } from './steps.ts';
 import { driverFor } from './drivers.ts';
 import { prepareSecrets, readableRefs, rotatableRefs } from './prepare.ts';
@@ -186,7 +187,10 @@ export async function deploy(flags: DeployFlags): Promise<void> {
     printSteps(driver, [...provision, ...rollout]);
     print('');
     if (workspace) print(style.dim(`  the workspace would be uploaded to ${workspace}`));
-    print(style.dim('  --dry-run: nothing was run, and no credential was read or written.'));
+    // Not "nothing was run": planning the list above reads the IAM policies this
+    // deploy would change, because what it supersedes is a fact about what is
+    // there. Reads only, and no credential among them.
+    print(style.dim('  --dry-run: nothing was changed, and no credential was read or written.'));
     return;
   }
 
@@ -261,6 +265,7 @@ export async function deploy(flags: DeployFlags): Promise<void> {
   // uploaded is a profile that gets served, and repairing a narrower set than
   // the upload sends would leave a served profile without the surface — this
   // bug again, one profile over.
+  let recorded: DeploymentRecord | null = null;
   if (workspace) {
     // The pre-flight that used to sit here is gone with contract 1. It refused
     // a deploy carrying a profile that did not declare the target, because the
@@ -296,39 +301,25 @@ export async function deploy(flags: DeployFlags): Promise<void> {
     // listing and no writes.
     await migrateWorkspace(workspace, { apply: true });
 
-    // **The target hands itself over to the workspace it now lives in.**
-    //
-    // Two writes, and the order matters. The declaration goes into the bucket's
-    // own `lanes-link.yaml` first, because that is the file the revision coming
-    // up will read to learn where its credentials and bytes are — and a
-    // revision that boots before it lands has nothing to open.
-    //
-    // The local entry then becomes a *pointer*. That is the whole of ADR-052 in
-    // two lines: after this, exactly one file declares this target, and this
-    // machine holds a reference to it rather than a copy. ADR-044's index
-    // existed because the profile's own block was the only record and could be
-    // lost in one edit; there is no second copy left to lose.
-    const stamped = new Date().toISOString();
-
-    await recordTarget(workspace, target, {
-      ...declared,
-      primary: resolution.profile,
-      last_deploy: stamped,
-    });
-
-    // **This machine's registry, not the target's.** `resolution.workspaceRoot`
-    // is the workspace the profile was *found* in, which for a deployed target is
-    // the bucket — so writing the pointer there pointed the bucket at itself, and
-    // the revision that came up refused to open its own target.
-    await recordTarget(resolveWorkspaceRoot(), target, {
+    // Where this deployment lives, in both registries — see `record.ts`. The
+    // declaration has to land before the revision boots, so it goes here rather
+    // than after the rollout; what rolled it is written once it has.
+    recorded = {
       workspace,
+      target,
+      declared,
       primary: resolution.profile,
-      last_deploy: stamped,
-    });
+      at: new Date().toISOString(),
+    };
+    await recordDeployment(recorded);
   }
 
   heading('Rolling out');
   await runSteps(driver, rollout);
+
+  // The release that rolled it, now that it has. `version()` is read from the
+  // installed package, which is the same tree the image was built from.
+  if (recorded) await recordDeployment({ ...recorded, version: version() });
 
   const url = await driver.url(deployConfig);
   if (!url) {

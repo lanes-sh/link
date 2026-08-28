@@ -433,6 +433,20 @@ export const workspaceTargetSchema = z
      */
     primary: identifier.optional(),
     last_deploy: z.string().optional(),
+    /**
+     * The CLI release that rolled the revision serving this target.
+     *
+     * Written by `deploy`, after the rollout rather than before it, so a build
+     * that failed does not leave a version recorded that never served anything.
+     * The image is built from the installed package, so the CLI that ran the
+     * deploy is the code running up there — which makes this the only way to ask
+     * "what version is the endpoint" without an endpoint answering.
+     *
+     * In the target's own workspace as well as on the machine that deployed it:
+     * a second laptop reading the registry learns it too, and `target show`
+     * prints it beside `last_deploy`.
+     */
+    last_deploy_version: z.string().optional(),
   })
   .superRefine((entry, ctx) => {
     const declares = entry.credentials !== undefined || entry.storage !== undefined;

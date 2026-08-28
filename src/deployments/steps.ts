@@ -61,6 +61,36 @@ export function isAlreadyThere(stderr: string): boolean {
 }
 
 /**
+ * The same thing, for a step that takes something away.
+ *
+ * A deploy removes the IAM bindings it supersedes, and a binding that is already
+ * gone is that step succeeding: the second deploy after the one that removed it
+ * finds nothing to remove, exactly as the second deploy after a create finds the
+ * thing present. Without this it reads as a warning, and a successful deploy
+ * printing warnings for its expected case teaches an operator to skim past the
+ * output that matters.
+ */
+const GONE = /NOT_FOUND|not found|does not exist|no such|cannot find|HTTPError 404/i;
+
+export function isAlreadyGone(stderr: string): boolean {
+  return GONE.test(stderr);
+}
+
+/**
+ * What a tolerated failure was, when it was this step's expected case.
+ *
+ * Keyed on what the step *does*, not on the message alone. `NOT_FOUND` from a
+ * removal is the work already being done; the same word from a step that binds a
+ * role means the secret it was binding does not exist, which is a deploy rolling
+ * a revision that cannot read its own token — the failure that has to stay
+ * visible.
+ */
+export function expectedOutcome(step: DeployStep, stderr: string): string | null {
+  if (step.removes === true) return isAlreadyGone(stderr) ? 'already gone' : null;
+  return isAlreadyThere(stderr) ? 'already there' : null;
+}
+
+/**
  * Spent across the whole run rather than per step.
  *
  * The wait is for one event — the APIs this deploy just enabled becoming usable
@@ -112,11 +142,12 @@ export async function runSteps(
     if (step.tolerateFailure) {
       // The expected case on every deploy after the first, said as such.
       // Anything else it tolerated is still worth seeing, because a tolerated
-      // failure that is not "already there" is how a deploy rolls a revision
-      // with no service account and finds out several minutes later.
+      // failure that is not this step's expected case is how a deploy rolls a
+      // revision with no service account and finds out several minutes later.
+      const expected = expectedOutcome(step, result.stderr);
       print(
-        isAlreadyThere(result.stderr)
-          ? style.dim(`    ${style.green('=')} already there`)
+        expected !== null
+          ? style.dim(`    ${style.green('=')} ${expected}`)
           : warn(`  ${firstLine(result.stderr)}`),
       );
       continue;

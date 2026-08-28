@@ -33,6 +33,17 @@ export interface DeployStep {
   readonly argv: readonly string[];
   /** A step whose failure is expected when the thing already exists. */
   readonly tolerateFailure?: boolean;
+  /**
+   * A step that takes something away rather than creating it.
+   *
+   * Its "already done" is the opposite message: a create that finds the thing
+   * present and a removal that finds it absent are both the expected case on
+   * every deploy after the one that did the work. Told apart explicitly rather
+   * than guessed from the argv, because reading `NOT_FOUND` as success on a step
+   * that was *adding* something would hide the exact failure this repository has
+   * already shipped twice.
+   */
+  readonly removes?: boolean;
 }
 
 export interface PlanInput {

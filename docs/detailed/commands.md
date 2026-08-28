@@ -394,7 +394,9 @@ $ lanes link target list --profile personal
 
 ### `lanes link target show <name>`
 
-One target's adapters, its deployment, and the address it answers on. Asks the platform.
+One target's adapters, its deployment, the address it answers on, and which release rolled it. Asks
+the platform for the address; the release comes off the registry, so it answers with the service
+scaled to zero.
 
 | | |
 |---|---|

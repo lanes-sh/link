@@ -220,13 +220,33 @@ Four bindings, each narrower than it looks:
 
 | Grant | Scope | Why not wider |
 |---|---|---|
-| `roles/secretmanager.secretAccessor` | the project | Read at boot: OAuth refresh tokens, the endpoint's own bearer token. |
+| `roles/secretmanager.secretAccessor` | **one binding per secret it reads** | Read at boot and while serving: OAuth refresh tokens, the endpoint's own bearer token, the vault key. |
 | `roles/secretmanager.secretVersionAdder` | **one binding per secret it rotates** | The vault document, and each connection's OAuth token. Add a version, never create — see below. |
 | `roles/storage.objectAdmin` | **conditioned** on `data/`, less each profile's `providers.d/` | What the endpoint owns and writes: state, the log, attachments, memory, and skills (writable under policy, ADR-014). Manifests are carved back out — they are config, and ADR-007 says a revision never rewrites its own. |
 | `roles/storage.objectViewer` | `profiles/`, `lanes-link.yaml`, and each `providers.d/` | Reading its own config. Deliberately *not* admin — see below. |
 
 `deploy` creates the account and all of them on a first run; `--dry-run` shows them, and
 `--service-account` names a different one.
+
+**And it takes away the ones it replaced.** `gcloud ... add-iam-policy-binding` *adds*: a binding is
+keyed on role, member and condition together, so changing a condition's expression writes a second
+binding beside the first, and IAM evaluates the set as a permissive union — the widest expression
+wins. Three deploys in a row narrowed `reads-its-config` while the revision went on holding
+`objectViewer` on every object in the bucket, under a title claiming the opposite, because the two
+attempts before them had been refused by CEL and every step here tolerates failure.
+
+So each deploy reads the policy it is about to change and removes what it superseded: a binding
+under one of these condition titles whose expression is no longer the one being applied, an
+unconditioned binding on a role that is only ever granted conditionally, and the project-wide
+`secretAccessor` that per-secret reads replaced. Additions run first and removals after, always —
+the two are one edit to a live policy, and the other order opens a window in which the revision
+currently serving holds no grant at all.
+
+Nothing is recorded between deploys to make that work. There is no state file, no lease and no drift
+reconciliation ([`init.md`](init.md) rules all three out, and a record would only ever agree with
+itself); the policy is read, because IAM is the thing that actually decides. A policy that cannot be
+read — no `gcloud`, a bucket that does not exist yet, a login without the permission — plans no
+removals at all rather than guessing.
 
 **Why the write grant is conditioned.** ADR-007 says a deployed instance never mutates its own
 configuration. That used to be enforced by the config being baked into a read-only image, which
