@@ -111,6 +111,11 @@ export const gmailImap = defineProvider({
     // Never the search terms — a query is content, and "who did I email about
     // the diagnosis" is the whole message.
     search_messages: ['mailbox', 'limit', 'unseen', 'flagged'],
+    // Identifiers only, and all of them: which mailbox, which message, which
+    // attachment. What the file turned out to be — name, size, type, digest —
+    // is recorded by the handler through `audit.annotate`, the same way the send
+    // path records what it attached.
+    get_attachment: ['mailbox', 'uid', 'message_id', 'attachment_id'],
     get_message: ['mailbox', 'uid', 'include_body'],
     mark_messages: ['mailbox', 'add_flags', 'remove_flags'],
     // `destination_flag` alongside `destination`: two spellings of the same

@@ -448,11 +448,13 @@ Not available, and not a limitation of this implementation: **Reminders and
 Notes** (Apple moved to-do lists to a private store after iOS 13; Notes were
 never exposed) and **iCloud Drive** (no public API).
 
-Attachments are asymmetric, and worth stating plainly. **Sending** them works —
-`send_message` takes an `attachments` list and this endpoint fetches the bytes
-itself (ADR-017). **Reading** them still does not: `get_message` reports each
-attachment's name, type, and size but not its content, so forwarding one is done
-by naming it (`message_id`) rather than by reading it first.
+Attachments go both ways. **Sending** works — `send_message` takes an
+`attachments` list and this endpoint fetches the bytes itself (ADR-017).
+**Taking one out** works too: `get_message` reports each attachment's name, type
+and size, and `get_attachment` pulls the file itself onto the endpoint and hands
+back a handle. Fetch it with `GET /attachments?connection=…&handle=…`, or name
+the handle in a later `send_message`. What never happens either way is the file
+passing through the model.
 
 ## Attachments
 
@@ -467,7 +469,8 @@ silently preferring one would make the other look like it worked.
 { "path": "/Users/you/Downloads/invoice.pdf" }        // read from this machine
 { "url": "https://example.com/invoice.pdf" }          // fetched here, over HTTPS only
 { "handle": "att_01j7k…" }                            // staged earlier, see below
-{ "message_id": "18f…", "attachment_id": "quote.pdf" } // already in this mailbox
+{ "message_id": "18f…", "attachment_id": "quote.pdf" } // already in this mailbox, by header
+{ "uid": 1234, "mailbox": "Archive" }                 // the same, the way IMAP addresses it
 { "data": "JVBERi0…", "filename": "invoice.pdf" }     // inline base64 — last resort
 ```
 
@@ -475,10 +478,37 @@ silently preferring one would make the other look like it worked.
 filename, a 1-based position, or (on Gmail) the vendor's own id; omit it when the message has one
 attachment.
 
-**Forwarding costs nothing.** `message_id` resolves inside the endpoint, so re-sending a PDF that
-arrived by mail never materialises it anywhere a context window can see. Prefer it over reading an
-attachment and passing the bytes back — the read side still returns metadata only, so that route
-does not exist anyway.
+**Forwarding costs nothing.** Both mailbox sources resolve inside the endpoint, so re-sending a PDF
+that arrived by mail never materialises it anywhere a context window can see. Prefer them over
+reading an attachment and passing the bytes back — the read side still returns metadata only, so
+that route does not exist anyway.
+
+**On an IMAP mailbox, prefer `uid` to `message_id`.** A uid is what IMAP addresses with, and
+`search_messages` and `get_message` both report one alongside the mailbox it belongs to — so naming
+the pair costs one `EXAMINE` and one `UID FETCH`. `message_id` has no mailbox attached to it, so it
+has to be *searched* for: every folder but Trash and Junk, matching on `HEADER MESSAGE-ID`, which is
+a substring test each server implements as it likes. A server that implements it poorly answers "no
+such message" while holding the message, and that has happened on a real iCloud mailbox. The trade
+in the other direction is that a uid is only valid in the mailbox it was reported for and stops
+being valid if the message moves, while a Message-ID survives both — so `message_id` stays, and is
+the right choice when the message has been sitting somewhere for a while. Gmail's REST provider has
+no uid at all and takes `message_id` only; it says so rather than 404ing.
+
+**Taking one out.** `get_attachment` names the message the way `send_message` does — `uid` with its
+`mailbox`, or `message_id` — plus `attachment_id` when the message carries more than one. It reads
+the bytes, stages them under an opaque handle, and returns a receipt: filename, size, type,
+SHA-256, expiry, and the URL to fetch them from.
+
+```console
+$ curl -H "Authorization: Bearer $TOKEN" \
+    "$ENDPOINT/attachments?connection=icloud_mail.main&handle=att_…" -o card.pdf
+```
+
+The handle is staged **in that connection's own namespace**, which is the same rule the upload half
+follows and the reason this is not a bridge between providers: the bytes were already inside that
+account's area, and this is a door onto it rather than a route between two. A handle minted for
+`icloud_mail.main` does not resolve from any other connection, and the endpoint answers a handle
+from the wrong connection exactly as it answers one that never existed. Staged files last 24 hours.
 
 **Sending from a remote endpoint.** `path` means the filesystem the *server* can see, which on Cloud
 Run is a container. Stage the bytes instead:
@@ -699,11 +729,18 @@ The cost is that an asset carries no description, and that is deliberate. "The M
 assets as invoice-2026-03.pdf" is a memory entry; prose in a store with no way to search it would be
 worse than either.
 
-**A write names a source and never carries bytes.** `assets.store` takes one of the five sources
-`resolveAttachments` resolves — `path`, `url`, `handle`, `message_id`, `data` — which is
-[ADR-017](adr/017-attachments-by-reference.md) reused rather than restated, and brings the size
-ceiling, the two-sources-named refusal, and the SHA-256 receipt with it. `message_id` refuses here,
-because an assets connection is not a mailbox, and says what to do instead.
+**A write names a source and never carries bytes.** `assets.store` takes `path`, `url`, `handle`, or
+`data`, which is [ADR-017](adr/017-attachments-by-reference.md) reused rather than restated, and
+brings the size ceiling, the two-sources-named refusal, and the SHA-256 receipt with it.
+
+The two mailbox sources — `message_id` and `uid` — are in the shared shape and **refuse here**,
+because an assets connection holds no mailbox. That refusal used to be the whole story and it was
+not enough: the tool's own description advertised `message_id`, so an agent asked to keep a PDF that
+had arrived by mail read the description, named the message, and was refused. The description no
+longer offers it, and the refusal names the sources that do work. Getting a mail attachment into
+assets is still not a thing this provider can do on its own — the storage a provider sees is scoped
+to `<provider>/<connection>`, so bridging the two crosses the isolation everything else relies on,
+and that belongs in dispatch if it belongs anywhere.
 
 **A read returns text or a description.** `ResourceContents` carries text and nothing else, so a text
 asset comes back as text and a binary one comes back named, typed, sized and digested. A 239 KB PDF

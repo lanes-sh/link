@@ -40,8 +40,15 @@ import {
  * model is the cost the five sources exist to avoid; there is no reason to pay
  * it on the way in that would not also apply on the way out.
  *
- * **Getting an asset into a mail is not done here**, and that is a boundary
- * rather than a gap. A staged handle is scoped to `<provider>/<connection>`
+ * **Neither direction between a mailbox and this store is done here**, and that
+ * is a boundary rather than a gap. It cost somebody a real attempt: `store` takes
+ * the shared attachment shape, which advertises `message_id`, so an agent asked to
+ * keep a PDF that had arrived by mail read the description, named the message, and
+ * was refused — twice, having tried the obvious workaround in between. The schema
+ * offered a route the handler never had. The description above now says so, and
+ * the refusal in `#connectivity/mail` names what does work instead.
+ *
+ * The reason it cannot is real rather than incidental. A staged handle is scoped to `<provider>/<connection>`
  * (`#dispatch`'s `stageAttachment`), so a handle minted under `assets/main` is
  * deliberately unresolvable from `gmail/main` — bridging the two means crossing
  * the isolation every provider relies on, and that belongs in dispatch if it
@@ -211,10 +218,10 @@ export const assetsProvider: ProviderDefinition = defineLocalProvider({
       name: 'store',
       title: 'Store a file',
       description:
-        'Keep a file in this profile. Name exactly one source — path, url, handle, message_id, or data — and the endpoint reads the bytes itself; never base64 a file into this call when any other source will do. Storing under a name that exists replaces it.',
+        'Keep a file in this profile. Name exactly one source — path, url, handle, or data — and the endpoint reads the bytes itself; never base64 a file into this call when any other source will do. Storing under a name that exists replaces it. An attachment sitting in a mailbox cannot be named here: this connection holds no mailbox, so ask the mail connection to send it somewhere it can be reached from.',
       inputSchema: z.object({
         source: attachmentRefSchema.describe(
-          'Where the bytes come from. Exactly one of path, url, handle, message_id, or data.',
+          'Where the bytes come from. Exactly one of path, url, handle, or data. The mailbox sources — message_id and uid — are part of the shared shape but cannot resolve here.',
         ),
         name: z
           .string()

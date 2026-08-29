@@ -21,10 +21,10 @@ export { receiptFor } from './message.ts';
 export { composeMime } from './compose.ts';
 
 export type { AttachmentRef, MailboxAttachmentSource, ResolveOptions } from './attachments.ts';
+export { guessContentType } from './content-type.ts';
 export {
   attachmentRefSchema,
   attachmentsJsonSchema,
-  guessContentType,
   resolveAttachments,
 } from './attachments.ts';
 

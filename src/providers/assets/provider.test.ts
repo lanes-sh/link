@@ -80,7 +80,7 @@ describe('storing a file names a source rather than carrying it', () => {
     const harness = assets();
 
     expect(harness.invoke('store', { source: { message_id: '18f' } })).rejects.toThrow(
-      /cannot resolve/,
+      /only a mail connection can resolve/,
     );
   });
 
