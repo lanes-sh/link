@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 
 /**
  * The image has to build from a clean checkout.
@@ -19,6 +19,7 @@ const GITIGNORE = new URL('../../../.gitignore', import.meta.url).pathname;
 const MANIFEST = new URL('../../../package.json', import.meta.url).pathname;
 const DOCKERIGNORE = new URL('../../../.dockerignore', import.meta.url).pathname;
 const GCLOUDIGNORE = new URL('../../../.gcloudignore', import.meta.url).pathname;
+const SRC = new URL('../../../src', import.meta.url).pathname;
 
 /**
  * What the credential store and its key look like, wherever they land.
@@ -212,16 +213,56 @@ describe('the deployed image', () => {
         .map((line) => line.trim())
         .filter((line) => line !== '' && !line.startsWith('#'));
 
-    const missing = SECRET_PATHS.filter((path) => !entries(gcloudignore).includes(path));
+    // Compared with the leading slash stripped, because the two files anchor
+    // differently — see the test below, which is the reason that matters.
+    const bare = (line: string): string => line.replace(/^\//, '');
+    const held = (text: string): string[] => entries(text).map(bare);
+
+    const missing = SECRET_PATHS.filter((path) => !held(gcloudignore).includes(path));
     expect({ missing, from: '.gcloudignore' }).toEqual({ missing: [], from: '.gcloudignore' });
 
     // And the two stay in step, so a path added to one is not silently absent
     // from the other.
-    const alsoMissing = SECRET_PATHS.filter((path) => !entries(dockerignore).includes(path));
+    const alsoMissing = SECRET_PATHS.filter((path) => !held(dockerignore).includes(path));
     expect({ missing: alsoMissing, from: '.dockerignore' }).toEqual({
       missing: [],
       from: '.dockerignore',
     });
+  });
+
+  test('no directory the package ships is excluded from the build upload', async () => {
+    // **The two files say the same thing and do not mean the same thing.**
+    // `.gcloudignore` is gitignore syntax, where `docs/` matches a directory
+    // called `docs` at *any* depth; `.dockerignore` is Docker's, where the same
+    // line is relative to the context root. Mirroring the patterns across
+    // stripped `src/providers/google/docs/` out of the tarball
+    // `gcloud builds submit` uploads — so the image built cleanly, started, and
+    // exited 1 on `Cannot find module './google/docs/index.ts'`. Cloud Run kept
+    // serving the previous revision, which is the only reason it was not an
+    // outage.
+    //
+    // Asserted against the real tree rather than by reading the patterns,
+    // because the failure is a *collision* between a pattern and a directory
+    // name, and neither side is wrong on its own.
+    const gcloudignore = await readFile(GCLOUDIGNORE, 'utf8');
+
+    const unanchored = gcloudignore
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.endsWith('/') && !line.startsWith('/') && !line.startsWith('**/'))
+      .map((line) => line.slice(0, -1));
+
+    // `node_modules` is the one directory name that *should* match at any depth.
+    const risky = unanchored.filter((name) => name !== 'node_modules');
+
+    const shipped = new Set(
+      (await readdir(SRC, { recursive: true, withFileTypes: true }))
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name),
+    );
+
+    const collisions = risky.filter((name) => shipped.has(name));
+    expect({ collisions, risky }).toEqual({ collisions: [], risky });
   });
 
   test('the workspace root is not baked in', async () => {
