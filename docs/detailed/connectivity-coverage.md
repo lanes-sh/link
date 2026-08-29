@@ -36,10 +36,10 @@ So it is a column here, not a row. Which arrangement a connection actually uses 
 
 | connector | none | oauth | bearer | api_key | header | basic | strategy | oauth + assertion |
 |---|---|---|---|---|---|---|---|---|
-| **mcp** | works | works — `notion`, `linear`, `slack`, `gmail_mcp`, `drive_mcp` | works — `github` | closed **R7** | closed **R7** | closed **R7** | closed **R7** | closed **R4** |
+| **mcp** | works | works — `notion`, `linear`, `slack`, `gmail_mcp`, `drive_mcp`, and the sixty-seven in [The DCR directory](#the-dcr-directory) | works — `github` | closed **R7** | closed **R7** | closed **R7** | closed **R7** | closed **R4** |
 | **http** | works | works — `gmail`, `drive`, `sheets`, `docs`, `calendar`, `tasks`, `contacts`, `reddit` | works | works | works — `discord` | works | works — `bunq` | works — the seven Google providers, via a service-account key |
-| **imap** | closed **R5** | closed **R5** | closed **R5** | closed **R5** | closed **R5** | works — `icloud_mail`, `gmail_imap` | closed **R5** | n/a |
-| **dav** | closed **R5** | closed **R5** | closed **R5** | closed **R5** | closed **R5** | works — `icloud_calendar`, `icloud_contacts` | closed **R5** | n/a |
+| **imap** | closed **R5** | closed **R5** | closed **R5** | closed **R5** | closed **R5** | works — `icloud_mail`, `gmail_imap`, `fastmail_mail`, `zoho_mail`, `yahoo_mail` | closed **R5** | n/a |
+| **dav** | closed **R5** | closed **R5** | closed **R5** | closed **R5** | closed **R5** | works — `icloud_calendar`, `icloud_contacts`, `fastmail_calendar`, `fastmail_contacts` | closed **R5** | n/a |
 | **fs** | works — `icloud_drive` | closed **R6** | closed **R6** | closed **R6** | closed **R6** | closed **R6** | closed **R6** | n/a |
 | **local** | works — the owner layer, `example` | closed **R6** | closed **R6** | closed **R6** | closed **R6** | closed **R6** | closed **R6** | n/a |
 
@@ -58,6 +58,41 @@ permits only three credential types (R7), `imap` and `dav` authenticate with a p
 **R5 is the only closure with an expiry date.** Its stated reason is that OAuth for mail and DAV is
 partner-gated with no published scopes. That is a fact about 2025, not about IMAP. When a vendor
 publishes scopes, R5 becomes wrong and two cells open.
+
+## The DCR directory
+
+Sixty-seven of the `mcp` + `oauth` entries are one cell of this matrix exercised sixty-seven times,
+and they are worth naming as a group because the thing they have in common is what makes them cheap:
+every one advertises **Dynamic Client Registration** in its authorization-server metadata. There is
+no client to register, no console to visit, and nothing for an operator to supply — `connect`
+registers us at the moment it runs. Each is fifteen lines and no code.
+
+`airtable` · `algolia` · `amplitude` · `apify` · `asana` · `attio` · `betterstack` ·
+`brightdata` · `buildkite` · `calendly` · `canva` · `circleci` · `clickup` · `close` ·
+`cloudflare_bindings` · `cloudflare_observability` · `contentful` · `datadog` · `dropbox` ·
+`expensify` · `figma` · `fireflies` · `flagsmith` · `gamma` · `grafana` · `heroku` · `hygraph` ·
+`insightly` · `jam` · `klaviyo` · `mercury` · `miro` · `mixpanel` · `monday` · `mux` · `navan` ·
+`neon` · `netlify` · `paddle` · `paypal` · `posthog` · `prisma` · `ramp` · `recurly` · `remote`
+· `replicate` · `resend` · `riverside` · `rootly` · `rudderstack` · `salesloft` · `sanity` ·
+`sentry` · `shortcut` · `square` · `storyblok` · `stripe` · `supabase` · `tavily` · `todoist` ·
+`vercel` · `vimeo` · `webflow` · `whimsical` · `wix` · `workable` · `zapier`
+
+**None of them declares `scopes`, and that is the decision rather than an omission.**
+`CredentialOAuthProvider.clientMetadata` puts a `scope` on the registration request *only* when the
+manifest declares one, so an empty list means the authorization server applies its own default for
+the resource. That is the honest answer when the vendor owns both the server and the vocabulary: a
+subset guessed from `scopes_supported` and never exercised is how you ship a manifest that
+registers cleanly, authorises cleanly, and is then permitted to do nothing — the failure R8 exists
+to prevent for assertions. `notion` has worked this way since it was written. `linear` is the
+exception and declares `['read', 'write']`, because Linear documents that pair as the whole
+vocabulary.
+
+Two consequences worth stating where somebody will find them. **`refresh_token` stays `required`**,
+its default: a server that returns no refresh token gets refused at `connect` rather than working
+for an hour and dying. And **none declares `redact`**, because redaction keys on capability names
+and an `mcp` provider's capabilities are discovered — so the default withholds every argument value.
+That is the right default for a capability we did not author, and it is the same one `notion` and
+`linear` have always had; there are simply sixty-seven more of them now.
 
 `local` is in the matrix for completeness and cannot be declared: it means the capability code is
 ours, compiled into this build. `connect custom` refuses it by name.

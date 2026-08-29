@@ -137,8 +137,17 @@ describe('dependency direction', () => {
  * way it is, and deleting that sentence to satisfy a grep would make the code
  * worse. What must not appear is a vendor name the code *branches on* or
  * *prints*.
+ *
+ * Four vendors are deliberately absent: Close, Remote, Resend, and Workable.
+ * Each is a provider like any other, but "close" is what a socket does,
+ * "remote" is half the vocabulary of a transport, and "resend" and "workable"
+ * both appear in ordinary prose about retries and schemas. Matching on them
+ * would flag scores of lines of protocol code, and a detector suppressed
+ * everywhere detects nothing — this list is a sample of names likely to leak,
+ * not a roll of every provider.
  */
-const VENDORS = /\b(gmail|icloud|notion|linear|apple|google|dropbox|fastmail|reddit|bunq|discord)\b/i;
+const VENDORS =
+  /\b(gmail|icloud|notion|linear|apple|google|dropbox|fastmail|reddit|bunq|discord|asana|stripe|sentry|figma|canva|todoist|clickup|monday|airtable|miro|calendly|zapier|paypal|square|mercury|vercel|netlify|supabase|neon|prisma|sanity|webflow|wix|datadog|grafana|fireflies|gamma|jam|cloudflare|algolia|amplitude|apify|attio|betterstack|brightdata|buildkite|circleci|contentful|expensify|flagsmith|heroku|hygraph|insightly|klaviyo|mixpanel|mux|navan|paddle|posthog|ramp|recurly|replicate|riverside|rootly|rudderstack|salesloft|shortcut|storyblok|tavily|vimeo|whimsical|zoho|yahoo|microsoft|outlook|onedrive|entra|atlassian|hubspot|jira|confluence)\b/i;
 
 /**
  * Where the rule bites: the machinery a request passes through.

@@ -182,7 +182,7 @@ describe('the Google manifests stay at the documented minimum', () => {
     );
   });
 
-  test('the broad scopes are exactly the sixteen that were argued for', () => {
+  test('the broad scopes are exactly the twenty-one that were argued for', () => {
     const broad = PROVIDERS.flatMap((manifest) => {
       const scopes = manifest.auth.kind === 'oauth' ? manifest.auth.scopes : [];
       return describeScopes(scopes)
@@ -242,6 +242,31 @@ describe('the Google manifests stay at the documented minimum', () => {
         'reddit submit',
         'reddit edit',
         'reddit vote',
+        // Microsoft's five. Graph draws its lines in coarser places than Google
+        // does, and four of these are broad for that reason rather than for
+        // asking more than the provider needs.
+        //
+        // `Mail.ReadWrite`, `Calendars.ReadWrite` and `Tasks.ReadWrite` are the
+        // direct counterparts of `gmail.modify`, `calendar.events` and `tasks`,
+        // and sit here for the same argument.
+        //
+        // `Files.ReadWrite` is the one that is broad for want of an alternative.
+        // Google Drive is reached with `drive.file` — files this app created or
+        // the person picked, and nothing else — and it is *not* on this list
+        // because of that. Graph publishes no equivalent, so the smallest grant
+        // that can create a folder in OneDrive is one that reaches every file
+        // in it.
+        //
+        // `Mail.Send` is broad for where it lands rather than for what it
+        // reaches, which is the Reddit argument one row up: a sent message
+        // leaves the account, arrives as the person, and cannot be recalled.
+        // Gmail has no equivalent row only because Google folds sending into
+        // `gmail.modify`, which is already here.
+        'outlook_mail Mail.ReadWrite',
+        'outlook_mail Mail.Send',
+        'outlook_calendar Calendars.ReadWrite',
+        'onedrive Files.ReadWrite',
+        'microsoft_todo Tasks.ReadWrite',
       ].sort(),
     );
   });

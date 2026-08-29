@@ -121,34 +121,33 @@ are, and there is no setting that would put them in a repository.
 
 ## Connect an account
 
-One command per account. Run it again to add a second mailbox, a second calendar, a second anything.
+**Over a hundred accounts and services, one command each.** Run it again to add a second mailbox, a
+second calendar, a second anything.
 
-| | Connect with |
+| | |
 |---|---|
-| Gmail | `lanes link connect gmail` |
-| Google Drive | `lanes link connect drive` |
-| Google Sheets | `lanes link connect sheets` |
-| Google Docs | `lanes link connect docs` |
-| Google Calendar | `lanes link connect calendar` |
-| Google Tasks | `lanes link connect google_tasks` |
-| Google Contacts | `lanes link connect contacts` |
-| iCloud Mail | `lanes link connect icloud_mail` |
-| iCloud Calendar | `lanes link connect icloud_calendar` |
-| iCloud Contacts | `lanes link connect icloud_contacts` |
-| iCloud Drive | `lanes link connect icloud_drive` |
-| Notion | `lanes link connect notion` |
-| Linear | `lanes link connect linear` |
-| GitHub | `lanes link connect github` |
-| Slack | `lanes link connect slack` |
-| Reddit | `lanes link connect reddit` |
-| Discord | `lanes link connect discord` |
-| Gmail (IMAP, app password) | `lanes link connect gmail_imap` |
-| Gmail (Google MCP) | `lanes link connect gmail_mcp` |
-| Drive (Google MCP) | `lanes link connect drive_mcp` |
-| bunq | `lanes link connect bunq` |
+| **Mail, calendar, contacts, files** | Gmail · Google Calendar · Google Drive · Google Docs · Google Sheets · Google Tasks · Google Contacts · iCloud Mail, Calendar, Contacts and Drive · Outlook Mail, Calendar and Contacts · OneDrive · Microsoft To Do · Fastmail · Zoho Mail · Yahoo Mail |
+| **Work** | Notion · Linear · Slack · GitHub · Asana · Atlassian (Jira, Confluence) · Todoist · ClickUp · monday.com · Shortcut · Miro · Whimsical · Figma · Canva · Calendly · Fireflies · HubSpot |
+| **Money** | Stripe · PayPal · Square · Mercury · Ramp · bunq · Paddle · Recurly · Expensify |
+| **Build and run** | Sentry · Vercel · Netlify · Cloudflare · Supabase · Neon · Prisma · Heroku · CircleCI · Buildkite · Datadog · Grafana · Better Stack · Rootly · Flagsmith |
+| **Content and data** | Contentful · Storyblok · Hygraph · Sanity · Webflow · Wix · Algolia · PostHog · Mixpanel · Amplitude · RudderStack |
+| **Everything else** | Reddit · Discord · Dropbox · Box · Airtable · Zapier · Attio · Klaviyo · Salesloft · Vimeo · Mux · Replicate · Apify · Tavily · Bright Data |
+
+**[The full list, with the command for each →](docs/connect.md)**
+
+Most of them need nothing set up. Seventy of them run their own MCP server and offer dynamic client
+registration, so `connect` registers us on the spot: browser, approve, done. The rest are one of
+three shapes — an app password you issue yourself (iCloud, Fastmail, Gmail over IMAP), a token you
+paste (GitHub, Discord), or an OAuth client of your own (Reddit, Microsoft).
+
+**Most of them are also untested**, and the tables say which. A provider marked † validates, generates
+tools inside the budget, and answers a probe — but nobody has connected it to a real account yet, and
+that is the part only a real account proves. See
+[`src/providers/README.md`](src/providers/README.md) for what that means and how the list is kept.
 
 Three things worth knowing up front. `lanes link connect icloud` sets up Mail, Calendar, and
-Contacts together, because one app-specific password covers all three. Reddit is the one that does
+Contacts together, because one app-specific password covers all three — and `lanes link connect
+fastmail` does the same for Fastmail's three. Reddit is the one that does
 need an app of your own — it rate-limits per client id, so a shared client would mean strangers
 spending your budget. Google and Slack need no
 OAuth client of your own: both authorise against the one Lanes operates, so there is no console to
@@ -161,7 +160,8 @@ limit on the API key while you are in there, and read
 [docs/detailed/setup/bunq.md](docs/detailed/setup/bunq.md) before connecting it.
 
 Full guide — what each one gives your agent, what it needs, and adding your own:
-**[docs/connect.md](docs/connect.md)**.
+**[docs/connect.md](docs/connect.md)**. How the provider layer works, and the whole inventory by
+connector and credential type: **[src/providers/README.md](src/providers/README.md)**.
 
 ## Run it anywhere
 

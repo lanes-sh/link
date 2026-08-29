@@ -1,0 +1,430 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "contact": {
+      "x-twitter": "microsoft"
+    },
+    "description": "This OData service is located at https://graph.microsoft.com/v1.0",
+    "title": "OData Service for namespace microsoft.graph",
+    "version": "1.0.1",
+    "x-apisguru-categories": [
+      "developer_tools"
+    ],
+    "x-logo": {
+      "url": "https://api.apis.guru/v2/cache/logo/https_twitter.com_microsoft_profile_image.png"
+    },
+    "x-ms-generated-by": {
+      "toolName": "Microsoft.OpenApi.OData",
+      "toolVersion": "1.0.9.0"
+    },
+    "x-origin": [
+      {
+        "format": "openapi",
+        "url": "https://raw.githubusercontent.com/microsoftgraph/msgraph-metadata/master/openapi/v1.0/openapi.yaml",
+        "version": "3.0"
+      }
+    ],
+    "x-providerName": "microsoft.com",
+    "x-serviceName": "graph",
+    "x-tags": [
+      "Microsoft"
+    ],
+    "x-preferred": true,
+    "x-vendored-from": "https://api.apis.guru/v2/specs/microsoft.com/graph/1.0.1/openapi.json",
+    "x-vendored-note": "Trimmed by src/providers/microsoft/specs/vendor.ts. Committed deliberately: a spec decides which paths are called with the operator token, so it must be reviewable rather than fetched at connect time."
+  },
+  "servers": [
+    {
+      "url": "https://graph.microsoft.com/v1.0"
+    }
+  ],
+  "paths": {
+    "/me/contactFolders": {
+      "description": "Provides operations to manage the contactFolders property of the microsoft.graph.user entity.",
+      "get": {
+        "description": "Get the contact folder collection in the default Contacts folder of the signed-in user.",
+        "externalDocs": {
+          "description": "Find more info here",
+          "url": "https://docs.microsoft.com/graph/api/user-list-contactfolders?view=graph-rest-1.0"
+        },
+        "operationId": "me.ListContactFolders",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/top"
+          },
+          {
+            "$ref": "#/components/parameters/filter"
+          },
+          {
+            "description": "Order items by property values",
+            "explode": false,
+            "in": "query",
+            "name": "$orderby",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "id desc",
+                  "displayName",
+                  "displayName desc",
+                  "parentFolderId",
+                  "parentFolderId desc"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          },
+          {
+            "description": "Select properties to be returned",
+            "explode": false,
+            "in": "query",
+            "name": "$select",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "displayName",
+                  "parentFolderId",
+                  "childFolders",
+                  "contacts",
+                  "multiValueExtendedProperties",
+                  "singleValueExtendedProperties"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "List contactFolders",
+        "tags": [
+          "me.contactFolder"
+        ],
+        "x-ms-docs-operation-type": "operation",
+        "x-ms-pageable": {
+          "nextLinkName": "@odata.nextLink",
+          "operationName": "listMore"
+        }
+      }
+    },
+    "/me/contacts": {
+      "description": "Provides operations to manage the contacts property of the microsoft.graph.user entity.",
+      "get": {
+        "description": "Get a contact collection from the default contacts folder of the signed-in user. There are two scenarios where an app can get contacts in another user's contact folder:",
+        "externalDocs": {
+          "description": "Find more info here",
+          "url": "https://docs.microsoft.com/graph/api/user-list-contacts?view=graph-rest-1.0"
+        },
+        "operationId": "me.ListContacts",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/top"
+          },
+          {
+            "$ref": "#/components/parameters/search"
+          },
+          {
+            "$ref": "#/components/parameters/filter"
+          },
+          {
+            "description": "Order items by property values",
+            "explode": false,
+            "in": "query",
+            "name": "$orderby",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "id desc",
+                  "categories",
+                  "categories desc",
+                  "changeKey",
+                  "changeKey desc",
+                  "createdDateTime",
+                  "createdDateTime desc",
+                  "lastModifiedDateTime",
+                  "lastModifiedDateTime desc",
+                  "assistantName",
+                  "assistantName desc",
+                  "birthday",
+                  "birthday desc",
+                  "businessAddress",
+                  "businessAddress desc",
+                  "businessHomePage",
+                  "businessHomePage desc",
+                  "businessPhones",
+                  "businessPhones desc",
+                  "children",
+                  "children desc",
+                  "companyName",
+                  "companyName desc",
+                  "department",
+                  "department desc",
+                  "displayName",
+                  "displayName desc",
+                  "emailAddresses",
+                  "emailAddresses desc",
+                  "fileAs",
+                  "fileAs desc",
+                  "generation",
+                  "generation desc",
+                  "givenName",
+                  "givenName desc",
+                  "homeAddress",
+                  "homeAddress desc",
+                  "homePhones",
+                  "homePhones desc",
+                  "imAddresses",
+                  "imAddresses desc",
+                  "initials",
+                  "initials desc",
+                  "jobTitle",
+                  "jobTitle desc",
+                  "manager",
+                  "manager desc",
+                  "middleName",
+                  "middleName desc",
+                  "mobilePhone",
+                  "mobilePhone desc",
+                  "nickName",
+                  "nickName desc",
+                  "officeLocation",
+                  "officeLocation desc",
+                  "otherAddress",
+                  "otherAddress desc",
+                  "parentFolderId",
+                  "parentFolderId desc",
+                  "personalNotes",
+                  "personalNotes desc",
+                  "profession",
+                  "profession desc",
+                  "spouseName",
+                  "spouseName desc",
+                  "surname",
+                  "surname desc",
+                  "title",
+                  "title desc",
+                  "yomiCompanyName",
+                  "yomiCompanyName desc",
+                  "yomiGivenName",
+                  "yomiGivenName desc",
+                  "yomiSurname",
+                  "yomiSurname desc"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          },
+          {
+            "description": "Select properties to be returned",
+            "explode": false,
+            "in": "query",
+            "name": "$select",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "categories",
+                  "changeKey",
+                  "createdDateTime",
+                  "lastModifiedDateTime",
+                  "assistantName",
+                  "birthday",
+                  "businessAddress",
+                  "businessHomePage",
+                  "businessPhones",
+                  "children",
+                  "companyName",
+                  "department",
+                  "displayName",
+                  "emailAddresses",
+                  "fileAs",
+                  "generation",
+                  "givenName",
+                  "homeAddress",
+                  "homePhones",
+                  "imAddresses",
+                  "initials",
+                  "jobTitle",
+                  "manager",
+                  "middleName",
+                  "mobilePhone",
+                  "nickName",
+                  "officeLocation",
+                  "otherAddress",
+                  "parentFolderId",
+                  "personalNotes",
+                  "profession",
+                  "spouseName",
+                  "surname",
+                  "title",
+                  "yomiCompanyName",
+                  "yomiGivenName",
+                  "yomiSurname",
+                  "extensions",
+                  "multiValueExtendedProperties",
+                  "photo",
+                  "singleValueExtendedProperties"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "List contacts",
+        "tags": [
+          "me.contact"
+        ],
+        "x-ms-docs-operation-type": "operation",
+        "x-ms-pageable": {
+          "nextLinkName": "@odata.nextLink",
+          "operationName": "listMore"
+        }
+      }
+    },
+    "/me/contacts/{contact-id}": {
+      "description": "Provides operations to manage the contacts property of the microsoft.graph.user entity.",
+      "get": {
+        "description": "The user's contacts. Read-only. Nullable.",
+        "operationId": "me.GetContacts",
+        "parameters": [
+          {
+            "description": "key: id of contact",
+            "in": "path",
+            "name": "contact-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-ms-docs-key-type": "contact"
+          },
+          {
+            "description": "Select properties to be returned",
+            "explode": false,
+            "in": "query",
+            "name": "$select",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "categories",
+                  "changeKey",
+                  "createdDateTime",
+                  "lastModifiedDateTime",
+                  "assistantName",
+                  "birthday",
+                  "businessAddress",
+                  "businessHomePage",
+                  "businessPhones",
+                  "children",
+                  "companyName",
+                  "department",
+                  "displayName",
+                  "emailAddresses",
+                  "fileAs",
+                  "generation",
+                  "givenName",
+                  "homeAddress",
+                  "homePhones",
+                  "imAddresses",
+                  "initials",
+                  "jobTitle",
+                  "manager",
+                  "middleName",
+                  "mobilePhone",
+                  "nickName",
+                  "officeLocation",
+                  "otherAddress",
+                  "parentFolderId",
+                  "personalNotes",
+                  "profession",
+                  "spouseName",
+                  "surname",
+                  "title",
+                  "yomiCompanyName",
+                  "yomiGivenName",
+                  "yomiSurname",
+                  "extensions",
+                  "multiValueExtendedProperties",
+                  "photo",
+                  "singleValueExtendedProperties"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "Get contacts from me",
+        "tags": [
+          "me.contact"
+        ],
+        "x-ms-docs-operation-type": "operation"
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "filter": {
+        "description": "Filter items by property values",
+        "explode": false,
+        "in": "query",
+        "name": "$filter",
+        "schema": {
+          "type": "string"
+        },
+        "style": "form"
+      },
+      "search": {
+        "description": "Search items by search phrases",
+        "explode": false,
+        "in": "query",
+        "name": "$search",
+        "schema": {
+          "type": "string"
+        },
+        "style": "form"
+      },
+      "top": {
+        "description": "Show only the first n items",
+        "example": 50,
+        "explode": false,
+        "in": "query",
+        "name": "$top",
+        "schema": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "style": "form"
+      }
+    }
+  }
+}

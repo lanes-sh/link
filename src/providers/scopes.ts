@@ -1,5 +1,6 @@
 import { GOOGLE_SCOPE_MEANINGS } from './google/shared/scopes.ts';
 import { LINEAR_SCOPE_MEANINGS } from './linear/scopes.ts';
+import { MICROSOFT_SCOPE_MEANINGS } from './microsoft/shared/scopes.ts';
 import { REDDIT_SCOPE_MEANINGS } from './reddit/scopes.ts';
 import { SLACK_SCOPE_MEANINGS } from './slack/scopes.ts';
 
@@ -25,6 +26,7 @@ export interface ScopeMeaning {
 export const SCOPE_MEANINGS: Record<string, ScopeMeaning> = {
   ...GOOGLE_SCOPE_MEANINGS,
   ...LINEAR_SCOPE_MEANINGS,
+  ...MICROSOFT_SCOPE_MEANINGS,
   ...REDDIT_SCOPE_MEANINGS,
   ...SLACK_SCOPE_MEANINGS,
 };

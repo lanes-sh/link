@@ -34,7 +34,116 @@ $ lanes link connect gmail --profile personal --target local        # again, for
 | Gmail (IMAP) | `lanes link connect gmail_imap` | The same mailbox over IMAP and SMTP, with an app password that does not expire |
 | Gmail (Google MCP) | `lanes link connect gmail_mcp` | Google's own MCP server — Developer Preview only |
 | Drive (Google MCP) | `lanes link connect drive_mcp` | Likewise; use `drive` unless you are enrolled |
+| Outlook Mail † | `lanes link connect outlook_mail` | Read, search, file, and send over Microsoft Graph |
+| Outlook Calendar † | `lanes link connect outlook_calendar` | Read and write events, and answer when you are free |
+| Outlook Contacts † | `lanes link connect outlook_contacts` | Look up an address, so "email Bob" resolves. Read-only |
+| OneDrive † | `lanes link connect onedrive` | Browse, search, read, and organise files |
+| Microsoft To Do † | `lanes link connect microsoft_todo` | Create, edit, complete, and organise tasks and lists |
+| Fastmail (all three) † | `lanes link connect fastmail` | Mail, Calendar, and Contacts together, on one app password |
+| Fastmail Mail † | `lanes link connect fastmail_mail` | Read, search, and send over IMAP and SMTP |
+| Fastmail Calendar † | `lanes link connect fastmail_calendar` | Read and write events over CalDAV |
+| Fastmail Contacts † | `lanes link connect fastmail_contacts` | Look up an address over CardDAV |
+| Zoho Mail † | `lanes link connect zoho_mail` | Read, search, and send over IMAP and SMTP |
+| Yahoo Mail † | `lanes link connect yahoo_mail` | Read, search, and send over IMAP and SMTP |
 | bunq | `lanes link connect bunq` | Accounts, balances, transaction history, and payments |
+
+**† means untested.** The manifest is right in every way this repository can check — it validates,
+its tools generate inside the budget, its scopes are described, its endpoint answered a probe — and
+nobody has yet connected it to a real account. That is the part only a real account proves. The list
+is [`src/providers/untested.ts`](../src/providers/untested.ts), and the tables here are checked
+against it.
+
+## Vendors that run their own MCP server
+
+Each of these offers dynamic client registration, so there is no OAuth client to register and no
+console to visit — `connect` registers us at the moment you run it.
+
+| | Connect with | What your agent gets |
+|---|---|---|
+| Atlassian (Jira, Confluence) † | `lanes link connect atlassian` | Issues, pages, and components |
+| Box † | `lanes link connect box` | Files and folders — needs an OAuth app of your own |
+| HubSpot † | `lanes link connect hubspot` | CRM records — needs an MCP auth app of your own |
+| Render † | `lanes link connect render` | Services and deploys — takes an API key you paste |
+| Airtable † | `lanes link connect airtable` | Bases, tables, records, and schema |
+| Algolia † | `lanes link connect algolia` | Search indices, records, queries, and synonyms |
+| Amplitude † | `lanes link connect amplitude` | Events, charts, cohorts, and user activity |
+| Apify † | `lanes link connect apify` | Actors, runs, datasets, and scraped results |
+| Asana † | `lanes link connect asana` | Tasks, projects, portfolios, and workspaces |
+| Attio † | `lanes link connect attio` | Records, lists, notes, and tasks in the CRM |
+| Better Stack † | `lanes link connect betterstack` | Incidents, monitors, heartbeats, and logs |
+| Bright Data † | `lanes link connect brightdata` | Web scraping, search results, and datasets |
+| Buildkite † | `lanes link connect buildkite` | Pipelines, builds, jobs, and artifacts |
+| Calendly † | `lanes link connect calendly` | Scheduled events, invitees, and availability |
+| Canva † | `lanes link connect canva` | Designs, folders, brand templates, and exports |
+| CircleCI † | `lanes link connect circleci` | Pipelines, workflows, jobs, and test results |
+| ClickUp † | `lanes link connect clickup` | Tasks, lists, spaces, docs, and time entries |
+| Close † | `lanes link connect close` | Leads, contacts, opportunities, and activities |
+| Cloudflare (bindings) † | `lanes link connect cloudflare_bindings` | Workers KV, R2, D1, and Durable Objects |
+| Cloudflare (observability) † | `lanes link connect cloudflare_observability` | Workers logs, analytics, and traces |
+| Contentful † | `lanes link connect contentful` | Entries, assets, content types, and spaces |
+| Datadog † | `lanes link connect datadog` | Metrics, logs, monitors, incidents, and dashboards |
+| Dropbox † | `lanes link connect dropbox` | Files, folders, shared links, and file requests |
+| Expensify † | `lanes link connect expensify` | Expenses, reports, and receipts |
+| Figma † | `lanes link connect figma` | Files, designs, components, and Dev Mode context |
+| Fireflies † | `lanes link connect fireflies` | Meeting transcripts, summaries, and action items |
+| Flagsmith † | `lanes link connect flagsmith` | Feature flags, segments, and environments |
+| Gamma † | `lanes link connect gamma` | Presentations and documents, generated and read back |
+| Grafana † | `lanes link connect grafana` | Dashboards, datasources, queries, and alert rules |
+| Heroku † | `lanes link connect heroku` | Apps, dynos, add-ons, releases, and logs |
+| Hygraph † | `lanes link connect hygraph` | Content entries, models, and schema |
+| Insightly † | `lanes link connect insightly` | Contacts, organisations, opportunities, and projects |
+| Jam † | `lanes link connect jam` | Bug reports, with console logs, network calls, and repro steps |
+| Klaviyo † | `lanes link connect klaviyo` | Profiles, lists, segments, campaigns, and flows |
+| Mercury † | `lanes link connect mercury` | Accounts, balances, transactions, and cards |
+| Miro † | `lanes link connect miro` | Boards, frames, sticky notes, and shapes |
+| Mixpanel † | `lanes link connect mixpanel` | Events, funnels, retention, and cohorts |
+| monday.com † | `lanes link connect monday` | Boards, items, groups, columns, and updates |
+| Mux † | `lanes link connect mux` | Video assets, live streams, and playback analytics |
+| Navan † | `lanes link connect navan` | Trips, bookings, and travel expenses |
+| Neon † | `lanes link connect neon` | Postgres projects, branches, and SQL |
+| Netlify † | `lanes link connect netlify` | Sites, deploys, functions, and environment variables |
+| Paddle † | `lanes link connect paddle` | Products, prices, subscriptions, and transactions |
+| PayPal † | `lanes link connect paypal` | Invoices, orders, payments, and disputes |
+| PostHog † | `lanes link connect posthog` | Events, insights, feature flags, and session replays |
+| Prisma † | `lanes link connect prisma` | Postgres databases, schema, and migrations |
+| Ramp † | `lanes link connect ramp` | Cards, transactions, reimbursements, and spend limits |
+| Recurly † | `lanes link connect recurly` | Subscriptions, invoices, and accounts |
+| Remote † | `lanes link connect remote` | Employees, contracts, payroll, and time off |
+| Replicate † | `lanes link connect replicate` | Models, predictions, and deployments |
+| Resend † | `lanes link connect resend` | Transactional email, domains, and delivery events |
+| Riverside † | `lanes link connect riverside` | Recordings, transcripts, and clips |
+| Rootly † | `lanes link connect rootly` | Incidents, alerts, retrospectives, and on-call schedules |
+| RudderStack † | `lanes link connect rudderstack` | Sources, destinations, and event streams |
+| Salesloft † | `lanes link connect salesloft` | Cadences, people, and sales activity |
+| Sanity † | `lanes link connect sanity` | Documents, datasets, schema, and content releases |
+| Sentry † | `lanes link connect sentry` | Issues, events, stack traces, and releases |
+| Shortcut † | `lanes link connect shortcut` | Stories, epics, iterations, and workflows |
+| Square † | `lanes link connect square` | Payments, orders, catalog, inventory, and customers |
+| Storyblok † | `lanes link connect storyblok` | Stories, components, assets, and spaces |
+| Stripe † | `lanes link connect stripe` | Payments, customers, invoices, and subscriptions |
+| Supabase † | `lanes link connect supabase` | Projects, database schema, SQL, and edge functions |
+| Tavily † | `lanes link connect tavily` | Web search and page content extraction |
+| Todoist † | `lanes link connect todoist` | Tasks, projects, sections, labels, and filters |
+| Vercel † | `lanes link connect vercel` | Projects, deployments, build logs, and domains |
+| Vimeo † | `lanes link connect vimeo` | Videos, folders, showcases, and analytics |
+| Webflow † | `lanes link connect webflow` | Sites, pages, CMS collections, and items |
+| Whimsical † | `lanes link connect whimsical` | Boards, flowcharts, wireframes, and mind maps |
+| Wix † | `lanes link connect wix` | Sites, stores, bookings, and CMS data |
+| Workable † | `lanes link connect workable` | Jobs, candidates, and interviews |
+| Zapier † | `lanes link connect zapier` | Zaps, and the actions they reach across thousands of apps |
+
+Two things follow from the vendor running the server rather than us.
+
+**The tool list is theirs.** It is read at connect time, not declared in a manifest here, so it
+tracks whatever they ship — new tools appear without a release from us, and a tool they withdraw
+stops being served. `lanes link tools` is what tells you what a connection actually exposes
+today.
+
+**The audit log records the call, not the argument values.** Redaction is keyed on capability names
+somebody authored, and here nobody did, so the default withholds every value. That is the right
+default when we did not write the capability and cannot know what is sensitive — but it does mean
+these connections give you a thinner record than Gmail or bunq do. `notion` and `linear` have always
+worked this way; there are simply more of them now.
 
 ## Four things the table does not show
 
