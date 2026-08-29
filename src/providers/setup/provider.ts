@@ -305,6 +305,18 @@ function renderProvider(plan: ProviderPlan): string {
     for (const requirement of plan.requires) lines.push(`  ${requirement.label}`);
   }
 
+  // Listed alongside the credentials, because to the person answering they are
+  // the same thing — another question `connect` will ask. Omitted here would be
+  // worse than for a credential: an agent relaying a setup plan for Nextcloud
+  // would say "your username and password" and never mention the one value that
+  // provider cannot be connected without.
+  if (plan.variables.length > 0) {
+    lines.push('', 'And where the service is:');
+    for (const variable of plan.variables) {
+      lines.push(`  ${variable.label} — ${variable.description} For example: ${variable.example}`);
+    }
+  }
+
   if (plan.needsId) {
     lines.push(
       '',

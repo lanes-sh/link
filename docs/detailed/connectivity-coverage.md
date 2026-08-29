@@ -209,6 +209,63 @@ exactly one operation to choose from.
 spec. Out of scope, and the reason is not the cost: the set of services reachable by GraphQL and not
 by MCP is small and shrinking.
 
+### ~~One address per manifest~~ — closed by ADR-055
+
+`base_url`, `endpoint` and `host` were one value per manifest, which made a built-in impossible for
+any service whose address is a property of the *account* rather than of the vendor: every
+self-hosted thing, and every multi-tenant SaaS whose host carries the tenant.
+
+A manifest may now put `{placeholders}` in its connector's address and declare `variables` that fill
+them; `connect` asks, the connection's own `config` stores the answer, and the factory substitutes
+before building. **No transport changed** — a variable decides where a connector points and nothing
+about how it speaks — which is the property the gaps below are measured against.
+
+```yaml
+id: mailbox
+name: Mailbox
+connector:
+  kind: imap
+  host: "{imap_host}"
+  smtp:
+    host: "{smtp_host}"
+auth:
+  kind: basic
+identity:
+  kind: connector
+variables:
+  - key: imap_host
+    label: IMAP server
+    description: Where mail is read from.
+    example: imap.example.com
+    pattern: "^[a-z0-9][a-z0-9.-]*[a-z0-9]$"
+  - key: smtp_host
+    label: SMTP server
+    description: Where mail is sent from.
+    example: smtp.example.com
+    pattern: "^[a-z0-9][a-z0-9.-]*[a-z0-9]$"
+setup:
+  prompts:
+    - key: username
+      label: Username
+      scope: connection
+      field: username
+    - key: password
+      label: Password
+      secret: true
+      scope: connection
+      field: password
+```
+
+The **pattern is the part to read twice**. A value goes into a URL, so an unconstrained one chooses
+the host the operator's credential is sent to. The default admits one label and no dots; a provider
+whose value is legitimately a whole hostname overrides it, and that override still refuses `/`, `@`,
+`:` and everything else that turns a host into a different address. It is enforced at substitution
+rather than only at the prompt, because config is a file someone can edit and a deployed revision
+reads it without ever seeing a prompt.
+
+What this does **not** close: an `http` provider still needs an OpenAPI document, so Zendesk and
+Shopify are expressible and not yet written.
+
 ### Pagination, cursors, rate limits, retries
 
 None of it is expressible. The `http` transport is one `fetch` and one response: no retry, no

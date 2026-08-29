@@ -26,6 +26,9 @@ import { fastmailContacts } from './fastmail/contacts/index.ts';
 import { fastmailMail } from './fastmail/mail/index.ts';
 import { yahooMail } from './yahoo_mail/index.ts';
 import { zohoMail } from './zoho_mail/index.ts';
+import { mailbox } from './mailbox/index.ts';
+import { nextcloudCalendar } from './nextcloud/calendar/index.ts';
+import { nextcloudContacts } from './nextcloud/contacts/index.ts';
 import { linear } from './linear/index.ts';
 import { notion } from './notion/index.ts';
 import { reddit } from './reddit/index.ts';
@@ -163,6 +166,9 @@ export const PROVIDERS: readonly (ProviderManifest | ProviderDefinition)[] = [
   fastmailContacts,
   zohoMail,
   yahooMail,
+  nextcloudCalendar,
+  nextcloudContacts,
+  mailbox,
   bunq,
 
   // Vendors running an official MCP server that offers Dynamic Client
@@ -276,6 +282,8 @@ export {
 export { fastmailCalendar, fastmailContacts, fastmailMail } from './fastmail/index.ts';
 export { yahooMail } from './yahoo_mail/index.ts';
 export { zohoMail } from './zoho_mail/index.ts';
+export { nextcloudCalendar, nextcloudContacts } from './nextcloud/index.ts';
+export { mailbox } from './mailbox/index.ts';
 export { bunq } from './bunq/index.ts';
 export { discord } from './discord/index.ts';
 export { github } from './github/index.ts';

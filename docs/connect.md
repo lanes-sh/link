@@ -45,6 +45,9 @@ $ lanes link connect gmail --profile personal --target local        # again, for
 | Fastmail Contacts † | `lanes link connect fastmail_contacts` | Look up an address over CardDAV |
 | Zoho Mail † | `lanes link connect zoho_mail` | Read, search, and send over IMAP and SMTP |
 | Yahoo Mail † | `lanes link connect yahoo_mail` | Read, search, and send over IMAP and SMTP |
+| Nextcloud Calendar † | `lanes link connect nextcloud_calendar` | Events over CalDAV, on your own server |
+| Nextcloud Contacts † | `lanes link connect nextcloud_contacts` | Contacts over CardDAV, on your own server |
+| Any IMAP mailbox † | `lanes link connect mailbox` | Read, search, and send on a host with no entry of its own |
 | bunq | `lanes link connect bunq` | Accounts, balances, transaction history, and payments |
 
 **† means untested.** The manifest is right in every way this repository can check — it validates,

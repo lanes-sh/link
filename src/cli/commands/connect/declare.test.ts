@@ -31,7 +31,12 @@ function declaring(connections: readonly ConnectionConfig[], over: Record<string
     account: 'ada@example.com',
     label: 'ada@example.com',
     method: undefined,
+    config: {},
     ...over,
+    // The cast is what let a missing argument through once already: `config`
+    // was passed by `runConnect` and never declared here, so the spread was not
+    // excess-property-checked and `tsc` stayed green while the value was
+    // dropped on the floor. Kept only for `over`, which is deliberately loose.
   } as Parameters<typeof declareConnection>[0]);
 
   return { changes, written: parse(document.toString()) as { connections: ConnectionConfig[] } };
@@ -97,3 +102,50 @@ describe('reconnecting one that is already declared', () => {
     expect(changes).toEqual(['connections.gmail.ada.label = Work mail', 're-authorised gmail.ada']);
   });
 });
+
+describe('a connection that carries where its service is', () => {
+  test('writes the address, so the next start can build a connector', () => {
+    // The regression this exists for. `connect` prompted for the host, probed
+    // the identity through a factory holding it, wrote the row — and the row had
+    // no `config`, so every later run found nothing, built no connector, and
+    // showed the provider as unconnected. No error anywhere.
+    const { written } = declaring([], {
+      providerId: 'nextcloud_calendar',
+      config: { host: 'cloud.example.com' },
+    });
+
+    expect(written.connections[0]).toMatchObject({
+      id: 'ada',
+      provider: 'nextcloud_calendar',
+      config: { host: 'cloud.example.com' },
+    });
+  });
+
+  test('a provider with no address writes no config key at all', () => {
+    expect(written(declaring([]))).not.toHaveProperty('config');
+  });
+
+  test('a reconnect updates an address that moved, and says so', () => {
+    // A self-hosted service moving is exactly why somebody reconnects, and a
+    // row left pointing at the old host sends the credential there.
+    const { changes, written: after } = declaring(
+      [
+        {
+          id: 'ada',
+          provider: 'nextcloud_calendar',
+          account: 'ada@example.com',
+          config: { host: 'old.example.com' },
+        } as ConnectionConfig,
+      ],
+      { providerId: 'nextcloud_calendar', config: { host: 'new.example.com' } },
+    );
+
+    expect(after.connections[0]?.config).toEqual({ host: 'new.example.com' });
+    expect(changes).toContain('connections.nextcloud_calendar.ada.config.host = new.example.com');
+  });
+});
+
+/** The first row, for the assertions that only care about one. */
+function written(result: { written: { connections: ConnectionConfig[] } }): ConnectionConfig {
+  return result.written.connections[0]!;
+}

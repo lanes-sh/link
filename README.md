@@ -126,7 +126,7 @@ second calendar, a second anything.
 
 | | |
 |---|---|
-| **Mail, calendar, contacts, files** | Gmail · Google Calendar · Google Drive · Google Docs · Google Sheets · Google Tasks · Google Contacts · iCloud Mail, Calendar, Contacts and Drive · Outlook Mail, Calendar and Contacts · OneDrive · Microsoft To Do · Fastmail · Zoho Mail · Yahoo Mail |
+| **Mail, calendar, contacts, files** | Gmail · Google Calendar · Google Drive · Google Docs · Google Sheets · Google Tasks · Google Contacts · iCloud Mail, Calendar, Contacts and Drive · Outlook Mail, Calendar and Contacts · OneDrive · Microsoft To Do · Fastmail · Zoho Mail · Yahoo Mail · Nextcloud · any IMAP mailbox |
 | **Work** | Notion · Linear · Slack · GitHub · Asana · Atlassian (Jira, Confluence) · Todoist · ClickUp · monday.com · Shortcut · Miro · Whimsical · Figma · Canva · Calendly · Fireflies · HubSpot |
 | **Money** | Stripe · PayPal · Square · Mercury · Ramp · bunq · Paddle · Recurly · Expensify |
 | **Build and run** | Sentry · Vercel · Netlify · Cloudflare · Supabase · Neon · Prisma · Heroku · CircleCI · Buildkite · Datadog · Grafana · Better Stack · Rootly · Flagsmith |
@@ -138,7 +138,9 @@ second calendar, a second anything.
 Most of them need nothing set up. Seventy of them run their own MCP server and offer dynamic client
 registration, so `connect` registers us on the spot: browser, approve, done. The rest are one of
 three shapes — an app password you issue yourself (iCloud, Fastmail, Gmail over IMAP), a token you
-paste (GitHub, Discord), or an OAuth client of your own (Reddit, Microsoft).
+paste (GitHub, Discord), or an OAuth client of your own (Reddit, Microsoft). A few also ask *where*
+they are, because the address belongs to the account rather than the vendor — a Nextcloud you run,
+or any IMAP server.
 
 **Most of them are also untested**, and the tables say which. A provider marked † validates, generates
 tools inside the budget, and answers a probe — but nobody has connected it to a real account yet, and

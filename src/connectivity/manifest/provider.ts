@@ -5,6 +5,7 @@ import { connectorSchema } from './connector.ts';
 import { identitySchema } from './identity.ts';
 import { identifier } from './primitives.ts';
 import { setupSchema } from './setup.ts';
+import { connectionVariableSchema, placeholdersInConnector } from './variables.ts';
 
 /**
  * A provider manifest.
@@ -60,6 +61,14 @@ export const providerManifestSchema = z.object({
    * not silently discarded.
    */
   hints: z.record(z.string(), z.string()).optional(),
+  /**
+   * What this connection has to say about *where* the service is.
+   *
+   * Absent for every provider whose address is the same for everybody, which is
+   * almost all of them. Present for a multi-tenant host that carries the tenant,
+   * or anything self-hosted — see `./variables.ts`.
+   */
+  variables: z.array(connectionVariableSchema).default([]),
 });
 
 export type ProviderManifest = z.infer<typeof providerManifestSchema>;
@@ -103,6 +112,43 @@ export function defineProvider(input: unknown): ProviderManifest {
   }
 
   const manifest = parsed.data;
+
+  // R12 and R13. The two halves of a variable have to agree, and neither failure
+  // is visible without this: a placeholder nothing fills reaches the vendor
+  // verbatim, so the request goes to a host literally called `{site}.zendesk.com`
+  // and fails as DNS rather than as configuration. A variable nothing uses is the
+  // opposite and quieter — `connect` asks the operator a question, stores the
+  // answer, and nothing ever reads it.
+  {
+    // `fs` and `local` are the two that hold no address a caller supplies.
+    // `local` is our own code, and `fs.root` *is* substitutable — a vault path
+    // differs per person — so only `local` is refused here.
+    if (manifest.connector.kind === 'local' && manifest.variables.length > 0) {
+      throw new Error(
+        `Provider "${manifest.id}": a local connector is our own code and has no address to fill in, so it cannot declare variables.`,
+      );
+    }
+
+    const placeholders = placeholdersInConnector(
+      manifest.connector as unknown as Record<string, unknown>,
+    );
+    const declared = new Set(manifest.variables.map((variable) => variable.key));
+
+    const unfilled = placeholders.filter((name) => !declared.has(name));
+    if (unfilled.length > 0) {
+      throw new Error(
+        `Provider "${manifest.id}": the connector names {${unfilled.join('}, {')}} and the manifest declares no variable for ${unfilled.length === 1 ? 'it' : 'them'}. Add one under "variables", or the address is sent to the vendor with the braces still in it.`,
+      );
+    }
+
+    const unused = [...declared].filter((key) => !placeholders.includes(key));
+    if (unused.length > 0) {
+      throw new Error(
+        `Provider "${manifest.id}": variable${unused.length === 1 ? '' : 's'} ${unused.join(', ')} ${unused.length === 1 ? 'appears' : 'appear'} in no address, so connect would ask for ${unused.length === 1 ? 'a value' : 'values'} nothing reads. Put {${unused[0]}} in the connector's address — or drop it.`,
+      );
+    }
+
+  }
 
   if (manifest.auth.kind === 'oauth' && manifest.auth.registration === 'manual') {
     if (!manifest.auth.app) {

@@ -99,4 +99,7 @@ export const UNTESTED_PROVIDERS: ReadonlySet<string> = new Set([
   'hubspot',
   'box',
   'render',
+  'mailbox',
+  'nextcloud_calendar',
+  'nextcloud_contacts',
 ]);

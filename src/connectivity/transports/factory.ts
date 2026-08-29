@@ -1,4 +1,5 @@
 import type { AnyConnector, ProviderDefinition, ProviderManifest } from '#connectivity';
+import { applyVariables } from '#connectivity/manifest/variables.ts';
 import type { SecretStore } from '#secrets';
 import type { ProviderRegistry } from '#registry';
 import { basicCredential } from '#connectivity/auth/basic/index.ts';
@@ -22,6 +23,29 @@ import { createMcpConnector } from './mcp/index.ts';
 export interface ConnectorFactoryOptions {
   readonly registry: ProviderRegistry;
   readonly credentials: SecretStore;
+  /**
+   * What one connection says about where its service is.
+   *
+   * Optional, and read only by a provider that declares `variables` — which is
+   * a handful. A caller that omits it is saying every provider it serves has a
+   * fixed address, which was true of all of them until Zendesk-shaped hosts
+   * arrived, and is still true of almost all.
+   */
+  readonly connectionConfig?: (
+    providerId: string,
+    connectionId: string,
+  ) => Readonly<Record<string, unknown>> | undefined;
+  /**
+   * Whether this connection is declared at all.
+   *
+   * Separate from its config, and the distinction is load-bearing: a provider
+   * nobody has connected is not a misconfiguration — every surface that lists
+   * what *could* be connected asks the factory about one — while a row that has
+   * been declared and carries no address is exactly the case worth failing
+   * loudly. Without this the two are indistinguishable, and the quiet answer
+   * wins for both.
+   */
+  readonly isDeclared?: (providerId: string, connectionId: string) => boolean;
 }
 
 /**
@@ -61,7 +85,13 @@ export function connectorFactory(options: ConnectorFactoryOptions): ConnectorFac
     const entry = options.registry.get(providerId);
     if (!entry) return undefined;
 
-    const connector = wrap(entry.definition, build(entry.manifest, entry.definition, connectionId, options));
+    // Filled in before the switch, so no transport case knows this happened —
+    // which is the property worth keeping. A variable changes *where* a
+    // connector points, and nothing about how it speaks.
+    const manifest = fillAddress(entry.manifest, providerId, connectionId, options);
+    if (!manifest) return undefined;
+
+    const connector = wrap(entry.definition, build(manifest, entry.definition, connectionId, options));
     if (connector) cache.set(key, connector);
     return connector;
   };
@@ -80,6 +110,49 @@ export function connectorFactory(options: ConnectorFactoryOptions): ConnectorFac
   };
 
   return factory;
+}
+
+/**
+ * Substitute what this connection says about where its service is.
+ *
+ * Returns the manifest itself when it declares no variables, which is the
+ * overwhelming majority — so the cost is one array check per connector built,
+ * and a provider with a fixed address cannot be affected by any of this.
+ *
+ * A missing or malformed value throws, and throwing here is deliberate. The
+ * alternative is a connector pointed at `{site}.zendesk.com`, which fails as a
+ * DNS error at the first call and says nothing about the real problem; this
+ * fails at construction, naming the variable and what it should look like.
+ */
+function fillAddress(
+  manifest: ProviderManifest,
+  providerId: string,
+  connectionId: string,
+  options: ConnectorFactoryOptions,
+): ProviderManifest | undefined {
+  if (manifest.variables.length === 0) return manifest;
+
+  const values = options.connectionConfig?.(providerId, connectionId) ?? {};
+
+  // A provider nobody has connected has no address and that is not an error:
+  // the dashboard asks the factory about every provider it lists, and a throw
+  // here took the whole page down rather than showing one as unconnected.
+  //
+  // A *declared* connection missing its address is the opposite, and used to be
+  // silent for the same reason — which is how a `connect` that never wrote the
+  // value produced a provider that was simply, wordlessly dead.
+  if (Object.keys(values).length === 0 && !options.isDeclared?.(providerId, connectionId)) {
+    return undefined;
+  }
+  const connector = applyVariables(
+    manifest.connector as unknown as Record<string, unknown>,
+    manifest.variables,
+    values,
+  );
+
+  // The cast is honest: `applyVariables` rewrites string fields in place and
+  // never touches `kind`, so the union member is the one it started as.
+  return { ...manifest, connector: connector as unknown as ProviderManifest['connector'] };
 }
 
 /**
