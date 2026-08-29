@@ -3,7 +3,7 @@ import { mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createMemoryBlobStore } from '#stores/blobs/testing.ts';
-import { putStaged, stagedBytesKey, STAGED_TTL_MS } from '#connectivity/mail';
+import { getStaged, putStaged, stagedBytesKey, STAGED_TTL_MS } from '#connectivity/mail';
 import { createImapConnector, imapDate, searchCriteria } from './index.ts';
 import type { ImapSocket, SocketFactory } from './socket.ts';
 import { sendOverSmtp, type OutgoingMessage, type Sender } from './send.ts';
@@ -150,6 +150,7 @@ describe('discovery', () => {
     const names = (await connector.discover(CONTEXT)).map((c) => c.name).sort();
 
     expect(names).toEqual([
+      'get_attachment',
       'get_message',
       'list_mailboxes',
       'mark_messages',
@@ -478,6 +479,86 @@ describe('the iCloud mail redact block names real arguments', () => {
   });
 });
 
+describe('taking an attachment out', () => {
+  test('get_attachment stages the file and hands back a handle, never the bytes', async () => {
+    // The whole point of the direction: an attachment that arrived by mail
+    // becomes something the client can fetch, without the file passing through
+    // the model on the way. A 239 KB PDF is ~320,000 characters of base64.
+    const mime = [
+      'From: a@example.com',
+      'Subject: Card',
+      'Message-ID: <card@example.com>',
+      'MIME-Version: 1.0',
+      'Content-Type: multipart/mixed; boundary="X"',
+      '',
+      '--X',
+      'Content-Type: text/plain',
+      '',
+      'hi',
+      '--X',
+      'Content-Type: application/pdf; name="card.pdf"',
+      'Content-Disposition: attachment; filename="card.pdf"',
+      'Content-Transfer-Encoding: base64',
+      '',
+      'AQIDBA==',
+      '--X--',
+      '',
+    ].join('\r\n');
+    const size = new TextEncoder().encode(mime).byteLength;
+
+    const { connector } = connectorWith([
+      { expect: /^EXAMINE/, reply: (tag) => `${tag} OK [READ-ONLY] done\r\n` },
+      {
+        expect: /^UID FETCH/,
+        reply: (tag) => `* 1 FETCH (UID 77 BODY[] {${size}}\r\n${mime})\r\n${tag} OK done\r\n`,
+      },
+    ]);
+
+    const capability = { name: 'get_attachment', target: { operation: 'get_attachment' } };
+    const result = await connector.invoke(
+      capability as never,
+      { mailbox: 'Archive', uid: 77 },
+      CONTEXT as never,
+    );
+
+    const body = parsed(result as never);
+    expect(body['handle']).toMatch(/^att_[0-9a-f]{32}$/);
+    expect(body['filename']).toBe('card.pdf');
+    expect(body['bytes']).toBe(4);
+    expect(body['content_type']).toBe('application/pdf');
+    // Verified out of band: `printf '\x01\x02\x03\x04' | shasum -a 256`.
+    expect(body['sha256']).toBe(
+      '9f64a747e1b97f131fabb6b447296c9b6f0201e79fb3c5356e6c77e89b6a806a',
+    );
+    expect(String(body['fetch'])).toContain('/attachments?connection=');
+
+    // The receipt names the file and does not carry it.
+    expect(JSON.stringify(body)).not.toContain('AQIDBA');
+
+    // And the bytes really are staged, byte-exact, in this connection's own area.
+    const staged = await getStaged(storage, String(body['handle']));
+    expect(staged?.bytes).toEqual(new Uint8Array([1, 2, 3, 4]));
+    expect(staged?.filename).toBe('card.pdf');
+    await connector.close?.();
+  });
+
+  test('get_attachment needs a message named, and refuses two ways of naming it', async () => {
+    const { connector } = connectorWith([]);
+    const capability = { name: 'get_attachment', target: { operation: 'get_attachment' } };
+
+    const neither = await connector.invoke(capability as never, {}, CONTEXT as never);
+    expect(neither.isError).toBe(true);
+
+    const both = await connector.invoke(
+      capability as never,
+      { uid: 1, message_id: '<a@b>' },
+      CONTEXT as never,
+    );
+    expect(both.isError).toBe(true);
+    await connector.close?.();
+  });
+});
+
 describe('sending', () => {
   test('files the copy in the mailbox flagged \\Sent, not one named "Sent"', async () => {
     // iCloud calls it `Sent Messages`, Gmail `[Gmail]/Sent Mail`, a German
@@ -611,6 +692,130 @@ describe('sending', () => {
         ],
       },
     ]);
+    await connector.close?.();
+  });
+
+
+  test('a uid names the message directly, without searching folders for a header', async () => {
+    // The failure this exists to prevent: a PDF arrives, `get_message` reports
+    // its mailbox and uid, and re-attaching it still went looking for the
+    // Message-ID folder by folder — matching on a HEADER search the server
+    // implements however it likes. One iCloud mailbox answered "no message with
+    // that Message-ID" while holding the message. A uid is what IMAP itself
+    // addresses with, so there is nothing to search.
+    const mime = [
+      'From: a@example.com',
+      'To: b@example.com',
+      'Subject: Card',
+      'Message-ID: <card@example.com>',
+      'MIME-Version: 1.0',
+      'Content-Type: multipart/mixed; boundary="X"',
+      '',
+      '--X',
+      'Content-Type: text/plain',
+      '',
+      'hi',
+      '--X',
+      'Content-Type: application/pdf; name="card.pdf"',
+      'Content-Disposition: attachment; filename="card.pdf"',
+      'Content-Transfer-Encoding: base64',
+      '',
+      'AQIDBA==',
+      '--X--',
+      '',
+    ].join('\r\n');
+    const size = new TextEncoder().encode(mime).byteLength;
+
+    const fake = server([
+      ...login(),
+      { expect: /^EXAMINE/, reply: (tag) => `${tag} OK [READ-ONLY] done\r\n` },
+      {
+        expect: /^UID FETCH/,
+        reply: (tag) => `* 1 FETCH (UID 1234 BODY[] {${size}}\r\n${mime})\r\n${tag} OK done\r\n`,
+      },
+      {
+        expect: /^LIST/,
+        reply: (tag) => `* LIST (\\HasNoChildren \\Sent) "/" "Sent Messages"\r\n${tag} OK done\r\n`,
+      },
+      { expect: /^APPEND/, reply: (tag) => `${tag} OK appended\r\n` },
+    ]);
+
+    let handed: OutgoingMessage | undefined;
+    const connector = createImapConnector({
+      host: 'imap.test',
+      port: 993,
+      maxBodyBytes: 1000,
+      smtp: SMTP,
+      socket: fake.factory,
+      credential: async () => ({ username: 'ada@example.com', password: 'p' }),
+      send: async ({ message }) => {
+        handed = message;
+        return { messageId: '<generated@example.com>', raw: new TextEncoder().encode('raw') };
+      },
+    });
+
+    await connector.invoke(
+      SEND as never,
+      {
+        to: ['sam@example.com'],
+        subject: 'Fwd: Card',
+        text: 'Here it is.',
+        attachments: [{ uid: 1234, mailbox: 'Archive' }],
+      },
+      CONTEXT as never,
+    );
+
+    expect(handed?.attachments?.[0]).toMatchObject({
+      filename: 'card.pdf',
+      contentType: 'application/pdf',
+    });
+    expect(handed?.attachments?.[0]?.bytes).toEqual(new Uint8Array([1, 2, 3, 4]));
+
+    // The mailbox the caller named, not INBOX, and PEEK so that fetching
+    // something to forward does not mark it read.
+    expect(fake.sent).toContain('EXAMINE "Archive"');
+    expect(fake.sent).toContain('UID FETCH 1234 (BODY.PEEK[])');
+    // The whole point: the fragile step never happens.
+    expect(fake.sent.some((line) => /UID SEARCH HEADER/.test(line))).toBe(false);
+    await connector.close?.();
+  });
+
+  test('a uid that is not there says so, and says why a uid can stop being valid', async () => {
+    const fake = server([
+      ...login(),
+      { expect: /^EXAMINE/, reply: (tag) => `${tag} OK [READ-ONLY] done\r\n` },
+      { expect: /^UID FETCH/, reply: (tag) => `${tag} OK done\r\n` },
+    ]);
+
+    const connector = createImapConnector({
+      host: 'imap.test',
+      port: 993,
+      maxBodyBytes: 1000,
+      smtp: SMTP,
+      socket: fake.factory,
+      credential: async () => ({ username: 'ada@example.com', password: 'p' }),
+      send: async () => ({ messageId: '<x@example.com>', raw: new TextEncoder().encode('raw') }),
+    });
+
+    const result = await connector.invoke(
+      SEND as never,
+      {
+        to: ['sam@example.com'],
+        subject: 'Fwd',
+        text: 'x',
+        attachments: [{ uid: 9999, mailbox: 'Archive' }],
+      },
+      CONTEXT as never,
+    );
+
+    expect(result.isError).toBe(true);
+    // Names both halves of the address, because a uid alone is not one — and
+    // says the thing a caller cannot otherwise know, which is that a uid is
+    // invalidated by the message being moved.
+    const first = result.content?.[0];
+    const text = first && 'text' in first ? first.text : '';
+    expect(text).toMatch(/uid 9999 in Archive/);
+    expect(text).toMatch(/stops being valid if the message moves/);
     await connector.close?.();
   });
 

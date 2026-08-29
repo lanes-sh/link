@@ -1,0 +1,1743 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "contact": {
+      "x-twitter": "microsoft"
+    },
+    "description": "This OData service is located at https://graph.microsoft.com/v1.0",
+    "title": "OData Service for namespace microsoft.graph",
+    "version": "1.0.1",
+    "x-apisguru-categories": [
+      "developer_tools"
+    ],
+    "x-logo": {
+      "url": "https://api.apis.guru/v2/cache/logo/https_twitter.com_microsoft_profile_image.png"
+    },
+    "x-ms-generated-by": {
+      "toolName": "Microsoft.OpenApi.OData",
+      "toolVersion": "1.0.9.0"
+    },
+    "x-origin": [
+      {
+        "format": "openapi",
+        "url": "https://raw.githubusercontent.com/microsoftgraph/msgraph-metadata/master/openapi/v1.0/openapi.yaml",
+        "version": "3.0"
+      }
+    ],
+    "x-providerName": "microsoft.com",
+    "x-serviceName": "graph",
+    "x-tags": [
+      "Microsoft"
+    ],
+    "x-preferred": true,
+    "x-vendored-from": "https://api.apis.guru/v2/specs/microsoft.com/graph/1.0.1/openapi.json",
+    "x-vendored-note": "Trimmed by src/providers/microsoft/specs/vendor.ts. Committed deliberately: a spec decides which paths are called with the operator token, so it must be reviewable rather than fetched at connect time."
+  },
+  "servers": [
+    {
+      "url": "https://graph.microsoft.com/v1.0"
+    }
+  ],
+  "paths": {
+    "/me/calendarView": {
+      "description": "Provides operations to manage the calendarView property of the microsoft.graph.user entity.",
+      "get": {
+        "description": "The calendar view for the calendar. Read-only. Nullable.",
+        "externalDocs": {
+          "description": "Find more info here",
+          "url": "https://docs.microsoft.com/graph/api/user-list-calendarview?view=graph-rest-1.0"
+        },
+        "operationId": "me.ListCalendarView",
+        "parameters": [
+          {
+            "description": "The start date and time of the time range, represented in ISO 8601 format. For example, 2019-11-08T19:00:00-08:00",
+            "in": "query",
+            "name": "startDateTime",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "The end date and time of the time range, represented in ISO 8601 format. For example, 2019-11-08T20:00:00-08:00",
+            "in": "query",
+            "name": "endDateTime",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/top"
+          },
+          {
+            "$ref": "#/components/parameters/filter"
+          },
+          {
+            "description": "Order items by property values",
+            "explode": false,
+            "in": "query",
+            "name": "$orderby",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "id desc",
+                  "categories",
+                  "categories desc",
+                  "changeKey",
+                  "changeKey desc",
+                  "createdDateTime",
+                  "createdDateTime desc",
+                  "lastModifiedDateTime",
+                  "lastModifiedDateTime desc",
+                  "allowNewTimeProposals",
+                  "allowNewTimeProposals desc",
+                  "attendees",
+                  "attendees desc",
+                  "body",
+                  "body desc",
+                  "bodyPreview",
+                  "bodyPreview desc",
+                  "end",
+                  "end desc",
+                  "hasAttachments",
+                  "hasAttachments desc",
+                  "hideAttendees",
+                  "hideAttendees desc",
+                  "iCalUId",
+                  "iCalUId desc",
+                  "importance",
+                  "importance desc",
+                  "isAllDay",
+                  "isAllDay desc",
+                  "isCancelled",
+                  "isCancelled desc",
+                  "isDraft",
+                  "isDraft desc",
+                  "isOnlineMeeting",
+                  "isOnlineMeeting desc",
+                  "isOrganizer",
+                  "isOrganizer desc",
+                  "isReminderOn",
+                  "isReminderOn desc",
+                  "location",
+                  "location desc",
+                  "locations",
+                  "locations desc",
+                  "onlineMeeting",
+                  "onlineMeeting desc",
+                  "onlineMeetingProvider",
+                  "onlineMeetingProvider desc",
+                  "onlineMeetingUrl",
+                  "onlineMeetingUrl desc",
+                  "organizer",
+                  "organizer desc",
+                  "originalEndTimeZone",
+                  "originalEndTimeZone desc",
+                  "originalStart",
+                  "originalStart desc",
+                  "originalStartTimeZone",
+                  "originalStartTimeZone desc",
+                  "recurrence",
+                  "recurrence desc",
+                  "reminderMinutesBeforeStart",
+                  "reminderMinutesBeforeStart desc",
+                  "responseRequested",
+                  "responseRequested desc",
+                  "responseStatus",
+                  "responseStatus desc",
+                  "sensitivity",
+                  "sensitivity desc",
+                  "seriesMasterId",
+                  "seriesMasterId desc",
+                  "showAs",
+                  "showAs desc",
+                  "start",
+                  "start desc",
+                  "subject",
+                  "subject desc",
+                  "transactionId",
+                  "transactionId desc",
+                  "type",
+                  "type desc",
+                  "webLink",
+                  "webLink desc"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          },
+          {
+            "description": "Select properties to be returned",
+            "explode": false,
+            "in": "query",
+            "name": "$select",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "categories",
+                  "changeKey",
+                  "createdDateTime",
+                  "lastModifiedDateTime",
+                  "allowNewTimeProposals",
+                  "attendees",
+                  "body",
+                  "bodyPreview",
+                  "end",
+                  "hasAttachments",
+                  "hideAttendees",
+                  "iCalUId",
+                  "importance",
+                  "isAllDay",
+                  "isCancelled",
+                  "isDraft",
+                  "isOnlineMeeting",
+                  "isOrganizer",
+                  "isReminderOn",
+                  "location",
+                  "locations",
+                  "onlineMeeting",
+                  "onlineMeetingProvider",
+                  "onlineMeetingUrl",
+                  "organizer",
+                  "originalEndTimeZone",
+                  "originalStart",
+                  "originalStartTimeZone",
+                  "recurrence",
+                  "reminderMinutesBeforeStart",
+                  "responseRequested",
+                  "responseStatus",
+                  "sensitivity",
+                  "seriesMasterId",
+                  "showAs",
+                  "start",
+                  "subject",
+                  "transactionId",
+                  "type",
+                  "webLink",
+                  "attachments",
+                  "calendar",
+                  "extensions",
+                  "instances",
+                  "multiValueExtendedProperties",
+                  "singleValueExtendedProperties"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "Get calendarView from me",
+        "tags": [
+          "me.event"
+        ],
+        "x-ms-docs-operation-type": "operation",
+        "x-ms-pageable": {
+          "nextLinkName": "@odata.nextLink",
+          "operationName": "listMore"
+        }
+      }
+    },
+    "/me/calendars": {
+      "description": "Provides operations to manage the calendars property of the microsoft.graph.user entity.",
+      "get": {
+        "description": "Get all the user's calendars (`/calendars` navigation property), get the calendars from the default calendar group or from a specific calendar group. ",
+        "externalDocs": {
+          "description": "Find more info here",
+          "url": "https://docs.microsoft.com/graph/api/user-list-calendars?view=graph-rest-1.0"
+        },
+        "operationId": "me.ListCalendars",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/top"
+          },
+          {
+            "$ref": "#/components/parameters/filter"
+          },
+          {
+            "description": "Order items by property values",
+            "explode": false,
+            "in": "query",
+            "name": "$orderby",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "id desc",
+                  "allowedOnlineMeetingProviders",
+                  "allowedOnlineMeetingProviders desc",
+                  "canEdit",
+                  "canEdit desc",
+                  "canShare",
+                  "canShare desc",
+                  "canViewPrivateItems",
+                  "canViewPrivateItems desc",
+                  "changeKey",
+                  "changeKey desc",
+                  "color",
+                  "color desc",
+                  "defaultOnlineMeetingProvider",
+                  "defaultOnlineMeetingProvider desc",
+                  "hexColor",
+                  "hexColor desc",
+                  "isDefaultCalendar",
+                  "isDefaultCalendar desc",
+                  "isRemovable",
+                  "isRemovable desc",
+                  "isTallyingResponses",
+                  "isTallyingResponses desc",
+                  "name",
+                  "name desc",
+                  "owner",
+                  "owner desc"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          },
+          {
+            "description": "Select properties to be returned",
+            "explode": false,
+            "in": "query",
+            "name": "$select",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "allowedOnlineMeetingProviders",
+                  "canEdit",
+                  "canShare",
+                  "canViewPrivateItems",
+                  "changeKey",
+                  "color",
+                  "defaultOnlineMeetingProvider",
+                  "hexColor",
+                  "isDefaultCalendar",
+                  "isRemovable",
+                  "isTallyingResponses",
+                  "name",
+                  "owner",
+                  "calendarPermissions",
+                  "calendarView",
+                  "events",
+                  "multiValueExtendedProperties",
+                  "singleValueExtendedProperties"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "List calendars",
+        "tags": [
+          "me.calendar"
+        ],
+        "x-ms-docs-operation-type": "operation",
+        "x-ms-pageable": {
+          "nextLinkName": "@odata.nextLink",
+          "operationName": "listMore"
+        }
+      }
+    },
+    "/me/events": {
+      "description": "Provides operations to manage the events property of the microsoft.graph.user entity.",
+      "get": {
+        "description": "Get a list of event objects in the user's mailbox. The list contains single \ninstance meetings and series masters. To get expanded event instances, you can get the calendar view, or \nget the instances of an event. Currently, this operation returns event bodies in only HTML format. There are two scenarios where an app can get events in another user's calendar:",
+        "externalDocs": {
+          "description": "Find more info here",
+          "url": "https://docs.microsoft.com/graph/api/user-list-events?view=graph-rest-1.0"
+        },
+        "operationId": "me.ListEvents",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/top"
+          },
+          {
+            "$ref": "#/components/parameters/filter"
+          },
+          {
+            "description": "Order items by property values",
+            "explode": false,
+            "in": "query",
+            "name": "$orderby",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "id desc",
+                  "categories",
+                  "categories desc",
+                  "changeKey",
+                  "changeKey desc",
+                  "createdDateTime",
+                  "createdDateTime desc",
+                  "lastModifiedDateTime",
+                  "lastModifiedDateTime desc",
+                  "allowNewTimeProposals",
+                  "allowNewTimeProposals desc",
+                  "attendees",
+                  "attendees desc",
+                  "body",
+                  "body desc",
+                  "bodyPreview",
+                  "bodyPreview desc",
+                  "end",
+                  "end desc",
+                  "hasAttachments",
+                  "hasAttachments desc",
+                  "hideAttendees",
+                  "hideAttendees desc",
+                  "iCalUId",
+                  "iCalUId desc",
+                  "importance",
+                  "importance desc",
+                  "isAllDay",
+                  "isAllDay desc",
+                  "isCancelled",
+                  "isCancelled desc",
+                  "isDraft",
+                  "isDraft desc",
+                  "isOnlineMeeting",
+                  "isOnlineMeeting desc",
+                  "isOrganizer",
+                  "isOrganizer desc",
+                  "isReminderOn",
+                  "isReminderOn desc",
+                  "location",
+                  "location desc",
+                  "locations",
+                  "locations desc",
+                  "onlineMeeting",
+                  "onlineMeeting desc",
+                  "onlineMeetingProvider",
+                  "onlineMeetingProvider desc",
+                  "onlineMeetingUrl",
+                  "onlineMeetingUrl desc",
+                  "organizer",
+                  "organizer desc",
+                  "originalEndTimeZone",
+                  "originalEndTimeZone desc",
+                  "originalStart",
+                  "originalStart desc",
+                  "originalStartTimeZone",
+                  "originalStartTimeZone desc",
+                  "recurrence",
+                  "recurrence desc",
+                  "reminderMinutesBeforeStart",
+                  "reminderMinutesBeforeStart desc",
+                  "responseRequested",
+                  "responseRequested desc",
+                  "responseStatus",
+                  "responseStatus desc",
+                  "sensitivity",
+                  "sensitivity desc",
+                  "seriesMasterId",
+                  "seriesMasterId desc",
+                  "showAs",
+                  "showAs desc",
+                  "start",
+                  "start desc",
+                  "subject",
+                  "subject desc",
+                  "transactionId",
+                  "transactionId desc",
+                  "type",
+                  "type desc",
+                  "webLink",
+                  "webLink desc"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          },
+          {
+            "description": "Select properties to be returned",
+            "explode": false,
+            "in": "query",
+            "name": "$select",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "categories",
+                  "changeKey",
+                  "createdDateTime",
+                  "lastModifiedDateTime",
+                  "allowNewTimeProposals",
+                  "attendees",
+                  "body",
+                  "bodyPreview",
+                  "end",
+                  "hasAttachments",
+                  "hideAttendees",
+                  "iCalUId",
+                  "importance",
+                  "isAllDay",
+                  "isCancelled",
+                  "isDraft",
+                  "isOnlineMeeting",
+                  "isOrganizer",
+                  "isReminderOn",
+                  "location",
+                  "locations",
+                  "onlineMeeting",
+                  "onlineMeetingProvider",
+                  "onlineMeetingUrl",
+                  "organizer",
+                  "originalEndTimeZone",
+                  "originalStart",
+                  "originalStartTimeZone",
+                  "recurrence",
+                  "reminderMinutesBeforeStart",
+                  "responseRequested",
+                  "responseStatus",
+                  "sensitivity",
+                  "seriesMasterId",
+                  "showAs",
+                  "start",
+                  "subject",
+                  "transactionId",
+                  "type",
+                  "webLink",
+                  "attachments",
+                  "calendar",
+                  "extensions",
+                  "instances",
+                  "multiValueExtendedProperties",
+                  "singleValueExtendedProperties"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "List events",
+        "tags": [
+          "me.event"
+        ],
+        "x-ms-docs-operation-type": "operation",
+        "x-ms-pageable": {
+          "nextLinkName": "@odata.nextLink",
+          "operationName": "listMore"
+        }
+      },
+      "post": {
+        "description": "Create an event in the user's default calendar or specified calendar. By default, the **allowNewTimeProposals** property is set to true when an event is created, which means invitees can propose a different date/time for the event. See Propose new meeting times for more information on how to propose a time, and how to receive and accept a new time proposal. You can specify the time zone for each of the start and end times of the event as part of their values, because the \n**start** and **end** properties are of dateTimeTimeZone type. First find the supported time zones to make sure you set only time zones that have been configured for the user's mailbox server.  When an event is sent, the server sends invitations to all the attendees. **Setting the location in an event** An Exchange administrator can set up a mailbox and an email address for a resource such as a meeting room, or equipment \nlike a projector. Users can then invite the resource as an attendee to a meeting. On behalf of the resource, the server accepts or rejects \nthe meeting request based on the free/busy schedule of the resource. \nIf the server accepts a meeting for the resource, it creates an event for the meeting in the resource's calendar. If the meeting is rescheduled, \nthe server automatically updates the event in the resource's calendar. Another advantage of setting up a mailbox for a resource is to control scheduling of the resource, for example, only executives\nor their delegates can book a private meeting room. If you're organizing an event that involves a meeting location: Additionally, if the meeting location has been set up as a resource, or if the event involves some equipment that has been set up as a resource:",
+        "externalDocs": {
+          "description": "Find more info here",
+          "url": "https://docs.microsoft.com/graph/api/user-post-events?view=graph-rest-1.0"
+        },
+        "operationId": "me.CreateEvents",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "The fields this call writes. A message carries far more, and the rest is computed by Graph rather than set here.",
+                "properties": {
+                  "subject": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "body": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/microsoft.graph.itemBody"
+                      },
+                      {
+                        "nullable": true,
+                        "type": "object"
+                      }
+                    ],
+                    "description": "The body of the message associated with the event. It can be in HTML or text format."
+                  },
+                  "start": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/microsoft.graph.dateTimeTimeZone"
+                      },
+                      {
+                        "nullable": true,
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "end": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/microsoft.graph.dateTimeTimeZone"
+                      },
+                      {
+                        "nullable": true,
+                        "type": "object"
+                      }
+                    ],
+                    "description": "The date, time, and time zone that the event ends. By default, the end time is in UTC."
+                  },
+                  "location": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/microsoft.graph.location"
+                      },
+                      {
+                        "nullable": true,
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "attendees": {
+                    "description": "The collection of attendees for the event.",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/microsoft.graph.attendee"
+                        },
+                        {
+                          "nullable": true,
+                          "type": "object"
+                        }
+                      ]
+                    },
+                    "type": "array"
+                  },
+                  "isAllDay": {
+                    "nullable": true,
+                    "type": "boolean"
+                  },
+                  "isOnlineMeeting": {
+                    "nullable": true,
+                    "type": "boolean"
+                  },
+                  "reminderMinutesBeforeStart": {
+                    "format": "int32",
+                    "maximum": 2147483647,
+                    "minimum": -2147483648,
+                    "nullable": true,
+                    "type": "integer"
+                  },
+                  "showAs": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/microsoft.graph.freeBusyStatus"
+                      },
+                      {
+                        "nullable": true,
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "recurrence": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/microsoft.graph.patternedRecurrence"
+                      },
+                      {
+                        "nullable": true,
+                        "type": "object"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "subject",
+                  "body",
+                  "start",
+                  "end",
+                  "location",
+                  "attendees",
+                  "isAllDay",
+                  "isOnlineMeeting",
+                  "reminderMinutesBeforeStart",
+                  "showAs",
+                  "recurrence"
+                ]
+              }
+            }
+          },
+          "description": "New navigation property",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "Create Event",
+        "tags": [
+          "me.event"
+        ],
+        "x-ms-docs-operation-type": "operation"
+      }
+    },
+    "/me/events/{event-id}": {
+      "delete": {
+        "operationId": "me.DeleteEvents",
+        "parameters": [
+          {
+            "description": "key: id of event",
+            "in": "path",
+            "name": "event-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-ms-docs-key-type": "event"
+          },
+          {
+            "description": "ETag",
+            "in": "header",
+            "name": "If-Match",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "Delete navigation property events for me",
+        "tags": [
+          "me.event"
+        ],
+        "x-ms-docs-operation-type": "operation"
+      },
+      "description": "Provides operations to manage the events property of the microsoft.graph.user entity.",
+      "get": {
+        "description": "The user's events. Default is to show Events under the Default Calendar. Read-only. Nullable.",
+        "operationId": "me.GetEvents",
+        "parameters": [
+          {
+            "description": "key: id of event",
+            "in": "path",
+            "name": "event-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-ms-docs-key-type": "event"
+          },
+          {
+            "description": "Select properties to be returned",
+            "explode": false,
+            "in": "query",
+            "name": "$select",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "categories",
+                  "changeKey",
+                  "createdDateTime",
+                  "lastModifiedDateTime",
+                  "allowNewTimeProposals",
+                  "attendees",
+                  "body",
+                  "bodyPreview",
+                  "end",
+                  "hasAttachments",
+                  "hideAttendees",
+                  "iCalUId",
+                  "importance",
+                  "isAllDay",
+                  "isCancelled",
+                  "isDraft",
+                  "isOnlineMeeting",
+                  "isOrganizer",
+                  "isReminderOn",
+                  "location",
+                  "locations",
+                  "onlineMeeting",
+                  "onlineMeetingProvider",
+                  "onlineMeetingUrl",
+                  "organizer",
+                  "originalEndTimeZone",
+                  "originalStart",
+                  "originalStartTimeZone",
+                  "recurrence",
+                  "reminderMinutesBeforeStart",
+                  "responseRequested",
+                  "responseStatus",
+                  "sensitivity",
+                  "seriesMasterId",
+                  "showAs",
+                  "start",
+                  "subject",
+                  "transactionId",
+                  "type",
+                  "webLink",
+                  "attachments",
+                  "calendar",
+                  "extensions",
+                  "instances",
+                  "multiValueExtendedProperties",
+                  "singleValueExtendedProperties"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "Get events from me",
+        "tags": [
+          "me.event"
+        ],
+        "x-ms-docs-operation-type": "operation"
+      },
+      "patch": {
+        "operationId": "me.UpdateEvents",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "The fields this call writes. A message carries far more, and the rest is computed by Graph rather than set here.",
+                "properties": {
+                  "subject": {
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "body": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/microsoft.graph.itemBody"
+                      },
+                      {
+                        "nullable": true,
+                        "type": "object"
+                      }
+                    ],
+                    "description": "The body of the message associated with the event. It can be in HTML or text format."
+                  },
+                  "start": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/microsoft.graph.dateTimeTimeZone"
+                      },
+                      {
+                        "nullable": true,
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "end": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/microsoft.graph.dateTimeTimeZone"
+                      },
+                      {
+                        "nullable": true,
+                        "type": "object"
+                      }
+                    ],
+                    "description": "The date, time, and time zone that the event ends. By default, the end time is in UTC."
+                  },
+                  "location": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/microsoft.graph.location"
+                      },
+                      {
+                        "nullable": true,
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "attendees": {
+                    "description": "The collection of attendees for the event.",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/microsoft.graph.attendee"
+                        },
+                        {
+                          "nullable": true,
+                          "type": "object"
+                        }
+                      ]
+                    },
+                    "type": "array"
+                  },
+                  "isAllDay": {
+                    "nullable": true,
+                    "type": "boolean"
+                  },
+                  "isOnlineMeeting": {
+                    "nullable": true,
+                    "type": "boolean"
+                  },
+                  "reminderMinutesBeforeStart": {
+                    "format": "int32",
+                    "maximum": 2147483647,
+                    "minimum": -2147483648,
+                    "nullable": true,
+                    "type": "integer"
+                  },
+                  "showAs": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/microsoft.graph.freeBusyStatus"
+                      },
+                      {
+                        "nullable": true,
+                        "type": "object"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "subject",
+                  "body",
+                  "start",
+                  "end",
+                  "location",
+                  "attendees",
+                  "isAllDay",
+                  "isOnlineMeeting",
+                  "reminderMinutesBeforeStart",
+                  "showAs"
+                ]
+              }
+            }
+          },
+          "description": "New navigation property values",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "Update the navigation property events in me",
+        "tags": [
+          "me.event"
+        ],
+        "x-ms-docs-operation-type": "operation",
+        "parameters": [
+          {
+            "description": "key: id of event",
+            "in": "path",
+            "name": "event-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-ms-docs-key-type": "event"
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "filter": {
+        "description": "Filter items by property values",
+        "explode": false,
+        "in": "query",
+        "name": "$filter",
+        "schema": {
+          "type": "string"
+        },
+        "style": "form"
+      },
+      "top": {
+        "description": "Show only the first n items",
+        "example": 50,
+        "explode": false,
+        "in": "query",
+        "name": "$top",
+        "schema": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "style": "form"
+      }
+    },
+    "schemas": {
+      "ReferenceNumeric": {
+        "enum": [
+          "-INF",
+          "INF",
+          "NaN"
+        ]
+      },
+      "microsoft.graph.attendee": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/microsoft.graph.attendeeBase"
+          },
+          {
+            "properties": {
+              "@odata.type": {
+                "default": "#microsoft.graph.attendee",
+                "type": "string"
+              },
+              "proposedNewTime": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/microsoft.graph.timeSlot"
+                  },
+                  {
+                    "nullable": true,
+                    "type": "object"
+                  }
+                ],
+                "description": "An alternate date/time proposed by the attendee for a meeting request to start and end. If the attendee hasn't proposed another time, then this property is not included in a response of a GET event."
+              },
+              "status": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/microsoft.graph.responseStatus"
+                  },
+                  {
+                    "nullable": true,
+                    "type": "object"
+                  }
+                ],
+                "description": "The attendee's response (none, accepted, declined, etc.) for the event and date-time that the response was sent."
+              }
+            },
+            "required": [
+              "@odata.type"
+            ],
+            "title": "attendee",
+            "type": "object"
+          }
+        ],
+        "x-ms-discriminator-value": "#microsoft.graph.attendee"
+      },
+      "microsoft.graph.attendeeBase": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/microsoft.graph.recipient"
+          },
+          {
+            "discriminator": {
+              "mapping": {
+                "#microsoft.graph.attendee": "#/components/schemas/microsoft.graph.attendee"
+              },
+              "propertyName": "@odata.type"
+            },
+            "properties": {
+              "@odata.type": {
+                "default": "#microsoft.graph.attendeeBase",
+                "type": "string"
+              },
+              "type": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/microsoft.graph.attendeeType"
+                  },
+                  {
+                    "nullable": true,
+                    "type": "object"
+                  }
+                ],
+                "description": "The type of attendee. The possible values are: required, optional, resource. Currently if the attendee is a person, findMeetingTimes always considers the person is of the Required type."
+              }
+            },
+            "required": [
+              "@odata.type"
+            ],
+            "title": "attendeeBase",
+            "type": "object"
+          }
+        ]
+      },
+      "microsoft.graph.attendeeType": {
+        "enum": [
+          "required",
+          "optional",
+          "resource"
+        ],
+        "title": "attendeeType",
+        "type": "string"
+      },
+      "microsoft.graph.bodyType": {
+        "enum": [
+          "text",
+          "html"
+        ],
+        "title": "bodyType",
+        "type": "string"
+      },
+      "microsoft.graph.dateTimeTimeZone": {
+        "properties": {
+          "@odata.type": {
+            "type": "string"
+          },
+          "dateTime": {
+            "description": "A single point of time in a combined date and time representation ({date}T{time}; for example, 2017-08-29T04:00:00.0000000).",
+            "type": "string"
+          },
+          "timeZone": {
+            "description": "Represents a time zone, for example, 'Pacific Standard Time'. See below for more possible values.",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "@odata.type"
+        ],
+        "title": "dateTimeTimeZone",
+        "type": "object"
+      },
+      "microsoft.graph.dayOfWeek": {
+        "enum": [
+          "sunday",
+          "monday",
+          "tuesday",
+          "wednesday",
+          "thursday",
+          "friday",
+          "saturday"
+        ],
+        "title": "dayOfWeek",
+        "type": "string"
+      },
+      "microsoft.graph.emailAddress": {
+        "properties": {
+          "@odata.type": {
+            "type": "string"
+          },
+          "address": {
+            "description": "The email address of the person or entity.",
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "description": "The display name of the person or entity.",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "@odata.type"
+        ],
+        "title": "emailAddress",
+        "type": "object"
+      },
+      "microsoft.graph.freeBusyStatus": {
+        "enum": [
+          "unknown",
+          "free",
+          "tentative",
+          "busy",
+          "oof",
+          "workingElsewhere"
+        ],
+        "title": "freeBusyStatus",
+        "type": "string"
+      },
+      "microsoft.graph.itemBody": {
+        "properties": {
+          "@odata.type": {
+            "type": "string"
+          },
+          "content": {
+            "description": "The content of the item.",
+            "nullable": true,
+            "type": "string"
+          },
+          "contentType": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/microsoft.graph.bodyType"
+              },
+              {
+                "nullable": true,
+                "type": "object"
+              }
+            ],
+            "description": "The type of the content. Possible values are text and html."
+          }
+        },
+        "required": [
+          "@odata.type"
+        ],
+        "title": "itemBody",
+        "type": "object"
+      },
+      "microsoft.graph.location": {
+        "discriminator": {
+          "mapping": {
+            "#microsoft.graph.locationConstraintItem": "#/components/schemas/microsoft.graph.locationConstraintItem"
+          },
+          "propertyName": "@odata.type"
+        },
+        "properties": {
+          "@odata.type": {
+            "type": "string"
+          },
+          "address": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/microsoft.graph.physicalAddress"
+              },
+              {
+                "nullable": true,
+                "type": "object"
+              }
+            ],
+            "description": "The street address of the location."
+          },
+          "coordinates": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/microsoft.graph.outlookGeoCoordinates"
+              },
+              {
+                "nullable": true,
+                "type": "object"
+              }
+            ],
+            "description": "The geographic coordinates and elevation of the location."
+          },
+          "displayName": {
+            "description": "The name associated with the location.",
+            "nullable": true,
+            "type": "string"
+          },
+          "locationEmailAddress": {
+            "description": "Optional email address of the location.",
+            "nullable": true,
+            "type": "string"
+          },
+          "locationType": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/microsoft.graph.locationType"
+              },
+              {
+                "nullable": true,
+                "type": "object"
+              }
+            ],
+            "description": "The type of location. The possible values are: default, conferenceRoom, homeAddress, businessAddress,geoCoordinates, streetAddress, hotel, restaurant, localBusiness, postalAddress. Read-only."
+          },
+          "locationUri": {
+            "description": "Optional URI representing the location.",
+            "nullable": true,
+            "type": "string"
+          },
+          "uniqueId": {
+            "description": "For internal use only.",
+            "nullable": true,
+            "type": "string"
+          },
+          "uniqueIdType": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/microsoft.graph.locationUniqueIdType"
+              },
+              {
+                "nullable": true,
+                "type": "object"
+              }
+            ],
+            "description": "For internal use only."
+          }
+        },
+        "required": [
+          "@odata.type"
+        ],
+        "title": "location",
+        "type": "object"
+      },
+      "microsoft.graph.locationType": {
+        "enum": [
+          "default",
+          "conferenceRoom",
+          "homeAddress",
+          "businessAddress",
+          "geoCoordinates",
+          "streetAddress",
+          "hotel",
+          "restaurant",
+          "localBusiness",
+          "postalAddress"
+        ],
+        "title": "locationType",
+        "type": "string"
+      },
+      "microsoft.graph.locationUniqueIdType": {
+        "enum": [
+          "unknown",
+          "locationStore",
+          "directory",
+          "private",
+          "bing"
+        ],
+        "title": "locationUniqueIdType",
+        "type": "string"
+      },
+      "microsoft.graph.outlookGeoCoordinates": {
+        "properties": {
+          "@odata.type": {
+            "type": "string"
+          },
+          "accuracy": {
+            "description": "The accuracy of the latitude and longitude. As an example, the accuracy can be measured in meters, such as the latitude and longitude are accurate to within 50 meters.",
+            "nullable": true,
+            "oneOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/components/schemas/ReferenceNumeric"
+              }
+            ]
+          },
+          "altitude": {
+            "description": "The altitude of the location.",
+            "nullable": true,
+            "oneOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/components/schemas/ReferenceNumeric"
+              }
+            ]
+          },
+          "altitudeAccuracy": {
+            "description": "The accuracy of the altitude.",
+            "nullable": true,
+            "oneOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/components/schemas/ReferenceNumeric"
+              }
+            ]
+          },
+          "latitude": {
+            "description": "The latitude of the location.",
+            "nullable": true,
+            "oneOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/components/schemas/ReferenceNumeric"
+              }
+            ]
+          },
+          "longitude": {
+            "description": "The longitude of the location.",
+            "nullable": true,
+            "oneOf": [
+              {
+                "format": "double",
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/components/schemas/ReferenceNumeric"
+              }
+            ]
+          }
+        },
+        "required": [
+          "@odata.type"
+        ],
+        "title": "outlookGeoCoordinates",
+        "type": "object"
+      },
+      "microsoft.graph.patternedRecurrence": {
+        "properties": {
+          "@odata.type": {
+            "type": "string"
+          },
+          "pattern": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/microsoft.graph.recurrencePattern"
+              },
+              {
+                "nullable": true,
+                "type": "object"
+              }
+            ],
+            "description": "The frequency of an event.  For access reviews: Do not specify this property for a one-time access review.  Only interval, dayOfMonth, and type (weekly, absoluteMonthly) properties of recurrencePattern are supported."
+          },
+          "range": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/microsoft.graph.recurrenceRange"
+              },
+              {
+                "nullable": true,
+                "type": "object"
+              }
+            ],
+            "description": "The duration of an event."
+          }
+        },
+        "required": [
+          "@odata.type"
+        ],
+        "title": "patternedRecurrence",
+        "type": "object"
+      },
+      "microsoft.graph.physicalAddress": {
+        "properties": {
+          "@odata.type": {
+            "type": "string"
+          },
+          "city": {
+            "description": "The city.",
+            "nullable": true,
+            "type": "string"
+          },
+          "countryOrRegion": {
+            "description": "The country or region. It's a free-format string value, for example, 'United States'.",
+            "nullable": true,
+            "type": "string"
+          },
+          "postalCode": {
+            "description": "The postal code.",
+            "nullable": true,
+            "type": "string"
+          },
+          "state": {
+            "description": "The state.",
+            "nullable": true,
+            "type": "string"
+          },
+          "street": {
+            "description": "The street.",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "@odata.type"
+        ],
+        "title": "physicalAddress",
+        "type": "object"
+      },
+      "microsoft.graph.recipient": {
+        "discriminator": {
+          "mapping": {
+            "#microsoft.graph.attendee": "#/components/schemas/microsoft.graph.attendee",
+            "#microsoft.graph.attendeeBase": "#/components/schemas/microsoft.graph.attendeeBase"
+          },
+          "propertyName": "@odata.type"
+        },
+        "properties": {
+          "@odata.type": {
+            "type": "string"
+          },
+          "emailAddress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/microsoft.graph.emailAddress"
+              },
+              {
+                "nullable": true,
+                "type": "object"
+              }
+            ],
+            "description": "The recipient's email address."
+          }
+        },
+        "required": [
+          "@odata.type"
+        ],
+        "title": "recipient",
+        "type": "object"
+      },
+      "microsoft.graph.recurrencePattern": {
+        "properties": {
+          "@odata.type": {
+            "type": "string"
+          },
+          "dayOfMonth": {
+            "description": "The day of the month on which the event occurs. Required if type is absoluteMonthly or absoluteYearly.",
+            "format": "int32",
+            "maximum": 2147483647,
+            "minimum": -2147483648,
+            "type": "integer"
+          },
+          "daysOfWeek": {
+            "description": "A collection of the days of the week on which the event occurs. The possible values are: sunday, monday, tuesday, wednesday, thursday, friday, saturday. If type is relativeMonthly or relativeYearly, and daysOfWeek specifies more than one day, the event falls on the first day that satisfies the pattern.  Required if type is weekly, relativeMonthly, or relativeYearly.",
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/microsoft.graph.dayOfWeek"
+                },
+                {
+                  "nullable": true,
+                  "type": "object"
+                }
+              ]
+            },
+            "type": "array"
+          },
+          "firstDayOfWeek": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/microsoft.graph.dayOfWeek"
+              },
+              {
+                "nullable": true,
+                "type": "object"
+              }
+            ],
+            "description": "The first day of the week. The possible values are: sunday, monday, tuesday, wednesday, thursday, friday, saturday. Default is sunday. Required if type is weekly."
+          },
+          "index": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/microsoft.graph.weekIndex"
+              },
+              {
+                "nullable": true,
+                "type": "object"
+              }
+            ],
+            "description": "Specifies on which instance of the allowed days specified in daysOfWeek the event occurs, counted from the first instance in the month. The possible values are: first, second, third, fourth, last. Default is first. Optional and used if type is relativeMonthly or relativeYearly."
+          },
+          "interval": {
+            "description": "The number of units between occurrences, where units can be in days, weeks, months, or years, depending on the type. Required.",
+            "format": "int32",
+            "maximum": 2147483647,
+            "minimum": -2147483648,
+            "type": "integer"
+          },
+          "month": {
+            "description": "The month in which the event occurs.  This is a number from 1 to 12.",
+            "format": "int32",
+            "maximum": 2147483647,
+            "minimum": -2147483648,
+            "type": "integer"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/microsoft.graph.recurrencePatternType"
+              },
+              {
+                "nullable": true,
+                "type": "object"
+              }
+            ],
+            "description": "The recurrence pattern type: daily, weekly, absoluteMonthly, relativeMonthly, absoluteYearly, relativeYearly. Required. For more information, see values of type property."
+          }
+        },
+        "required": [
+          "@odata.type"
+        ],
+        "title": "recurrencePattern",
+        "type": "object"
+      },
+      "microsoft.graph.recurrencePatternType": {
+        "enum": [
+          "daily",
+          "weekly",
+          "absoluteMonthly",
+          "relativeMonthly",
+          "absoluteYearly",
+          "relativeYearly"
+        ],
+        "title": "recurrencePatternType",
+        "type": "string"
+      },
+      "microsoft.graph.recurrenceRange": {
+        "properties": {
+          "@odata.type": {
+            "type": "string"
+          },
+          "endDate": {
+            "description": "The date to stop applying the recurrence pattern. Depending on the recurrence pattern of the event, the last occurrence of the meeting may not be this date. Required if type is endDate.",
+            "format": "date",
+            "nullable": true,
+            "pattern": "^[0-9]{4,}-(0[1-9]|1[012])-(0[1-9]|[12][0-9]|3[01])$",
+            "type": "string"
+          },
+          "numberOfOccurrences": {
+            "description": "The number of times to repeat the event. Required and must be positive if type is numbered.",
+            "format": "int32",
+            "maximum": 2147483647,
+            "minimum": -2147483648,
+            "type": "integer"
+          },
+          "recurrenceTimeZone": {
+            "description": "Time zone for the startDate and endDate properties. Optional. If not specified, the time zone of the event is used.",
+            "nullable": true,
+            "type": "string"
+          },
+          "startDate": {
+            "description": "The date to start applying the recurrence pattern. The first occurrence of the meeting may be this date or later, depending on the recurrence pattern of the event. Must be the same value as the start property of the recurring event. Required.",
+            "format": "date",
+            "nullable": true,
+            "pattern": "^[0-9]{4,}-(0[1-9]|1[012])-(0[1-9]|[12][0-9]|3[01])$",
+            "type": "string"
+          },
+          "type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/microsoft.graph.recurrenceRangeType"
+              },
+              {
+                "nullable": true,
+                "type": "object"
+              }
+            ],
+            "description": "The recurrence range. The possible values are: endDate, noEnd, numbered. Required."
+          }
+        },
+        "required": [
+          "@odata.type"
+        ],
+        "title": "recurrenceRange",
+        "type": "object"
+      },
+      "microsoft.graph.recurrenceRangeType": {
+        "enum": [
+          "endDate",
+          "noEnd",
+          "numbered"
+        ],
+        "title": "recurrenceRangeType",
+        "type": "string"
+      },
+      "microsoft.graph.responseStatus": {
+        "properties": {
+          "@odata.type": {
+            "type": "string"
+          },
+          "response": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/microsoft.graph.responseType"
+              },
+              {
+                "nullable": true,
+                "type": "object"
+              }
+            ],
+            "description": "The response type. Possible values are: none, organizer, tentativelyAccepted, accepted, declined, notResponded.To differentiate between none and notResponded:  none – from organizer's perspective. This value is used when the status of an attendee/participant is reported to the organizer of a meeting.  notResponded – from attendee's perspective. Indicates the attendee has not responded to the meeting request.  Clients can treat notResponded == none.  As an example, if attendee Alex hasn't responded to a meeting request, getting Alex' response status for that event in Alex' calendar returns notResponded. Getting Alex' response from the calendar of any other attendee or the organizer's returns none. Getting the organizer's response for the event in anybody's calendar also returns none."
+          },
+          "time": {
+            "description": "The date and time when the response was returned. It uses ISO 8601 format and is always in UTC time. For example, midnight UTC on Jan 1, 2014 is 2014-01-01T00:00:00Z",
+            "format": "date-time",
+            "nullable": true,
+            "pattern": "^[0-9]{4,}-(0[1-9]|1[012])-(0[1-9]|[12][0-9]|3[01])T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]([.][0-9]{1,12})?(Z|[+-][0-9][0-9]:[0-9][0-9])$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "@odata.type"
+        ],
+        "title": "responseStatus",
+        "type": "object"
+      },
+      "microsoft.graph.responseType": {
+        "enum": [
+          "none",
+          "organizer",
+          "tentativelyAccepted",
+          "accepted",
+          "declined",
+          "notResponded"
+        ],
+        "title": "responseType",
+        "type": "string"
+      },
+      "microsoft.graph.timeSlot": {
+        "properties": {
+          "@odata.type": {
+            "type": "string"
+          },
+          "end": {
+            "$ref": "#/components/schemas/microsoft.graph.dateTimeTimeZone"
+          },
+          "start": {
+            "$ref": "#/components/schemas/microsoft.graph.dateTimeTimeZone"
+          }
+        },
+        "required": [
+          "@odata.type"
+        ],
+        "title": "timeSlot",
+        "type": "object"
+      },
+      "microsoft.graph.weekIndex": {
+        "enum": [
+          "first",
+          "second",
+          "third",
+          "fourth",
+          "last"
+        ],
+        "title": "weekIndex",
+        "type": "string"
+      }
+    }
+  }
+}

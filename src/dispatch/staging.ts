@@ -1,7 +1,14 @@
 import { createHash } from 'node:crypto';
 import type { AuditSink } from '#audit';
 import type { Principal } from '#auth';
-import { newHandle, putStaged, sweepStaged, STAGED_TTL_MS } from '#connectivity/mail';
+import {
+  getStaged,
+  newHandle,
+  putStaged,
+  sweepStaged,
+  STAGED_TTL_MS,
+  type StagedFile,
+} from '#connectivity/mail';
 import type { BlobStore } from '#stores/blobs';
 import { scopeBlobStore } from '#stores/blobs';
 import { scopeNamespace } from './context.ts';
@@ -99,4 +106,72 @@ export async function stageAttachment(
   });
 
   return { handle, sha256, expiresAt };
+}
+
+export interface FetchStagedRequest {
+  readonly principal: Principal;
+  readonly providerId: string;
+  readonly connectionId: string;
+  readonly handle: string;
+  readonly clientLabel?: string | undefined;
+}
+
+/**
+ * Handing bytes back out, which is the half staging was missing.
+ *
+ * Upload always worked: bytes in over HTTP, a handle through the model, a send
+ * that names it. The other direction had no route at all — an attachment that
+ * arrived by mail could be *described* by `get_message` and attached to an
+ * outgoing message by `send_message`, and there was no way to simply have it.
+ * The only paths out were to mail it somewhere else or to base64 it through the
+ * conversation, which is the cost this whole design exists to avoid.
+ *
+ * So it is the same shape run backwards, and deliberately the same scoping: the
+ * store is namespaced by provider and connection here exactly as it is above, so
+ * a handle minted for `icloud_mail.main` is fetchable from that connection and
+ * from no other. Nothing is bridged and no provider gains reach it did not have
+ * — the bytes were already inside this account's namespace, and this is a door
+ * onto it rather than a route between two.
+ *
+ * Null for "no such handle", "expired", and "wrong connection" alike. A caller
+ * cannot act on the difference, and distinguishing them would let someone probe
+ * for handles staged against an account they cannot reach.
+ */
+export async function fetchStaged(
+  deps: {
+    readonly storage: BlobStore;
+    readonly audit: AuditSink;
+    readonly profile: string;
+  },
+  request: FetchStagedRequest,
+): Promise<StagedFile | null> {
+  const storage = scopeBlobStore(
+    deps.storage,
+    scopeNamespace(request.providerId, request.connectionId),
+  );
+
+  const found = await getStaged(storage, request.handle);
+
+  // Logged either way. "Did anything leave the endpoint" is the question this
+  // answers, and a miss is as worth having as a hit — a run of them against
+  // handles that do not exist is what probing looks like.
+  await deps.audit.append({
+    profile: deps.profile,
+    principal: request.principal.id,
+    ...(request.clientLabel ? { clientLabel: request.clientLabel } : {}),
+    provider: request.providerId,
+    connection: `${request.providerId}.${request.connectionId}`,
+    capability: 'attachments.fetch',
+    arguments: {
+      handle: request.handle,
+      ...(found
+        ? { filename: found.filename, bytes: found.bytes.byteLength, content_type: found.contentType }
+        : {}),
+    },
+    authorization: 'allowed',
+    status: found ? 'ok' : 'error',
+    durationMs: 0,
+  });
+
+  return found;
 }

@@ -1,0 +1,755 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "contact": {
+      "x-twitter": "microsoft"
+    },
+    "description": "This OData service is located at https://graph.microsoft.com/v1.0",
+    "title": "OData Service for namespace microsoft.graph",
+    "version": "1.0.1",
+    "x-apisguru-categories": [
+      "developer_tools"
+    ],
+    "x-logo": {
+      "url": "https://api.apis.guru/v2/cache/logo/https_twitter.com_microsoft_profile_image.png"
+    },
+    "x-ms-generated-by": {
+      "toolName": "Microsoft.OpenApi.OData",
+      "toolVersion": "1.0.9.0"
+    },
+    "x-origin": [
+      {
+        "format": "openapi",
+        "url": "https://raw.githubusercontent.com/microsoftgraph/msgraph-metadata/master/openapi/v1.0/openapi.yaml",
+        "version": "3.0"
+      }
+    ],
+    "x-providerName": "microsoft.com",
+    "x-serviceName": "graph",
+    "x-tags": [
+      "Microsoft"
+    ],
+    "x-preferred": true,
+    "x-vendored-from": "https://api.apis.guru/v2/specs/microsoft.com/graph/1.0.1/openapi.json",
+    "x-vendored-note": "Trimmed by src/providers/microsoft/specs/vendor.ts. Committed deliberately: a spec decides which paths are called with the operator token, so it must be reviewable rather than fetched at connect time."
+  },
+  "servers": [
+    {
+      "url": "https://graph.microsoft.com/v1.0"
+    }
+  ],
+  "paths": {
+    "/me/todo/lists": {
+      "description": "Provides operations to manage the lists property of the microsoft.graph.todo entity.",
+      "get": {
+        "description": "Get a list of the todoTaskList objects and their properties.",
+        "externalDocs": {
+          "description": "Find more info here",
+          "url": "https://docs.microsoft.com/graph/api/todo-list-lists?view=graph-rest-1.0"
+        },
+        "operationId": "me.todo.ListLists",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/top"
+          },
+          {
+            "$ref": "#/components/parameters/search"
+          },
+          {
+            "$ref": "#/components/parameters/filter"
+          },
+          {
+            "description": "Order items by property values",
+            "explode": false,
+            "in": "query",
+            "name": "$orderby",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "id desc",
+                  "displayName",
+                  "displayName desc",
+                  "isOwner",
+                  "isOwner desc",
+                  "isShared",
+                  "isShared desc",
+                  "wellknownListName",
+                  "wellknownListName desc"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          },
+          {
+            "description": "Select properties to be returned",
+            "explode": false,
+            "in": "query",
+            "name": "$select",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "displayName",
+                  "isOwner",
+                  "isShared",
+                  "wellknownListName",
+                  "extensions",
+                  "tasks"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "List lists",
+        "tags": [
+          "me.todo"
+        ],
+        "x-ms-docs-operation-type": "operation",
+        "x-ms-pageable": {
+          "nextLinkName": "@odata.nextLink",
+          "operationName": "listMore"
+        }
+      },
+      "post": {
+        "description": "Create a new lists object.",
+        "externalDocs": {
+          "description": "Find more info here",
+          "url": "https://docs.microsoft.com/graph/api/todo-post-lists?view=graph-rest-1.0"
+        },
+        "operationId": "me.todo.CreateLists",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "The fields this call writes. A message carries far more, and the rest is computed by Graph rather than set here.",
+                "properties": {
+                  "displayName": {
+                    "description": "The name of the task list.",
+                    "nullable": true,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "displayName"
+                ]
+              }
+            }
+          },
+          "description": "New navigation property",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "Create todoTaskList",
+        "tags": [
+          "me.todo"
+        ],
+        "x-ms-docs-operation-type": "operation"
+      }
+    },
+    "/me/todo/lists/{todoTaskList-id}/tasks": {
+      "description": "Provides operations to manage the tasks property of the microsoft.graph.todoTaskList entity.",
+      "get": {
+        "description": "Get the **todoTask** resources from the **tasks** navigation property of a specified todoTaskList.",
+        "externalDocs": {
+          "description": "Find more info here",
+          "url": "https://docs.microsoft.com/graph/api/todotasklist-list-tasks?view=graph-rest-1.0"
+        },
+        "operationId": "me.todo.lists.ListTasks",
+        "parameters": [
+          {
+            "description": "key: id of todoTaskList",
+            "in": "path",
+            "name": "todoTaskList-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-ms-docs-key-type": "todoTaskList"
+          },
+          {
+            "$ref": "#/components/parameters/top"
+          },
+          {
+            "$ref": "#/components/parameters/search"
+          },
+          {
+            "$ref": "#/components/parameters/filter"
+          },
+          {
+            "description": "Order items by property values",
+            "explode": false,
+            "in": "query",
+            "name": "$orderby",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "id desc",
+                  "body",
+                  "body desc",
+                  "bodyLastModifiedDateTime",
+                  "bodyLastModifiedDateTime desc",
+                  "categories",
+                  "categories desc",
+                  "completedDateTime",
+                  "completedDateTime desc",
+                  "createdDateTime",
+                  "createdDateTime desc",
+                  "dueDateTime",
+                  "dueDateTime desc",
+                  "hasAttachments",
+                  "hasAttachments desc",
+                  "importance",
+                  "importance desc",
+                  "isReminderOn",
+                  "isReminderOn desc",
+                  "lastModifiedDateTime",
+                  "lastModifiedDateTime desc",
+                  "recurrence",
+                  "recurrence desc",
+                  "reminderDateTime",
+                  "reminderDateTime desc",
+                  "startDateTime",
+                  "startDateTime desc",
+                  "status",
+                  "status desc",
+                  "title",
+                  "title desc"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          },
+          {
+            "description": "Select properties to be returned",
+            "explode": false,
+            "in": "query",
+            "name": "$select",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "body",
+                  "bodyLastModifiedDateTime",
+                  "categories",
+                  "completedDateTime",
+                  "createdDateTime",
+                  "dueDateTime",
+                  "hasAttachments",
+                  "importance",
+                  "isReminderOn",
+                  "lastModifiedDateTime",
+                  "recurrence",
+                  "reminderDateTime",
+                  "startDateTime",
+                  "status",
+                  "title",
+                  "attachments",
+                  "attachmentSessions",
+                  "checklistItems",
+                  "extensions",
+                  "linkedResources"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "List tasks",
+        "tags": [
+          "me.todo"
+        ],
+        "x-ms-docs-operation-type": "operation",
+        "x-ms-pageable": {
+          "nextLinkName": "@odata.nextLink",
+          "operationName": "listMore"
+        }
+      },
+      "post": {
+        "description": "Create a new task object in a specified todoTaskList.",
+        "externalDocs": {
+          "description": "Find more info here",
+          "url": "https://docs.microsoft.com/graph/api/todotasklist-post-tasks?view=graph-rest-1.0"
+        },
+        "operationId": "me.todo.lists.CreateTasks",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "The fields this call writes. A message carries far more, and the rest is computed by Graph rather than set here.",
+                "properties": {
+                  "title": {
+                    "description": "A brief description of the task.",
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "body": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/microsoft.graph.itemBody"
+                      },
+                      {
+                        "nullable": true,
+                        "type": "object"
+                      }
+                    ],
+                    "description": "The task body that typically contains information about the task."
+                  },
+                  "dueDateTime": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/microsoft.graph.dateTimeTimeZone"
+                      },
+                      {
+                        "nullable": true,
+                        "type": "object"
+                      }
+                    ],
+                    "description": "The date and time in the specified time zone that the task is to be finished."
+                  },
+                  "reminderDateTime": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/microsoft.graph.dateTimeTimeZone"
+                      },
+                      {
+                        "nullable": true,
+                        "type": "object"
+                      }
+                    ],
+                    "description": "The date and time in the specified time zone for a reminder alert of the task to occur."
+                  },
+                  "importance": {
+                    "$ref": "#/components/schemas/microsoft.graph.importance"
+                  },
+                  "status": {
+                    "$ref": "#/components/schemas/microsoft.graph.taskStatus"
+                  },
+                  "categories": {
+                    "description": "The categories associated with the task. Each category corresponds to the displayName property of an outlookCategory that the user has defined.",
+                    "items": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "title",
+                  "body",
+                  "dueDateTime",
+                  "reminderDateTime",
+                  "importance",
+                  "status",
+                  "categories"
+                ]
+              }
+            }
+          },
+          "description": "New navigation property",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "Create todoTask",
+        "tags": [
+          "me.todo"
+        ],
+        "x-ms-docs-operation-type": "operation",
+        "parameters": [
+          {
+            "description": "key: id of todoTaskList",
+            "in": "path",
+            "name": "todoTaskList-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-ms-docs-key-type": "todoTaskList"
+          }
+        ]
+      }
+    },
+    "/me/todo/lists/{todoTaskList-id}/tasks/{todoTask-id}": {
+      "delete": {
+        "operationId": "me.todo.lists.DeleteTasks",
+        "parameters": [
+          {
+            "description": "key: id of todoTaskList",
+            "in": "path",
+            "name": "todoTaskList-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-ms-docs-key-type": "todoTaskList"
+          },
+          {
+            "description": "key: id of todoTask",
+            "in": "path",
+            "name": "todoTask-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-ms-docs-key-type": "todoTask"
+          },
+          {
+            "description": "ETag",
+            "in": "header",
+            "name": "If-Match",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "Delete navigation property tasks for me",
+        "tags": [
+          "me.todo"
+        ],
+        "x-ms-docs-operation-type": "operation"
+      },
+      "description": "Provides operations to manage the tasks property of the microsoft.graph.todoTaskList entity.",
+      "get": {
+        "description": "The tasks in this task list. Read-only. Nullable.",
+        "operationId": "me.todo.lists.GetTasks",
+        "parameters": [
+          {
+            "description": "key: id of todoTaskList",
+            "in": "path",
+            "name": "todoTaskList-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-ms-docs-key-type": "todoTaskList"
+          },
+          {
+            "description": "key: id of todoTask",
+            "in": "path",
+            "name": "todoTask-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-ms-docs-key-type": "todoTask"
+          },
+          {
+            "description": "Select properties to be returned",
+            "explode": false,
+            "in": "query",
+            "name": "$select",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "body",
+                  "bodyLastModifiedDateTime",
+                  "categories",
+                  "completedDateTime",
+                  "createdDateTime",
+                  "dueDateTime",
+                  "hasAttachments",
+                  "importance",
+                  "isReminderOn",
+                  "lastModifiedDateTime",
+                  "recurrence",
+                  "reminderDateTime",
+                  "startDateTime",
+                  "status",
+                  "title",
+                  "attachments",
+                  "attachmentSessions",
+                  "checklistItems",
+                  "extensions",
+                  "linkedResources"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "Get tasks from me",
+        "tags": [
+          "me.todo"
+        ],
+        "x-ms-docs-operation-type": "operation"
+      },
+      "patch": {
+        "operationId": "me.todo.lists.UpdateTasks",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "The fields this call writes. A message carries far more, and the rest is computed by Graph rather than set here.",
+                "properties": {
+                  "title": {
+                    "description": "A brief description of the task.",
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "body": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/microsoft.graph.itemBody"
+                      },
+                      {
+                        "nullable": true,
+                        "type": "object"
+                      }
+                    ],
+                    "description": "The task body that typically contains information about the task."
+                  },
+                  "dueDateTime": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/microsoft.graph.dateTimeTimeZone"
+                      },
+                      {
+                        "nullable": true,
+                        "type": "object"
+                      }
+                    ],
+                    "description": "The date and time in the specified time zone that the task is to be finished."
+                  },
+                  "reminderDateTime": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/microsoft.graph.dateTimeTimeZone"
+                      },
+                      {
+                        "nullable": true,
+                        "type": "object"
+                      }
+                    ],
+                    "description": "The date and time in the specified time zone for a reminder alert of the task to occur."
+                  },
+                  "importance": {
+                    "$ref": "#/components/schemas/microsoft.graph.importance"
+                  },
+                  "status": {
+                    "$ref": "#/components/schemas/microsoft.graph.taskStatus"
+                  },
+                  "categories": {
+                    "description": "The categories associated with the task. Each category corresponds to the displayName property of an outlookCategory that the user has defined.",
+                    "items": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "title",
+                  "body",
+                  "dueDateTime",
+                  "reminderDateTime",
+                  "importance",
+                  "status",
+                  "categories"
+                ]
+              }
+            }
+          },
+          "description": "New navigation property values",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "Update the navigation property tasks in me",
+        "tags": [
+          "me.todo"
+        ],
+        "x-ms-docs-operation-type": "operation",
+        "parameters": [
+          {
+            "description": "key: id of todoTaskList",
+            "in": "path",
+            "name": "todoTaskList-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-ms-docs-key-type": "todoTaskList"
+          },
+          {
+            "description": "key: id of todoTask",
+            "in": "path",
+            "name": "todoTask-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-ms-docs-key-type": "todoTask"
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "filter": {
+        "description": "Filter items by property values",
+        "explode": false,
+        "in": "query",
+        "name": "$filter",
+        "schema": {
+          "type": "string"
+        },
+        "style": "form"
+      },
+      "search": {
+        "description": "Search items by search phrases",
+        "explode": false,
+        "in": "query",
+        "name": "$search",
+        "schema": {
+          "type": "string"
+        },
+        "style": "form"
+      },
+      "top": {
+        "description": "Show only the first n items",
+        "example": 50,
+        "explode": false,
+        "in": "query",
+        "name": "$top",
+        "schema": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "style": "form"
+      }
+    },
+    "schemas": {
+      "microsoft.graph.bodyType": {
+        "enum": [
+          "text",
+          "html"
+        ],
+        "title": "bodyType",
+        "type": "string"
+      },
+      "microsoft.graph.dateTimeTimeZone": {
+        "properties": {
+          "@odata.type": {
+            "type": "string"
+          },
+          "dateTime": {
+            "description": "A single point of time in a combined date and time representation ({date}T{time}; for example, 2017-08-29T04:00:00.0000000).",
+            "type": "string"
+          },
+          "timeZone": {
+            "description": "Represents a time zone, for example, 'Pacific Standard Time'. See below for more possible values.",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "@odata.type"
+        ],
+        "title": "dateTimeTimeZone",
+        "type": "object"
+      },
+      "microsoft.graph.importance": {
+        "enum": [
+          "low",
+          "normal",
+          "high"
+        ],
+        "title": "importance",
+        "type": "string"
+      },
+      "microsoft.graph.itemBody": {
+        "properties": {
+          "@odata.type": {
+            "type": "string"
+          },
+          "content": {
+            "description": "The content of the item.",
+            "nullable": true,
+            "type": "string"
+          },
+          "contentType": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/microsoft.graph.bodyType"
+              },
+              {
+                "nullable": true,
+                "type": "object"
+              }
+            ],
+            "description": "The type of the content. Possible values are text and html."
+          }
+        },
+        "required": [
+          "@odata.type"
+        ],
+        "title": "itemBody",
+        "type": "object"
+      },
+      "microsoft.graph.taskStatus": {
+        "enum": [
+          "notStarted",
+          "inProgress",
+          "completed",
+          "waitingOnOthers",
+          "deferred"
+        ],
+        "title": "taskStatus",
+        "type": "string"
+      }
+    }
+  }
+}

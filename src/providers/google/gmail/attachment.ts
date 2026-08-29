@@ -40,7 +40,22 @@ export function gmailAttachments(input: {
     return (await response.json()) as Record<string, unknown>;
   };
 
-  return async ({ messageId, attachmentId }) => {
+  return async ({ messageId, uid, attachmentId }) => {
+    // Gmail's REST API has no mailbox uid — a message is named by the id
+    // `messages.list` reports, and a label is not a folder to EXAMINE. Saying so
+    // and naming the key that does work is the whole job here: the alternative
+    // is a caller who read "uid" in the shared schema getting a 404 from Google
+    // that explains nothing.
+    if (uid !== undefined) {
+      throw new Error(
+        'Gmail names a message by its id rather than a mailbox uid. Use message_id, with the id ' +
+          'gmail.users_messages_list reports. A uid belongs to the IMAP providers — gmail_imap, icloud_mail, fastmail_mail.',
+      );
+    }
+    if (messageId === undefined) {
+      throw new Error('Re-attaching from Gmail needs message_id.');
+    }
+
     const message = await get(`/messages/${encodeURIComponent(messageId)}?format=full`);
     const parts = attachmentParts(message['payload']);
 

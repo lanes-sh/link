@@ -12,11 +12,20 @@ import { decodeMailboxName, encodeMailboxName } from './utf7.ts';
  * the bytes to make a round trip through the model. Here they never leave the
  * process.
  *
- * A message is named by its RFC 2822 `Message-ID` rather than by UID, because
- * that is what `get_message` and `search_messages` already report and it does not
- * oblige the caller to also remember which folder the message was in. The cost is
- * a search: INBOX first, since that is where it almost always is, then the rest
- * of the folders in the order the server lists them.
+ * Two ways to name the message, and the order of preference is the opposite of
+ * the order they were built in.
+ *
+ * A **uid** — with the mailbox it belongs to — is what IMAP itself uses, and it
+ * is already in front of the caller: `search_messages` reports both and
+ * `get_message` takes both. One `EXAMINE` and one `UID FETCH`, no searching.
+ *
+ * A **Message-ID** obliges a search, because the caller has not said which folder
+ * the message is in: INBOX first, since that is where it almost always is, then
+ * the rest in the order the server lists them, matching on `HEADER MESSAGE-ID`.
+ * That is a substring match the server implements however it likes, and a server
+ * that implements it poorly answers "no such message" while holding the message.
+ * It stays because a Message-ID survives being moved between folders and a uid
+ * does not — but a caller holding a uid should send the uid.
  *
  * Kept out of `commands.ts` because that file is near the size budget and this is
  * a self-contained question — which bytes, given a Message-ID — rather than
@@ -27,12 +36,21 @@ import { decodeMailboxName, encodeMailboxName } from './utf7.ts';
 const SKIP_FLAGS = new Set(['\\trash', '\\junk']);
 
 export function mailboxAttachments(client: ImapClient): MailboxAttachmentSource {
-  return async ({ messageId, attachmentId }) =>
+  return async ({ messageId, mailbox, uid, attachmentId }) =>
     client.run(async (session) => {
-      const bytes = await findMessageBytes(session, messageId);
+      const named = uid === undefined ? messageId : `uid ${uid} in ${mailbox ?? 'INBOX'}`;
+      const bytes =
+        uid === undefined
+          ? await findMessageBytes(session, messageId!)
+          : await fetchByUid(session, mailbox ?? 'INBOX', uid);
+
       if (!bytes) {
         throw new Error(
-          `No message with Message-ID ${messageId} in this account, so its attachment cannot be re-attached.`,
+          uid === undefined
+            ? `No message with Message-ID ${messageId} was found in this account. Every folder but Trash and Junk was searched, ` +
+              `and some servers match the Message-ID header poorly — if search_messages or get_message reported a uid and a ` +
+              `mailbox for this message, name those instead: { "uid": 1234, "mailbox": "INBOX" }.`
+            : `No message with ${named} — a uid is only valid in the mailbox it was reported for, and stops being valid if the message moves.`,
         );
       }
 
@@ -40,10 +58,10 @@ export function mailboxAttachments(client: ImapClient): MailboxAttachmentSource 
       const attachments = mail.attachments;
 
       if (attachments.length === 0) {
-        throw new Error(`Message ${messageId} has no attachments.`);
+        throw new Error(`Message ${named} has no attachments.`);
       }
 
-      const chosen = pick(attachments, attachmentId, messageId);
+      const chosen = pick(attachments, attachmentId, named!);
 
       return {
         bytes:
@@ -155,6 +173,31 @@ async function fetchByMessageId(
 
   if (uid === undefined) return null;
 
+  return await fetchBody(session, uid);
+}
+
+/**
+ * The direct route: the caller already knows which mailbox and which uid.
+ *
+ * `EXAMINE` rather than `SELECT`, and `BODY.PEEK[]` rather than `BODY[]`, for the
+ * same reason as every other read here — fetching something to attach must not
+ * mark it as read.
+ */
+async function fetchByUid(
+  session: ImapSession,
+  mailbox: string,
+  uid: number,
+): Promise<Uint8Array | null> {
+  try {
+    await session.command(`EXAMINE ${quoted(encodeMailboxName(mailbox))}`);
+  } catch {
+    return null;
+  }
+
+  return await fetchBody(session, uid);
+}
+
+async function fetchBody(session: ImapSession, uid: number): Promise<Uint8Array | null> {
   const fetched = await session.command(`UID FETCH ${uid} (BODY.PEEK[])`);
   const record = fetched.untagged.find(
     (tokens) => asText(tokens[2]) === 'FETCH' && tokens[3]?.kind === 'list',

@@ -1,4 +1,5 @@
 import type { McpOpenAPITool, ParameterMapper } from 'mcp-from-openapi';
+import { withLegalKeys } from './keys.ts';
 import { shortenName } from '../mcp/index.ts';
 import {
   READ_BUNDLE,
@@ -186,17 +187,22 @@ export function createHttpConnector(options: HttpConnectorOptions): Connector {
           tool.description || `${tool.metadata.method.toUpperCase()} ${tool.metadata.path}`;
         const hint = context.manifest.hints?.[name];
 
+        const legal = withLegalKeys(
+          tool.inputSchema as unknown as Record<string, unknown>,
+          tool.mapper as unknown as ParameterMapper[],
+        );
+
         return {
           name,
           description: hint ? `${described}\n\n${hint}` : described,
-          inputSchema: tool.inputSchema as unknown as Record<string, unknown>,
+          inputSchema: legal.schema,
           bundle: bundleForMethod(tool.metadata.method),
           // Everything needed to rebuild the request without re-reading the spec,
           // so a cold instance serves from the cache alone.
           target: {
             path: tool.metadata.path,
             method: tool.metadata.method,
-            mapper: tool.mapper as unknown as Record<string, unknown>[],
+            mapper: legal.mapper as unknown as Record<string, unknown>[],
           },
         };
       });

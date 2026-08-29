@@ -70,6 +70,34 @@ export function imapCapabilities(input: {
           target: { operation: OPERATIONS.getMessage },
         },
         {
+          name: OPERATIONS.getAttachment,
+          description:
+            'Take one attachment out of a message and hold it on the endpoint, returning a handle rather than the file. Fetch the bytes with GET /attachments?connection=<provider>.<account>&handle=<handle>, or name the handle in a later send_message. get_message lists what a message carries; this is how you get one.',
+          bundle: READ_BUNDLE,
+          inputSchema: object(
+            {
+              mailbox: mailboxArgument,
+              uid: {
+                type: 'integer',
+                minimum: 1,
+                description: 'UID as search_messages and get_message report it. Preferred — it names the message directly.',
+              },
+              message_id: {
+                type: 'string',
+                description:
+                  'RFC 2822 Message-ID, if you do not have a uid. Slower and less reliable: it has no mailbox attached, so every folder is searched.',
+              },
+              attachment_id: {
+                type: 'string',
+                description:
+                  'Which attachment: its filename, or its 1-based position. Omit when the message has exactly one.',
+              },
+            },
+            [],
+          ),
+          target: { operation: OPERATIONS.getAttachment },
+        },
+        {
           name: OPERATIONS.markMessages,
           description: 'Add or remove flags on messages — read, flagged, answered, draft.',
           bundle: WRITE_BUNDLE,

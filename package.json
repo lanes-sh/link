@@ -54,7 +54,8 @@
     "audit": "bun audit",
     "vendor:bunq": "bun run ./src/providers/bunq/specs/vendor.ts",
     "vendor:discord": "bun run ./src/providers/discord/specs/vendor.ts",
-    "vendor:google": "bun run ./src/providers/google/specs/vendor.ts"
+    "vendor:google": "bun run ./src/providers/google/specs/vendor.ts",
+    "vendor:microsoft": "bun run ./src/providers/microsoft/specs/vendor.ts"
   },
   "imports": {
     "#audit": "./src/audit/index.ts",

@@ -127,6 +127,48 @@ export function narrowRequestBody(
  * Apply before reachability, so a schema the projection no longer reaches leaves
  * the document rather than lingering unused.
  */
+/**
+ * Every property a schema describes, including the ones it inherits.
+ *
+ * OpenAPI spells inheritance `allOf: [{ $ref: parent }, { properties: … }]`, and
+ * a schema written that way has no `properties` of its own at the top level.
+ * Microsoft Graph uses it for every entity: `microsoft.graph.message` declares
+ * thirty-one properties and inherits `categories` from `outlookItem`, so reading
+ * `properties` off the schema alone reports a field the vendor plainly does
+ * describe as missing — and the refusal that exists to catch a rename fires on a
+ * document that never changed.
+ *
+ * Nearest definition wins, which is what `allOf` means: a later member overrides
+ * an earlier one, and the schema's own `properties` override everything it
+ * inherits. `seen` is against a cycle in the inheritance chain rather than in the
+ * data — `cutCycles` handles the other kind, and this walk would not reach it.
+ */
+function describedProperties(
+  schema: unknown,
+  schemas: Record<string, unknown>,
+  seen: Set<string> = new Set(),
+): Record<string, unknown> {
+  if (schema === null || typeof schema !== 'object') return {};
+  const record = schema as Record<string, unknown>;
+
+  const reference = record['$ref'];
+  if (typeof reference === 'string') {
+    if (!reference.startsWith('#/components/schemas/')) return {};
+    const name = reference.slice('#/components/schemas/'.length);
+    if (seen.has(name)) return {};
+    seen.add(name);
+    return describedProperties(schemas[name], schemas, seen);
+  }
+
+  const collected: Record<string, unknown> = {};
+  for (const member of (record['allOf'] as unknown[] | undefined) ?? []) {
+    Object.assign(collected, describedProperties(member, schemas, seen));
+  }
+  Object.assign(collected, (record['properties'] as Record<string, unknown> | undefined) ?? {});
+
+  return collected;
+}
+
 export function projectRequestBody(
   operation: Record<string, unknown>,
   operationId: string,
@@ -154,7 +196,7 @@ export function projectRequestBody(
   }
 
   const name = reference.slice('#/components/schemas/'.length);
-  const source = (schemas[name] as { properties?: Record<string, unknown> } | undefined)?.properties ?? {};
+  const source = describedProperties(schemas[name], schemas);
 
   const properties: Record<string, unknown> = {};
   for (const field of fields) {

@@ -16,7 +16,8 @@ import type {
 import { isToolResult, strategyContextFrom, strategyFor } from '#connectivity';
 import type { Config } from '#profile';
 import { buildProviderContext, createProviderLogger } from './context.ts';
-import { stageAttachment, type StagedAttachment, type StageRequest } from './staging.ts';
+import { fetchStaged, stageAttachment } from './staging.ts';
+import type { FetchStagedRequest, StagedAttachment, StageRequest } from './staging.ts';
 import type { ProviderRegistry } from '#registry';
 
 /**
@@ -104,16 +105,22 @@ export class Dispatcher {
    * operator's file inside the endpoint, where a later send can post it outward
    * — so it is audited on the same path as the send rather than beside it.
    */
+  /** What both halves of staging take. One place, so the two cannot diverge. */
+  get #staging() {
+    return {
+      storage: this.#deps.storage,
+      audit: this.#deps.audit,
+      profile: this.#deps.config.instance.profile,
+    };
+  }
+
   async stageAttachment(request: StageRequest): Promise<StagedAttachment> {
-    return stageAttachment(
-      {
-        storage: this.#deps.storage,
-        audit: this.#deps.audit,
-        profile: this.#deps.config.instance.profile,
-        now: this.#now,
-      },
-      request,
-    );
+    return stageAttachment({ ...this.#staging, now: this.#now }, request);
+  }
+
+  /** The same door, outward — bytes back to the client. See `fetchStaged`. */
+  async fetchStagedAttachment(request: FetchStagedRequest) {
+    return fetchStaged(this.#staging, request);
   }
 
   /**
