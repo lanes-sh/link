@@ -126,12 +126,43 @@ export function deployPlan(input: PlanInput): DeployStep[] {
         // harness can mint one — so a target reached by a remote MCP client
         // declares `public` and gates the request in the application instead.
         cloudrun.access === 'iam' ? '--no-allow-unauthenticated' : '--allow-unauthenticated',
-        // Always passed, including the zero. Config is the source of truth here
-        // (ADR-004), and a flag sent only when non-zero would let a value be
-        // raised and never lowered — the revision would keep whatever the last
-        // deploy that bothered to mention it had set.
+        // What the platform will accept a connection from at all, which is a
+        // different question from who it lets through. An `iam` target is by
+        // definition not reached by an MCP client — no agent harness can mint the
+        // identity token Cloud Run wants — so it is reached by other cloud
+        // workloads or by nothing, and neither needs an internet-facing listener.
+        // `public` is the case where the listener *is* the point.
+        '--ingress',
+        cloudrun.access === 'iam' ? 'internal-and-cloud-load-balancing' : 'all',
+        // Always passed, including the zero and including every default below
+        // it. Config is the source of truth here (ADR-004), and a flag sent only
+        // when non-zero would let a value be raised and never lowered — the
+        // revision would keep whatever the last deploy that bothered to mention
+        // it had set.
         '--min-instances',
         String(cloudrun.min_instances),
+        // The five that used to be absent, and absent meant the platform's own
+        // defaults: a hundred instances, eighty concurrent requests each, and
+        // 512 MiB to serve a 64 MiB upload in. Each one is argued at its field in
+        // `deployTargetSchema`; what they have in common is that a public URL
+        // with no ceiling on any of them is an endpoint whose cost and whose
+        // credential-store traffic are decided by whoever is calling it.
+        '--max-instances',
+        String(cloudrun.max_instances),
+        '--concurrency',
+        String(cloudrun.concurrency),
+        '--timeout',
+        String(cloudrun.timeout_seconds),
+        '--memory',
+        cloudrun.memory,
+        '--cpu',
+        cloudrun.cpu,
+        // Named rather than inherited, like the five above. gen2 is the current
+        // default and the one this image is tested on; pinning it means a
+        // platform migration is a commit here rather than a change under a
+        // running endpoint.
+        '--execution-environment',
+        'gen2',
       ],
     },
   ];
@@ -151,7 +182,14 @@ export function deployPlan(input: PlanInput): DeployStep[] {
  */
 function secretMounts(secretEnv: PlanInput['secretEnv']): string[] {
   const entries = Object.entries(secretEnv ?? {});
-  if (entries.length === 0) return [];
+
+  // `--clear-secrets`, not nothing. `gcloud run deploy` leaves a setting it is
+  // not told about exactly as the last revision had it, so an empty map used to
+  // mean "keep whatever is mounted" rather than "mount nothing" — and removing a
+  // vault from config left its secret still resolved into the new revision's
+  // environment, indefinitely, with nothing in the config saying so. The same
+  // argument `--min-instances` makes about always passing the zero.
+  if (entries.length === 0) return ['--clear-secrets'];
 
   return [
     '--set-secrets',

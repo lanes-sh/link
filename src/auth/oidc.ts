@@ -108,8 +108,27 @@ export class OidcVerifier {
     return verified;
   }
 
-  async #endpoint(): Promise<string | null> {
-    if (this.#options.introspectionEndpoint) return this.#options.introspectionEndpoint;
+  /**
+   * Where to ask about a token, and whether the operator chose it.
+   *
+   * The second half decides one thing: whether the non-standard GET shape below
+   * is attempted at all. A discovered endpoint is one the issuer publishes as
+   * RFC 7662, and RFC 7662 is a form POST — so an issuer that answers discovery
+   * and then needs its token in a query string is not a case that exists. The
+   * shape is for issuers that ship an equivalent without advertising one, and
+   * those have to be named in config regardless.
+   */
+  async #endpoint(): Promise<{ url: string; explicit: boolean } | null> {
+    const named = this.#options.introspectionEndpoint;
+    if (named) {
+      if (!isHttps(named)) {
+        throw new Error(
+          `auth.authorization.introspection_endpoint is ${named}, which is not https. ` +
+            'A token is sent to it on every call.',
+        );
+      }
+      return { url: named, explicit: true };
+    }
 
     this.#discovered ??= this.#fetch(
       `${this.#options.issuer.replace(/\/$/, '')}/.well-known/openid-configuration`,
@@ -120,16 +139,33 @@ export class OidcVerifier {
 
     const metadata = await this.#discovered;
     const endpoint = metadata['introspection_endpoint'];
-    return typeof endpoint === 'string' ? endpoint : null;
+    if (typeof endpoint !== 'string') return null;
+
+    // **A discovery document decides where a credential is sent, so what it
+    // names is checked rather than followed.** The issuer is config and the
+    // operator chose it; the endpoint inside its metadata is a value fetched
+    // over the network, and until now anything there — any host, any scheme —
+    // received this endpoint's tokens. Same origin as the issuer is what a
+    // conforming document says anyway.
+    if (!isHttps(endpoint) || !sameOrigin(endpoint, this.#options.issuer)) return null;
+
+    return { url: endpoint, explicit: false };
   }
 
   /**
    * Two request shapes, because two are in the wild.
    *
    * RFC 7662 is a form POST of `token`. The other common spelling is a GET with
-   * the token in the query string, which several issuers ship instead. Trying
-   * the standard one first and the other on failure covers both without either
-   * being named in a conditional.
+   * the token in the query string, which several issuers ship instead — Google's
+   * `tokeninfo` among them, which is why the second shape exists at all.
+   *
+   * **The GET is attempted only for an endpoint the operator named.** A token in
+   * a query string is a credential in the issuer's access logs and in every
+   * proxy between here and it, which is a cost worth paying for the issuer whose
+   * documented setup requires it and worth paying for no other. A discovered
+   * endpoint publishes itself as RFC 7662 and RFC 7662 is the POST, so trying
+   * the query-string shape against one could only ever put a credential in a URL
+   * for an issuer that did not ask for it.
    */
   async #introspect(token: string): Promise<Introspection | null> {
     const endpoint = await this.#endpoint();
@@ -138,20 +174,21 @@ export class OidcVerifier {
       // audience would leave the confused-deputy hole open while looking like
       // it verified something.
       throw new Error(
-        `The issuer ${this.#options.issuer} publishes no introspection_endpoint. ` +
-          'Set auth.authorization.introspection_endpoint to the URL that answers ' +
-          'questions about a token, or this endpoint cannot check who a token was issued to.',
+        `The issuer ${this.#options.issuer} publishes no introspection_endpoint this endpoint ` +
+          'will use — it is absent, not https, or not on the issuer\'s own origin. Set ' +
+          'auth.authorization.introspection_endpoint to the URL that answers questions about a ' +
+          'token, or this endpoint cannot check who a token was issued to.',
       );
     }
 
-    const posted = await this.#ask(endpoint, {
+    const posted = await this.#ask(endpoint.url, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ token }).toString(),
     });
-    if (posted) return posted;
+    if (posted || !endpoint.explicit) return posted;
 
-    const url = new URL(endpoint);
+    const url = new URL(endpoint.url);
     url.searchParams.set('access_token', token);
     return this.#ask(url.toString(), { method: 'GET' });
   }
@@ -164,6 +201,22 @@ export class OidcVerifier {
     } catch {
       return null;
     }
+  }
+}
+
+function isHttps(candidate: string): boolean {
+  try {
+    return new URL(candidate).protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function sameOrigin(candidate: string, issuer: string): boolean {
+  try {
+    return new URL(candidate).origin === new URL(issuer).origin;
+  } catch {
+    return false;
   }
 }
 

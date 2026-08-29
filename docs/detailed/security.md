@@ -107,6 +107,10 @@ limitation. `RESERVED` names a compatibility slot with no implementation.
 | `oauth.refresh-replay-is-refused-and-recorded` | ENFORCED **outside a 30-second reuse interval** | a spent refresh token is tombstoned rather than deleted, so presenting it again is detectable; within 30 seconds of being spent it still answers, because a client whose refresh response was lost has no other move and the reference client rethrows `invalid_grant` rather than recovering ([ADR-036](adr/036-a-client-is-told-this-endpoint-keeps-it-signed-in.md) has the client-side reasoning). After that the replayed token is refused, the replay is logged, and the family it belongs to keeps working — tested over real HTTP in `src/server/oauth.test.ts` from any depth in the chain. Revoking the whole family instead is what [ADR-035](adr/035-a-replayed-refresh-token-must-not-log-the-owner-out.md) reversed, and what it gives up is stated there: a family is minted once and never rotates, so the old answer logged an approved client out roughly daily and a thief never |
 | `token.rotation-takes-effect` | ENFORCED **within a five-second window** | `src/auth/index.test.ts` covers both halves against a real credential store: the replacement is accepted on its first call, and the rotated-away token stops working once the window passes. Both caches are dropped together — the authenticator's and the credential store's — because dropping only one re-reads the same stale value |
 | `limits.per-profile` | ENFORCED per instance | rate limit tests |
+| `edge.pre-auth-metered` | ENFORCED (deployed target) | the four things that answer before the bearer check — `/health` presented with a credential, `/register`, `/authorize`, `/token` — each cost a credential-store read or a bucket write, and until [ADR-054](adr/054-the-surface-in-front-of-the-gate.md) none of them passed through any ceiling: the limit lived inside the `401` branch, which is reached after the 404 gate. Two buckets are now taken on each, one keyed on the caller and one keyed on nothing — the second is the one that holds, because the caller key is the first `X-Forwarded-For` hop and a stranger writes that. `/health` with **no** credential stays free: it reads nothing, and it is what a platform probe sends. Off on loopback, decided beside CORS and the dashboard in `serve()`, for the reason ADR-054 gives. `src/server/index.test.ts` drives it over real HTTP |
+| `limits.map-is-bounded` | ENFORCED | a rate-limiter key is the caller's forwarded address, which on a public URL is a header a stranger writes. `RateLimiter` evicts — idle buckets first, then oldest-by-last-use in batches — rather than relying on a `prune` a caller remembers to call, which for most of this file's life nothing did. `src/policy/limits.test.ts` |
+| `deployed.data-recoverable` | ENFORCED (deployed target) | the revision holds `objectAdmin` on `data/`, which contains `storage.objects.delete` — so the process most exposed to the internet can erase the record of what it did. The bucket carries a 30-day soft-delete window and object versioning with a lifecycle rule bounding it, applied by `buckets update` on **every** deploy rather than as flags on the create, which is refused as `ALREADY_EXISTS` from the second deploy onwards and so would never reach a bucket that already exists. This does not make deletion *detectable* — see `audit.tamper-evident` — it makes it undoable |
+| `deployed.not-publicly-shareable` | ENFORCED (deployed target) | public access prevention is enforced on the bucket, so anonymous read cannot be granted rather than merely not being granted. Uniform bucket-level access already removed per-object ACLs; this removes the bucket-level route to the same place |
 | `audit.every-invocation` | ENFORCED **with two documented exceptions** | see below |
 | `credentials.client-secret-never-local` | ENFORCED (hosted client) | there is no client secret on the machine to hold. `resolveSecretRefs` grants no client reference at all for a connection authorised this way, asserted in `src/dispatch/context.test.ts` |
 | `credentials.exchange-is-local` | **NOT-GUARANTEED for a connection authorised against the hosted client** | see below |
@@ -290,9 +294,14 @@ weekly schedule — so `invalid_grant` is detected specifically and the error na
   token. It does mean an unauthenticated caller can write rows, so the list is capped at 200 and the
   oldest without a live token are evicted — a connector in use is never dropped to make room.
 - **Rate limits are per instance.** On a horizontally scaled deployment they are not global.
-  This now includes a ceiling on *failed* authentication at the HTTP edge, which exists to bound
-  the credential-store re-read a mismatch triggers rather than to make guessing harder — 256 bits
-  already does that. Only a failure spends the budget, so a valid token is never refused by it.
+  What bounds the aggregate instead is `max_instances`, which the rollout now always sends and
+  which defaults to four — with no ceiling on instances the aggregate had no value at all, and
+  `docs/detailed/deployment-cloudrun.md` told the reader to set one themselves because nothing did.
+  Two ceilings sit at the HTTP edge. One is on *failed* authentication, and exists to bound the
+  credential-store re-read a mismatch triggers rather than to make guessing harder — 256 bits
+  already does that; only a failure spends it, so a valid token is never refused by it. The other
+  is on the surface that answers *before* authentication, and is the subject of
+  [ADR-054](adr/054-the-surface-in-front-of-the-gate.md). Neither is a security boundary.
 - **No egress control**, no provider sandbox, no secret scanning on write.
 - **Content leaving the boundary is not recoverable.** Lanes Link governs what an agent may fetch,
   not what happens to it afterwards.
@@ -306,9 +315,20 @@ compromised version and yank it within hours; a release-age floor keeps a versio
 the lockfile entirely. This is verified rather than assumed: `bun add hono` resolves to the newest
 release older than the floor, not to `latest`.
 
-Also: `bun pm scan` for lockfile CVEs, `bun install --frozen-lockfile` in CI, a pinned Bun version in
-`.bun-version`, and a committed lockfile. An urgent security fix can be pulled in ahead of the window
-by installing an exact version explicitly.
+Also: `bun run audit` for lockfile CVEs, `bun install --frozen-lockfile` in CI, a pinned Bun version
+in `.bun-version`, and a committed lockfile. An urgent security fix can be pulled in ahead of the
+window by installing an exact version explicitly.
+
+**That line used to say `bun pm scan`, and `bun pm scan` did nothing.** Without an
+`[install.security] scanner` configured in `bunfig.toml` it prints how to configure one and exits
+zero — so the check was documented, scripted, and inert, on a project holding live OAuth refresh
+tokens. `bun audit` needs no scanner package: it resolves the lockfile against npm's advisory
+database directly. It runs in CI now rather than only in the script, because a control nobody has
+to act on is the state this replaces.
+
+The base image is pinned by digest as well as by tag. A tag is a pointer its publisher can move,
+so it is not a promise about bytes — the release-age floor above protects the npm half of the
+supply chain, and the base image is the larger half and had nothing.
 
 The runtime dependency set is deliberately small — MCP SDK v2 (`core` has one dependency), `zod`, and
 `yaml`. Argument parsing is hand-rolled rather than delegated, because a dependency that parses argv

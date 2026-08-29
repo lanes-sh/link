@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { DEPLOY_DEFAULTS } from './schema.ts';
 import { noTargetNamed, notInRegistry, requireTarget, type Registry } from './targets.ts';
 
 /**
@@ -21,7 +22,16 @@ const declared = (name: string, deploy = false): Registry[string] => ({
   credentials: { adapter: 'file' },
   storage: { adapter: 'filesystem' },
   ...(deploy
-    ? { deploy: { platform: 'cloudrun' as const, region: 'r', service: 's', access: 'iam' as const, min_instances: 0 } }
+    ? {
+        deploy: {
+          platform: 'cloudrun' as const,
+          region: 'r',
+          service: 's',
+          access: 'iam' as const,
+          min_instances: 0,
+          ...DEPLOY_DEFAULTS,
+        },
+      }
     : {}),
 });
 

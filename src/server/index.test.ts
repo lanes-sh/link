@@ -1018,6 +1018,116 @@ describe('the authentication edge', () => {
   });
 });
 
+/**
+ * The ceiling in front of authentication, which is a different one.
+ *
+ * `the authentication edge` above covers the limit behind the bearer gate. This
+ * covers the four things that answer without ever reaching it, each of which
+ * costs the owner a read of the credential store or a write to the workspace
+ * bucket: `/health` presented with a credential, `/register`, `/authorize` and
+ * `/token`. On a `public` deployment all four are reachable by anyone with the
+ * hostname, and until this existed none of them had any ceiling at all.
+ */
+describe('the pre-authentication edge', () => {
+  const metered = startHarness({
+    profile: 'personal',
+    port: allocatePort(),
+    policy: `  allow:
+    - "example.*"`,
+    authorization: true,
+    // The ceiling is off on loopback, where what it protects is a local file
+    // rather than a network call and a bucket write. This harness asks for the
+    // deployed behaviour so the thing under test is the thing that ships.
+    meterUnauthenticated: true,
+  });
+
+  const origin = (): string => new URL(metered.server.url).origin;
+
+  afterAll(async () => {
+    await metered.stop();
+  });
+
+  test('a credentialed /health burst is eventually refused', async () => {
+    // A `/health` carrying a credential is not the free request an uncredentialed
+    // one is: it compares against the credential store, and a value that does
+    // not match what the process cached forces a re-read — a Secret Manager call
+    // on a deployed target, twice over, for a caller holding nothing.
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const response = await fetch(`${origin()}/health`, {
+        headers: {
+          authorization: `Bearer llk_wrong_${attempt}`,
+          'x-forwarded-for': '198.51.100.7',
+        },
+      });
+      statuses.push(response.status);
+    }
+
+    expect(statuses[0]).toBe(200);
+    expect(statuses.at(-1)).toBe(429);
+  });
+
+  test('the authorization surface is metered on the same budget', async () => {
+    // Registration is open by design — it yields an identifier and nothing else
+    // — but open was never meant to mean free. Each call writes an object to the
+    // workspace bucket and then lists two namespaces to decide what to evict.
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const response = await fetch(`${origin()}/register`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-forwarded-for': '198.51.100.8' },
+        body: JSON.stringify({ redirect_uris: ['https://client.example/callback'] }),
+      });
+      statuses.push(response.status);
+    }
+
+    expect(statuses[0]).toBe(201);
+    expect(statuses.at(-1)).toBe(429);
+
+    // A refusal a client can act on. `Retry-After` is already in the CORS
+    // expose list for exactly this.
+    const refused = await fetch(`${origin()}/register`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': '198.51.100.8' },
+      body: JSON.stringify({ redirect_uris: ['https://client.example/callback'] }),
+    });
+    expect(refused.status).toBe(429);
+    expect(refused.headers.get('retry-after')).not.toBeNull();
+  });
+
+  test('rotating the forwarded-for header does not evade the ceiling', async () => {
+    // The point of the second bucket. `x-forwarded-for` is a header anyone
+    // talking to the endpoint directly writes as they please, so a per-caller
+    // limit alone bounds only a caller who is not trying. The endpoint-wide
+    // bucket is keyed on nothing and cannot be rotated out of.
+    let last = 0;
+    for (let attempt = 0; attempt < 220; attempt += 1) {
+      const response = await fetch(`${origin()}/health`, {
+        headers: {
+          authorization: 'Bearer llk_wrong',
+          // A fresh caller every single time.
+          'x-forwarded-for': `203.0.113.${attempt % 254}, 10.0.0.1`,
+        },
+      });
+      last = response.status;
+    }
+
+    expect(last).toBe(429);
+  });
+
+  test('an uncredentialed /health still answers while everything else is refused', async () => {
+    // Deliberately free, and this is the assertion that says so. It reads
+    // nothing, and it is what a platform probe, `lanes link deploy` and
+    // `lanes link outputs` send — metering it would put a ceiling on the one
+    // request that costs nothing to answer, and a health check that 429s during
+    // an attack is an outage the attack did not have to cause.
+    const response = await fetch(`${origin()}/health`);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ status: 'ok' });
+  });
+});
+
 describe('operational logging', () => {
   test('a rejected request is reported to the logger', async () => {
     // The warning existed and went nowhere: every caller of `serve()` passed a

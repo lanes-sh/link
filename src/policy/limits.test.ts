@@ -96,3 +96,71 @@ describe('rate limiting', () => {
     expect(limiter.take('personal', 5).allowed).toBe(false);
   });
 });
+
+/**
+ * The bound on the map itself.
+ *
+ * A key here is not always one the endpoint chose: at the HTTP edge a caller is
+ * identified by the first `X-Forwarded-For` hop, which on a public deployment is
+ * a header a stranger writes. Without a cap that is an unbounded allocation
+ * driven from outside the process.
+ */
+describe('the key map', () => {
+  test('holds no more keys than its cap, however many distinct callers arrive', () => {
+    const time = clock();
+    const limiter = new RateLimiter(time.now, 100);
+
+    for (let i = 0; i < 5_000; i++) {
+      time.advance(1);
+      limiter.take(`caller-${i}`, 30);
+    }
+
+    expect(limiter.size).toBeLessThanOrEqual(100);
+  });
+
+  test('an idle caller goes before a live one', () => {
+    const time = clock();
+    const limiter = new RateLimiter(time.now, 10);
+
+    // Nine callers that arrive and stop.
+    for (let i = 0; i < 9; i++) limiter.take(`idle-${i}`, 30);
+
+    // Long past the idle window for those nine. `busy` arrives now and spends
+    // twice, so it is the one caller whose bucket is both live and not full.
+    time.advance(400_000);
+    limiter.take('busy', 30);
+    limiter.take('busy', 30);
+
+    // The insert that overflows: the nine idle buckets are dropped, and nothing
+    // live is touched.
+    limiter.take('newcomer', 30);
+    expect(limiter.size).toBeLessThanOrEqual(10);
+
+    // Two of thirty spent. Had `busy` been evicted, re-creating it would hand
+    // back a full bucket and this would read thirty — so the number is the
+    // assertion that its spend survived the eviction going on around it.
+    let remaining = 0;
+    while (limiter.take('busy', 30).allowed) remaining += 1;
+    expect(remaining).toBe(28);
+  });
+
+  test('eviction is amortised rather than one key per overflow', () => {
+    // A single eviction per insert would run a sort on every request once the
+    // map is full, which turns the bound into its own denial of service. A batch
+    // means most inserts past the cap do no sorting at all.
+    const time = clock();
+    const limiter = new RateLimiter(time.now, 100);
+
+    for (let i = 0; i < 100; i++) {
+      time.advance(1);
+      limiter.take(`caller-${i}`, 30);
+    }
+    expect(limiter.size).toBe(100);
+
+    // The insert that overflows drops a tenth, so there is room for nine more
+    // before the next one has to.
+    time.advance(1);
+    limiter.take('overflows', 30);
+    expect(limiter.size).toBe(91);
+  });
+});

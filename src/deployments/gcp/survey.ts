@@ -1,4 +1,4 @@
-import { ConfigError, type DeployConfig, type TargetConfig } from '#profile';
+import { ConfigError, DEPLOY_DEFAULTS, type DeployConfig, type TargetConfig } from '#profile';
 import { heading, print, style, waiting } from '#cli/output.ts';
 import { ask, confirm } from '#cli/prompt.ts';
 import type { SurveyInput, SurveyResult } from '../driver.ts';
@@ -130,6 +130,17 @@ export async function surveyCloudRun(input: SurveyInput): Promise<SurveyResult> 
     // Not asked about. Zero is right for almost every target and the question
     // would cost every operator a decision to buy one of them a knob.
     min_instances: current.min_instances ?? 0,
+    // Not asked about either, and for a stronger version of the same reason: a
+    // ceiling is only interesting to somebody who has already hit it, and the
+    // defaults are the ones a single-user endpoint wants. Carried through from
+    // what the target already says so that an operator who *has* edited them
+    // keeps their edit — pressing return through the survey changes nothing,
+    // which is the property every other field here has too.
+    max_instances: current.max_instances ?? DEPLOY_DEFAULTS.max_instances,
+    concurrency: current.concurrency ?? DEPLOY_DEFAULTS.concurrency,
+    timeout_seconds: current.timeout_seconds ?? DEPLOY_DEFAULTS.timeout_seconds,
+    memory: current.memory ?? DEPLOY_DEFAULTS.memory,
+    cpu: current.cpu ?? DEPLOY_DEFAULTS.cpu,
     project,
     region,
     service,

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import {
   auditTargetSchema,
   credentialsTargetSchema,
+  DEPLOY_DEFAULTS,
   deployTargetSchema,
   storageTargetSchema,
   vaultTargetSchema,
@@ -54,14 +55,18 @@ export const legacyTargetSchema = z
       ? target
       : {
           ...target,
-          // The pre-`deploy` spelling predates both of these, so it gets the
-          // same defaults the current one would: the closed door, and no
-          // instance kept warm.
+          // The pre-`deploy` spelling predates all of these, so it gets the
+          // same defaults the current one would: the closed door, no instance
+          // kept warm, and the ceilings a public URL is deployed under. Built by
+          // hand here rather than parsed, so `DEPLOY_DEFAULTS` is spread rather
+          // than left to zod — a block that reaches `deployPlan` without them
+          // sends `undefined` to `gcloud` as the string "undefined".
           deploy: {
             ...cloudrun,
             platform: 'cloudrun' as const,
             access: 'iam' as const,
             min_instances: 0,
+            ...DEPLOY_DEFAULTS,
           },
         },
   );

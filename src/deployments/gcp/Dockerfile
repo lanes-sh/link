@@ -11,7 +11,21 @@
 # There is no build step: Bun runs TypeScript directly, so the image holds
 # source, and `bun install` only fetches the third-party dependencies.
 
-FROM oven/bun:1.3.11-slim
+# Pinned by digest, with the tag kept beside it so the next bump is legible.
+#
+# A tag is a pointer its publisher can move. `1.3.11-slim` is not a promise about
+# bytes — it resolves to whatever was last pushed under that name — so a rebuild
+# months from now can ship a base image nobody here reviewed, in a container that
+# holds live OAuth refresh tokens. The digest is the bytes.
+#
+# `bunfig.toml` already makes this argument about npm packages, with a seven-day
+# release-age floor; the base image is the larger half of the same supply chain
+# and had nothing.
+#
+# To bump: change the tag, then resolve it —
+#   docker buildx imagetools inspect oven/bun:<tag> --format '{{.Manifest.Digest}}'
+# The digest below is the multi-arch index, so it still resolves per architecture.
+FROM oven/bun:1.3.11-slim@sha256:478281fdd196871c7e51ba6a820b7803a8ae97042ec86cdbc2e1c6b6626442d9
 
 WORKDIR /app
 
@@ -42,7 +56,18 @@ COPY package.json bunfig.toml bun.lock* ./
 # in `package.json` is an exact version, so the direct set is identical either
 # way; the lockfile pins what those depend on in turn, and a published package
 # has never been able to carry one.
-RUN if [ -f bun.lock ]; then bun install --frozen-lockfile; else bun install; fi
+#
+# The fallback says so out loud. An unfrozen resolve is a real difference in what
+# ships and it used to be silent — the build log looked identical either way, so
+# "which transitive versions did this image get" was answerable only by opening
+# the image. One line makes it answerable from the build.
+RUN if [ -f bun.lock ]; then \
+      bun install --frozen-lockfile; \
+    else \
+      echo "no bun.lock in the build context: resolving transitive dependencies fresh." >&2; \
+      echo "Direct dependencies are exact in package.json, so the direct set is unchanged." >&2; \
+      bun install; \
+    fi
 
 COPY src/ src/
 

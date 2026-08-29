@@ -1,6 +1,6 @@
 {
   "name": "@lanes-sh/link",
-  "version": "0.6.9",
+  "version": "0.6.10",
   "description": "A self-hostable MCP gateway for all your connections, memory, tasks, files, and secrets",
   "license": "Apache-2.0",
   "homepage": "https://lanes.sh/link",
@@ -44,13 +44,14 @@
     "README.md",
     "LICENSE",
     "bunfig.toml",
-    ".dockerignore"
+    ".dockerignore",
+    ".gcloudignore"
   ],
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "lanes": "bun run ./src/cli/lanes.ts",
-    "audit": "bun pm scan",
+    "audit": "bun audit",
     "vendor:bunq": "bun run ./src/providers/bunq/specs/vendor.ts",
     "vendor:discord": "bun run ./src/providers/discord/specs/vendor.ts",
     "vendor:google": "bun run ./src/providers/google/specs/vendor.ts"
