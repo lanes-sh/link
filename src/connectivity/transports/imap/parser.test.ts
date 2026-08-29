@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { asText, itemValue, ResponseAssembler, tokenize, type ImapToken } from './parser.ts';
+import {
+  asText,
+  itemValue,
+  MAX_RESPONSE_BYTES,
+  ResponseAssembler,
+  tokenize,
+  type ImapToken,
+} from './parser.ts';
 
 /** The items of a token that must be a list, so the tests read as assertions. */
 const items = (token: ImapToken | undefined): readonly ImapToken[] => {
@@ -146,5 +153,92 @@ describe('tokenising', () => {
 
     expect(asText(tokens[2])).toContain('IMAP4rev1');
     expect(asText(tokens[2])).toContain('AUTH=PLAIN');
+  });
+});
+
+/**
+ * What the server is allowed to make this allocate.
+ *
+ * A literal's length is a number the server writes and the reader waits for.
+ * With no ceiling that is an allocation the far end decides the size of — and
+ * the far end is not always one this endpoint chose, because a connector names
+ * its own host.
+ */
+describe('bounds', () => {
+  const line = (text: string): Uint8Array => new TextEncoder().encode(text);
+
+  test('refuses a literal larger than the limit, on the announcement', () => {
+    // Before the bytes arrive, not after: believing the number is what makes
+    // waiting for it expensive.
+    const assembler = new ResponseAssembler();
+    assembler.push(line(`* 1 FETCH (BODY[] {${MAX_RESPONSE_BYTES + 1}}\r\n`));
+
+    expect(() => assembler.next()).toThrow(/over the .* limit/);
+  });
+
+  test('accepts a literal at the limit', () => {
+    const assembler = new ResponseAssembler();
+    assembler.push(line(`* 1 FETCH (BODY[] {${MAX_RESPONSE_BYTES}}\r\n`));
+
+    // Not complete — the bytes have not arrived — but not refused either.
+    expect(assembler.next()).toBeUndefined();
+  });
+
+  test('refuses a server that never completes a response', () => {
+    // The other half, and it is not the same check: a response may announce
+    // several literals, each individually reasonable, and a server that simply
+    // never finishes would otherwise grow this without bound.
+    const assembler = new ResponseAssembler();
+    const megabyte = new Uint8Array(1024 * 1024);
+
+    expect(() => {
+      for (let sent = 0; sent <= MAX_RESPONSE_BYTES; sent += megabyte.length) {
+        assembler.push(megabyte);
+      }
+    }).toThrow(/without completing a response/);
+  });
+
+  test('a large body still assembles, and does so in one piece', () => {
+    // The bound has to leave the legitimate case alone. Four mebibytes in
+    // sixty-four-kilobyte chunks is an ordinary mail with an attachment.
+    const size = 4 * 1024 * 1024;
+    const body = new Uint8Array(size).fill(0x61);
+    const assembler = new ResponseAssembler();
+
+    const response = [
+      line(`* 1 FETCH (BODY[] {${size}}\r\n`),
+      body,
+      line(')\r\n'),
+    ];
+
+    const stream = new Uint8Array(response.reduce((total, part) => total + part.length, 0));
+    let at = 0;
+    for (const part of response) {
+      stream.set(part, at);
+      at += part.length;
+    }
+
+    for (let offset = 0; offset < stream.length; offset += 65536) {
+      assembler.push(stream.subarray(offset, offset + 65536));
+      if (offset + 65536 < stream.length) expect(assembler.next()).toBeUndefined();
+    }
+
+    const assembled = assembler.next();
+    expect(assembled?.length).toBe(stream.length);
+    expect(assembler.pending).toBe(0);
+  });
+
+  test('bytes survive being shifted down after a response is taken', () => {
+    // `next` returns a copy and compacts in place. A view would be rewritten by
+    // the compaction, so this pins that the first response is still intact
+    // after the second one has been read.
+    const assembler = new ResponseAssembler();
+    assembler.push(line('* OK first\r\n* OK second\r\n'));
+
+    const first = assembler.next()!;
+    const second = assembler.next()!;
+
+    expect(new TextDecoder().decode(first)).toBe('* OK first\r\n');
+    expect(new TextDecoder().decode(second)).toBe('* OK second\r\n');
   });
 });
