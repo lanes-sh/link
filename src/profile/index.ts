@@ -12,6 +12,7 @@
  */
 
 export {
+  DEPLOY_DEFAULTS,
   SUPPORTED_CONTRACT,
   configSchema,
   declaredTarget,

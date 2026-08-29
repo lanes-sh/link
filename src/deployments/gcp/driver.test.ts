@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { DeployConfig, TargetConfig } from '#profile';
+import { DEPLOY_DEFAULTS, type DeployConfig, type TargetConfig } from '#profile';
 import { cloudRunDriver, deployPlan, imageReference } from './driver.ts';
 import { provisionSteps } from './provision.ts';
 
@@ -18,6 +18,7 @@ const cloudrun = {
   service: 'lanes-link',
   access: 'iam',
   min_instances: 0,
+  ...DEPLOY_DEFAULTS,
 } as const satisfies DeployConfig;
 
 const plan = (overrides: Partial<DeployConfig> = {}, rest: { profile?: string } = {}) =>
@@ -168,8 +169,48 @@ describe('who can reach the endpoint', () => {
     );
   });
 
-  test('no --set-secrets at all for a target that needs none', () => {
+  test('a target that needs no secret clears the mounts rather than omitting the flag', () => {
+    // Omitting it is not "mount nothing" — `gcloud run deploy` leaves a setting
+    // it is not told about exactly as the previous revision had it. So removing
+    // a vault from config used to leave its secret resolved into the new
+    // revision's environment indefinitely, with nothing in the config saying so.
     expect(rollout().argv).not.toContain('--set-secrets');
+    expect(rollout().argv).toContain('--clear-secrets');
+  });
+
+  test('the ceilings are stated on every rollout, at their defaults', () => {
+    // Absent, each of these fell to a platform default: a hundred instances,
+    // eighty concurrent requests each, and 512 MiB to stage a 64 MiB upload in.
+    // On a `public` target those defaults are what an unauthenticated caller
+    // gets to spend, so they are config here and always sent — same argument
+    // `--min-instances` makes about passing the zero.
+    const argv = rollout().argv;
+    const valueOf = (flag: string): string | undefined => argv[argv.indexOf(flag) + 1];
+
+    expect(valueOf('--max-instances')).toBe('4');
+    expect(valueOf('--concurrency')).toBe('40');
+    expect(valueOf('--timeout')).toBe('300');
+    expect(valueOf('--memory')).toBe('1Gi');
+    expect(valueOf('--cpu')).toBe('1');
+    expect(valueOf('--execution-environment')).toBe('gen2');
+  });
+
+  test('a raised ceiling is what gets sent', () => {
+    const argv = rollout({ max_instances: 20, memory: '2Gi' }).argv;
+    expect(argv[argv.indexOf('--max-instances') + 1]).toBe('20');
+    expect(argv[argv.indexOf('--memory') + 1]).toBe('2Gi');
+  });
+
+  test('ingress follows access, so an iam target has no internet-facing listener', () => {
+    // An `iam` target cannot be reached by an MCP client at all — no agent
+    // harness can mint the identity token Cloud Run wants — so the listener it
+    // would present to the internet answers nobody and is one more thing to
+    // probe.
+    const closed = rollout({ access: 'iam' }).argv;
+    expect(closed[closed.indexOf('--ingress') + 1]).toBe('internal-and-cloud-load-balancing');
+
+    const open = rollout({ access: 'public' }).argv;
+    expect(open[open.indexOf('--ingress') + 1]).toBe('all');
   });
 
   test('a service account is passed through, and omitted when not given', () => {
@@ -345,6 +386,52 @@ describe('first-run provisioning', () => {
     expect(create.argv[create.argv.indexOf('--autoclass-terminal-storage-class') + 1]).toBe(
       'ARCHIVE',
     );
+  });
+
+  test('durability is applied by an update, so it reaches a bucket that already exists', async () => {
+    // The create step tolerates failure and is refused as ALREADY_EXISTS from
+    // the second deploy onwards, so a protection expressed as a flag on it
+    // reaches new buckets only — and every deployment that already exists is
+    // exactly the one holding an audit log worth keeping.
+    const update = (await provision({ adapter: 'gcs', bucket: 'lanes-link-blobs' })).find(
+      (step) => step.argv[0] === 'storage' && step.argv[2] === 'update',
+    )!;
+
+    expect(update).toBeDefined();
+    expect(update.argv).toContain('gs://lanes-link-blobs');
+    // Nothing here is served to a browser, so the useful setting is the one that
+    // makes granting anonymous read impossible rather than merely absent.
+    expect(update.argv).toContain('--public-access-prevention');
+    // The revision holds objectAdmin on data/, which contains objects.delete —
+    // so the process most exposed to the internet can erase the record of what
+    // it did. Soft delete is what makes that recoverable.
+    expect(update.argv[update.argv.indexOf('--soft-delete-duration') + 1]).toBe('30d');
+    // And versioning for the other half: an object overwritten in place, where
+    // soft delete does not help and the previous content is the thing worth
+    // keeping.
+    expect(update.argv).toContain('--versioning');
+  });
+
+  test('versioning ships with the rule that bounds it', async () => {
+    // Unbounded, versioning keeps every prior copy of every state key forever,
+    // and state is the one thing here rewritten rather than appended. The rule
+    // is a file beside the driver rather than one written at plan time, because
+    // `--dry-run` writes nothing.
+    const update = (await provision({ adapter: 'gcs', bucket: 'b' })).find(
+      (step) => step.argv[0] === 'storage' && step.argv[2] === 'update',
+    )!;
+
+    const lifecycle = update.argv[update.argv.indexOf('--lifecycle-file') + 1]!;
+    expect(lifecycle.endsWith('src/deployments/gcp/lifecycle.json')).toBe(true);
+
+    const rules = (await Bun.file(lifecycle).json()) as {
+      rule: { action: { type: string }; condition: Record<string, number> }[];
+    };
+    expect(rules.rule.every((entry) => entry.action.type === 'Delete')).toBe(true);
+    expect(rules.rule.map((entry) => Object.keys(entry.condition)[0])).toEqual([
+      'daysSinceNoncurrentTime',
+      'numNewerVersions',
+    ]);
   });
 
   test('no bucket is created for a target that declares no object storage', async () => {

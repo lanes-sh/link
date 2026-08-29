@@ -158,6 +158,25 @@ export const vaultTargetSchema = z.object({
  * discriminated union per platform — buys precision this file cannot use and
  * costs a schema edit on every field any host ever adds.
  */
+/**
+ * The ceilings a deployed revision runs under, in one place.
+ *
+ * A named constant rather than five literals inside `z.default()` because two
+ * callers need the same numbers and neither can read a zod default out of a
+ * schema: the survey writes a target's block field by field, and the deploy plan
+ * sends every one of them on every rollout. Two spellings of a ceiling is a
+ * ceiling that is one value in a fresh profile and another in a surveyed one.
+ *
+ * Each is argued at its own field below.
+ */
+export const DEPLOY_DEFAULTS = {
+  max_instances: 4,
+  concurrency: 40,
+  timeout_seconds: 300,
+  memory: '1Gi',
+  cpu: '1',
+} as const;
+
 export const deployTargetSchema = z.object({
   platform: z.enum(['cloudrun']),
   // Non-empty here rather than in a referential check further down. Under
@@ -210,6 +229,52 @@ export const deployTargetSchema = z.object({
    * Raise it if a re-authorization ever lines up with a cold `/token`.
    */
   min_instances: z.number().int().min(0).max(10).default(0),
+  /**
+   * The ceiling on instances, and the only thing bounding what a public URL can
+   * spend.
+   *
+   * Four, not the platform's hundred. `access: public` is a routable address on
+   * the internet, and every instance that starts reads the credential store and
+   * lists the bucket — so scaling out multiplies cost *and* traffic against the
+   * two things this endpoint most wants kept quiet. A single-user endpoint that
+   * genuinely needs a fifth concurrent instance has an agent in a loop, which is
+   * the case the ceiling is for.
+   *
+   * It is also what makes `limits.requests_per_minute` mean something in
+   * aggregate. Those limits are per instance and always were; with no ceiling
+   * the aggregate had no value at all, and `docs/detailed/deployment-cloudrun.md`
+   * told the reader to cap this themselves because nothing here did.
+   */
+  max_instances: z.number().int().min(1).max(100).default(DEPLOY_DEFAULTS.max_instances),
+  /**
+   * Requests one instance serves at once.
+   *
+   * Forty rather than the platform's eighty, paired with `memory` below: an
+   * attachment upload is capped at 64 MiB and is buffered before it is written,
+   * so what bounds this is memory per instance rather than CPU.
+   */
+  concurrency: z.number().int().min(1).max(1000).default(DEPLOY_DEFAULTS.concurrency),
+  /**
+   * How long one request may run before the platform cuts it.
+   *
+   * The platform's own default, stated rather than inherited — the point is that
+   * it is written down and always sent, so a platform changing its default is
+   * not a silent change to what this serves.
+   */
+  timeout_seconds: z.number().int().min(1).max(3600).default(DEPLOY_DEFAULTS.timeout_seconds),
+  /**
+   * Memory per instance.
+   *
+   * A gigabyte because 512 MiB is not enough for what the endpoint already
+   * accepts: `MAX_UPLOAD_BYTES` is 64 MiB, and staging one costs roughly twice
+   * that at peak — the chunks as they arrive, and the single buffer they are
+   * copied into. At the platform default that is one upload away from an
+   * out-of-memory kill, and an OOM is a 503 for every request the instance was
+   * also serving.
+   */
+  memory: z.string().min(1).default(DEPLOY_DEFAULTS.memory),
+  /** CPU per instance. Explicit for the same reason `timeout_seconds` is. */
+  cpu: z.string().min(1).default(DEPLOY_DEFAULTS.cpu),
 });
 
 /**

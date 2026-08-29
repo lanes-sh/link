@@ -43,4 +43,6 @@ If you are unsure whether something is in scope, report it.
 
 Dependency compromise is a live threat for a project holding long-lived credentials.
 `bunfig.toml` sets a seven-day `minimumReleaseAge`, so a version published and yanked within hours
-cannot enter the lockfile. Reports about a dependency are welcome; please also report them upstream.
+cannot enter the lockfile. `bun run audit` resolves the lockfile against npm's advisory database and
+runs in CI. The deployed image's base is pinned by digest, not only by tag. Reports about a
+dependency are welcome; please also report them upstream.

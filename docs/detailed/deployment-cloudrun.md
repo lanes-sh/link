@@ -330,6 +330,29 @@ It applies to a bucket the deploy creates. A bucket from an earlier deploy is le
 — the create step finds it present and moves on — so turning Autoclass on for an existing one is a
 change you make yourself, in the console or with `gcloud storage buckets update`.
 
+### What protects the bucket, on every deploy rather than only the first
+
+Three things, and they are applied by a `buckets update` step precisely because of the paragraph
+above: a flag on the create reaches a bucket made after the change and no other, and every
+deployment that already exists is the one holding an audit log worth keeping.
+
+- **Public access prevention, enforced.** Nothing here is served to a browser, so the useful setting
+  is the one that makes granting anonymous read impossible rather than merely absent. Uniform
+  bucket-level access already removed per-object ACLs; this removes the bucket-level route.
+- **Soft delete, thirty days.** The revision holds `objectAdmin` on everything under `data/`, and
+  `objectAdmin` contains `storage.objects.delete`. That grant is right — the endpoint writes state,
+  memory, tasks, assets and the log, and rewriting an object is deleting the old one — but it means
+  the process most exposed to the internet is also the one that can erase the record of what it did.
+  Thirty rather than the platform's seven, because the gap this closes is noticing late.
+- **Object versioning**, with a lifecycle rule that bounds it (`src/deployments/gcp/lifecycle.json`:
+  noncurrent versions go at thirty days or ten newer copies, whichever comes first). This covers what
+  soft delete does not — an object *overwritten* in place, where the previous content is the thing
+  worth keeping — and state is the one thing here that is rewritten rather than appended.
+
+None of this makes a deletion *detectable*. `audit.tamper-evident` in
+[`security.md`](security.md) is explicit that deleting a run whole is not, and that has not changed.
+It makes it undoable.
+
 ### The vault key, which the deploy now mints
 
 The vault document is sealed before it reaches Secret Manager, under `LANES_LINK_VAULT_KEY` — a
@@ -510,15 +533,70 @@ account it has; which of them is *you* is not something it knows.
 
 **Rate limits are per instance.** `limits.requests_per_minute` is enforced by an in-memory counter, so
 a service running N instances enforces N times the configured limit in aggregate. A shared counter
-store would be needed for a global limit, and that is not in scope. If the limit matters to you as a
-ceiling rather than as a guard against a runaway agent, cap `--max-instances` accordingly.
+store would be needed for a global limit, and that is not in scope. What bounds the aggregate instead
+is `max_instances`, below — this used to say "cap `--max-instances` accordingly" and nothing in
+`deploy` ever sent the flag, so the aggregate had no ceiling at all.
+
+### The ceilings a revision runs under
+
+Five settings the rollout sends on every deploy, defaults included, for the reason `min_instances`
+is also always sent: config decides, and a flag passed only when it differs from a default lets a
+value be raised and never lowered. Absent, each fell to the platform's own default — a hundred
+instances, eighty concurrent requests each, and 512 MiB to stage a 64 MiB upload in.
+
+```yaml
+targets:
+  cloud:
+    deploy:
+      platform: cloudrun
+      # ...
+      min_instances: 0
+      max_instances: 4     # instances
+      concurrency: 40      # requests per instance
+      timeout_seconds: 300
+      memory: 1Gi
+      cpu: "1"
+```
+
+You do not write these either — the survey carries them through, and pressing return changes
+nothing. They are here because they are worth being able to find.
+
+`max_instances` is the one that matters on a `public` target. That is a routable address anyone can
+send a request to, and every instance that starts reads the credential store and lists the bucket —
+so scaling out multiplies cost *and* traffic against the two things this endpoint most wants kept
+quiet. Four is a single-user endpoint's ceiling; a fifth concurrent instance is an agent in a loop.
+Raise it if you are genuinely serving that much.
+
+`memory` is a gigabyte because 512 MiB is not enough for what the endpoint already accepts: an
+attachment is capped at 64 MiB and staging one costs roughly twice that at peak, so the platform
+default is one upload away from an out-of-memory kill — which is a 503 for every other request that
+instance was serving.
+
+### What answers before the token does
+
+Four things answer without a credential, and on a `public` target that means to anybody:
+`/health`, `/register`, `/authorize`, `/token`. Each costs a read of the credential store or an
+object written to the bucket, so each is metered — two buckets, one per caller and one for the
+endpoint, because the per-caller key is a forwarded address a stranger can rewrite. A `/health`
+carrying **no** credential is free and stays free: it reads nothing, and it is what the platform's
+probe and `lanes link outputs` send.
+
+None of this applies to `lanes link start`. A loopback endpoint's credential store is a local file
+belonging to whoever is already at the machine, and the cross-origin refusal covers the one caller
+who is not. See [ADR-054](adr/054-the-surface-in-front-of-the-gate.md).
 
 ---
 
 ## The image
 
 `src/deployments/gcp/Dockerfile`, built from the repository root through
-`src/deployments/gcp/cloudbuild.yaml`. Two things about it are worth knowing.
+`src/deployments/gcp/cloudbuild.yaml`. Three things about it are worth knowing.
+
+**It is pinned by digest.** `FROM oven/bun:<version>@sha256:<digest>`, with the tag kept beside it so
+the next bump is legible. A tag is a pointer its publisher can move, so it is not a promise about
+bytes: a rebuild months from now can pull a base image nobody reviewed, into a container holding live
+refresh tokens. To bump it, change the tag and resolve it with
+`docker buildx imagetools inspect oven/bun:<tag> --format '{{.Manifest.Digest}}'`.
 
 **The config is not in it.** The image carries no `lanes-link.yaml` and no `profiles/`; `deploy`
 uploads them to the bucket and passes `LANES_LINK_HOME=gs://<bucket>` at rollout, so one image
@@ -534,10 +612,18 @@ authored directories inside the profile, `data/<profile>/skills.d/` and
 reason `.dockerignore` excludes it.
 
 **Everything else under `data/` is excluded, and that exclusion is load bearing.** The local
-encrypted credential store and its key live there. The root `.dockerignore` keeps them out of the build context; a credential baked
-into an image is pushed to a registry, cached on every builder that touched it, and readable by anyone
-who can pull the tag. The deployed target reads credentials from Secret Manager and wants nothing from
-that directory.
+encrypted credential store and its key live there. A credential baked into an image is pushed to a
+registry, cached on every builder that touched it, and readable by anyone who can pull the tag. The
+deployed target reads credentials from Secret Manager and wants nothing from that directory.
+
+It takes **two** files, because there are two things to stay out of. The root `.dockerignore` keeps
+them out of the image. `.gcloudignore` keeps them out of the tarball `gcloud builds submit` uploads
+to a Cloud Build staging bucket, which is packed and sent before any Dockerfile is read — so
+`.dockerignore` has nothing to say about it. Without the second file gcloud derives its exclusions
+from `.gitignore` when the context happens to be a git checkout and from nothing at all when it is
+not, and `deploy` sends the *installed package*, which for the documented install method is a
+directory under `~/.bun` with no `.git` in it. The safe behaviour was being inherited from a
+coincidence. Keep the first block of the two files in step; `dockerfile.test.ts` checks that you did.
 
 The entrypoint is `src/server/container.ts`, not `lanes link start`. It logs plain lines to stdout for
 Cloud Logging, handles SIGTERM, listens on `$PORT`, and — importantly — **refuses to start when the

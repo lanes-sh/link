@@ -62,11 +62,30 @@ export function isAuthorizationPath(pathname: string): boolean {
  * `http` and every metadata document would name a resource no client asked for
  * — which fails the exact-match the specification requires. Config cannot help
  * either: the hostname carries a project hash assigned at deploy time.
+ *
+ * **The host is `Host`, and `X-Forwarded-Host` is not consulted.** It used to
+ * be, ahead of `Host`, and the justification above is entirely about the
+ * *scheme* — nothing ever needed the other header. What it cost is that four
+ * documents were steerable per request by whoever sent it: both discovery
+ * documents, the `resource_metadata` pointer on every `401`, and the `action` of
+ * the consent form that asks the owner to paste their endpoint token. Cloud Run
+ * sets `Host` and routes on it, so it is the one value a caller cannot invent
+ * without the request going somewhere else; a proxy that genuinely rewrites it
+ * rewrites `Host` too, which is what a domain mapping does.
+ *
+ * The scheme is checked rather than trusted for the same reason, and it is a
+ * smaller hole — naming `http` in a document downgrades nothing, it just makes
+ * the exact-match fail — but a header that decides part of a URL should not
+ * accept an arbitrary string.
  */
 export function publicOrigin(request: Request): string {
   const url = new URL(request.url);
-  const host = request.headers.get('x-forwarded-host') ?? request.headers.get('host') ?? url.host;
-  const proto = request.headers.get('x-forwarded-proto') ?? url.protocol.replace(':', '');
+  const host = request.headers.get('host') ?? url.host;
+
+  const forwarded = request.headers.get('x-forwarded-proto');
+  const proto =
+    forwarded === 'https' || forwarded === 'http' ? forwarded : url.protocol.replace(':', '');
+
   return `${proto}://${host}`;
 }
 
