@@ -4,12 +4,13 @@
 [![license Apache-2.0](https://img.shields.io/github/license/lanes-sh/link?style=flat-square&color=black)](LICENSE)
 [![ci](https://img.shields.io/github/actions/workflow/status/lanes-sh/link/ci.yml?branch=main&style=flat-square&label=ci)](https://github.com/lanes-sh/link/actions/workflows/ci.yml)
 
-**One secure endpoint between your AI agents and all your connections, memory, tasks, files, and secrets.**
+**One endpoint you own, holding everything your agents need to know you: connections, memory, tasks, files, contacts, and secrets.**
 
-Connect your mail, calendar, files, and notes once, and add the memory, tasks, and procedures that
-only you have. Every agent you use — Claude, ChatGPT, and anything else that speaks MCP — reaches them
-through a single MCP endpoint that you own and run. Open source, self-hostable, no vendor sitting in
-the middle of your data.
+You own it and you run it. Connect your mail, calendar, files, and notes once, and add the memory,
+tasks, and procedures that only you have. Every agent you use — Claude, ChatGPT, and anything else
+that speaks MCP — reaches all of it through that one endpoint. Change your AI and you keep your
+context, because none of it ever lived in the agent. Open source, self-hostable, no vendor in the
+middle of your data.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/lanes-link-dark.svg">
@@ -23,6 +24,9 @@ the middle of your data.
   them — it does not ask the model to behave.
 - **Work and personal never mix.** Separate profiles, separate credentials, separate stores.
 - **Every call is recorded.** An append-only log of what was reached, and what was refused.
+- **It is yours to move.** What you store is plain files on your own disk — readable in an editor,
+  backed up like anything else, and portable to a private Git repository or to another machine
+  whenever you want. There is no export to ask for.
 
 ## What people use it for
 
@@ -88,7 +92,10 @@ $ lanes link desktop     # opens the app on that page, installing it if it is no
 
 **[How to use it →](https://lanes.sh/docs/desktop/lanes-link)**
 
-## What your agent gets
+## What you keep in it
+
+Not "what your agent gets" — the distinction is the whole point. These are yours. An agent is a
+visitor to them, and you decide per profile how far in it comes.
 
 | | | Manage it with |
 |---|---|---|
@@ -97,12 +104,18 @@ $ lanes link desktop     # opens the app on that page, installing it if it is no
 | **Tasks** | what you have to do, each with a status | `lanes link tasks` |
 | **Assets** | files you want kept, by name | `lanes link assets` |
 | **Skills** | your own procedures, handed to an agent as instructions | `lanes link skills` |
+| **Identity** | who you are, and the people and companies that recur in your work | `lanes link identity` |
 | **Vault** | passwords and API keys, released only where you allow it | `lanes link vault` |
 
-The first five arrive switched on: they hold your own material rather than an account, so there was
-never anything to authorise. Memory, tasks, and skills are plain Markdown files and an asset is
-stored under its own filename, so a text editor and an agent reach the same bytes. Every one of them
-belongs to a single profile: what you add under `work` is invisible under `personal`.
+Every one of these except connections arrives switched on: they hold your own material rather than
+an account, so there was never anything to authorise. Memory, tasks, and skills are plain Markdown
+files and an asset is stored under its own filename, so a text editor and an agent reach the same
+bytes. Every one of them belongs to a single profile: what you add under `work` is invisible under
+`personal`.
+
+Identity is the one that is read-only by construction. An agent able to rewrite whose name it signs
+with would be rewriting the one fact that stops it signing as the wrong person, so you declare it in
+a terminal and the endpoint only reads it back.
 
 Which store a thing goes in is the one thing worth knowing. **Memory is what is true, tasks is what
 is to be done, assets is a file.** "Remember to chase the invoice" is a task — filed as memory it
