@@ -16,15 +16,16 @@
  * provider that has that shape.
  */
 
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { OpenAPIToolGenerator, type McpOpenAPITool } from 'mcp-from-openapi';
-import { cutCycles, makeOpaque, referenced, type Spec } from './openapi.ts';
+import { cutCycles, makeOpaque, reachableComponents, type Spec } from './openapi.ts';
 import {
   METHODS,
   dropSystemParameters,
   hoistParameters,
   narrowRequestBody,
+  projectRequestBody,
 } from './vendor-operations.ts';
 
 /** Kept in step with `BUDGET_KB` in `src/cli/tools.test.ts`, which enforces it. */
@@ -98,6 +99,23 @@ export interface VendorSpecOptions {
    * the document rather than lingering unused.
    */
   readonly rewriteRequestBody?: Readonly<Record<string, unknown>>;
+  /**
+   * Narrow an operation's request body to named fields, keeping the vendor's own
+   * types and descriptions.
+   *
+   * The remedy for a body that references a wide entity. Microsoft Graph's
+   * `PATCH /me/messages/{id}` takes a whole `microsoft.graph.message`, which
+   * inlines to 346 KB against a 64 KB budget — and almost all of it is fields
+   * the server computes and ignores on a write.
+   *
+   * Preferred over `rewriteRequestBody` wherever the body is a schema reference,
+   * because it is checked: a field the vendor has renamed, removed, or made
+   * read-only fails the refresh instead of becoming an argument the API quietly
+   * discards. Reach for the rewrite only where there is no schema to project.
+   */
+  readonly projectRequestBody?: Readonly<Record<string, readonly string[]>>;
+  /** What a projected body says about itself. One sentence, baked into the spec. */
+  readonly projectionNote?: string;
 }
 
 export async function vendorSpec(id: string, options: VendorSpecOptions): Promise<void> {
@@ -161,6 +179,7 @@ export async function vendorSpec(id: string, options: VendorSpecOptions): Promis
   }
 
   let narrowed = 0;
+  let projected = 0;
   for (const item of Object.values(paths)) {
     for (const [method, operation] of Object.entries(item)) {
       if (!METHODS.includes(method)) continue;
@@ -174,13 +193,44 @@ export async function vendorSpec(id: string, options: VendorSpecOptions): Promis
         );
       }
 
+      const fields = operation.operationId
+        ? options.projectRequestBody?.[operation.operationId]
+        : undefined;
+      if (fields && operation.operationId) {
+        projectRequestBody(
+          holder,
+          operation.operationId,
+          (spec.components?.schemas ?? {}) as Record<string, unknown>,
+          fields,
+          options.projectionNote ??
+            'The fields this call actually writes. The entity it shares a schema with is far wider, ' +
+              'and the rest of it is computed by the service rather than set here.',
+        );
+        projected += 1;
+      }
+
       const replacement = operation.operationId
         ? options.rewriteRequestBody?.[operation.operationId]
         : undefined;
       if (replacement) {
-        const body = holder['requestBody'] as { content?: Record<string, unknown> } | undefined;
-        for (const type of Object.keys(body?.content ?? {})) {
-          (body!.content![type] as Record<string, unknown>)['schema'] = replacement;
+        const body = holder['requestBody'] as
+          | { $ref?: string; content?: Record<string, unknown> }
+          | undefined;
+
+        // A body declared as a shared `requestBodies` component has no `content`
+        // here to overwrite — Microsoft Graph's `sendMail` is one, and the
+        // rewrite silently did nothing, leaving the 346 KB entity it was meant
+        // to replace. Replacing the whole node is the only way in, and it also
+        // detaches the operation from a component the trim would otherwise carry.
+        if (!body || typeof body.$ref === 'string' || !body.content) {
+          holder['requestBody'] = {
+            required: true,
+            content: { 'application/json': { schema: replacement } },
+          };
+        } else {
+          for (const type of Object.keys(body.content)) {
+            (body.content[type] as Record<string, unknown>)['schema'] = replacement;
+          }
         }
       }
     }
@@ -212,10 +262,33 @@ export async function vendorSpec(id: string, options: VendorSpecOptions): Promis
 
   const schemas = spec.components?.schemas ?? {};
   const opaqued = makeOpaque(schemas, options.opaque ?? [], options.opaqueNote ?? '');
-  const keep = referenced(paths, schemas);
-  const trimmedSchemas = Object.fromEntries(
-    Object.entries(schemas).filter(([name]) => keep.has(name)),
-  );
+
+  // Reachability across *every* component section, not just schemas. A shared
+  // response that survives while the schema it points at is trimmed away is a
+  // dangling reference, and a document full of those is one the generator
+  // refuses outright — see `reachableComponents`.
+  const reach = reachableComponents(paths, (spec.components ?? {}) as Record<string, unknown>);
+
+  const carried: Record<string, unknown> = {};
+  for (const [section, entries] of Object.entries(spec.components ?? {})) {
+    if (entries === null || typeof entries !== 'object') continue;
+
+    // Named by the `security` array rather than by `$ref`, so no walk can see
+    // it and dropping it would leave operations declaring auth that resolves to
+    // nothing.
+    if (section === 'securitySchemes') {
+      carried[section] = entries;
+      continue;
+    }
+
+    const keep = reach[section];
+    if (!keep || keep.size === 0) continue;
+    carried[section] = Object.fromEntries(
+      Object.entries(entries as Record<string, unknown>).filter(([name]) => keep.has(name)),
+    );
+  }
+
+  const trimmedSchemas = (carried['schemas'] ?? {}) as Record<string, unknown>;
   const cuts = cutCycles(trimmedSchemas);
 
   const trimmed: Spec = {
@@ -227,19 +300,18 @@ export async function vendorSpec(id: string, options: VendorSpecOptions): Promis
     },
     ...(spec.servers ? { servers: spec.servers } : {}),
     paths,
-    components: { ...spec.components, schemas: trimmedSchemas },
+    components: carried,
   };
 
   await mkdir(options.outputDirectory, { recursive: true });
-  await writeFile(
-    join(options.outputDirectory, options.out),
-    `${JSON.stringify(trimmed, null, 2)}\n`,
-  );
+  const outputPath = join(options.outputDirectory, options.out);
+  await writeFile(outputPath, `${JSON.stringify(trimmed, null, 2)}\n`);
 
   const size = Math.round(JSON.stringify(trimmed).length / 1024);
   const extra = [
     options.hoistPathParameters ? `${hoisted} params hoisted` : '',
     narrowed > 0 ? `${narrowed} body types dropped` : '',
+    projected > 0 ? `${projected} bodies projected` : '',
   ].filter(Boolean);
   console.log(
     `  ${id.padEnd(6)} ${String(Object.keys(paths).length).padStart(2)} paths, ` +
@@ -249,7 +321,7 @@ export async function vendorSpec(id: string, options: VendorSpecOptions): Promis
       (extra.length > 0 ? `, ${extra.join(', ')}` : ''),
   );
 
-  await reportLargestTools(id, trimmed, seen.size);
+  await reportLargestTools(id, outputPath, seen.size);
 }
 
 /**
@@ -265,17 +337,26 @@ export async function vendorSpec(id: string, options: VendorSpecOptions): Promis
  * Printed here so the refresh that adds an operation shows its cost, rather than
  * leaving it to a test failure to say so after the fact.
  *
+ * Measured by reading back the file that was just written, rather than the
+ * object it was written from. Those are not reliably the same document — a key
+ * holding `undefined` is present in memory and gone through `JSON.stringify` —
+ * and the validator refused an in-memory shape whose committed form it accepted,
+ * reporting "could not measure" against a spec that was in fact fine. The
+ * artifact is what the budget is about, so the artifact is what is measured.
+ *
  * The count is the other half. The generator answers an unresolvable reference by
  * logging to the console and omitting that one tool, so a document can trim
  * cleanly, write successfully, and quietly advertise less than it selected.
  * `tools.test.ts` only asserts the surface is non-empty, so nothing downstream
  * would notice.
  */
-async function reportLargestTools(id: string, trimmed: Spec, expected: number): Promise<void> {
+async function reportLargestTools(id: string, path: string, expected: number): Promise<void> {
   let measured: Array<{ name: string; kb: number }>;
 
   try {
-    const generator = await OpenAPIToolGenerator.fromJSON(trimmed);
+    const generator = await OpenAPIToolGenerator.fromJSON(
+      JSON.parse(await readFile(path, 'utf8')) as Spec,
+    );
     const tools = await generator.generateTools();
 
     if (tools.length !== expected) {
