@@ -24,8 +24,17 @@ export function declareConnection(input: {
   readonly label: string;
   /** Which route in, where the provider offered a choice. */
   readonly method: string | undefined;
+  /**
+   * Where this connection's service is, for a provider that asked.
+   *
+   * Empty for every provider whose address is fixed, which is almost all of
+   * them. Written on a reconnect as well as on an add: the operator may be
+   * reconnecting *because* the server moved.
+   */
+  readonly config: Readonly<Record<string, string>>;
 }): readonly string[] {
   const { document, connections, providerId, connectionId, account, label, method } = input;
+  const config = input.config;
 
   const key = `${providerId}.${connectionId}`;
   const index = connections.findIndex((c) => `${c.provider}.${c.id}` === key);
@@ -44,6 +53,7 @@ export function declareConnection(input: {
       provider: providerId,
       account,
       ...(label === account ? {} : { label }),
+      ...(Object.keys(config).length > 0 ? { config } : {}),
     });
     changes.push(`connections += ${key} (${account})`);
     return changes;
@@ -65,6 +75,15 @@ export function declareConnection(input: {
   if ((declared?.label ?? declared?.account) !== label) {
     document.setIn(['connections', index, 'label'], label);
     changes.push(`connections.${key}.label = ${label}`);
+  }
+
+  // The address, when the provider has one to keep. Written whenever it differs,
+  // because a reconnect is exactly when a self-hosted service has moved — and a
+  // row whose config is silently stale points the credential at the old host.
+  for (const [key_, value] of Object.entries(config)) {
+    if ((declared?.config as Record<string, unknown> | undefined)?.[key_] === value) continue;
+    document.setIn(['connections', index, 'config', key_], value);
+    changes.push(`connections.${key}.config.${key_} = ${value}`);
   }
 
   // Named where the provider offered a choice, because this is the line an

@@ -327,7 +327,14 @@ export async function openRuntime(
   // dispatcher and the CLI share it deliberately: a stateful connector must be
   // the *same instance* whichever side asks for it, or a held session is held
   // twice.
-  const connectorFor = connectorFactory({ registry, credentials });
+  const connectorFor = connectorFactory({
+    registry,
+    credentials,
+    // From the connection row, which is where a per-connection setting has
+    // always lived. One lookup behind both, so they cannot disagree.
+    connectionConfig: (provider, id) => row(config, provider, id)?.config,
+    isDeclared: (provider, id) => row(config, provider, id) !== undefined,
+  });
   const authorizeRequest = requestAuthorizer(registry, credentials);
   let closed = false;
 
@@ -385,3 +392,6 @@ export async function openRuntime(
     },
   };
 }
+
+const row = (config: Config, provider: string, id: string) =>
+  config.connections.find((connection) => connection.provider === provider && connection.id === id);

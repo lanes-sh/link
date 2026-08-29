@@ -16,6 +16,13 @@ import { hasOwnClientPath, RESERVED_PROVIDER_IDS, setupRequirements, type SetupR
  */
 
 export interface ProviderPlan {
+  /** Where the service is, for a provider whose address the connection supplies. */
+  readonly variables: readonly {
+    readonly key: string;
+    readonly label: string;
+    readonly description: string;
+    readonly example: string;
+  }[];
   readonly id: string;
   readonly name: string;
   readonly description: string;
@@ -145,6 +152,10 @@ export function planFor(
     ...(manifest.setup?.docs_url ? { docsUrl: manifest.setup.docs_url } : {}),
     steps: manifest.setup?.steps ?? [],
     requires: requirements,
+    // Not a `requires` entry, and the difference is the point: a variable is not
+    // a secret, has no ref, and no `secrets set` line would place it. It is
+    // asked for at connect and written to the connection's own row.
+    variables: manifest.variables,
     needsId,
     command,
     brokered,

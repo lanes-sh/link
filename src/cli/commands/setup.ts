@@ -128,6 +128,18 @@ function renderOne(plan: ProviderPlan, missing: ReadonlySet<string>): void {
     }
   }
 
+  if (plan.variables.length > 0) {
+    // Its own heading rather than a row under "Values it needs", because there
+    // is nothing to store ahead of time: `connect` asks for these and writes
+    // them to the connection, so the useful thing to show is what will be asked
+    // and what an answer looks like.
+    heading('Where it is');
+    for (const variable of plan.variables) {
+      print(`  ${style.bold(variable.label)}  ${style.dim(`e.g. ${variable.example}`)}`);
+      print(`    ${style.dim(variable.description)}`);
+    }
+  }
+
   heading('Then');
   print(`  ${plan.command}`);
 

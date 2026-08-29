@@ -1,6 +1,6 @@
 # Providers
 
-A hundred and two of them, and almost all are a folder and a line. This page is the inventory and the
+A hundred and five of them, and almost all are a folder and a line. This page is the inventory and the
 ins and outs; [`docs/connect.md`](../../docs/connect.md) is the same list written for someone
 deciding what to connect.
 
@@ -19,16 +19,16 @@ Where they come from:
 
 | | |
 |---|---|
-| **connector** | `mcp` 77 · `http` 15 · `imap` 5 · `dav` 4 · `fs` 1 |
-| **auth** | `oauth (dynamic)` 70 · `oauth (manual)` 18 · `basic` 9 · `bearer` 2 · `header` 1 · `none` 1 · `strategy` 1 |
+| **connector** | `mcp` 77 · `http` 15 · `imap` 6 · `dav` 6 · `fs` 1 |
+| **auth** | `oauth (dynamic)` 70 · `oauth (manual)` 18 · `basic` 12 · `bearer` 2 · `header` 1 · `none` 1 · `strategy` 1 |
 
-Two of the hundred and two are code rather than data — `gmail`, which assembles an RFC 2822 message to
+Two of the hundred and five are code rather than data — `gmail`, which assembles an RFC 2822 message to
 send one, and `bunq`, which runs a signing handshake no declarative form describes. Everything else
 is a manifest.
 
 ## Tested means somebody connected it
 
-**Twenty-one are tested. Eighty-one are not**, and the tables say which.
+**Twenty-one are tested. Eighty-four are not**, and the tables say which.
 
 A manifest can be right in every way this repository can check and still not work. What the checks
 prove: the schema validates, the vendored spec generates registrable tools inside the 64 KB budget,
@@ -65,10 +65,14 @@ Four things bite, and all four are quiet:
    budget. `projectRequestBody` is the remedy where the body is a schema reference, and it is
    checked — a field the vendor renames fails the refresh instead of becoming an argument the API
    ignores.
-3. **A property key the Anthropic API refuses takes down every provider at once**, not just its own.
+3. **A placeholder in the address needs a variable, and the reverse.** A provider whose host belongs
+   to the account rather than the vendor declares `variables`; `defineProvider` refuses a
+   `{placeholder}` nothing fills and a variable nothing uses, because the first fails as DNS and the
+   second asks the operator a question nothing reads. See ADR-055.
+4. **A property key the Anthropic API refuses takes down every provider at once**, not just its own.
    `^[a-zA-Z0-9_.-]{1,64}$`, and one bad key rejects the whole `tools` array. The `http` transport
    renames them and leaves the wire name alone, so OData's `$top` reaches an agent as `top`.
-4. **`base_url` must equal the spec's own `servers[0].url`**, and the version lives in different
+5. **`base_url` must equal the spec's own `servers[0].url`**, and the version lives in different
    places per vendor — Drive puts it in the host, Sheets in the path. Copying the wrong one 404s
    every call.
 
@@ -82,6 +86,8 @@ Four things bite, and all four are quiet:
 | `fastmail_contacts` | Fastmail Contacts | `dav` | `basic` |  |
 | `icloud_calendar` | iCloud Calendar | `dav` | `basic` | yes |
 | `icloud_contacts` | iCloud Contacts | `dav` | `basic` | yes |
+| `nextcloud_calendar` | Nextcloud Calendar | `dav` | `basic` |  |
+| `nextcloud_contacts` | Nextcloud Contacts | `dav` | `basic` |  |
 | `icloud_drive` | iCloud Drive | `fs` | `none` | yes |
 | `bunq` | bunq | `http` | `strategy` | yes |
 | `calendar` | Google Calendar | `http` | `oauth (manual)` | yes |
@@ -101,6 +107,7 @@ Four things bite, and all four are quiet:
 | `fastmail_mail` | Fastmail Mail | `imap` | `basic` |  |
 | `gmail_imap` | Gmail (IMAP) | `imap` | `basic` | yes |
 | `icloud_mail` | iCloud Mail | `imap` | `basic` | yes |
+| `mailbox` | Mailbox (any IMAP server) | `imap` | `basic` |  |
 | `yahoo_mail` | Yahoo Mail | `imap` | `basic` |  |
 | `zoho_mail` | Zoho Mail | `imap` | `basic` |  |
 | `airtable` | Airtable | `mcp` | `oauth (dynamic)` |  |

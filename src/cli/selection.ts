@@ -253,6 +253,9 @@ const ACCEPTS: Record<string, readonly string[]> = {
   connect: [
     'id',
     'display-name',
+    // Repeatable: `--set host=cloud.example.com`. The only way to give a
+    // provider its address without a terminal to ask at.
+    'set',
     'label',
     'replace',
     'non-interactive',

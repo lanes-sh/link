@@ -289,3 +289,57 @@ describe('bearerTokenAsStored', () => {
     );
   });
 });
+
+describe('a connector whose address the connection supplies', () => {
+  const registry = new ProviderRegistry();
+
+  registry.register(
+    defineProvider({
+      id: 'tenant',
+      name: 'Tenant',
+      connector: { kind: 'dav', base_url: 'https://{site}.example.com', service: 'caldav' },
+      auth: { kind: 'basic' },
+      variables: [
+        {
+          key: 'site',
+          label: 'subdomain',
+          description: 'The first part of your address.',
+          example: 'acme',
+        },
+      ],
+      setup: {
+        prompts: [
+          { key: 'username', label: 'User', scope: 'connection', field: 'username' },
+          { key: 'password', label: 'Password', secret: true, scope: 'connection', field: 'password' },
+        ],
+      },
+    }),
+  );
+
+  const factoryWith = (config: Record<string, unknown> | undefined) =>
+    connectorFactory({
+      registry,
+      credentials: createMemoryCredentials({}),
+      connectionConfig: () => config,
+    });
+
+  test('is built once the connection says where it is', () => {
+    expect(factoryWith({ site: 'acme' })('tenant', 'main')).toBeDefined();
+  });
+
+  test('a provider nobody has connected is undefined rather than a throw', () => {
+    // Every surface that lists what *could* be connected asks for this — the
+    // dashboard among them — and a throw took the whole page down rather than
+    // showing an unconnected provider as unconnected.
+    expect(factoryWith(undefined)('tenant', 'main')).toBeUndefined();
+  });
+
+  test('a row that is set up and wrong throws, rather than going quiet', () => {
+    // The opposite case, and the reason the one above is not simply "return
+    // undefined on any failure": this connection *has* been configured, and a
+    // value that cannot be used is worth saying out loud.
+    expect(() => factoryWith({ site: 'acme.evil.test' })('tenant', 'main')).toThrow(
+      /not a usable subdomain/,
+    );
+  });
+});

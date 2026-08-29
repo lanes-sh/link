@@ -62,6 +62,7 @@ Nothing in the codebase depends on it.
 | [052](052-a-target-owns-its-workspace.md) | A target owns its workspace, and a profile lives in exactly one |
 | [053](053-the-page-a-person-reads-is-the-app.md) | The page a person reads is the desktop app, and the endpoint stops serving one |
 | [054](054-the-surface-in-front-of-the-gate.md) | The surface in front of the gate is metered, and does not name itself |
+| [055](055-a-connection-may-say-where-its-service-is.md) | A connection may say where its service is, so a self-hosted or multi-tenant host can be a built-in |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 
