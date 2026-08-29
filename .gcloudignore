@@ -12,9 +12,19 @@
 # method is a directory under `~/.bun` with no `.git` in it — so the safe
 # behaviour was being inherited from a coincidence.
 #
-# Keep the first block in step with `.dockerignore`. `data/` holds the encrypted
-# credential store *and* the key that opens it.
-data/
+# **Anchor every directory pattern with a leading slash.** This file is gitignore
+# syntax and `.dockerignore` is not: there, a pattern is relative to the context
+# root, so `docs/` means the one at the top. Here `docs/` means *any* directory
+# called `docs`, at any depth — which is `src/providers/google/docs/`, and
+# stripping it produced an image that built cleanly and died on its first import
+# with `Cannot find module './google/docs/index.ts'`. The two files must say the
+# same thing, not carry the same characters.
+#
+# The credential patterns below are deliberately *not* anchored: a stray `*.key`
+# is worth excluding wherever it turns up. `data/` is, because the credential
+# store is one known directory and a source directory called `data` would be a
+# legitimate part of the package.
+/data/
 *.key
 *.pem
 *.enc
@@ -23,28 +33,28 @@ data/
 .env.*
 
 # Not needed to build, and `.git` in particular carries every branch.
-.git/
+/.git/
 .gitignore
-.worktrees/
+/.worktrees/
 node_modules/
 **/node_modules/
-coverage/
-dist/
-build/
+/coverage/
+/dist/
+/build/
 *.tsbuildinfo
 
 # Tests, docs and tooling: the image runs the endpoint and nothing else.
 **/*.test.ts
 **/*.test.json
-docs/
-instructions/
+/docs/
+/instructions/
 **/README.md
-.lanes/
-.claude/
-.vscode/
-.idea/
+/.lanes/
+/.claude/
+/.vscode/
+/.idea/
 .DS_Store
-.playwright-mcp/
+/.playwright-mcp/
 
 # The compiled binary from `bun build --compile`, if one was made locally.
 /lanes
