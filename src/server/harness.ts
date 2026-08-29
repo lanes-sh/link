@@ -116,6 +116,15 @@ export interface HarnessOptions {
    * serving the old generation" case is reached; absent means nothing new.
    */
   reopen?: () => Promise<ReadonlyMap<string, ProfileRuntime>>;
+  /**
+   * Meter the pre-authentication surface, as a routable deployment does.
+   *
+   * A harness binds loopback, where `serve()` leaves this off — the ceiling
+   * protects a credential-store call over the network and an object written to a
+   * bucket, and on loopback both are a local file. Set it to drive the deployed
+   * behaviour without a deployment.
+   */
+  meterUnauthenticated?: boolean;
 }
 
 /**
@@ -254,6 +263,7 @@ export function startHarness(options: HarnessOptions): Harness {
     primary: options.profile,
     authenticator: gate ? new AuthenticatorChain([bearer, gate.authenticator]) : bearer,
     ...(gate ? { authorization: gate.surface } : {}),
+    ...(options.meterUnauthenticated ? { meterUnauthenticated: true } : {}),
     log,
   });
 

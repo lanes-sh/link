@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { defineProvider } from '#connectivity';
-import type { ConnectionConfig, DeployConfig } from '#profile';
+import { DEPLOY_DEFAULTS, type ConnectionConfig, type DeployConfig } from '#profile';
 import type { CommandResult, DeployDriver } from './driver.ts';
 import { bindConnectionCredentials, unboundRotatableRefs } from './bind.ts';
 
@@ -27,6 +27,7 @@ const cloudrun = {
   access: 'public',
   service_account: 'lanes-link-run@my-project.iam.gserviceaccount.com',
   min_instances: 0,
+  ...DEPLOY_DEFAULTS,
 } as const satisfies DeployConfig;
 
 const connection: ConnectionConfig = {

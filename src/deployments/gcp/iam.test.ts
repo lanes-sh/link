@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import type { DeployConfig, TargetConfig } from '#profile';
+import { DEPLOY_DEFAULTS, type DeployConfig, type TargetConfig } from '#profile';
 import { conditionFlag, removalStep, supersededBindings, type PolicyBinding, type PolicyReader } from './iam.ts';
 import { bucketGrants } from './bucket.ts';
 import { provisionSteps } from './provision.ts';
@@ -168,6 +168,7 @@ const cloudrun = {
   access: 'public',
   service_account: SERVICE_ACCOUNT,
   min_instances: 0,
+  ...DEPLOY_DEFAULTS,
 } as const satisfies DeployConfig;
 
 const target: TargetConfig = {

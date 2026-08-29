@@ -180,13 +180,40 @@ describe('discovery', () => {
     // document built from the incoming request would say `http`, which fails
     // the exact match the client makes against the URL its user typed.
     const response = await fetch(`${origin}/.well-known/oauth-protected-resource`, {
-      headers: { 'x-forwarded-proto': 'https', 'x-forwarded-host': 'link.example.run.app' },
+      headers: { 'x-forwarded-proto': 'https' },
     });
 
+    const secure = origin.replace('http://', 'https://');
     expect(await response.json()).toMatchObject({
-      resource: 'https://link.example.run.app/mcp',
-      authorization_servers: ['https://link.example.run.app'],
+      resource: `${secure}/mcp`,
+      authorization_servers: [secure],
     });
+  });
+
+  test('a forwarded host is ignored, so a caller cannot steer the documents', async () => {
+    // `X-Forwarded-Host` used to be preferred over `Host`, and nothing needed it
+    // — the argument for reading headers at all is about the *scheme*. What it
+    // cost is that a caller decided what four documents said: both discovery
+    // documents, the `resource_metadata` pointer on every `401`, and the form
+    // action on the page that asks the owner for their endpoint token.
+    const response = await fetch(`${origin}/.well-known/oauth-protected-resource`, {
+      headers: { 'x-forwarded-proto': 'https', 'x-forwarded-host': 'attacker.example' },
+    });
+
+    const body = (await response.json()) as Record<string, unknown>;
+    expect(JSON.stringify(body)).not.toContain('attacker.example');
+    expect(body['resource']).toBe(`${origin.replace('http://', 'https://')}/mcp`);
+  });
+
+  test('a forwarded scheme that is neither http nor https is not echoed into a URL', async () => {
+    // Smaller than the host — naming a nonsense scheme downgrades nothing, it
+    // just makes the client's exact match fail — but a header that decides part
+    // of a URL should not accept an arbitrary string.
+    const response = await fetch(`${origin}/.well-known/oauth-protected-resource`, {
+      headers: { 'x-forwarded-proto': 'javascript' },
+    });
+
+    expect(await response.json()).toMatchObject({ resource: `${origin}/mcp` });
   });
 
   test('the authorization server advertises S256, which a client checks before starting', async () => {

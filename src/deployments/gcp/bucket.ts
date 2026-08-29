@@ -1,4 +1,5 @@
-import { layout } from '#profile';
+import { join } from 'node:path';
+import { installRoot, layout } from '#profile';
 import type { DeployStep } from '../driver.ts';
 import {
   removalStep,
@@ -103,6 +104,68 @@ export function bucketGrants(bucket: string, profiles: readonly string[]): Condi
   ];
 }
 
+/**
+ * How long a deleted or overwritten object can still be recovered.
+ *
+ * The revision holds `objectAdmin` on everything under `data/`, and
+ * `objectAdmin` contains `storage.objects.delete`. That grant is correct — the
+ * endpoint writes state, memory, tasks, assets and the audit log, and rewriting
+ * an object is deleting the old one — but it means the process most exposed to
+ * the internet is also the one that can erase the record of what it did.
+ * `audit.tamper-evident` already says deleting a run whole is not *detectable*;
+ * without this it was not *recoverable* either.
+ *
+ * Thirty days rather than the platform's default seven, because the gap this
+ * closes is noticing late. A compromise found the same afternoon needs no
+ * retention policy at all.
+ */
+const SOFT_DELETE_DURATION = '30d';
+
+/**
+ * The three protections a deploy applies to the bucket every time it runs.
+ *
+ * `update` rather than flags on `create`, so they reach a bucket that already
+ * exists — see the call site. Idempotent: setting a policy to what it already is
+ * is a no-op that costs one API call.
+ *
+ * - **Public access prevention**, enforced. Nothing in this bucket is served to
+ *   a browser and nothing in it should ever be anonymous-readable, so the useful
+ *   setting is the one that makes granting that impossible rather than merely
+ *   absent. Uniform bucket-level access already removes per-object ACLs; this
+ *   removes the bucket-level way to do the same thing.
+ * - **Soft delete**, so a deletion is recoverable — see above.
+ * - **Object versioning**, with the lifecycle rule that bounds it. Versioning
+ *   covers what soft delete does not: an object *overwritten* in place, where
+ *   the previous content is the thing worth keeping. The rule is a file shipped
+ *   beside this one rather than written at plan time, because `--dry-run` writes
+ *   nothing and prints what it would run — a temporary file would break both.
+ */
+function durabilitySteps(bucket: string): DeployStep[] {
+  const lifecycle = join(installRoot(import.meta.dir), 'src/deployments/gcp/lifecycle.json');
+
+  return [
+    {
+      title: 'make the bucket unable to be shared publicly, and its deletions recoverable',
+      argv: [
+        'storage',
+        'buckets',
+        'update',
+        `gs://${bucket}`,
+        '--public-access-prevention',
+        '--soft-delete-duration',
+        SOFT_DELETE_DURATION,
+        '--versioning',
+        // Without this, versioning keeps every prior copy of every state key
+        // forever, and state is the one thing here that is rewritten rather than
+        // appended. The rule bounds it by age and by count.
+        '--lifecycle-file',
+        lifecycle,
+      ],
+      tolerateFailure: true,
+    },
+  ];
+}
+
 const TITLES: Record<string, string> = {
   'owns-its-data': 'let the revision write its own data, but not the manifests in it',
   'reads-its-config': 'let the revision read its config, and only read it',
@@ -133,20 +196,30 @@ export async function bucketSteps(input: {
         // served publicly; uniform access removes per-object ACLs as a way to
         // get that wrong.
         '--uniform-bucket-level-access',
-        // Autoclass rather than a lifecycle rule, because no one fixed class is
-        // right for this bucket: it holds the config the endpoint reads on every
-        // boot next to assets and audit rows nobody opens again. Inside an
-        // Autoclass bucket there are no retrieval and no early-deletion fees,
-        // which is what makes ARCHIVE safe as the floor rather than a bet on
-        // never reading the thing again — a read pulls the object back to
-        // Standard at no charge. Objects under 128 KiB never leave Standard, so
-        // this costs the config and the log nothing and saves on attachments.
+        // Autoclass rather than a storage-class lifecycle rule, because no one
+        // fixed class is right for this bucket: it holds the config the endpoint
+        // reads on every boot next to assets and audit rows nobody opens again.
+        // Inside an Autoclass bucket there are no retrieval and no
+        // early-deletion fees, which is what makes ARCHIVE safe as the floor
+        // rather than a bet on never reading the thing again — a read pulls the
+        // object back to Standard at no charge. Objects under 128 KiB never
+        // leave Standard, so this costs the config and the log nothing and saves
+        // on attachments.
         '--enable-autoclass',
         '--autoclass-terminal-storage-class',
         'ARCHIVE',
       ],
       tolerateFailure: true,
     },
+    // Everything about durability, applied separately from the create.
+    //
+    // **Not folded into the flags above, and that is the whole point.** Every
+    // step here tolerates failure, so the create is refused as `ALREADY_EXISTS`
+    // on the second deploy onwards — which means a protection added to that
+    // argv reaches a bucket made after this commit and no other. Every
+    // deployment that already exists is exactly the one that has an audit log
+    // worth keeping.
+    ...durabilitySteps(input.bucket),
   ];
 
   if (!input.serviceAccount) return steps;

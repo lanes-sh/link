@@ -182,6 +182,10 @@ describe('what a browser actually receives', () => {
       expect(response.headers.get('referrer-policy')).toBe('no-referrer');
       expect(csp).toContain("frame-ancestors 'none'");
       expect(csp).toContain("default-src 'none'");
+      // Named separately because it has to be: `form-action` does not fall back
+      // to `default-src`, so `'none'` above says nothing about where a form may
+      // post — and one of these pages posts the owner's endpoint token.
+      expect(csp).toContain("form-action 'self'");
       expect(csp).toContain('https://fonts.googleapis.com');
       expect(csp).toContain('https://fonts.gstatic.com');
       // Script is allowed exactly where there is one: the consent screen has a

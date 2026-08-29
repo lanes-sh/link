@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { parse as parseYaml } from 'yaml';
 import { ConfigError, parseConfig, validateConfig } from './load.ts';
 import { legacyTargetSchema } from './legacy.ts';
-import { workspaceSchema } from './schema.ts';
+import { DEPLOY_DEFAULTS, workspaceSchema } from './schema.ts';
 
 /** A minimal valid config; each test overrides the part it is about. */
 const VALID = `
@@ -344,6 +344,11 @@ describe('where a target deploys', () => {
       // Scaling to zero is the default, and stays the default: a cold start is
       // under three seconds and the platform queues the request behind it.
       min_instances: 0,
+      // And the ceilings, which a target that says nothing also gets. That is
+      // the whole point of them being defaults rather than prompts: an operator
+      // who never opens this block still deploys behind a bound on what a public
+      // URL can spend.
+      ...DEPLOY_DEFAULTS,
     });
   });
 
@@ -366,6 +371,10 @@ describe('where a target deploys', () => {
       service: 'lanes-link',
       access: 'iam',
       min_instances: 0,
+      // The pre-`deploy` spelling predates these too, so `legacy.ts` supplies
+      // them by hand — a migrated block that reached `deployPlan` without them
+      // would send the string "undefined" to gcloud.
+      ...DEPLOY_DEFAULTS,
     });
   });
 

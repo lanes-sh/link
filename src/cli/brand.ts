@@ -160,6 +160,12 @@ a { color: inherit; }
  */
 export const PAGE_CSP =
   "frame-ancestors 'none'; default-src 'none'; " +
+  // `form-action` does **not** fall back to `default-src`, so `'none'` above
+  // says nothing about where a form may post. One page here posts the owner's
+  // endpoint token, and its `action` is built from the request's own `Host` —
+  // this is the second lock on that, so a form target that ever came from
+  // somewhere else is refused by the browser rather than followed.
+  "form-action 'self'; " +
   "style-src 'unsafe-inline' https://fonts.googleapis.com; " +
   'font-src https://fonts.gstatic.com';
 

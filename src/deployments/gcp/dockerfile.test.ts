@@ -17,6 +17,17 @@ import { readFile } from 'node:fs/promises';
 const DOCKERFILE = new URL('./Dockerfile', import.meta.url).pathname;
 const GITIGNORE = new URL('../../../.gitignore', import.meta.url).pathname;
 const MANIFEST = new URL('../../../package.json', import.meta.url).pathname;
+const DOCKERIGNORE = new URL('../../../.dockerignore', import.meta.url).pathname;
+const GCLOUDIGNORE = new URL('../../../.gcloudignore', import.meta.url).pathname;
+
+/**
+ * What the credential store and its key look like, wherever they land.
+ *
+ * The same list has to be excluded from two different things — the image, and
+ * the tarball `gcloud builds submit` uploads — and they are governed by two
+ * files that do not know about each other.
+ */
+const SECRET_PATHS = ['data/', '*.key', '*.pem', '*.enc', '*.p12', '.env', '.env.*'];
 
 /** The sources of every `COPY`, minus the destination and any flags. */
 function copySources(dockerfile: string): string[] {
@@ -165,6 +176,52 @@ describe('the deployed image', () => {
     expect(instructions).toContain('--frozen-lockfile');
     expect(instructions).not.toMatch(/--frozen-lockfile\s*\|\|/);
     expect(instructions).toMatch(/if \[ -f bun\.lock \]/);
+
+    // And the fallback says so. An unfrozen resolve is a real difference in
+    // what ships, and it used to leave a build log identical to a frozen one.
+    expect(instructions).toMatch(/echo "no bun\.lock in the build context/);
+  });
+
+  test('the base image is pinned by digest, not only by tag', async () => {
+    // A tag is a pointer its publisher can move, so it is not a promise about
+    // bytes: a rebuild months from now can pull a base image nobody here
+    // reviewed, into a container holding live OAuth refresh tokens. `bunfig.toml`
+    // already makes this argument about npm packages with a release-age floor;
+    // the base image is the larger half of the same supply chain.
+    const from = (await readFile(DOCKERFILE, 'utf8'))
+      .split('\n')
+      .find((line) => line.startsWith('FROM '))!;
+
+    expect(from).toMatch(/^FROM oven\/bun:[\w.-]+@sha256:[0-9a-f]{64}$/);
+  });
+
+  test('the build upload excludes the credential store, not only the image', async () => {
+    // `.dockerignore` is not consulted by `gcloud builds submit`: the context is
+    // packed and sent to a Cloud Build staging bucket before any Dockerfile is
+    // read. Without a `.gcloudignore` gcloud derives exclusions from
+    // `.gitignore` when the context is a git checkout and from nothing when it
+    // is not — and `lanes link deploy` sends `installRoot`, which for the
+    // documented install method is a directory under `~/.bun` with no `.git`.
+    // So the safe behaviour was inherited from a coincidence.
+    const gcloudignore = await readFile(GCLOUDIGNORE, 'utf8');
+    const dockerignore = await readFile(DOCKERIGNORE, 'utf8');
+
+    const entries = (text: string): string[] =>
+      text
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line !== '' && !line.startsWith('#'));
+
+    const missing = SECRET_PATHS.filter((path) => !entries(gcloudignore).includes(path));
+    expect({ missing, from: '.gcloudignore' }).toEqual({ missing: [], from: '.gcloudignore' });
+
+    // And the two stay in step, so a path added to one is not silently absent
+    // from the other.
+    const alsoMissing = SECRET_PATHS.filter((path) => !entries(dockerignore).includes(path));
+    expect({ missing: alsoMissing, from: '.dockerignore' }).toEqual({
+      missing: [],
+      from: '.dockerignore',
+    });
   });
 
   test('the workspace root is not baked in', async () => {

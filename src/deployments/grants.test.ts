@@ -6,7 +6,7 @@ import {
   type ProviderManifest,
 } from '#connectivity';
 import { CredentialOAuthProvider } from '#connectivity/auth/index.ts';
-import { layout, type Config, type DeployConfig, type TargetConfig } from '#profile';
+import { DEPLOY_DEFAULTS, layout, type Config, type DeployConfig, type TargetConfig } from '#profile';
 import { ownClientRefsFor } from '#registry';
 import { encodeRef } from './adapters/gcp-secret-manager.ts';
 import { provisionSteps } from './gcp/provision.ts';
@@ -45,6 +45,7 @@ const cloudrun = {
   access: 'public',
   service_account: 'lanes-link-run@my-project.iam.gserviceaccount.com',
   min_instances: 0,
+  ...DEPLOY_DEFAULTS,
 } as const satisfies DeployConfig;
 
 const target: TargetConfig = {

@@ -39,3 +39,19 @@ jobs:
 
       - run: bun test
       - run: bun run typecheck
+
+      # The third command, and the one that was written down without being run.
+      #
+      # `SECURITY.md` has claimed a lockfile CVE check since the first release
+      # and the script behind it was `bun pm scan`, which does nothing at all
+      # without `[install.security] scanner` configured in `bunfig.toml` — it
+      # prints how to configure one and exits zero. So a project that holds live
+      # OAuth refresh tokens had a supply-chain control that was documented,
+      # scripted, and inert.
+      #
+      # `bun audit` needs no scanner package: it resolves the lockfile against
+      # npm's advisory database directly. Blocking rather than advisory, because
+      # a security check nobody has to act on is the state this replaces. If a
+      # transitive advisory with no fix available ever holds up unrelated work,
+      # the lever is `--audit-level`, not deleting the step.
+      - run: bun run audit

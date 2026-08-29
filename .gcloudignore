@@ -1,0 +1,50 @@
+# What `gcloud builds submit` uploads, and what it must not.
+#
+# **This file exists because `.dockerignore` is not consulted for the upload.**
+# The build context is packed and sent to a Cloud Build staging bucket before any
+# Dockerfile is read, so the first block of `.dockerignore` — which its own
+# comment calls "a security control, not an image-size optimisation" — governs
+# what reaches the *image* and says nothing about what reaches Google.
+#
+# Absent this file, gcloud derives its exclusions from `.gitignore` when the
+# context happens to be a git checkout, and from nothing at all when it is not.
+# `lanes link deploy` sends `installRoot`, which for the documented install
+# method is a directory under `~/.bun` with no `.git` in it — so the safe
+# behaviour was being inherited from a coincidence.
+#
+# Keep the first block in step with `.dockerignore`. `data/` holds the encrypted
+# credential store *and* the key that opens it.
+data/
+*.key
+*.pem
+*.enc
+*.p12
+.env
+.env.*
+
+# Not needed to build, and `.git` in particular carries every branch.
+.git/
+.gitignore
+.worktrees/
+node_modules/
+**/node_modules/
+coverage/
+dist/
+build/
+*.tsbuildinfo
+
+# Tests, docs and tooling: the image runs the endpoint and nothing else.
+**/*.test.ts
+**/*.test.json
+docs/
+instructions/
+**/README.md
+.lanes/
+.claude/
+.vscode/
+.idea/
+.DS_Store
+.playwright-mcp/
+
+# The compiled binary from `bun build --compile`, if one was made locally.
+/lanes

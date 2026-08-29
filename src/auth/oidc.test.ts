@@ -134,6 +134,89 @@ describe('when the issuer cannot answer', () => {
     await expect(blind.verify('t')).rejects.toThrow(/introspection_endpoint/);
   });
 
+  test('a discovery document may not send the token somewhere else', async () => {
+    // The issuer is config and the operator chose it. The endpoint named inside
+    // its metadata is a value fetched over the network, and following it
+    // unchecked means a compromised or misconfigured discovery document
+    // redirects this endpoint's tokens to a host of its choosing.
+    const stub: FetchLike = (input) =>
+      Promise.resolve(
+        String(input).endsWith('/.well-known/openid-configuration')
+          ? Response.json({ introspection_endpoint: 'https://attacker.example/tokeninfo' })
+          : Response.json(VALID),
+      );
+
+    const elsewhere = new OidcVerifier({
+      issuer: ISSUER,
+      audience: 'this-application',
+      allowedSubjects: ['you@example.com'],
+      fetch: stub,
+      now: () => 1_000_000,
+    });
+
+    await expect(elsewhere.verify('t')).rejects.toThrow(/introspection_endpoint/);
+  });
+
+  test('a discovered endpoint is never asked with the token in the query string', async () => {
+    // RFC 7662 is a form POST, and a discovered endpoint is one publishing
+    // itself as RFC 7662. The query-string shape exists for issuers that ship a
+    // non-standard equivalent, and those have to be named in config anyway — so
+    // trying it here could only put a credential in a URL, and in the issuer's
+    // access log, for an issuer that never asked for it.
+    const { stub, calls } = stubIssuer({ active: false });
+
+    const discovered = new OidcVerifier({
+      issuer: ISSUER,
+      audience: 'this-application',
+      allowedSubjects: ['you@example.com'],
+      fetch: stub,
+      now: () => 1_000_000,
+    });
+
+    await discovered.verify('super-secret-token');
+    expect(calls.some((url) => url.includes('super-secret-token'))).toBe(false);
+  });
+
+  test('an endpoint the operator named keeps the fallback, because Google needs it', async () => {
+    // `oauth2.googleapis.com/tokeninfo` is the documented `oidc` setup and it
+    // answers a GET with `access_token` in the query. Dropping the shape
+    // outright would break the one configuration the docs walk through; keeping
+    // it behind an explicit setting is the operator choosing the cost.
+    const calls: string[] = [];
+    const stub: FetchLike = (input, init) => {
+      calls.push(String(input));
+      // Refuse the POST, as a tokeninfo-shaped endpoint does.
+      return Promise.resolve(
+        init?.method === 'POST' ? new Response('bad request', { status: 400 }) : Response.json(VALID),
+      );
+    };
+
+    const named = new OidcVerifier({
+      issuer: ISSUER,
+      audience: 'this-application',
+      allowedSubjects: ['you@example.com'],
+      introspectionEndpoint: INTROSPECTION,
+      fetch: stub,
+      now: () => 1_000_000,
+    });
+
+    expect(await named.verify('t')).not.toBeNull();
+    expect(calls.some((url) => url.includes('access_token=t'))).toBe(true);
+  });
+
+  test('an introspection endpoint that is not https is refused before a token reaches it', async () => {
+    const insecure = new OidcVerifier({
+      issuer: ISSUER,
+      audience: 'this-application',
+      allowedSubjects: ['you@example.com'],
+      introspectionEndpoint: 'http://issuer.example/tokeninfo',
+      fetch: () => Promise.reject(new Error('should never be called')),
+      now: () => 1_000_000,
+    });
+
+    await expect(insecure.verify('t')).rejects.toThrow(/not https/);
+  });
+
   test('an unreachable issuer is not an authorisation', async () => {
     const failing = new OidcVerifier({
       issuer: ISSUER,

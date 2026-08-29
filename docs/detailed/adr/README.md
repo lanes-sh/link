@@ -61,6 +61,7 @@ Nothing in the codebase depends on it.
 | [051](051-tasks-and-assets-are-their-own-stores.md) | A task and a file are each their own store, not a memory entry |
 | [052](052-a-target-owns-its-workspace.md) | A target owns its workspace, and a profile lives in exactly one |
 | [053](053-the-page-a-person-reads-is-the-app.md) | The page a person reads is the desktop app, and the endpoint stops serving one |
+| [054](054-the-surface-in-front-of-the-gate.md) | The surface in front of the gate is metered, and does not name itself |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 

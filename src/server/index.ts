@@ -1,4 +1,4 @@
-import { challenge, type Authenticator, type AuthOutcome, type ChallengeError } from '#auth';
+import type { Authenticator } from '#auth';
 import type { Logger } from '#connectivity';
 import { capabilityIdForToolName } from '#server/mcp';
 import { ATTACHMENTS_PATH, stageAttachment } from './attachments.ts';
@@ -6,7 +6,12 @@ import { allowedHostnamesFor, rebindingRefusal } from './rebinding.ts';
 import { ANY_ORIGIN, corsAware, type CorsPolicy } from './cors.ts';
 import type { Generation } from './generation.ts';
 import type { Generations } from './generations.ts';
-import { callerKey, failedAuthLimiter, FAILED_AUTH_PER_MINUTE, tooManyAttempts } from './edge.ts';
+import {
+  authRefusal,
+  failedAuthLimiter,
+  unauthenticatedLimiter,
+  unauthenticatedRefusal,
+} from './edge.ts';
 import {
   handleAuthorization,
   isAuthorizationPath,
@@ -50,38 +55,29 @@ export interface ServerOptions {
   readonly authorization?: AuthorizationSurface | undefined;
   /** Hostnames this endpoint answers to. See `./rebinding.ts`. */
   readonly allowedHostnames?: readonly string[] | undefined;
+  /**
+   * Meter the surface that answers before authentication.
+   *
+   * A property of what this is bound to, exactly as `cors` and
+   * `allowedHostnames` are, and decided in the same lines of `serve()`. Off on
+   * loopback, and that is not a gap: what the ceiling protects is a
+   * credential-store call over the network and an object written to a bucket,
+   * and on loopback both are a local file belonging to whoever is already
+   * standing at the machine. `./rebinding.ts` refuses the one caller that is not
+   * — a page the owner happens to be visiting — before this would be reached.
+   */
+  readonly meterUnauthenticated?: boolean | undefined;
 }
-
-type RefusalReason = Extract<AuthOutcome, { ok: false }>['reason'];
-
-/**
- * What a caller should do about each refusal.
- *
- * `invalid` is the only one a client can act on by itself: it presented a
- * credential and this endpoint did not accept it, which is what a refresh is
- * for. RFC 6750 §3.1 has a name for that and clients branch on it; the others
- * mean there is nothing to refresh, and §3 says to stay quiet rather than send
- * a client after a token it does not hold. `malformed` says nothing either —
- * `invalid_request` carries a SHOULD of a 400 status, and changing that path's
- * status is a larger question than this answers.
- */
-const CHALLENGE: Partial<Record<RefusalReason, ChallengeError>> = {
-  invalid: {
-    code: 'invalid_token',
-    description: 'The credential is expired, revoked, or not one this endpoint issued.',
-  },
-};
-
-/** The same four, for whoever is reading the body rather than the header. */
-const HINTS: Record<RefusalReason, string> = {
-  missing: 'Present the profile token as: Authorization: Bearer <token>',
-  malformed: 'Present the profile token as: Authorization: Bearer <token>',
-  invalid: 'Refresh the credential. Authorize again only if the refresh is refused too.',
-  not_configured: 'This profile has no token yet. Run: lanes link token rotate',
-};
 
 export const MCP_PATH = '/mcp';
 export const RELOAD_PATH = '/reload';
+/**
+ * Named rather than inline, because two places now decide about it: the branch
+ * that answers it, and the ceiling in front of that branch which has to know
+ * that a `/health` carrying a credential is not the free request the other one
+ * is.
+ */
+export const HEALTH_PATH = '/health';
 
 /**
  * Loopback addresses. What binding to one changes is the browser threat model,
@@ -111,6 +107,7 @@ export interface RequestHandler {
 export function createRequestHandler(options: ServerOptions): RequestHandler {
   let probedAt = 0;
   const failedAuth = failedAuthLimiter();
+  const unauthenticated = options.meterUnauthenticated ? unauthenticatedLimiter() : null;
 
   /**
    * Re-read the config because a call named a tool we do not serve.
@@ -144,6 +141,27 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
 
       const url = new URL(request.url);
 
+      // Ahead of every path that answers without a credential, because the
+      // ceiling further down is inside the `401` branch and so has never covered
+      // any of them. Each costs a read of the credential store or a write to the
+      // workspace bucket, and none of them asks who is calling first. See
+      // `./edge.ts` for which ones, and for why `/health` is only sometimes
+      // among them.
+      if (unauthenticated) {
+        const refusal = unauthenticatedRefusal({
+          request,
+          pathname: url.pathname,
+          limiter: unauthenticated,
+          healthPath: HEALTH_PATH,
+          isAuthorizationPath,
+          authorizationEnabled: options.authorization !== undefined,
+        });
+        if (refusal) {
+          options.log.warn('rejected request', { reason: 'unauthenticated_rate' });
+          return refusal;
+        }
+      }
+
       // Before authentication, deliberately: a client's first request is the
       // one that discovers how to authenticate, so requiring a token to read
       // the document that says where tokens come from would close the loop it
@@ -152,7 +170,7 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
         return await handleAuthorization(request, options.authorization);
       }
 
-      if (url.pathname === '/health') {
+      if (url.pathname === HEALTH_PATH) {
         // `status` is unauthenticated because the platform's own probe reads it
         // and a deploy waits on it. The profile *names* are not: on a public URL
         // that is a list of what this endpoint holds, handed to anyone who asks,
@@ -182,37 +200,17 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
         request.headers.get('authorization'),
       );
 
+      // The refusal, and the ceiling on how often one may be provoked. Both in
+      // `./edge.ts`, which is the subject: what this endpoint does about a
+      // caller who has not authenticated.
       if (!outcome.ok) {
         options.log.warn('rejected request', { reason: outcome.reason });
-
-        // After the attempt rather than before it: keyed on the caller alone,
-        // anyone able to reach the endpoint could spend the owner's budget and
-        // lock them out, which trades a cost problem for a worse availability
-        // one. Only a failure consumes a token, so a valid credential is never
-        // refused by this.
-        const budget = failedAuth.take(callerKey(request), FAILED_AUTH_PER_MINUTE);
-        if (!budget.allowed) return tooManyAttempts(budget.retryAfterMs);
-
-        // The pointer is the whole handshake for a remote client: it reads the
-        // named document, finds the authorization server, and starts a flow.
-        // Without it the client has to guess the document's location, and a
-        // client that guesses wrong reports the endpoint as unreachable.
-        const metadata = options.authorization ? resourceMetadataUrl(request) : null;
-
-        return new Response(
-          JSON.stringify({
-            error: 'unauthorized',
-            reason: outcome.reason,
-            hint: HINTS[outcome.reason],
-          }),
-          {
-            status: 401,
-            headers: {
-              'content-type': 'application/json',
-              'www-authenticate': challenge(metadata, CHALLENGE[outcome.reason]),
-            },
-          },
-        );
+        return authRefusal({
+          request,
+          reason: outcome.reason,
+          limiter: failedAuth,
+          metadataUrl: options.authorization ? resourceMetadataUrl(request) : null,
+        });
       }
 
       // Behind the same bearer check as everything else, and deliberately not a
@@ -348,6 +346,10 @@ export function serve(options: ServeOptions): RunningServer {
     : { allowedOrigins: primary.config.auth.allowed_origins ?? [ANY_ORIGIN] };
   const handler = createRequestHandler({
     ...options,
+    // Off on loopback for the same reason `cors` is undefined there, and decided
+    // here so every property of the bind address is decided together. An
+    // explicit `true` wins, which is how a test drives the deployed behaviour.
+    meterUnauthenticated: options.meterUnauthenticated ?? !loopback,
     ...(allowedHostnames ? { allowedHostnames } : {}),
   });
 
