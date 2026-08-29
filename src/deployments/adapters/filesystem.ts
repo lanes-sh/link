@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
-import type { BlobKey, BlobMetadata, BlobStore } from '#stores/blobs';
+import { containedKey, type BlobKey, type BlobMetadata, type BlobStore } from '#stores/blobs';
 
 /**
  * Filesystem blob store — the `local` target's adapter.
@@ -54,12 +54,27 @@ export function createFilesystemBlobStore(options: FilesystemBlobStoreOptions): 
    * this adapter is also usable directly, and a containment check belongs at
    * the point where a path actually becomes a filesystem operation. Defence in
    * depth is cheap; a provider escaping its directory is not.
+   *
+   * **The rule is `containedKey`'s, not this file's.** It used to be a copy,
+   * and the copy did not agree: it tested `rel.startsWith('..')` where it meant
+   * "the first segment is `..`", so a key beginning with two dots and
+   * continuing — an ordinary name — was refused here and accepted by every
+   * other adapter. That is the divergence `conformance.ts` exists to prevent,
+   * and it was reachable from an ordinary argument, because a provider passes
+   * a caller's name straight through as a key.
+   *
+   * Kept as a resolve-then-join rather than deferring the whole path: the
+   * shared rule answers "does this land inside", and this adapter still has to
+   * turn the answer into a filesystem path.
    */
   const pathFor = (key: BlobKey): string => {
-    const resolved = resolve(root, key);
+    const resolved = resolve(root, containedKey(key));
     const rel = relative(root, resolved);
 
-    if (rel === '' || rel.startsWith('..') || rel.startsWith(`..${sep}`)) {
+    // Unreachable once `containedKey` has answered, and kept because this is
+    // the line where a path becomes a filesystem operation: a future change to
+    // either side should fail here rather than escape.
+    if (rel === '' || rel === '..' || rel.startsWith(`..${sep}`)) {
       throw new Error(`Blob key resolves outside the store root: ${key}`);
     }
     return resolved;
