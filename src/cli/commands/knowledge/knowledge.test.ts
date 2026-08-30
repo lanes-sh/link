@@ -50,6 +50,7 @@ policy:
 const SELECT = { profile: 'personal', target: 'local' } as const;
 
 const SKILL = '---\ndescription: Triage an inbox\n---\nOpen the inbox.\n';
+const ENTITY = '---\ntype: person\nname: Jan Bakker\n---\n\nPrefers email.\n';
 const ENTRY = '---\ntitle: A note\nupdated_at: 2026-01-01T00:00:00.000Z\n---\nBody.\n';
 
 async function workspace(seed = true): Promise<string> {
@@ -65,6 +66,9 @@ async function workspace(seed = true): Promise<string> {
     await writeFile(join(root, 'data/personal/memory/main/a-note.md'), ENTRY);
     await mkdir(join(root, 'data/personal/skills.d/triage'), { recursive: true });
     await writeFile(join(root, 'data/personal/skills.d/triage/SKILL.md'), SKILL);
+    await mkdir(join(root, 'data/personal/entities/main'), { recursive: true });
+    await writeFile(join(root, 'data/personal/entities/main/jan-bakker.md'), ENTITY);
+    await writeFile(join(root, 'data/personal/entities/main/_index.json'), '{"v":1}');
   }
 
   process.env['LANES_LINK_HOME'] = root;
@@ -110,12 +114,19 @@ describe('switching to a repository', () => {
     expect(github.files()).toEqual({
       'memory/main/a-note.md': ENTRY,
       'skills/triage/SKILL.md': SKILL,
+      'entities/main/jan-bakker.md': ENTITY,
+      // The derived index travels with the documents it describes. Asserted
+      // rather than tolerated: it is a cache in a documents repository, which
+      // is a real cost of committing it, and it should be a decision somebody
+      // made rather than something that happened.
+      'entities/main/_index.json': '{"v":1}',
     });
-    // One commit for both files, not one each.
+    // One commit for all of them, not one each.
     expect(github.calls.filter((call) => call.includes('/git/commits')).length).toBe(1);
 
     expect(existsSync(join(root, 'data/personal/memory/main/a-note.md'))).toBe(false);
     expect(existsSync(join(root, 'data/personal/skills.d/triage/SKILL.md'))).toBe(false);
+    expect(existsSync(join(root, 'data/personal/entities/main/jan-bakker.md'))).toBe(false);
   });
 
   test('writes one block, on the profile', async () => {
@@ -137,8 +148,9 @@ describe('switching to a repository', () => {
 
     await use({ migrate: true, keep: true });
 
-    expect(Object.keys(github.files())).toHaveLength(2);
+    expect(Object.keys(github.files())).toHaveLength(4);
     expect(existsSync(join(root, 'data/personal/memory/main/a-note.md'))).toBe(true);
+    expect(existsSync(join(root, 'data/personal/entities/main/jan-bakker.md'))).toBe(true);
   });
 
   test('--no-migrate switches and leaves what is stored where it is', async () => {
@@ -178,12 +190,14 @@ describe('switching to a repository', () => {
     expect(await readProfile(root)).toContain('repo: my-org/my-notes');
   });
 
-  test('a path prefix lands both areas under it', async () => {
+  test('a path prefix lands every area under it', async () => {
     await workspace();
 
     await use({ migrate: true, path: 'context' });
 
     expect(Object.keys(github.files()).sort()).toEqual([
+      'context/entities/main/_index.json',
+      'context/entities/main/jan-bakker.md',
       'context/memory/main/a-note.md',
       'context/skills/triage/SKILL.md',
     ]);
@@ -267,6 +281,9 @@ describe('coming back', () => {
 
     expect(await readFile(join(root, 'data/personal/memory/main/a-note.md'), 'utf8')).toBe(ENTRY);
     expect(await readFile(join(root, 'data/personal/skills.d/triage/SKILL.md'), 'utf8')).toBe(SKILL);
+    expect(await readFile(join(root, 'data/personal/entities/main/jan-bakker.md'), 'utf8')).toBe(
+      ENTITY,
+    );
     expect(await readProfile(root)).not.toContain('knowledge:');
   });
 
@@ -276,7 +293,7 @@ describe('coming back', () => {
 
     await knowledgeUse('local', { ...SELECT, fetch: github.fetch, migrate: true, yes: true });
 
-    expect(Object.keys(github.files())).toHaveLength(2);
+    expect(Object.keys(github.files())).toHaveLength(4);
   });
 
   test('a profile that never switched is told so rather than edited', async () => {
@@ -370,6 +387,9 @@ describe('knowledge show', () => {
       where: 'github:my-org/my-notes',
       memory: 1,
       skills: 1,
+      // Two: the entity document and its derived index, which is a file in that
+      // directory like any other and is counted as one.
+      entities: 2,
     });
   });
 });
@@ -488,9 +508,12 @@ describe('removing a profile does not reach into the repository', () => {
     // The routing that points memory at a repository lives in `openRuntime`;
     // this command opens the target's declared storage, so it cannot see one.
     expect(output).not.toContain('memory/main/a-note.md');
+    expect(output).not.toContain('entities/main/jan-bakker.md');
     expect(github.files()).toEqual({
       'memory/main/a-note.md': ENTRY,
       'skills/triage/SKILL.md': SKILL,
+      'entities/main/jan-bakker.md': ENTITY,
+      'entities/main/_index.json': '{"v":1}',
     });
   });
 });

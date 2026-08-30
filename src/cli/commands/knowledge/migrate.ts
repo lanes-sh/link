@@ -1,4 +1,10 @@
-import { ConfigError, KNOWLEDGE_LAYOUT, knowledgeRoot, type KnowledgeConfig } from '#profile';
+import {
+  ConfigError,
+  KNOWLEDGE_LAYOUT,
+  knowledgeRoot,
+  type KnowledgeArea,
+  type KnowledgeConfig,
+} from '#profile';
 import type { BlobStore } from '#stores/blobs';
 import { commitFiles, type CommitFile } from '#deployments/adapters/github-commit.ts';
 import type { GithubRepository } from '#deployments/adapters/github-repo.ts';
@@ -24,9 +30,30 @@ export interface Movable {
   readonly key: string;
   /** Where it goes in the repository. */
   readonly path: string;
-  readonly area: 'memory' | 'skills';
+  readonly area: KnowledgeArea;
   readonly data: Uint8Array;
 }
+
+/**
+ * Where each area lives locally, as one table.
+ *
+ * Two of the three are prefixes inside the profile's blob root and the third is
+ * a store of its own, and that asymmetry was written out three times before —
+ * once per direction — which is three places to forget a fourth area. Stating
+ * it once means `localContents`, `removeLocal` and `moveOut` each became a loop
+ * over this rather than a branch on a literal.
+ */
+type LocalArea = { readonly store: BlobStore; readonly prefix: string };
+
+function localAreas(storage: BlobStore, skills: BlobStore): Record<KnowledgeArea, LocalArea> {
+  return {
+    memory: { store: storage, prefix: `${KNOWLEDGE_LAYOUT.memory}/` },
+    skills: { store: skills, prefix: '' },
+    entities: { store: storage, prefix: `${KNOWLEDGE_LAYOUT.entities}/` },
+  };
+}
+
+const AREAS = ['memory', 'skills', 'entities'] as const;
 
 /**
  * Everything this profile has stored locally, ready to move.
@@ -42,30 +69,19 @@ export async function localContents(
   skills: BlobStore,
   knowledge: KnowledgeConfig,
 ): Promise<Movable[]> {
+  const areas = localAreas(storage, skills);
   const found: Movable[] = [];
-  const prefix = `${KNOWLEDGE_LAYOUT.memory}/`;
 
-  for (const entry of await storage.list(prefix)) {
-    const data = await storage.get(entry.key);
-    if (data === null) continue; // Listed then deleted; not worth failing over.
-    const key = entry.key.slice(prefix.length);
-    found.push({
-      key,
-      area: 'memory',
-      path: `${knowledgeRoot(knowledge, 'memory')}/${key}`,
-      data,
-    });
-  }
+  for (const area of AREAS) {
+    const { store, prefix } = areas[area];
 
-  for (const entry of await skills.list()) {
-    const data = await skills.get(entry.key);
-    if (data === null) continue;
-    found.push({
-      key: entry.key,
-      area: 'skills',
-      path: `${knowledgeRoot(knowledge, 'skills')}/${entry.key}`,
-      data,
-    });
+    for (const entry of await store.list(prefix)) {
+      const data = await store.get(entry.key);
+      if (data === null) continue; // Listed then deleted; not worth failing over.
+
+      const key = entry.key.slice(prefix.length);
+      found.push({ key, area, path: `${knowledgeRoot(knowledge, area)}/${key}`, data });
+    }
   }
 
   return found;
@@ -115,9 +131,11 @@ export async function removeLocal(
   skills: BlobStore,
   movable: readonly Movable[],
 ): Promise<void> {
+  const areas = localAreas(storage, skills);
+
   for (const item of movable) {
-    if (item.area === 'memory') await storage.delete(`${KNOWLEDGE_LAYOUT.memory}/${item.key}`);
-    else await skills.delete(item.key);
+    const { store, prefix } = areas[item.area];
+    await store.delete(`${prefix}${item.key}`);
   }
 }
 
@@ -135,24 +153,19 @@ export async function moveOut(
   knowledge: KnowledgeConfig,
   storage: BlobStore,
   skills: BlobStore,
-): Promise<{ memory: number; skills: number }> {
+): Promise<Record<KnowledgeArea, number>> {
   const { entries } = await repository.entries();
-  const roots = {
-    memory: `${knowledgeRoot(knowledge, 'memory')}/`,
-    skills: `${knowledgeRoot(knowledge, 'skills')}/`,
-  } as const;
-
-  const counts = { memory: 0, skills: 0 };
+  const areas = localAreas(storage, skills);
+  const counts: Record<KnowledgeArea, number> = { memory: 0, skills: 0, entities: 0 };
 
   for (const entry of entries.values()) {
-    for (const area of ['memory', 'skills'] as const) {
-      if (!entry.path.startsWith(roots[area])) continue;
+    for (const area of AREAS) {
+      const root = `${knowledgeRoot(knowledge, area)}/`;
+      if (!entry.path.startsWith(root)) continue;
 
-      const key = entry.path.slice(roots[area].length);
-      const data = await repository.blob(entry.sha);
-
-      if (area === 'memory') await storage.put(`${KNOWLEDGE_LAYOUT.memory}/${key}`, data);
-      else await skills.put(key, data);
+      const key = entry.path.slice(root.length);
+      const { store, prefix } = areas[area];
+      await store.put(`${prefix}${key}`, await repository.blob(entry.sha));
 
       counts[area] += 1;
     }
@@ -161,14 +174,19 @@ export async function moveOut(
   return counts;
 }
 
-/** `12 skills and 47 memory entries`, or whichever half of that is non-zero. */
+/** `12 skills and 47 memory entries`, or whichever parts of that are non-zero. */
 export function summarise(movable: readonly Movable[]): string {
-  const skills = movable.filter((item) => item.area === 'skills').length;
-  const memory = movable.length - skills;
+  const count = (area: KnowledgeArea) => movable.filter((item) => item.area === area).length;
+  const skills = count('skills');
+  const memory = count('memory');
+  const entities = count('entities');
 
+  // Skills and memory keep their existing wording and their existing order: a
+  // third clause is an addition to this sentence, not a rewrite of it.
   const parts = [
     ...(skills > 0 ? [`${skills} skill${skills === 1 ? '' : 's'}`] : []),
     ...(memory > 0 ? [`${memory} memory entr${memory === 1 ? 'y' : 'ies'}`] : []),
+    ...(entities > 0 ? [`${entities} entit${entities === 1 ? 'y' : 'ies'}`] : []),
   ];
   return parts.length === 0 ? 'nothing' : parts.join(' and ');
 }

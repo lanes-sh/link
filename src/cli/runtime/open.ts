@@ -175,7 +175,13 @@ export async function openRuntime(
   // own roots on the target's own storage and are untouched.
   const knowledge = await openKnowledge(adapters, credentials, options.fetch);
   const storage = knowledge
-    ? routeBlobStore(storageFor(), [{ prefix: `${KNOWLEDGE_LAYOUT.memory}/`, store: knowledge.memory }])
+    ? routeBlobStore(storageFor(), [
+        { prefix: `${KNOWLEDGE_LAYOUT.memory}/`, store: knowledge.memory },
+        // The prefixes are disjoint and `routeBlobStore` already handles a list,
+        // so a third area is one element rather than a second mechanism — which
+        // is the evidence the seam above was cut in the right place.
+        { prefix: `${KNOWLEDGE_LAYOUT.entities}/`, store: knowledge.entities },
+      ])
     : storageFor();
   const state = openState(storageFor, config.instance.profile);
 

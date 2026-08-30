@@ -42,9 +42,11 @@ async function open(overrides: Record<string, unknown> = {}) {
   const stores = await knowledgeStores(repository, config);
 
   // Exactly what `openRuntime` builds: the profile's blob root with `memory/`
-  // routed away, and skills taken from the repository rather than the profile.
+  // and `entities/` routed away, and skills taken from the repository rather
+  // than the profile.
   const storage = routeBlobStore(createMemoryBlobStore(), [
     { prefix: `${KNOWLEDGE_LAYOUT.memory}/`, store: stores.memory },
+    { prefix: `${KNOWLEDGE_LAYOUT.entities}/`, store: stores.entities },
   ]);
 
   return { github, storage, skills: stores.skills };
@@ -62,6 +64,28 @@ describe('a profile whose knowledge is in a repository', () => {
     });
 
     expect(Object.keys(github.files())).toEqual(['memory/main/a-note.md']);
+  });
+
+  test('an entity and its derived index both land in the repository', async () => {
+    const { github, storage } = await open();
+
+    const provider = scopeBlobStore(storage, scopeNamespace('entities', 'main'));
+    await provider.put(
+      'jan-bakker.md',
+      new TextEncoder().encode('---\nname: Jan Bakker\n---\n\n'),
+      { contentType: 'text/markdown' },
+    );
+    await provider.put('_index.json', new TextEncoder().encode('{"v":1}'), {
+      contentType: 'application/json',
+    });
+
+    // The index travels with the documents because it is derived from what
+    // travels — the weaker half of ADR-055's argument, and worth pinning so it
+    // is a decision rather than an accident.
+    expect(Object.keys(github.files()).sort()).toEqual([
+      'entities/main/_index.json',
+      'entities/main/jan-bakker.md',
+    ]);
   });
 
   test('the CLI and the provider address the same object', async () => {
@@ -144,16 +168,37 @@ describe('reading what somebody typed', () => {
 });
 
 describe('the repository layout', () => {
-  test('is two directories, and a prefix moves both', () => {
+  test('is three directories, and a prefix moves all of them', () => {
     expect(knowledgeRoot(knowledge(), 'memory')).toBe('memory');
     expect(knowledgeRoot(knowledge(), 'skills')).toBe('skills');
+    expect(knowledgeRoot(knowledge(), 'entities')).toBe('entities');
     expect(knowledgeRoot(knowledge({ path: 'context' }), 'memory')).toBe('context/memory');
+    expect(knowledgeRoot(knowledge({ path: 'context' }), 'entities')).toBe('context/entities');
   });
 
-  test('the memory directory is the provider namespace that routes into it', () => {
+  test('a directory name is the provider namespace that routes into it', () => {
     // If these ever differ, a write goes to one place and a read looks in
     // another, and nothing fails — the entry is simply not there.
     expect(KNOWLEDGE_LAYOUT.memory).toBe('memory');
     expect(scopeNamespace('memory', 'main').startsWith(`${KNOWLEDGE_LAYOUT.memory}/`)).toBe(true);
+    expect(KNOWLEDGE_LAYOUT.entities).toBe('entities');
+    expect(scopeNamespace('entities', 'main').startsWith(`${KNOWLEDGE_LAYOUT.entities}/`)).toBe(
+      true,
+    );
+  });
+
+  test('what may move is still what a document is, and nothing else', () => {
+    // ADR-041's exclusion is structural — there is no field that could name the
+    // credential store or the vault — and ADR-055 adds none. Asserted here
+    // because "and nothing else may" is the sentence a third area looks like it
+    // weakened, and the thing that makes it still true is the absence of a key.
+    expect(Object.keys(KNOWLEDGE_LAYOUT).sort()).toEqual(['entities', 'memory', 'skills']);
+    expect(Object.keys(knowledgeTargetSchema.shape).sort()).toEqual([
+      'adapter',
+      'branch',
+      'path',
+      'repo',
+      'token_ref',
+    ]);
   });
 });

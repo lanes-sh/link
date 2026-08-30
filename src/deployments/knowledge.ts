@@ -1,6 +1,6 @@
 import type { SecretStore } from '#secrets';
 import type { BlobStore } from '#stores/blobs';
-import { knowledgeRoot, type KnowledgeConfig } from '#profile';
+import { knowledgeRoot, type KnowledgeArea, type KnowledgeConfig } from '#profile';
 import { requireSecret, type TargetInput } from './target.ts';
 import type { FetchLike } from './adapters/github-api.ts';
 // Type-only, so a target with no `knowledge` block never loads the adapter.
@@ -14,13 +14,13 @@ import type { GithubRepository } from './adapters/github-repo.ts';
 export type { FetchLike } from './adapters/github-api.ts';
 
 /**
- * Opening the place a profile keeps its memory and its skills, when that is not
- * the place it keeps everything else.
+ * Opening the place a profile keeps its memory, skills and entities, when that
+ * is not the place it keeps everything else.
  *
  * Its own file rather than a fifth case in `target.ts`, because it is not the
  * same kind of decision. `target.ts` answers "where does this target run" —
  * credentials here, bytes there — and every consumer of a `BlobStore` rides
- * that one answer. This answers a narrower one: two directories of documents
+ * that one answer. This answers a narrower one: three directories of documents
  * the owner wrote have somewhere else to be, and nothing else moves with them.
  *
  * ADR-041 has the argument. `src/profile/knowledge.ts` has the contract, and
@@ -29,19 +29,22 @@ export type { FetchLike } from './adapters/github-api.ts';
  */
 
 /**
- * One repository client, two stores.
+ * One repository client, three stores.
  *
- * Memory and skills are two directories in one repository, and pointing both at
- * one client means one branch head, one tree, and one blob cache between them —
- * so the endpoint's two-second skill poll keeps memory's view current for free.
- * Two clients would each poll, each cache, and could disagree about which
- * commit is current.
+ * Memory, skills and entities are three directories in one repository, and
+ * pointing all of them at one client means one branch head, one tree, and one
+ * blob cache between them — so the endpoint's two-second skill poll keeps the
+ * other two views current for free. Three clients would each poll, each cache,
+ * and could disagree about which commit is current. The argument got stronger
+ * with a third area rather than weaker, which is why adding one is a line here.
  */
 export interface KnowledgeStores {
   readonly repository: GithubRepository;
   readonly skills: BlobStore;
   /** Rooted at the repository's memory directory; keys are `<connection>/<id>.md`. */
   readonly memory: BlobStore;
+  /** The same shape again, plus the derived `<connection>/_index.json`. */
+  readonly entities: BlobStore;
   /** One line for `target show` and `doctor`, so the config file is not the only witness. */
   readonly describe: string;
 }
@@ -88,7 +91,7 @@ export async function openKnowledge(
 }
 
 /**
- * The two stores a knowledge repository holds.
+ * The three stores a knowledge repository holds.
  *
  * Separate from `openKnowledge` because `lanes link knowledge use` builds these
  * against a repository it is still probing — before any of it has been written
@@ -98,21 +101,27 @@ export async function openKnowledge(
 export async function knowledgeStores(
   repository: GithubRepository,
   knowledge: KnowledgeConfig,
-): Promise<{ skills: BlobStore; memory: BlobStore }> {
+): Promise<{ skills: BlobStore; memory: BlobStore; entities: BlobStore }> {
   const { createGithubBlobStore } = await import('./adapters/github.ts');
 
-  const build = (area: 'memory' | 'skills'): BlobStore =>
+  // What the commit says it did. Named per area rather than left to the
+  // adapter's default, because "Store main/note.md" in a repository holding
+  // three of them is a line that does not say which one changed.
+  const noun: Record<KnowledgeArea, string> = {
+    memory: 'memory',
+    skills: 'skill',
+    entities: 'entity',
+  };
+
+  const build = (area: KnowledgeArea): BlobStore =>
     createGithubBlobStore({
       repository,
       root: knowledgeRoot(knowledge, area),
-      // What the commit says it did. Named per area rather than left to the
-      // adapter's default, because "Store main/note.md" in a repository holding
-      // both is a line that does not say which of them changed.
       message: (operation, key) =>
-        `${operation === 'store' ? 'Store' : 'Remove'} ${area === 'skills' ? 'skill' : 'memory'} ${key}`,
+        `${operation === 'store' ? 'Store' : 'Remove'} ${noun[area]} ${key}`,
     });
 
-  return { skills: build('skills'), memory: build('memory') };
+  return { skills: build('skills'), memory: build('memory'), entities: build('entities') };
 }
 
 /** `github:owner/name#branch/path`, in one place so every reader agrees. */
