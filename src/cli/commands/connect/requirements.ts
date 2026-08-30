@@ -97,6 +97,8 @@ export async function preflight(input: {
    * a step it does not perform.
    */
   readonly method?: 'oauth' | 'assertion' | 'pasted';
+  /** What `--set` supplied, so an address given on the command line is not reported missing. */
+  readonly supplied?: Readonly<Record<string, string>> | undefined;
 }): Promise<Blocked | null> {
   const { manifest, connectionId, profile, target, spec } = input;
   const method = input.method ?? 'oauth';
@@ -150,8 +152,28 @@ export async function preflight(input: {
     };
   }
 
+  // Before the credential check, so the two come back together rather than one
+  // per run. An address is not a credential and no `secrets set` places it —
+  // `--set` does — but to somebody scripting this it is the same thing: another
+  // value the command will refuse without. Reporting it only after the
+  // credentials were stored made a two-step setup a three-step one.
+  const address = manifest.variables
+    .filter((variable) => (input.supplied ?? {})[variable.key] === undefined)
+    .map((variable) => `--set ${variable.key}=${variable.example}`);
+
   const missing = await missingRequirements(requirements, input.credentials);
-  if (missing.length === 0) return null;
+  if (missing.length === 0 && address.length === 0) return null;
+
+  if (address.length > 0) {
+    return {
+      reason: 'missing_credentials',
+      message:
+        `${manifest.name} needs ${missing.length + address.length} value(s) before it can connect. ` +
+        `Its address is not stored — it is given on the command line.`,
+      needs: missing,
+      then: `${rerun}${connectionId ? ` --id ${connectionId}` : ''} ${address.join(' ')} --non-interactive`,
+    };
+  }
 
   return {
     reason: 'missing_credentials',

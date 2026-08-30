@@ -74,10 +74,17 @@ export async function knowledgeShow(flags: KnowledgeFlags): Promise<void> {
     const selection = ` --profile ${runtime.resolution.profile} --target ${runtime.target}`;
     const skills = (await runtime.skills.list()).length;
     const memory = (await runtime.storage.list(`${KNOWLEDGE_LAYOUT.memory}/`)).length;
+    const entities = (await runtime.storage.list(`${KNOWLEDGE_LAYOUT.entities}/`)).length;
     const where = runtime.knowledge?.describe;
 
     if (flags.json) {
-      print(JSON.stringify({ target: runtime.target, where: where ?? 'local', memory, skills }, null, 2));
+      print(
+        JSON.stringify(
+          { target: runtime.target, where: where ?? 'local', memory, skills, entities },
+          null,
+          2,
+        ),
+      );
       return;
     }
 
@@ -95,6 +102,16 @@ export async function knowledgeShow(flags: KnowledgeFlags): Promise<void> {
         '  skills',
         where ? `${where}/${KNOWLEDGE_LAYOUT.skills}` : layout.skills(profile),
         style.dim(`${skills} file${skills === 1 ? '' : 's'}`),
+      ],
+      // The count includes the derived `_index.json`, deliberately: it is a
+      // file in that directory and it is committed with the rest, so a number
+      // that quietly excluded it would not match what a person sees there.
+      [
+        '  entities',
+        where
+          ? `${where}/${KNOWLEDGE_LAYOUT.entities}`
+          : `${layout.blobs(profile)}/${KNOWLEDGE_LAYOUT.entities}`,
+        style.dim(`${entities} file${entities === 1 ? '' : 's'}`),
       ],
     ]);
 
@@ -266,8 +283,9 @@ async function useLocal(flags: KnowledgeFlags): Promise<void> {
       const moved = await moveOut(repository, knowledge, local.storage, local.skills);
       print(
         ok(
-          `wrote back ${moved.memory} memory entr${moved.memory === 1 ? 'y' : 'ies'} and ` +
-            `${moved.skills} skill file${moved.skills === 1 ? '' : 's'}`,
+          `wrote back ${moved.memory} memory entr${moved.memory === 1 ? 'y' : 'ies'}, ` +
+            `${moved.skills} skill file${moved.skills === 1 ? '' : 's'} and ` +
+            `${moved.entities} entity file${moved.entities === 1 ? '' : 's'}`,
         ),
       );
     }
@@ -275,7 +293,7 @@ async function useLocal(flags: KnowledgeFlags): Promise<void> {
     await writeBlock(runtime.config, runtime.resolution.workspaceRoot, undefined);
 
     print('');
-    print(ok('memory and skills are back on this target\'s own storage'));
+    print(ok('memory, skills and entities are back on this target\'s own storage'));
     print(
       style.dim(
         `  ${knowledge.repo} still holds everything — it is version control, so nothing was removed from it.`,

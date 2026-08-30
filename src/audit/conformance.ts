@@ -358,7 +358,7 @@ export function describeAuditSinkContract(
       await use(async (fixture) => {
         // The append-only guarantee is the absence of these methods, so assert
         // the absence directly rather than trusting the interface to stay
-        // honest. `docs/detailed/security.md` lists `audit.append-only` as ENFORCED on
+        // honest. `https://lanes.sh/docs/link/security` lists `audit.append-only` as ENFORCED on
         // the grounds that the store interface has no update or delete — this
         // is the check behind that claim, and it holds for every adapter.
         const sink = fixture.open();

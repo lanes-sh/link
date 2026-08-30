@@ -12,7 +12,7 @@ $ lanes link connect gmail --target cloud
 $ lanes link deploy                        # again, so the revision sees it
 ```
 
-`docs/deploy.md` documented that as the flow. Locally the same defect read as "stop `lanes link
+`https://lanes.sh/docs/link/deploy` documented that as the flow. Locally the same defect read as "stop `lanes link
 start` and run it again".
 
 Two mechanisms produced it, and they are independent.

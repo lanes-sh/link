@@ -50,7 +50,7 @@ cannot undo. Get to a green `bun test` unattended, then stop and ask.
 
 ## A release publishes, and npm does not give a version back
 
-[`docs/detailed/releasing.md`](docs/detailed/releasing.md) is the lifecycle end to end — the two
+[The development lifecycle](https://lanes.sh/docs/link/releasing) is the lifecycle end to end — the two
 paths `release.yml` takes, and the verification that a release shipped. What an agent gets wrong:
 
 - **Set the version on `develop`, before the pull request to `main`.** A merge whose version is
@@ -96,7 +96,7 @@ that is not.
 One package, one `src/`, thirteen components. Cross-component imports go through the
 package.json `imports` map: `#policy`, `#stores/state`, `#providers/google/gmail`. There
 are no workspace packages and no `apps/` or `packages/` — see the layout table in
-[`docs/detailed/architecture.md`](docs/detailed/architecture.md).
+[Architecture](https://lanes.sh/docs/link/architecture).
 
 A command whose subject is the *endpoint* — `status`, `deploy`, `sync targets` — names a
 `--target` and acts on every profile declaring it; `--profile` narrows that set rather than
@@ -104,10 +104,10 @@ selecting it (ADR-043). Everything acting on one account still names both. The t
 `src/cli/selection.ts` is the whole rule, and `selection.test.ts` reads the dispatch files to
 check a new command cannot be added without appearing in it.
 
-## The owner layer is seven ids, and `tasks` is not Google's
+## The owner layer is eight ids, and `tasks` is not Google's
 
-`RESERVED_PROVIDER_IDS` is `memory`, `tasks`, `assets`, `skills`, `vault`, `setup`, `identity`. Two
-things an agent gets wrong here:
+`RESERVED_PROVIDER_IDS` is `memory`, `tasks`, `assets`, `skills`, `vault`, `setup`, `identity`,
+`entities`. Three things an agent gets wrong here:
 
 - **`tasks` is the built-in task list; Google Tasks is `google_tasks`.** The rename was forced —
   `buildRegistry` registers the owner layer before `PROVIDERS`, so a manifest holding a reserved id
@@ -120,6 +120,19 @@ things an agent gets wrong here:
   `ensureOwnerLayer` in `src/cli/config-repair.ts` repairs an older profile from `start`, `connect`
   and `deploy`; the template in `config-edit.ts` and that repair must write a row in **one**
   spelling, which `config-edit.test.ts` checks by asserting a fresh profile needs no repair.
+- **`identity` and `entities` differ on writability and on the default grant, and the reason is one
+  test.** It is not "is it empty" — memory arrives empty and is granted. It is *can it be filled in
+  from here*: identity is configuration and changed in the CLI (ADR-007), so an agent able to edit
+  it could edit the one fact that stops it signing as the wrong person. Everyone else's details
+  accumulate on the same surface that reads them, so `entities` is agent-writable and granted like
+  memory (ADR-056). Do not "fix" the asymmetry.
+
+`entities.find` returns **every** match and sets no error on more than one, deliberately. If you
+change how it ranks, the rule to keep is that ordering is not selection: there is no scoring inside
+a rank, because a tiebreak that promoted one of two exact alias matches would turn a question for
+the owner into a silent pick. Its derived `_index.json` is a cache stamped with a `key:size`
+fingerprint of the entity files — not `key:size:mtime`, because the GitHub adapter reports the
+branch tip for every file and the stamp would never match twice.
 
 `src/architecture.test.ts` asserts the four rules the layout expresses: dependency
 direction between components, no vendor name in the code a request passes through, a

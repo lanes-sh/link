@@ -4,7 +4,7 @@ import { defineLocalProvider, keepKeys, type ProviderContext } from '#connectivi
 /**
  * The example provider — the reference every other provider is written
  * against, and small enough to reproduce verbatim in
- * `docs/detailed/creating-a-provider.md`.
+ * `https://lanes.sh/docs/link/creating-a-provider`.
  *
  * It is also load-bearing beyond being a sample. It declares no auth
  * requirement and touches no third-party service, which makes it an *owner

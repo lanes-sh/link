@@ -112,7 +112,7 @@ Three things bound it. Registration is open, but a client that has registered ho
 identifier — it must still complete an approval the owner performs by hand, at a consent screen
 that demands the endpoint token. The access token it could steal is one credential among the
 several this endpoint already treats as bearer authorization, which
-[`security.md`](../security.md) states plainly rather than implying otherwise. And the revocation
+[`security.md`](https://lanes.sh/docs/link/security) states plainly rather than implying otherwise. And the revocation
 that matters is unchanged: `lanes link token rotate` replaces the token every consent depends on.
 
 Against that: the behaviour being removed was firing on a real, approved client roughly daily and

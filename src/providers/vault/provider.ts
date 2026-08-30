@@ -14,7 +14,7 @@ import { assertItemId, type VaultStore } from '#secrets';
  * Three properties, each of which is a decision recorded in ADR-012:
  *
  * **Tools only, never resources.** Resources are listable and cacheable, and
- * both are wrong for a secret (`docs/detailed/providers.md`).
+ * both are wrong for a secret (`https://lanes.sh/docs/link/capabilities`).
  *
  * **Per-item policy through the capability name.** Each stored item gets its own
  * read capability — `vault.get.github_token` — so `deny: [vault.get.bank]` and

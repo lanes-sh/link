@@ -112,7 +112,7 @@ export function serveOverStdio(options: StdioOptions): StdioSurface {
  * write it. Policy-filtered discovery means an unpermitted tool is never
  * advertised, so the protocol layer answers a call naming one before any of our
  * code runs — and it would otherwise leave no trace at all, which is what
- * `audit.every-invocation` in `docs/detailed/security.md` promises it does not.
+ * `audit.every-invocation` in `https://lanes.sh/docs/link/security` promises it does not.
  *
  * HTTP reads the method and target from the 2026-07-28 headers, which is exact
  * for an envelope client and blind to a 2025-era one — a documented gap over

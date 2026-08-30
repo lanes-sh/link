@@ -1,0 +1,901 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "contact": {
+      "x-twitter": "microsoft"
+    },
+    "description": "This OData service is located at https://graph.microsoft.com/v1.0",
+    "title": "OData Service for namespace microsoft.graph",
+    "version": "1.0.1",
+    "x-apisguru-categories": [
+      "developer_tools"
+    ],
+    "x-logo": {
+      "url": "https://api.apis.guru/v2/cache/logo/https_twitter.com_microsoft_profile_image.png"
+    },
+    "x-ms-generated-by": {
+      "toolName": "Microsoft.OpenApi.OData",
+      "toolVersion": "1.0.9.0"
+    },
+    "x-origin": [
+      {
+        "format": "openapi",
+        "url": "https://raw.githubusercontent.com/microsoftgraph/msgraph-metadata/master/openapi/v1.0/openapi.yaml",
+        "version": "3.0"
+      }
+    ],
+    "x-providerName": "microsoft.com",
+    "x-serviceName": "graph",
+    "x-tags": [
+      "Microsoft"
+    ],
+    "x-preferred": true,
+    "x-vendored-from": "https://api.apis.guru/v2/specs/microsoft.com/graph/1.0.1/openapi.json",
+    "x-vendored-note": "Trimmed by src/providers/microsoft/specs/vendor.ts. Committed deliberately: a spec decides which paths are called with the operator token, so it must be reviewable rather than fetched at connect time."
+  },
+  "servers": [
+    {
+      "url": "https://graph.microsoft.com/v1.0"
+    }
+  ],
+  "paths": {
+    "/me/mailFolders": {
+      "description": "Provides operations to manage the mailFolders property of the microsoft.graph.user entity.",
+      "get": {
+        "description": "Get the mail folder collection directly under the root folder of the signed-in user. The returned collection includes any mail search folders directly under the root. By default, this operation does not return hidden folders. Use a query parameter _includeHiddenFolders_ to include them in the response.",
+        "externalDocs": {
+          "description": "Find more info here",
+          "url": "https://docs.microsoft.com/graph/api/user-list-mailfolders?view=graph-rest-1.0"
+        },
+        "operationId": "me.ListMailFolders",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/top"
+          },
+          {
+            "$ref": "#/components/parameters/filter"
+          },
+          {
+            "description": "Order items by property values",
+            "explode": false,
+            "in": "query",
+            "name": "$orderby",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "id desc",
+                  "childFolderCount",
+                  "childFolderCount desc",
+                  "displayName",
+                  "displayName desc",
+                  "isHidden",
+                  "isHidden desc",
+                  "parentFolderId",
+                  "parentFolderId desc",
+                  "totalItemCount",
+                  "totalItemCount desc",
+                  "unreadItemCount",
+                  "unreadItemCount desc"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          },
+          {
+            "description": "Select properties to be returned",
+            "explode": false,
+            "in": "query",
+            "name": "$select",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "childFolderCount",
+                  "displayName",
+                  "isHidden",
+                  "parentFolderId",
+                  "totalItemCount",
+                  "unreadItemCount",
+                  "childFolders",
+                  "messageRules",
+                  "messages",
+                  "multiValueExtendedProperties",
+                  "singleValueExtendedProperties"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "List mailFolders",
+        "tags": [
+          "me.mailFolder"
+        ],
+        "x-ms-docs-operation-type": "operation",
+        "x-ms-pageable": {
+          "nextLinkName": "@odata.nextLink",
+          "operationName": "listMore"
+        }
+      }
+    },
+    "/me/messages": {
+      "description": "Provides operations to manage the messages property of the microsoft.graph.user entity.",
+      "get": {
+        "description": "Get an open extension (openTypeExtension object) identified by name or fully qualified name. The table in the Permissions section lists the resources that support open extensions. The following table lists the three scenarios where you can get an open extension from a supported resource instance.",
+        "externalDocs": {
+          "description": "Find more info here",
+          "url": "https://docs.microsoft.com/graph/api/opentypeextension-get?view=graph-rest-1.0"
+        },
+        "operationId": "me.ListMessages",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/top"
+          },
+          {
+            "$ref": "#/components/parameters/search"
+          },
+          {
+            "$ref": "#/components/parameters/filter"
+          },
+          {
+            "description": "Order items by property values",
+            "explode": false,
+            "in": "query",
+            "name": "$orderby",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "id desc",
+                  "categories",
+                  "categories desc",
+                  "changeKey",
+                  "changeKey desc",
+                  "createdDateTime",
+                  "createdDateTime desc",
+                  "lastModifiedDateTime",
+                  "lastModifiedDateTime desc",
+                  "bccRecipients",
+                  "bccRecipients desc",
+                  "body",
+                  "body desc",
+                  "bodyPreview",
+                  "bodyPreview desc",
+                  "ccRecipients",
+                  "ccRecipients desc",
+                  "conversationId",
+                  "conversationId desc",
+                  "conversationIndex",
+                  "conversationIndex desc",
+                  "flag",
+                  "flag desc",
+                  "from",
+                  "from desc",
+                  "hasAttachments",
+                  "hasAttachments desc",
+                  "importance",
+                  "importance desc",
+                  "inferenceClassification",
+                  "inferenceClassification desc",
+                  "internetMessageHeaders",
+                  "internetMessageHeaders desc",
+                  "internetMessageId",
+                  "internetMessageId desc",
+                  "isDeliveryReceiptRequested",
+                  "isDeliveryReceiptRequested desc",
+                  "isDraft",
+                  "isDraft desc",
+                  "isRead",
+                  "isRead desc",
+                  "isReadReceiptRequested",
+                  "isReadReceiptRequested desc",
+                  "parentFolderId",
+                  "parentFolderId desc",
+                  "receivedDateTime",
+                  "receivedDateTime desc",
+                  "replyTo",
+                  "replyTo desc",
+                  "sender",
+                  "sender desc",
+                  "sentDateTime",
+                  "sentDateTime desc",
+                  "subject",
+                  "subject desc",
+                  "toRecipients",
+                  "toRecipients desc",
+                  "uniqueBody",
+                  "uniqueBody desc",
+                  "webLink",
+                  "webLink desc"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          },
+          {
+            "description": "Select properties to be returned",
+            "explode": false,
+            "in": "query",
+            "name": "$select",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "categories",
+                  "changeKey",
+                  "createdDateTime",
+                  "lastModifiedDateTime",
+                  "bccRecipients",
+                  "body",
+                  "bodyPreview",
+                  "ccRecipients",
+                  "conversationId",
+                  "conversationIndex",
+                  "flag",
+                  "from",
+                  "hasAttachments",
+                  "importance",
+                  "inferenceClassification",
+                  "internetMessageHeaders",
+                  "internetMessageId",
+                  "isDeliveryReceiptRequested",
+                  "isDraft",
+                  "isRead",
+                  "isReadReceiptRequested",
+                  "parentFolderId",
+                  "receivedDateTime",
+                  "replyTo",
+                  "sender",
+                  "sentDateTime",
+                  "subject",
+                  "toRecipients",
+                  "uniqueBody",
+                  "webLink",
+                  "attachments",
+                  "extensions",
+                  "multiValueExtendedProperties",
+                  "singleValueExtendedProperties"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "Get open extension",
+        "tags": [
+          "me.message"
+        ],
+        "x-ms-docs-operation-type": "operation",
+        "x-ms-pageable": {
+          "nextLinkName": "@odata.nextLink",
+          "operationName": "listMore"
+        }
+      }
+    },
+    "/me/messages/{message-id}": {
+      "description": "Provides operations to manage the messages property of the microsoft.graph.user entity.",
+      "get": {
+        "description": "The messages in a mailbox or folder. Read-only. Nullable.",
+        "operationId": "me.GetMessages",
+        "parameters": [
+          {
+            "description": "key: id of message",
+            "in": "path",
+            "name": "message-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-ms-docs-key-type": "message"
+          },
+          {
+            "description": "Select properties to be returned",
+            "explode": false,
+            "in": "query",
+            "name": "$select",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "categories",
+                  "changeKey",
+                  "createdDateTime",
+                  "lastModifiedDateTime",
+                  "bccRecipients",
+                  "body",
+                  "bodyPreview",
+                  "ccRecipients",
+                  "conversationId",
+                  "conversationIndex",
+                  "flag",
+                  "from",
+                  "hasAttachments",
+                  "importance",
+                  "inferenceClassification",
+                  "internetMessageHeaders",
+                  "internetMessageId",
+                  "isDeliveryReceiptRequested",
+                  "isDraft",
+                  "isRead",
+                  "isReadReceiptRequested",
+                  "parentFolderId",
+                  "receivedDateTime",
+                  "replyTo",
+                  "sender",
+                  "sentDateTime",
+                  "subject",
+                  "toRecipients",
+                  "uniqueBody",
+                  "webLink",
+                  "attachments",
+                  "extensions",
+                  "multiValueExtendedProperties",
+                  "singleValueExtendedProperties"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "Get messages from me",
+        "tags": [
+          "me.message"
+        ],
+        "x-ms-docs-operation-type": "operation"
+      },
+      "patch": {
+        "operationId": "me.UpdateMessages",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "The fields this call writes. A message carries far more, and the rest is computed by Graph rather than set here.",
+                "properties": {
+                  "isRead": {
+                    "nullable": true,
+                    "type": "boolean"
+                  },
+                  "categories": {
+                    "description": "The categories associated with the item",
+                    "items": {
+                      "nullable": true,
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "flag": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/microsoft.graph.followupFlag"
+                      },
+                      {
+                        "nullable": true,
+                        "type": "object"
+                      }
+                    ],
+                    "description": "The flag value that indicates the status, start date, due date, or completion date for the message."
+                  },
+                  "importance": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/microsoft.graph.importance"
+                      },
+                      {
+                        "nullable": true,
+                        "type": "object"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "isRead",
+                  "categories",
+                  "flag",
+                  "importance"
+                ]
+              }
+            }
+          },
+          "description": "New navigation property values",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "Update the navigation property messages in me",
+        "tags": [
+          "me.message"
+        ],
+        "x-ms-docs-operation-type": "operation",
+        "parameters": [
+          {
+            "description": "key: id of message",
+            "in": "path",
+            "name": "message-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-ms-docs-key-type": "message"
+          }
+        ]
+      }
+    },
+    "/me/messages/{message-id}/attachments": {
+      "description": "Provides operations to manage the attachments property of the microsoft.graph.message entity.",
+      "get": {
+        "description": "Retrieve a list of attachment objects.",
+        "externalDocs": {
+          "description": "Find more info here",
+          "url": "https://docs.microsoft.com/graph/api/eventmessage-list-attachments?view=graph-rest-1.0"
+        },
+        "operationId": "me.messages.ListAttachments",
+        "parameters": [
+          {
+            "description": "key: id of message",
+            "in": "path",
+            "name": "message-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-ms-docs-key-type": "message"
+          },
+          {
+            "$ref": "#/components/parameters/top"
+          },
+          {
+            "$ref": "#/components/parameters/filter"
+          },
+          {
+            "description": "Order items by property values",
+            "explode": false,
+            "in": "query",
+            "name": "$orderby",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "id desc",
+                  "contentType",
+                  "contentType desc",
+                  "isInline",
+                  "isInline desc",
+                  "lastModifiedDateTime",
+                  "lastModifiedDateTime desc",
+                  "name",
+                  "name desc",
+                  "size",
+                  "size desc"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          },
+          {
+            "description": "Select properties to be returned",
+            "explode": false,
+            "in": "query",
+            "name": "$select",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "contentType",
+                  "isInline",
+                  "lastModifiedDateTime",
+                  "name",
+                  "size"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "List attachments",
+        "tags": [
+          "me.message"
+        ],
+        "x-ms-docs-operation-type": "operation",
+        "x-ms-pageable": {
+          "nextLinkName": "@odata.nextLink",
+          "operationName": "listMore"
+        }
+      },
+      "x-ms-docs-grouped-path": [
+        "/me/mailFolders/{mailFolder-id}/childFolders/{mailFolder-id1}/messages/{message-id}/attachments",
+        "/me/mailFolders/{mailFolder-id}/messages/{message-id}/attachments"
+      ]
+    },
+    "/me/messages/{message-id}/attachments/{attachment-id}": {
+      "description": "Provides operations to manage the attachments property of the microsoft.graph.message entity.",
+      "get": {
+        "description": "The fileAttachment and itemAttachment attachments for the message.",
+        "operationId": "me.messages.GetAttachments",
+        "parameters": [
+          {
+            "description": "key: id of message",
+            "in": "path",
+            "name": "message-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-ms-docs-key-type": "message"
+          },
+          {
+            "description": "key: id of attachment",
+            "in": "path",
+            "name": "attachment-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-ms-docs-key-type": "attachment"
+          },
+          {
+            "description": "Select properties to be returned",
+            "explode": false,
+            "in": "query",
+            "name": "$select",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "contentType",
+                  "isInline",
+                  "lastModifiedDateTime",
+                  "name",
+                  "size"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "Get attachments from me",
+        "tags": [
+          "me.message"
+        ],
+        "x-ms-docs-operation-type": "operation"
+      },
+      "x-ms-docs-grouped-path": [
+        "/me/mailFolders/{mailFolder-id}/childFolders/{mailFolder-id1}/messages/{message-id}/attachments/{attachment-id}",
+        "/me/mailFolders/{mailFolder-id}/messages/{message-id}/attachments/{attachment-id}"
+      ]
+    },
+    "/me/microsoft.graph.sendMail": {
+      "description": "Provides operations to call the sendMail method.",
+      "post": {
+        "description": "Send the message specified in the request body using either JSON or MIME format. When using JSON format you can include a file attachment in the same **sendMail** action call. When using MIME format:\n- Provide the applicable Internet message headers and the MIME content, all encoded in **base64** format in the request body.\n- Add any attachments and S/MIME properties to the MIME content. This method saves the message in the **Sent Items** folder. Alternatively, create a draft message to send later. To learn more about the steps involved in the backend before a mail is delivered to recipients, see here.",
+        "externalDocs": {
+          "description": "Find more info here",
+          "url": "https://docs.microsoft.com/graph/api/user-sendmail?view=graph-rest-1.0"
+        },
+        "operationId": "me.sendMail",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "message"
+                ],
+                "properties": {
+                  "message": {
+                    "type": "object",
+                    "required": [
+                      "subject",
+                      "body",
+                      "toRecipients"
+                    ],
+                    "properties": {
+                      "subject": {
+                        "type": "string"
+                      },
+                      "body": {
+                        "type": "object",
+                        "required": [
+                          "contentType",
+                          "content"
+                        ],
+                        "properties": {
+                          "contentType": {
+                            "type": "string",
+                            "enum": [
+                              "text",
+                              "html"
+                            ]
+                          },
+                          "content": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "toRecipients": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/components/schemas/microsoft.graph.recipient"
+                        }
+                      },
+                      "ccRecipients": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/components/schemas/microsoft.graph.recipient"
+                        }
+                      },
+                      "bccRecipients": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/components/schemas/microsoft.graph.recipient"
+                        }
+                      }
+                    }
+                  },
+                  "saveToSentItems": {
+                    "type": "boolean",
+                    "description": "Keep a copy in Sent Items. Defaults to true."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "Invoke action sendMail",
+        "tags": [
+          "me.Actions"
+        ],
+        "x-ms-docs-operation-type": "action"
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "filter": {
+        "description": "Filter items by property values",
+        "explode": false,
+        "in": "query",
+        "name": "$filter",
+        "schema": {
+          "type": "string"
+        },
+        "style": "form"
+      },
+      "search": {
+        "description": "Search items by search phrases",
+        "explode": false,
+        "in": "query",
+        "name": "$search",
+        "schema": {
+          "type": "string"
+        },
+        "style": "form"
+      },
+      "top": {
+        "description": "Show only the first n items",
+        "example": 50,
+        "explode": false,
+        "in": "query",
+        "name": "$top",
+        "schema": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "style": "form"
+      }
+    },
+    "schemas": {
+      "microsoft.graph.dateTimeTimeZone": {
+        "properties": {
+          "@odata.type": {
+            "type": "string"
+          },
+          "dateTime": {
+            "description": "A single point of time in a combined date and time representation ({date}T{time}; for example, 2017-08-29T04:00:00.0000000).",
+            "type": "string"
+          },
+          "timeZone": {
+            "description": "Represents a time zone, for example, 'Pacific Standard Time'. See below for more possible values.",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "@odata.type"
+        ],
+        "title": "dateTimeTimeZone",
+        "type": "object"
+      },
+      "microsoft.graph.emailAddress": {
+        "properties": {
+          "@odata.type": {
+            "type": "string"
+          },
+          "address": {
+            "description": "The email address of the person or entity.",
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "description": "The display name of the person or entity.",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "@odata.type"
+        ],
+        "title": "emailAddress",
+        "type": "object"
+      },
+      "microsoft.graph.followupFlag": {
+        "properties": {
+          "@odata.type": {
+            "type": "string"
+          },
+          "completedDateTime": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/microsoft.graph.dateTimeTimeZone"
+              },
+              {
+                "nullable": true,
+                "type": "object"
+              }
+            ],
+            "description": "The date and time that the follow-up was finished."
+          },
+          "dueDateTime": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/microsoft.graph.dateTimeTimeZone"
+              },
+              {
+                "nullable": true,
+                "type": "object"
+              }
+            ],
+            "description": "The date and time that the follow up is to be finished. Note: To set the due date, you must also specify the startDateTime; otherwise, you will get a 400 Bad Request response."
+          },
+          "flagStatus": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/microsoft.graph.followupFlagStatus"
+              },
+              {
+                "nullable": true,
+                "type": "object"
+              }
+            ],
+            "description": "The status for follow-up for an item. Possible values are notFlagged, complete, and flagged."
+          },
+          "startDateTime": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/microsoft.graph.dateTimeTimeZone"
+              },
+              {
+                "nullable": true,
+                "type": "object"
+              }
+            ],
+            "description": "The date and time that the follow-up is to begin."
+          }
+        },
+        "required": [
+          "@odata.type"
+        ],
+        "title": "followupFlag",
+        "type": "object"
+      },
+      "microsoft.graph.followupFlagStatus": {
+        "enum": [
+          "notFlagged",
+          "complete",
+          "flagged"
+        ],
+        "title": "followupFlagStatus",
+        "type": "string"
+      },
+      "microsoft.graph.importance": {
+        "enum": [
+          "low",
+          "normal",
+          "high"
+        ],
+        "title": "importance",
+        "type": "string"
+      },
+      "microsoft.graph.recipient": {
+        "discriminator": {
+          "mapping": {
+            "#microsoft.graph.attendee": "#/components/schemas/microsoft.graph.attendee",
+            "#microsoft.graph.attendeeBase": "#/components/schemas/microsoft.graph.attendeeBase"
+          },
+          "propertyName": "@odata.type"
+        },
+        "properties": {
+          "@odata.type": {
+            "type": "string"
+          },
+          "emailAddress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/microsoft.graph.emailAddress"
+              },
+              {
+                "nullable": true,
+                "type": "object"
+              }
+            ],
+            "description": "The recipient's email address."
+          }
+        },
+        "required": [
+          "@odata.type"
+        ],
+        "title": "recipient",
+        "type": "object"
+      }
+    }
+  }
+}

@@ -322,7 +322,7 @@ connections:
     test('is the only candidate when the manifest derives none', async () => {
       // A `local` provider authenticates with nothing, so there is no derived
       // ref to disagree with — and `resolveSecretRefs` makes this connection's
-      // whole allowlist, which `docs/detailed/creating-a-provider.md` says outright.
+      // whole allowlist, which `https://lanes.sh/docs/link/creating-a-provider` says outright.
       const local = config(`
 connections:
   - id: a

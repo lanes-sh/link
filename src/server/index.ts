@@ -1,7 +1,7 @@
 import type { Authenticator } from '#auth';
 import type { Logger } from '#connectivity';
 import { capabilityIdForToolName } from '#server/mcp';
-import { ATTACHMENTS_PATH, stageAttachment } from './attachments.ts';
+import { ATTACHMENTS_PATH, handleAttachments } from './attachments.ts';
 import { allowedHostnamesFor, rebindingRefusal } from './rebinding.ts';
 import { ANY_ORIGIN, corsAware, type CorsPolicy } from './cors.ts';
 import type { Generation } from './generation.ts';
@@ -234,7 +234,7 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
         // into one named connection rather than a shared area, so a staged file
         // stays as isolated as the account it was staged for.
         if (url.pathname === ATTACHMENTS_PATH) {
-          return await stageAttachment({
+          return await handleAttachments({
             profiles: generation.profiles,
             primary: options.primary,
             principal: outcome.principal,
@@ -262,7 +262,7 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
         // whose default is `'stateless'`, so those requests are served rather
         // than refused. This check short-circuits and the refusal goes
         // unrecorded. That is the second documented exception to
-        // `audit.every-invocation` in `docs/detailed/security.md`, asserted in
+        // `audit.every-invocation` in `https://lanes.sh/docs/link/security`, asserted in
         // `index.test.ts`. Closing it means cloning and parsing the body when
         // the header is absent, which is what `stdio.ts` does for want of
         // headers.

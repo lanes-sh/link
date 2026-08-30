@@ -11,6 +11,7 @@ export const OPERATIONS = {
   listMailboxes: 'list_mailboxes',
   searchMessages: 'search_messages',
   getMessage: 'get_message',
+  getAttachment: 'get_attachment',
   markMessages: 'mark_messages',
   moveMessages: 'move_messages',
   sendMessage: 'send_message',

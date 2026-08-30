@@ -8,7 +8,7 @@ import type { PolicyReader } from './iam.ts';
 /**
  * The project-level things a Cloud Run deploy needs to already exist.
  *
- * These used to be a numbered list in `docs/detailed/deployment-cloudrun.md` that the
+ * These used to be a numbered list in `https://lanes.sh/docs/link/deployment-cloudrun` that the
  * operator worked through by hand before their first deploy could get past its
  * first step. Everything here is derivable from what the target already
  * declares, so asking someone to transcribe it into a console was work with no

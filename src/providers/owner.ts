@@ -1,7 +1,8 @@
 /**
- * The owner layer — memory, tasks, assets, skills, vault, setup, identity.
+ * The owner layer — memory, tasks, assets, skills, vault, setup, identity,
+ * entities.
  *
- * Seven providers that hold no third-party account: no OAuth, no vendor API, no
+ * Eight providers that hold no third-party account: no OAuth, no vendor API, no
  * rate limit anyone else imposes. They are ordinary `defineLocalProvider`
  * registrations, scoped by the same profiles and gated by the same policy
  * evaluation as everything else — which was the claim `docs/detailed/init.md`
@@ -33,7 +34,16 @@
  * naming the owner and describing what is connected are two policy decisions
  * instead of one.
  *
- * All seven ids are reserved (`RESERVED_PROVIDER_IDS`) and still refused by
+ * `entities` is its mirror: who and what *everyone else* is — the people,
+ * companies and projects the owner deals with, and their canonical addresses —
+ * so that a reference is looked up rather than inferred from whatever was in
+ * the conversation. It is writable where `identity` is not, and the two are
+ * consistent rather than in tension: identity is configuration, so an agent
+ * able to edit it could edit the one fact that stops it signing as the wrong
+ * person, while everyone else's details are ordinary owner material that
+ * accumulates on the same surface that reads it (ADR-056).
+ *
+ * All eight ids are reserved (`RESERVED_PROVIDER_IDS`) and still refused by
  * default — the registry has to be built with `allowReserved` to hold them, so a
  * third-party provider cannot claim a namespace whose policy rules would then
  * mean something else. `tasks` cost something to reserve: Google Tasks held that
@@ -57,6 +67,8 @@ export { createSkillsProvider, type SkillsProviderOptions } from './skills/provi
 export { createVaultProvider, type VaultProviderOptions } from './vault/provider.ts';
 export { createSetupProvider, type SetupProviderOptions } from './setup/provider.ts';
 export { createIdentityProvider, type IdentityProviderOptions } from './identity/provider.ts';
+export { entitiesProvider } from './entities/provider.ts';
+export { entityStorage, type Attribute, type Entity, type Relation } from './entities/store.ts';
 export { planAll, planFor, type PlanContext, type ProviderPlan } from './setup/plan.ts';
 // The vault's *store* is not here: it is `#secrets`, beside the system
 // credential store it must never become. What lives in `./vault/` is the

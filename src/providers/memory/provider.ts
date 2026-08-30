@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { splitOptionalFrontmatter, stringList, withFrontmatter } from '#providers/shared/frontmatter.ts';
+import { slugify as slugifyText } from '#providers/shared/slug.ts';
 import {
   defineLocalProvider,
   keepKeys,
@@ -11,7 +12,7 @@ import {
  * `memory` — the owner's accumulated knowledge.
  *
  * **Reading and writing are separate capabilities**, and that separation is the
- * whole security argument for this provider (ADR-012 §2, `docs/detailed/security.md`).
+ * whole security argument for this provider (ADR-012 §2, `https://lanes.sh/docs/link/security`).
  * Upstream content is already treated as potentially prompt-injecting and passed
  * through unscreened; memory an agent can *write to* changes the shape of that
  * risk rather than its size, because an injected instruction is stored once and
@@ -167,13 +168,7 @@ async function allEntries(storage: BlobStore): Promise<Entry[]> {
 
 /** A stable id from a title, so writing does not demand one be invented. */
 function slugify(title: string): string {
-  const slug = title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60);
-
-  return slug.length > 0 ? slug : `entry-${title.length}`;
+  return slugifyText(title, 'entry');
 }
 
 export const memoryProvider: ProviderDefinition = defineLocalProvider({

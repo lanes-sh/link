@@ -5,6 +5,7 @@ import type { BlobStore } from '#stores/blobs';
 import type { ResolvedAttachment } from './message.ts';
 import { getStaged } from './staging.ts';
 import { fetchFromUrl, type AddressLookup } from './url.ts';
+import { basename, guessContentType } from './content-type.ts';
 
 /**
  * Turning a named attachment into bytes.
@@ -21,11 +22,12 @@ import { fetchFromUrl, type AddressLookup } from './url.ts';
  *   url         fetched over HTTPS, with the checks in `url.ts`
  *   handle      bytes staged earlier through the upload route
  *   message_id  an attachment already sitting in the mailbox being used
+ *   uid         the same, addressed the way the mailbox itself addresses it
  *   data        base64 inline — the escape hatch, not the path
  *
  * `path` is deliberately unrestricted: no allowlist, no confinement to a root.
  * The endpoint already holds its owner's credentials, so the filesystem is
- * treated the same way, and `docs/detailed/creating-a-provider.md`'s note that provider
+ * treated the same way, and `https://lanes.sh/docs/link/creating-a-provider`'s note that provider
  * code is trusted code applies here too. What makes that defensible is the audit
  * trail rather than a sandbox — every resolved attachment carries its origin and
  * a SHA-256, and the manifest's `redact` block keeps both, so "was this file ever
@@ -34,7 +36,7 @@ import { fetchFromUrl, type AddressLookup } from './url.ts';
  */
 
 /** The source keys, in the order they are reported when a caller supplies two. */
-const SOURCE_KEYS = ['path', 'url', 'handle', 'message_id', 'data'] as const;
+const SOURCE_KEYS = ['path', 'url', 'handle', 'message_id', 'uid', 'data'] as const;
 
 export const attachmentRefSchema = z
   .strictObject({
@@ -48,10 +50,22 @@ export const attachmentRefSchema = z
       .string()
       .optional()
       .describe('Re-attach an attachment already on a message in this mailbox.'),
+    uid: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe(
+        'Re-attach from a message named by its mailbox UID, as search_messages and get_message report it. Pair with mailbox. Prefer this to message_id on a mailbox that has both: it addresses the message directly instead of searching every folder for a header.',
+      ),
+    mailbox: z
+      .string()
+      .optional()
+      .describe('Which mailbox the uid belongs to. Defaults to INBOX.'),
     attachment_id: z
       .string()
       .optional()
-      .describe('Which attachment on that message. Required with message_id where the provider ids them.'),
+      .describe('Which attachment on that message. Required with message_id or uid where the provider ids them.'),
     data: z
       .string()
       .optional()
@@ -61,7 +75,7 @@ export const attachmentRefSchema = z
     filename: z.string().optional().describe('Overrides the name derived from the source.'),
     content_type: z.string().optional().describe('Overrides the type derived from the source.'),
   })
-  .describe('One attachment, named by exactly one of path, url, handle, message_id, or data.');
+  .describe('One attachment, named by exactly one of path, url, handle, message_id, uid, or data.');
 
 export type AttachmentRef = z.infer<typeof attachmentRefSchema>;
 
@@ -82,9 +96,23 @@ export const attachmentsJsonSchema = ((): Record<string, unknown> => {
   return schema;
 })();
 
-/** Pulls bytes for `message_id` out of whatever mailbox the caller is already in. */
+/**
+ * Pulls bytes for `message_id` or `uid` out of the mailbox the caller is already in.
+ *
+ * Two ways to name the message, because the two protocols name it differently
+ * and only one of them can do both. A `uid` is what IMAP itself uses and what
+ * `search_messages` and `get_message` already report, so it addresses a message
+ * directly; a `messageId` has to be *searched* for, folder by folder, and a
+ * server whose `HEADER MESSAGE-ID` matching is unreliable fails that search on a
+ * message it is holding. Gmail's REST API has no uid and takes its own id.
+ *
+ * Exactly one arrives set. An implementation that cannot serve the one it is
+ * given should say so naming the other, rather than returning nothing.
+ */
 export type MailboxAttachmentSource = (reference: {
-  readonly messageId: string;
+  readonly messageId: string | undefined;
+  readonly mailbox: string | undefined;
+  readonly uid: number | undefined;
   readonly attachmentId: string | undefined;
 }) => Promise<{
   readonly bytes: Uint8Array;
@@ -213,21 +241,25 @@ async function bytesFor(
     case 'handle':
       return await fromHandle(ref.handle!, where, options.storage);
 
-    case 'message_id': {
+    case 'message_id':
+    case 'uid': {
       if (!options.mailbox) {
         throw new Error(
-          `${where} uses message_id, which this provider cannot resolve. Fetch the attachment and stage it, or use path or url.`,
+          `${where} uses ${source}, which only a mail connection can resolve — this one holds no mailbox. ` +
+            `Name the file with path, url, or handle instead, or ask the mail connection itself to send it somewhere.`,
         );
       }
       const found = await options.mailbox({
-        messageId: ref.message_id!,
+        messageId: ref.message_id,
+        mailbox: ref.mailbox,
+        uid: ref.uid,
         attachmentId: ref.attachment_id,
       });
       return {
         bytes: found.bytes,
         filename: found.filename,
         contentType: found.contentType,
-        origin: `mailbox:${ref.message_id!}`,
+        origin: source === 'uid' ? `mailbox:${ref.mailbox ?? 'INBOX'}:${ref.uid!}` : `mailbox:${ref.message_id!}`,
       };
     }
 
@@ -306,67 +338,4 @@ function decodeBase64(value: string, where: string): Uint8Array {
   } catch {
     throw new Error(`${where}: data is not valid base64.`);
   }
-}
-
-function basename(path: string): string | null {
-  const name = path.split(/[/\\]/).pop();
-  return name ? decodeURIComponent(name) : null;
-}
-
-/**
- * Type from the filename, since three of the five sources do not report one.
- *
- * A table rather than `Bun.file().type`, which would resolve this in one line:
- * Bun-specific APIs are confined to two named files, and a mail composer is not
- * one of them. Deliberately short — what an attachment actually is, not a mime
- * database. Anything unlisted becomes `application/octet-stream`, which every
- * mail client handles as "a file", so the failure mode is a generic icon rather
- * than a broken attachment.
- */
-const CONTENT_TYPES: Readonly<Record<string, string>> = {
-  pdf: 'application/pdf',
-  txt: 'text/plain',
-  md: 'text/markdown',
-  csv: 'text/csv',
-  html: 'text/html',
-  json: 'application/json',
-  xml: 'application/xml',
-  ics: 'text/calendar',
-  vcf: 'text/vcard',
-  png: 'image/png',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  gif: 'image/gif',
-  webp: 'image/webp',
-  svg: 'image/svg+xml',
-  heic: 'image/heic',
-  tiff: 'image/tiff',
-  zip: 'application/zip',
-  gz: 'application/gzip',
-  mp3: 'audio/mpeg',
-  m4a: 'audio/mp4',
-  wav: 'audio/wav',
-  mp4: 'video/mp4',
-  mov: 'video/quicktime',
-  doc: 'application/msword',
-  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  xls: 'application/vnd.ms-excel',
-  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  ppt: 'application/vnd.ms-powerpoint',
-  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  // `.pages`, `.numbers` and `.key` are absent on purpose. Their registered
-  // media types carry a vendor name, and `architecture.test.ts` refuses one
-  // anywhere a request passes through — correctly, even though an IANA type is
-  // not the vendor *knowledge* that rule is aimed at. They fall through to
-  // octet-stream, which mail clients show as a file and the recipient's system
-  // opens by extension anyway. Adding them back will fail the suite.
-};
-
-/**
- * Exported because `assets` needs exactly this and the table above must not be
- * copied — its `.pages`/`.numbers` note is a rule the copy would not carry.
- */
-export function guessContentType(filename: string): string {
-  const extension = filename.split('.').pop()?.toLowerCase();
-  return (extension ? CONTENT_TYPES[extension] : undefined) ?? 'application/octet-stream';
 }

@@ -35,7 +35,8 @@ One attachment carries exactly one source key:
 | `path` | A file on the machine running this endpoint. Read as-is. |
 | `url` | Fetched over HTTPS by the endpoint, with the checks below. |
 | `handle` | Bytes staged earlier through the upload route. |
-| `message_id` | An attachment already on a message in this mailbox. |
+| `message_id` | An attachment already on a message in this mailbox, found by its RFC 2822 header. |
+| `uid` | The same attachment, named by the mailbox and uid the mailbox itself reports. |
 | `data` | Base64 inline — the escape hatch, not the path. |
 
 Exactly one, enforced at runtime rather than resolved by precedence. Silently preferring one
@@ -93,7 +94,7 @@ Refusing at 5 MB would have been a limit we invented.
 ### `path` is unrestricted, and the audit record is what makes that defensible
 
 No allowlist, no confinement to a root. The endpoint already holds its owner's credentials, so the
-filesystem is treated the same way, and `docs/detailed/creating-a-provider.md` already says provider code is
+filesystem is treated the same way, and `https://lanes.sh/docs/link/creating-a-provider` already says provider code is
 trusted code.
 
 What makes it defensible is the record rather than a sandbox. Every resolved attachment carries a
@@ -173,3 +174,43 @@ clear the last batch.
   reentrancy or a hole in the connection boundary. Staging covers the case today.
 - **MCP `roots`.** Transfers no bytes, names paths on the client's host, deprecated, and
   unimplemented by the two clients that matter.
+
+## Amendment: addressing a mailbox attachment by uid
+
+`message_id` was the only way to name a message already in the mailbox, and it obliges a search —
+the reference carries no folder, so every folder but Trash and Junk is examined in turn and matched
+on `HEADER MESSAGE-ID`. That is a substring test the server implements however it likes, and an
+iCloud mailbox was observed answering "no message with that Message-ID" for a message it was
+holding. The attachment was unreachable by every route: unreadable through `get_message`, which
+reports metadata only, and unattachable through the one source meant for exactly this.
+
+`uid` is the same idea addressed the way IMAP addresses it. `search_messages` and `get_message`
+already report a uid and the mailbox it belongs to, so the caller has the pair in hand; resolving it
+is one `EXAMINE` and one `UID FETCH`, with no searching and nothing for a server to implement
+badly.
+
+Both stay, because they fail in opposite directions: a uid is invalid outside its mailbox and is
+invalidated by the message moving, while a Message-ID survives both and cannot be resolved without a
+search. A provider that cannot serve the one it is given refuses naming the other — Gmail's REST API
+has no uid, and says so rather than returning a 404 that explains nothing.
+
+## Amendment: the same door, outward
+
+Attachments were one-directional, and the asymmetry was not a decision — it was the upload route
+being built for sending and nothing being built for the other way. `get_message` described what a
+message carried, `send_message` could attach it back out, and there was no way to simply *have* the
+file. Both workarounds people reached for are dead ends: storing it as an asset cannot resolve a
+mailbox reference, because a provider's store is scoped to its own connection; and mailing it to
+yourself needs the message found again by a header search some servers do badly.
+
+`get_attachment` reads the bytes, stages them under a handle, and returns a receipt.
+`GET /attachments?connection=…&handle=…` hands them over. That is the upload route run backwards,
+on the same path, with the same authorization and — the part that matters — **the same scoping**:
+the store is namespaced by provider and connection at both ends, so a handle minted for one
+connection resolves from that connection and no other. Nothing is bridged and no provider gains
+reach it did not have.
+
+The rule this ADR exists for is unchanged and applies in the new direction: **the bytes never enter
+the tool result**. A model that must read a file in order to have it has not been handed anything —
+239 KB of PDF is around 320,000 characters of base64 — so what travels through the conversation is
+a handle, exactly as it does on the way in.

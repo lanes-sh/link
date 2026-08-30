@@ -73,6 +73,110 @@ const stage = async (
   });
 };
 
+/** The download half: same path, same query, a handle instead of a body. */
+const collect = async (
+  base: string,
+  init: { handle: string; connection?: string; token?: string | null },
+): Promise<Response> => {
+  const headers: Record<string, string> = {};
+  if (init.token !== null) headers['authorization'] = `Bearer ${init.token ?? TEST_TOKEN}`;
+
+  const origin = new URL(base).origin;
+  const connection = init.connection ?? 'example.a';
+  return fetch(`${origin}/attachments?connection=${connection}&handle=${init.handle}`, { headers });
+};
+
+describe('handing bytes back', () => {
+  test('a staged file round-trips, byte for byte, with its name and type', async () => {
+    // The direction that did not exist. An attachment could be described by
+    // get_message and forwarded by send_message, and there was no way to simply
+    // have it — so a file that arrived by mail was unreachable except by mailing
+    // it somewhere else.
+    const bytes = new Uint8Array([1, 2, 3, 4, 5]);
+    const staged = (await json(
+      await stage(endpoint.server.url, { filename: 'card.pdf', body: bytes }),
+    )) as { handle: string };
+
+    const response = await collect(endpoint.server.url, { handle: staged.handle });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('application/pdf');
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes);
+    expect(response.headers.get('content-disposition')).toContain('card.pdf');
+    // Not a shared cache's business, however unguessable the handle is.
+    expect(response.headers.get('cache-control')).toBe('no-store');
+  });
+
+  test('a non-ASCII filename survives, both ways round', async () => {
+    // RFC 6266. A raw header would be rejected outright, and mail attachments
+    // are exactly where this bites.
+    const staged = (await json(
+      await stage(endpoint.server.url, { filename: 'Rechnung_Kaufmännisch.pdf' }),
+    )) as { handle: string };
+
+    const disposition =
+      (await collect(endpoint.server.url, { handle: staged.handle })).headers.get(
+        'content-disposition',
+      ) ?? '';
+
+    expect(disposition).toContain("filename*=UTF-8''");
+    expect(disposition).toContain(encodeURIComponent('Rechnung_Kaufmännisch.pdf'));
+    // The ASCII fallback stays ASCII, or the header is invalid for old clients.
+    const fallback = /filename="([^"]*)"/.exec(disposition)?.[1] ?? '';
+    expect(fallback).toMatch(/^[\x20-\x7e]*$/);
+  });
+
+  test('a handle staged for one connection is not fetchable from another', async () => {
+    // The property the whole scoping exists for. `example.b` is reachable for
+    // this token exactly as `example.a` is, so this is not a policy refusal —
+    // it is the namespace, and it has to hold even between two accounts the
+    // caller may otherwise use.
+    const staged = (await json(
+      await stage(endpoint.server.url, { query: 'connection=example.a' }),
+    )) as { handle: string };
+
+    const response = await collect(endpoint.server.url, {
+      handle: staged.handle,
+      connection: 'example.b',
+    });
+
+    expect(response.status).toBe(404);
+  });
+
+  test('an unknown handle is a 404, told the same way as a wrong connection', async () => {
+    const response = await collect(endpoint.server.url, {
+      handle: 'att_00000000000000000000000000000000',
+    });
+
+    expect(response.status).toBe(404);
+  });
+
+  test('a malformed handle is refused before it reaches the store', async () => {
+    const response = await collect(endpoint.server.url, { handle: '../../etc/passwd' });
+
+    expect(response.status).toBe(400);
+  });
+
+  test('a fetch still needs the bearer token', async () => {
+    const staged = (await json(await stage(endpoint.server.url))) as { handle: string };
+
+    const response = await collect(endpoint.server.url, { handle: staged.handle, token: null });
+
+    expect(response.status).toBe(401);
+  });
+
+  test('a token that cannot reach the connection cannot fetch from it either', async () => {
+    const staged = (await json(await stage(endpoint.server.url))) as { handle: string };
+
+    const response = await collect(narrow.server.url, {
+      handle: staged.handle,
+      token: 'llk_work_token_value',
+    });
+
+    expect(response.status).toBe(403);
+  });
+});
+
 describe('staging bytes for a later call', () => {
   test('returns a handle, a digest, and an expiry', async () => {
     const response = await stage(endpoint.server.url, { filename: 'invoice.pdf' });
@@ -185,12 +289,26 @@ describe('what it refuses', () => {
     expect(String((await json(response))['error'])).toContain('empty');
   });
 
-  test('a GET, naming the method it wants', async () => {
+  test('a method that is neither direction, naming the two that are', async () => {
+    // GET used to be refused here. It is the download half now — the same path,
+    // the same scoping — so the refusal moved to the methods that mean nothing
+    // on this route rather than being deleted.
     const response = await fetch(`${new URL(endpoint.server.url).origin}/attachments?connection=example.a`, {
+      method: 'DELETE',
       headers: { authorization: `Bearer ${TEST_TOKEN}` },
     });
 
     expect(response.status).toBe(405);
+    expect(await response.text()).toMatch(/POST.*GET|GET.*POST/s);
+  });
+
+  test('a GET with no handle says what is missing rather than 404ing', async () => {
+    const response = await fetch(`${new URL(endpoint.server.url).origin}/attachments?connection=example.a`, {
+      headers: { authorization: `Bearer ${TEST_TOKEN}` },
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toMatch(/handle/);
   });
 
   test('an unknown path is still a 404, so the route did not widen the surface', async () => {

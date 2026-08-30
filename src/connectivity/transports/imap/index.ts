@@ -44,6 +44,8 @@ import type { SocketFactory } from './socket.ts';
  */
 
 import { imapCapabilities } from './capabilities.ts';
+import { mailboxAttachments } from './attachment.ts';
+import { getAttachment } from './download.ts';
 import { OPERATIONS } from './operations.ts';
 import { error, json } from './result.ts';
 import {
@@ -114,6 +116,17 @@ export function createImapConnector(options: ImapConnectorOptions): Connector {
             return await client.run((session) => searchMessages(session, args));
           case OPERATIONS.getMessage:
             return await client.run((session) => getMessage(session, args, options.maxBodyBytes));
+          case OPERATIONS.getAttachment:
+            // Handed the context for the same reason `send_message` is: what
+            // came out is worth recording as resolved facts, and the raw
+            // argument cannot say what the file turned out to be.
+            return await getAttachment(
+              mailboxAttachments(client),
+              args as Record<string, unknown>,
+              context.provider.audit,
+              context.provider.storage,
+              context.provider.connection,
+            );
           case OPERATIONS.markMessages:
             // Never retried. A repeated flag change is harmless, but keeping the
             // rule uniform is what stops the exceptions from multiplying.

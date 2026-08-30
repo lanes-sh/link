@@ -6,7 +6,6 @@ import type { BlobStore } from '#stores/blobs';
 import type { AnyConnector, ProviderManifest } from '#connectivity';
 import { RateLimiter, allowedConnections } from '#policy';
 import {
-  KNOWLEDGE_LAYOUT,
   layout,
   listProfiles,
   workspacePath,
@@ -26,7 +25,7 @@ import {
   type StorageFactory,
   type TargetInput,
 } from '#deployments/target.ts';
-import { openKnowledge, type FetchLike, type KnowledgeStores } from '#deployments/knowledge.ts';
+import { knowledgeRoutes, openKnowledge, type FetchLike, type KnowledgeStores } from '#deployments/knowledge.ts';
 import { routeBlobStore } from '#stores/blobs/route.ts';
 import { connectorFactory } from '#connectivity/transports';
 import { requestAuthorizer } from '#connectivity/auth/index.ts';
@@ -174,9 +173,7 @@ export async function openRuntime(
   // The audit log, `state.kv`, the credential store and the vault keep their
   // own roots on the target's own storage and are untouched.
   const knowledge = await openKnowledge(adapters, credentials, options.fetch);
-  const storage = knowledge
-    ? routeBlobStore(storageFor(), [{ prefix: `${KNOWLEDGE_LAYOUT.memory}/`, store: knowledge.memory }])
-    : storageFor();
+  const storage = knowledge ? routeBlobStore(storageFor(), knowledgeRoutes(knowledge)) : storageFor();
   const state = openState(storageFor, config.instance.profile);
 
   // The durable log, plus any copies the target declares. `sink` is what
@@ -195,7 +192,7 @@ export async function openRuntime(
   // The vault's own store, beside the credential store and never it: a separate
   // document, a separate key, and a separate environment variable
   // (`LANES_LINK_VAULT_KEY`). One master secret reused across purposes turns any
-  // single compromise into a total one — `docs/detailed/security.md`, and the boundary
+  // single compromise into a total one — `https://lanes.sh/docs/link/security`, and the boundary
   // test that has existed since M1.
   //
   // Opened before the registry because each stored item becomes its own
@@ -327,7 +324,14 @@ export async function openRuntime(
   // dispatcher and the CLI share it deliberately: a stateful connector must be
   // the *same instance* whichever side asks for it, or a held session is held
   // twice.
-  const connectorFor = connectorFactory({ registry, credentials });
+  const connectorFor = connectorFactory({
+    registry,
+    credentials,
+    // From the connection row, which is where a per-connection setting has
+    // always lived. One lookup behind both, so they cannot disagree.
+    connectionConfig: (provider, id) => row(config, provider, id)?.config,
+    isDeclared: (provider, id) => row(config, provider, id) !== undefined,
+  });
   const authorizeRequest = requestAuthorizer(registry, credentials);
   let closed = false;
 
@@ -385,3 +389,6 @@ export async function openRuntime(
     },
   };
 }
+
+const row = (config: Config, provider: string, id: string) =>
+  config.connections.find((connection) => connection.provider === provider && connection.id === id);

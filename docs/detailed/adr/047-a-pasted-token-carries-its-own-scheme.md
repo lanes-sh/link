@@ -65,11 +65,11 @@ response, and a webhook token is standalone: anybody holding it can post to that
 other authentication. It therefore reaches the model.
 
 This is a real weakening and it is recorded as one — `provider.response-may-carry-a-credential`,
-NOT-GUARANTEED, in [`security.md`](../security.md). It is accepted because the alternative is not
+NOT-GUARANTEED, in [`security.md`](https://lanes.sh/docs/link/security). It is accepted because the alternative is not
 "the same thing, safely" but "no posting under the operator's own name", which was the point.
 Bounded three ways: the token only posts to the one channel it was made for, `redact` withholds
 `webhook_token` from the audit log so it is not also written down in clear, and
-`docs/detailed/setup/discord.md` says plainly that a webhook is a credential and how to revoke one.
+`https://lanes.sh/docs/link/discord` says plainly that a webhook is a credential and how to revoke one.
 
 **No capability is authored.** An authored `announce` capability could find-or-create the webhook
 and post through it without ever returning the token, which would close the exposure above. It is

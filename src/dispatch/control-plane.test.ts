@@ -15,6 +15,7 @@ import {
   createSetupProvider,
   createSkillsProvider,
   createVaultProvider,
+  entitiesProvider,
   memoryProvider,
   tasksProvider,
 } from '#providers/owner.ts';
@@ -81,6 +82,10 @@ function registryWithBuiltins(): ProviderRegistry {
   registry.register(
     createIdentityProvider({ profile: 'personal', target: 'local', entries: [] }),
   );
+  // Writable, unlike the two above, and still nothing here is a control-plane
+  // operation: what it changes is the owner's own record of other people, not
+  // what any agent is authorised to do next.
+  registry.register(entitiesProvider);
 
   return registry;
 }

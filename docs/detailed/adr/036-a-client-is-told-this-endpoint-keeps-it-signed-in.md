@@ -108,7 +108,7 @@ implementation contradicts.
 **It does not make a client refresh.** Everything here is the server's half: the offer, the
 grant, and an accurate refusal. A connector that discards its own credentials, or never attempts
 the refresh, is beyond anything the endpoint can say — and that has been observed too, with no
-request reaching the endpoint at all. `docs/clients.md` says how to tell that case apart.
+request reaching the endpoint at all. `https://lanes.sh/docs/link/clients` says how to tell that case apart.
 
 **It does not adopt sender-constrained tokens.** DPoP (RFC 9449) is the stronger answer to
 everything ADR-035 traded away, and would let rotation relax rather than tighten. No mainstream

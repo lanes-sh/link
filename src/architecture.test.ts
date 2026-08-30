@@ -137,8 +137,17 @@ describe('dependency direction', () => {
  * way it is, and deleting that sentence to satisfy a grep would make the code
  * worse. What must not appear is a vendor name the code *branches on* or
  * *prints*.
+ *
+ * Four vendors are deliberately absent: Close, Remote, Resend, and Workable.
+ * Each is a provider like any other, but "close" is what a socket does,
+ * "remote" is half the vocabulary of a transport, and "resend" and "workable"
+ * both appear in ordinary prose about retries and schemas. Matching on them
+ * would flag scores of lines of protocol code, and a detector suppressed
+ * everywhere detects nothing — this list is a sample of names likely to leak,
+ * not a roll of every provider.
  */
-const VENDORS = /\b(gmail|icloud|notion|linear|apple|google|dropbox|fastmail|reddit|bunq|discord)\b/i;
+const VENDORS =
+  /\b(gmail|icloud|notion|linear|apple|google|dropbox|fastmail|reddit|bunq|discord|asana|stripe|sentry|figma|canva|todoist|clickup|monday|airtable|miro|calendly|zapier|paypal|square|mercury|vercel|netlify|supabase|neon|prisma|sanity|webflow|wix|datadog|grafana|fireflies|gamma|jam|cloudflare|algolia|amplitude|apify|attio|betterstack|brightdata|buildkite|circleci|contentful|expensify|flagsmith|heroku|hygraph|insightly|klaviyo|mixpanel|mux|navan|paddle|posthog|ramp|recurly|replicate|riverside|rootly|rudderstack|salesloft|shortcut|storyblok|tavily|vimeo|whimsical|zoho|yahoo|microsoft|outlook|onedrive|entra|atlassian|hubspot|jira|confluence)\b/i;
 
 /**
  * Where the rule bites: the machinery a request passes through.
@@ -306,7 +315,35 @@ const MAX_LINES = 400;
  * `knowledge`, which is fourteen lines of the same shape as the twenty-seven
  * cases around it.
  */
+/**
+ * `server/mcp/instructions.ts` is the same case again, and the split it looks
+ * like it wants is the one thing that would damage it.
+ *
+ * The file is a list of paragraphs — one per owner surface an agent can reach,
+ * each carrying the story of the mistake it prevents — plus one assembler and
+ * one ceiling. Its length is a count of *surfaces*, which is `cli/main.ts`'s
+ * argument for being a count of *commands*.
+ *
+ * The obvious cut is prose into one module and assembly into another, and it is
+ * wrong here specifically: `MAX_INSTRUCTIONS` is a *measurement of the prose*,
+ * and its docstring carries the arithmetic that produced it. Putting the number
+ * in one file and the thing it measures in another is exactly how the two come
+ * to disagree — which that docstring records having already happened once, when
+ * the test asserted a literal while the code reserved room against a second,
+ * differently-derived number.
+ *
+ * It crossed the line adding `entities` (ADR-056): two paragraphs and a
+ * collapsed pair, the same shape as the eight around them. That is the
+ * concession, and it is worth naming as one — the alternative was a shorter
+ * paragraph, and a paragraph shortened to fit a line budget is a worse trade
+ * than a long file.
+ *
+ * What would earn a split is something here that is neither a paragraph nor its
+ * assembly: per-client branching, or prose built from configuration rather than
+ * declared. Both are visible in a diff.
+ */
 const KNOWN_LONG = new Set([
+  'server/mcp/instructions.ts',
   'cli/main.ts',
   'connectivity/transports/dav/ical.ts',
   'deployments/adapters/gcp-secret-manager.ts',

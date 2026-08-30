@@ -1,0 +1,993 @@
+{
+  "openapi": "3.0.1",
+  "info": {
+    "contact": {
+      "x-twitter": "microsoft"
+    },
+    "description": "This OData service is located at https://graph.microsoft.com/v1.0",
+    "title": "OData Service for namespace microsoft.graph",
+    "version": "1.0.1",
+    "x-apisguru-categories": [
+      "developer_tools"
+    ],
+    "x-logo": {
+      "url": "https://api.apis.guru/v2/cache/logo/https_twitter.com_microsoft_profile_image.png"
+    },
+    "x-ms-generated-by": {
+      "toolName": "Microsoft.OpenApi.OData",
+      "toolVersion": "1.0.9.0"
+    },
+    "x-origin": [
+      {
+        "format": "openapi",
+        "url": "https://raw.githubusercontent.com/microsoftgraph/msgraph-metadata/master/openapi/v1.0/openapi.yaml",
+        "version": "3.0"
+      }
+    ],
+    "x-providerName": "microsoft.com",
+    "x-serviceName": "graph",
+    "x-tags": [
+      "Microsoft"
+    ],
+    "x-preferred": true,
+    "x-vendored-from": "https://api.apis.guru/v2/specs/microsoft.com/graph/1.0.1/openapi.json",
+    "x-vendored-note": "Trimmed by src/providers/microsoft/specs/vendor.ts. Committed deliberately: a spec decides which paths are called with the operator token, so it must be reviewable rather than fetched at connect time."
+  },
+  "servers": [
+    {
+      "url": "https://graph.microsoft.com/v1.0"
+    }
+  ],
+  "paths": {
+    "/drives/{drive-id}/items/{driveItem-id}": {
+      "description": "Provides operations to manage the items property of the microsoft.graph.drive entity.",
+      "get": {
+        "description": "All items contained in the drive. Read-only. Nullable.",
+        "operationId": "drives.GetItems",
+        "parameters": [
+          {
+            "description": "key: id of drive",
+            "in": "path",
+            "name": "drive-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-ms-docs-key-type": "drive"
+          },
+          {
+            "description": "key: id of driveItem",
+            "in": "path",
+            "name": "driveItem-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-ms-docs-key-type": "driveItem"
+          },
+          {
+            "description": "Select properties to be returned",
+            "explode": false,
+            "in": "query",
+            "name": "$select",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "createdBy",
+                  "createdDateTime",
+                  "description",
+                  "eTag",
+                  "lastModifiedBy",
+                  "lastModifiedDateTime",
+                  "name",
+                  "parentReference",
+                  "webUrl",
+                  "audio",
+                  "bundle",
+                  "content",
+                  "cTag",
+                  "deleted",
+                  "file",
+                  "fileSystemInfo",
+                  "folder",
+                  "image",
+                  "location",
+                  "malware",
+                  "package",
+                  "pendingOperations",
+                  "photo",
+                  "publication",
+                  "remoteItem",
+                  "root",
+                  "searchResult",
+                  "shared",
+                  "sharepointIds",
+                  "size",
+                  "specialFolder",
+                  "video",
+                  "webDavUrl",
+                  "createdByUser",
+                  "lastModifiedByUser",
+                  "workbook",
+                  "analytics",
+                  "children",
+                  "listItem",
+                  "permissions",
+                  "subscriptions",
+                  "thumbnails",
+                  "versions"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "Get items from drives",
+        "tags": [
+          "drives.driveItem"
+        ],
+        "x-ms-docs-operation-type": "operation"
+      }
+    },
+    "/drives/{drive-id}/items/{driveItem-id}/children": {
+      "description": "Provides operations to manage the children property of the microsoft.graph.driveItem entity.",
+      "get": {
+        "description": "Return a collection of DriveItems in the **children** relationship of a DriveItem. DriveItems with a non-null **folder** or **package** facet can have one or more child DriveItems.",
+        "externalDocs": {
+          "description": "Find more info here",
+          "url": "https://docs.microsoft.com/graph/api/driveitem-list-children?view=graph-rest-1.0"
+        },
+        "operationId": "drives.items.ListChildren",
+        "parameters": [
+          {
+            "description": "key: id of drive",
+            "in": "path",
+            "name": "drive-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-ms-docs-key-type": "drive"
+          },
+          {
+            "description": "key: id of driveItem",
+            "in": "path",
+            "name": "driveItem-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-ms-docs-key-type": "driveItem"
+          },
+          {
+            "$ref": "#/components/parameters/top"
+          },
+          {
+            "$ref": "#/components/parameters/search"
+          },
+          {
+            "$ref": "#/components/parameters/filter"
+          },
+          {
+            "description": "Order items by property values",
+            "explode": false,
+            "in": "query",
+            "name": "$orderby",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "id desc",
+                  "createdBy",
+                  "createdBy desc",
+                  "createdDateTime",
+                  "createdDateTime desc",
+                  "description",
+                  "description desc",
+                  "eTag",
+                  "eTag desc",
+                  "lastModifiedBy",
+                  "lastModifiedBy desc",
+                  "lastModifiedDateTime",
+                  "lastModifiedDateTime desc",
+                  "name",
+                  "name desc",
+                  "parentReference",
+                  "parentReference desc",
+                  "webUrl",
+                  "webUrl desc",
+                  "audio",
+                  "audio desc",
+                  "bundle",
+                  "bundle desc",
+                  "content",
+                  "content desc",
+                  "cTag",
+                  "cTag desc",
+                  "deleted",
+                  "deleted desc",
+                  "file",
+                  "file desc",
+                  "fileSystemInfo",
+                  "fileSystemInfo desc",
+                  "folder",
+                  "folder desc",
+                  "image",
+                  "image desc",
+                  "location",
+                  "location desc",
+                  "malware",
+                  "malware desc",
+                  "package",
+                  "package desc",
+                  "pendingOperations",
+                  "pendingOperations desc",
+                  "photo",
+                  "photo desc",
+                  "publication",
+                  "publication desc",
+                  "remoteItem",
+                  "remoteItem desc",
+                  "root",
+                  "root desc",
+                  "searchResult",
+                  "searchResult desc",
+                  "shared",
+                  "shared desc",
+                  "sharepointIds",
+                  "sharepointIds desc",
+                  "size",
+                  "size desc",
+                  "specialFolder",
+                  "specialFolder desc",
+                  "video",
+                  "video desc",
+                  "webDavUrl",
+                  "webDavUrl desc"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          },
+          {
+            "description": "Select properties to be returned",
+            "explode": false,
+            "in": "query",
+            "name": "$select",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "createdBy",
+                  "createdDateTime",
+                  "description",
+                  "eTag",
+                  "lastModifiedBy",
+                  "lastModifiedDateTime",
+                  "name",
+                  "parentReference",
+                  "webUrl",
+                  "audio",
+                  "bundle",
+                  "content",
+                  "cTag",
+                  "deleted",
+                  "file",
+                  "fileSystemInfo",
+                  "folder",
+                  "image",
+                  "location",
+                  "malware",
+                  "package",
+                  "pendingOperations",
+                  "photo",
+                  "publication",
+                  "remoteItem",
+                  "root",
+                  "searchResult",
+                  "shared",
+                  "sharepointIds",
+                  "size",
+                  "specialFolder",
+                  "video",
+                  "webDavUrl",
+                  "createdByUser",
+                  "lastModifiedByUser",
+                  "workbook",
+                  "analytics",
+                  "children",
+                  "listItem",
+                  "permissions",
+                  "subscriptions",
+                  "thumbnails",
+                  "versions"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "List children of a driveItem",
+        "tags": [
+          "drives.driveItem"
+        ],
+        "x-ms-docs-operation-type": "operation",
+        "x-ms-pageable": {
+          "nextLinkName": "@odata.nextLink",
+          "operationName": "listMore"
+        }
+      },
+      "post": {
+        "externalDocs": {
+          "description": "Find more info here",
+          "url": "https://docs.microsoft.com/graph/api/driveitem-post-children?view=graph-rest-1.0"
+        },
+        "operationId": "drives.items.CreateChildren",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "description": "The fields this call writes. A message carries far more, and the rest is computed by Graph rather than set here.",
+                "properties": {
+                  "name": {
+                    "description": "The name of the item. Read-write.",
+                    "nullable": true,
+                    "type": "string"
+                  },
+                  "folder": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/microsoft.graph.folder"
+                      },
+                      {
+                        "nullable": true,
+                        "type": "object"
+                      }
+                    ],
+                    "description": "Folder metadata, if the item is a folder. Read-only."
+                  },
+                  "file": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/microsoft.graph.file"
+                      },
+                      {
+                        "nullable": true,
+                        "type": "object"
+                      }
+                    ],
+                    "description": "File metadata, if the item is a file. Read-only."
+                  }
+                },
+                "required": [
+                  "name",
+                  "folder",
+                  "file"
+                ]
+              }
+            }
+          },
+          "description": "New navigation property",
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "Create new navigation property to children for drives",
+        "tags": [
+          "drives.driveItem"
+        ],
+        "x-ms-docs-operation-type": "operation",
+        "parameters": [
+          {
+            "description": "key: id of drive",
+            "in": "path",
+            "name": "drive-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-ms-docs-key-type": "drive"
+          },
+          {
+            "description": "key: id of driveItem",
+            "in": "path",
+            "name": "driveItem-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-ms-docs-key-type": "driveItem"
+          }
+        ]
+      }
+    },
+    "/drives/{drive-id}/items/{driveItem-id}/content": {
+      "description": "Provides operations to manage the media for the drive entity.",
+      "get": {
+        "description": "The content stream, if the item represents a file.",
+        "operationId": "drives.GetItemsContent",
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "Get content for the navigation property items from drives",
+        "tags": [
+          "drives.driveItem"
+        ],
+        "x-ms-docs-operation-type": "operation",
+        "parameters": [
+          {
+            "description": "key: id of drive",
+            "in": "path",
+            "name": "drive-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-ms-docs-key-type": "drive"
+          },
+          {
+            "description": "key: id of driveItem",
+            "in": "path",
+            "name": "driveItem-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-ms-docs-key-type": "driveItem"
+          }
+        ]
+      }
+    },
+    "/drives/{drive-id}/items/{driveItem-id}/microsoft.graph.search(q='{q}')": {
+      "description": "Provides operations to call the search method.",
+      "get": {
+        "operationId": "drives.drive.items.driveItem.search",
+        "parameters": [
+          {
+            "description": "key: id of drive",
+            "in": "path",
+            "name": "drive-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-ms-docs-key-type": "drive"
+          },
+          {
+            "description": "key: id of driveItem",
+            "in": "path",
+            "name": "driveItem-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-ms-docs-key-type": "driveItem"
+          },
+          {
+            "description": "Usage: q='{q}'",
+            "in": "path",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/top"
+          },
+          {
+            "$ref": "#/components/parameters/search"
+          },
+          {
+            "$ref": "#/components/parameters/filter"
+          },
+          {
+            "description": "Select properties to be returned",
+            "explode": false,
+            "in": "query",
+            "name": "$select",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "createdBy",
+                  "createdDateTime",
+                  "description",
+                  "eTag",
+                  "lastModifiedBy",
+                  "lastModifiedDateTime",
+                  "name",
+                  "parentReference",
+                  "webUrl",
+                  "audio",
+                  "bundle",
+                  "content",
+                  "cTag",
+                  "deleted",
+                  "file",
+                  "fileSystemInfo",
+                  "folder",
+                  "image",
+                  "location",
+                  "malware",
+                  "package",
+                  "pendingOperations",
+                  "photo",
+                  "publication",
+                  "remoteItem",
+                  "root",
+                  "searchResult",
+                  "shared",
+                  "sharepointIds",
+                  "size",
+                  "specialFolder",
+                  "video",
+                  "webDavUrl",
+                  "createdByUser",
+                  "lastModifiedByUser",
+                  "workbook",
+                  "analytics",
+                  "children",
+                  "listItem",
+                  "permissions",
+                  "subscriptions",
+                  "thumbnails",
+                  "versions"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          },
+          {
+            "description": "Order items by property values",
+            "explode": false,
+            "in": "query",
+            "name": "$orderby",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "id desc",
+                  "createdBy",
+                  "createdBy desc",
+                  "createdDateTime",
+                  "createdDateTime desc",
+                  "description",
+                  "description desc",
+                  "eTag",
+                  "eTag desc",
+                  "lastModifiedBy",
+                  "lastModifiedBy desc",
+                  "lastModifiedDateTime",
+                  "lastModifiedDateTime desc",
+                  "name",
+                  "name desc",
+                  "parentReference",
+                  "parentReference desc",
+                  "webUrl",
+                  "webUrl desc",
+                  "audio",
+                  "audio desc",
+                  "bundle",
+                  "bundle desc",
+                  "content",
+                  "content desc",
+                  "cTag",
+                  "cTag desc",
+                  "deleted",
+                  "deleted desc",
+                  "file",
+                  "file desc",
+                  "fileSystemInfo",
+                  "fileSystemInfo desc",
+                  "folder",
+                  "folder desc",
+                  "image",
+                  "image desc",
+                  "location",
+                  "location desc",
+                  "malware",
+                  "malware desc",
+                  "package",
+                  "package desc",
+                  "pendingOperations",
+                  "pendingOperations desc",
+                  "photo",
+                  "photo desc",
+                  "publication",
+                  "publication desc",
+                  "remoteItem",
+                  "remoteItem desc",
+                  "root",
+                  "root desc",
+                  "searchResult",
+                  "searchResult desc",
+                  "shared",
+                  "shared desc",
+                  "sharepointIds",
+                  "sharepointIds desc",
+                  "size",
+                  "size desc",
+                  "specialFolder",
+                  "specialFolder desc",
+                  "video",
+                  "video desc",
+                  "webDavUrl",
+                  "webDavUrl desc"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "Invoke function search",
+        "tags": [
+          "drives.Functions"
+        ],
+        "x-ms-docs-operation-type": "function",
+        "x-ms-pageable": {
+          "nextLinkName": "@odata.nextLink",
+          "operationName": "listMore"
+        }
+      },
+      "x-ms-docs-grouped-path": [
+        "/drives/{drive-id}/microsoft.graph.search(q='{q}')"
+      ]
+    },
+    "/drives/{drive-id}/root": {
+      "description": "Provides operations to manage the root property of the microsoft.graph.drive entity.",
+      "get": {
+        "description": "Retrieve the metadata for a driveItem in a drive by file system path or ID.\n`item-id` is the ID of a driveItem. It may also be the unique ID of a SharePoint list item.",
+        "externalDocs": {
+          "description": "Find more info here",
+          "url": "https://docs.microsoft.com/graph/api/driveitem-get?view=graph-rest-1.0"
+        },
+        "operationId": "drives.GetRoot",
+        "parameters": [
+          {
+            "description": "key: id of drive",
+            "in": "path",
+            "name": "drive-id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "x-ms-docs-key-type": "drive"
+          },
+          {
+            "description": "Select properties to be returned",
+            "explode": false,
+            "in": "query",
+            "name": "$select",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "createdBy",
+                  "createdDateTime",
+                  "description",
+                  "eTag",
+                  "lastModifiedBy",
+                  "lastModifiedDateTime",
+                  "name",
+                  "parentReference",
+                  "webUrl",
+                  "audio",
+                  "bundle",
+                  "content",
+                  "cTag",
+                  "deleted",
+                  "file",
+                  "fileSystemInfo",
+                  "folder",
+                  "image",
+                  "location",
+                  "malware",
+                  "package",
+                  "pendingOperations",
+                  "photo",
+                  "publication",
+                  "remoteItem",
+                  "root",
+                  "searchResult",
+                  "shared",
+                  "sharepointIds",
+                  "size",
+                  "specialFolder",
+                  "video",
+                  "webDavUrl",
+                  "createdByUser",
+                  "lastModifiedByUser",
+                  "workbook",
+                  "analytics",
+                  "children",
+                  "listItem",
+                  "permissions",
+                  "subscriptions",
+                  "thumbnails",
+                  "versions"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "Get a driveItem resource",
+        "tags": [
+          "drives.driveItem"
+        ],
+        "x-ms-docs-operation-type": "operation"
+      }
+    },
+    "/me/drive": {
+      "description": "Provides operations to manage the drive property of the microsoft.graph.user entity.",
+      "get": {
+        "description": "Retrieve the properties and relationships of a Drive resource. A Drive is the top-level container for a file system, such as OneDrive or SharePoint document libraries.",
+        "externalDocs": {
+          "description": "Find more info here",
+          "url": "https://docs.microsoft.com/graph/api/drive-get?view=graph-rest-1.0"
+        },
+        "operationId": "me.GetDrive",
+        "parameters": [
+          {
+            "description": "Select properties to be returned",
+            "explode": false,
+            "in": "query",
+            "name": "$select",
+            "schema": {
+              "items": {
+                "enum": [
+                  "id",
+                  "createdBy",
+                  "createdDateTime",
+                  "description",
+                  "eTag",
+                  "lastModifiedBy",
+                  "lastModifiedDateTime",
+                  "name",
+                  "parentReference",
+                  "webUrl",
+                  "driveType",
+                  "owner",
+                  "quota",
+                  "sharePointIds",
+                  "system",
+                  "createdByUser",
+                  "lastModifiedByUser",
+                  "bundles",
+                  "following",
+                  "items",
+                  "list",
+                  "root",
+                  "special"
+                ],
+                "type": "string"
+              },
+              "type": "array",
+              "uniqueItems": true
+            },
+            "style": "form"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success. The response body is returned verbatim."
+          }
+        },
+        "summary": "Get Drive",
+        "tags": [
+          "me.drive"
+        ],
+        "x-ms-docs-operation-type": "operation"
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "filter": {
+        "description": "Filter items by property values",
+        "explode": false,
+        "in": "query",
+        "name": "$filter",
+        "schema": {
+          "type": "string"
+        },
+        "style": "form"
+      },
+      "search": {
+        "description": "Search items by search phrases",
+        "explode": false,
+        "in": "query",
+        "name": "$search",
+        "schema": {
+          "type": "string"
+        },
+        "style": "form"
+      },
+      "top": {
+        "description": "Show only the first n items",
+        "example": 50,
+        "explode": false,
+        "in": "query",
+        "name": "$top",
+        "schema": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "style": "form"
+      }
+    },
+    "schemas": {
+      "microsoft.graph.file": {
+        "properties": {
+          "@odata.type": {
+            "type": "string"
+          },
+          "hashes": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/microsoft.graph.hashes"
+              },
+              {
+                "nullable": true,
+                "type": "object"
+              }
+            ],
+            "description": "Hashes of the file's binary content, if available. Read-only."
+          },
+          "mimeType": {
+            "description": "The MIME type for the file. This is determined by logic on the server and might not be the value provided when the file was uploaded. Read-only.",
+            "nullable": true,
+            "type": "string"
+          },
+          "processingMetadata": {
+            "nullable": true,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "@odata.type"
+        ],
+        "title": "file",
+        "type": "object"
+      },
+      "microsoft.graph.folder": {
+        "properties": {
+          "@odata.type": {
+            "type": "string"
+          },
+          "childCount": {
+            "description": "Number of children contained immediately within this container.",
+            "format": "int32",
+            "maximum": 2147483647,
+            "minimum": -2147483648,
+            "nullable": true,
+            "type": "integer"
+          },
+          "view": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/microsoft.graph.folderView"
+              },
+              {
+                "nullable": true,
+                "type": "object"
+              }
+            ],
+            "description": "A collection of properties defining the recommended view for the folder."
+          }
+        },
+        "required": [
+          "@odata.type"
+        ],
+        "title": "folder",
+        "type": "object"
+      },
+      "microsoft.graph.folderView": {
+        "properties": {
+          "@odata.type": {
+            "type": "string"
+          },
+          "sortBy": {
+            "description": "The method by which the folder should be sorted.",
+            "nullable": true,
+            "type": "string"
+          },
+          "sortOrder": {
+            "description": "If true, indicates that items should be sorted in descending order. Otherwise, items should be sorted ascending.",
+            "nullable": true,
+            "type": "string"
+          },
+          "viewType": {
+            "description": "The type of view that should be used to represent the folder.",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "@odata.type"
+        ],
+        "title": "folderView",
+        "type": "object"
+      },
+      "microsoft.graph.hashes": {
+        "properties": {
+          "@odata.type": {
+            "type": "string"
+          },
+          "crc32Hash": {
+            "description": "The CRC32 value of the file in little endian (if available). Read-only.",
+            "nullable": true,
+            "type": "string"
+          },
+          "quickXorHash": {
+            "description": "A proprietary hash of the file that can be used to determine if the contents of the file have changed (if available). Read-only.",
+            "nullable": true,
+            "type": "string"
+          },
+          "sha1Hash": {
+            "description": "SHA1 hash for the contents of the file (if available). Read-only.",
+            "nullable": true,
+            "type": "string"
+          },
+          "sha256Hash": {
+            "description": "SHA256 hash for the contents of the file (if available). Read-only.",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "@odata.type"
+        ],
+        "title": "hashes",
+        "type": "object"
+      }
+    }
+  }
+}

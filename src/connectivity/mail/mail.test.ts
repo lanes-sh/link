@@ -295,9 +295,44 @@ describe('a mailbox reference', () => {
   });
 
   test('a provider with no mailbox says so and suggests what does work', async () => {
+    // Both halves matter, and the second is why the wording is asserted at all:
+    // `assets.store` takes this same schema, so a caller reading `message_id`
+    // there needs the refusal to name a route that exists rather than just
+    // saying no.
+    await expect(resolveAttachments([{ message_id: '<a@b>' }], BUDGET)).rejects.toThrow(
+      /only a mail connection can resolve/,
+    );
+    await expect(resolveAttachments([{ message_id: '<a@b>' }], BUDGET)).rejects.toThrow(
+      /path, url, or handle/,
+    );
+  });
+
+  test('a uid reaches the mailbox source with its mailbox, and is refused the same way without one', async () => {
+    const seen: unknown[] = [];
+    const mailbox = async (reference: unknown) => {
+      seen.push(reference);
+      return { bytes: new Uint8Array([7, 7]), filename: 'card.pdf', contentType: 'application/pdf' };
+    };
+
+    const [resolved] = await resolveAttachments([{ uid: 1234, mailbox: 'Archive' }], {
+      ...BUDGET,
+      mailbox,
+    });
+
+    expect(seen[0]).toMatchObject({ uid: 1234, mailbox: 'Archive', messageId: undefined });
+    // The origin records which mailbox and which uid, because a uid alone is not
+    // an identifier — it means nothing without the mailbox it was issued in.
+    expect(resolved?.origin).toBe('mailbox:Archive:1234');
+
+    await expect(resolveAttachments([{ uid: 1234 }], BUDGET)).rejects.toThrow(
+      /only a mail connection can resolve/,
+    );
+  });
+
+  test('a uid and a message_id together are refused as two sources, not merged', async () => {
     await expect(
-      resolveAttachments([{ message_id: '<a@b>' }], BUDGET),
-    ).rejects.toThrow(/cannot resolve/);
+      resolveAttachments([{ uid: 1, message_id: '<a@b>' }], { ...BUDGET, mailbox: async () => ({ bytes: new Uint8Array(), filename: null, contentType: null }) }),
+    ).rejects.toThrow(/names 2 sources/);
   });
 });
 

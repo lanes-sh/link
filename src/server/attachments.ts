@@ -1,3 +1,4 @@
+import { isHandle } from '#connectivity/mail';
 import { mergeCapabilities, type ProfileRuntime } from './mcp/index.ts';
 import type { Principal } from '#auth';
 
@@ -51,11 +52,20 @@ export interface StageOptions {
   readonly clientLabel?: string | undefined;
 }
 
-export async function stageAttachment(options: StageOptions): Promise<Response> {
+/**
+ * One path, both directions.
+ *
+ * `POST` takes bytes and gives back a handle; `GET` takes a handle and gives
+ * back the bytes. Same path, same query, same authorization, because they are
+ * the two ends of one idea and splitting them across two routes would invite
+ * the scoping to drift apart — which is the one thing that must not happen
+ * here, since the scoping is what keeps one account's files out of another's.
+ */
+export async function handleAttachments(options: StageOptions): Promise<Response> {
   const { request } = options;
 
-  if (request.method !== 'POST') {
-    return problem(405, 'Stage an attachment with POST.');
+  if (request.method !== 'POST' && request.method !== 'GET') {
+    return problem(405, 'Stage an attachment with POST, or fetch one with GET.');
   }
 
   const url = new URL(request.url);
@@ -82,12 +92,17 @@ export async function stageAttachment(options: StageOptions): Promise<Response> 
 
   // The same policy that decides which connections a tool may name. Staging into
   // an account the caller cannot act on would be a write they are not permitted
-  // to make, even though nothing is sent by it.
+  // to make, even though nothing is sent by it — and fetching back out of one is
+  // a read they are not permitted to make, which matters more.
   if (!reachable(runtime, options, profileName, target)) {
     return problem(
       403,
       `Connection "${target}" is not reachable for this token in profile "${profileName}".`,
     );
+  }
+
+  if (request.method === 'GET') {
+    return await fetchAttachment({ options, runtime, url, providerId, connectionId, target });
   }
 
   const bytes = await readCapped(request);
@@ -122,6 +137,83 @@ export async function stageAttachment(options: StageOptions): Promise<Response> 
     profile: profileName,
     hint: `Pass it as an attachment: { "handle": "${staged.handle}" }`,
   });
+}
+
+/**
+ * Handing a staged file back.
+ *
+ * The counterpart to the upload, and the thing that makes an attachment which
+ * arrived by mail reachable at all: `get_attachment` on a mail connection pulls
+ * the bytes out of the mailbox and stages them *in that same connection's*
+ * namespace, and this is where the client collects them. No provider gains
+ * reach it did not have — the bytes were already inside that account's area —
+ * and nothing crosses between two connections.
+ *
+ * The bytes go out over HTTP for the same reason they come in that way: a file
+ * in a tool result is base64 in the model's context, which for a 239 KB PDF is
+ * around 320,000 characters of something no model needs to read.
+ */
+async function fetchAttachment(input: {
+  readonly options: StageOptions;
+  readonly runtime: ProfileRuntime;
+  readonly url: URL;
+  readonly providerId: string;
+  readonly connectionId: string;
+  readonly target: string;
+}): Promise<Response> {
+  const handle = input.url.searchParams.get('handle');
+  if (!handle) {
+    return problem(400, 'Name the file to fetch, as ?handle=att_… — the handle a stage or a get_attachment returned.');
+  }
+  if (!isHandle(handle)) {
+    return problem(400, `"${handle}" is not a handle.`);
+  }
+
+  const found = await input.runtime.dispatcher.fetchStagedAttachment({
+    principal: input.options.principal,
+    providerId: input.providerId,
+    connectionId: input.connectionId,
+    handle,
+    clientLabel: input.options.clientLabel,
+  });
+
+  // One answer for absent, expired, and staged-against-another-connection. The
+  // caller can act on none of the three differently, and telling them apart is
+  // how someone probes for handles belonging to an account they cannot reach.
+  if (!found) {
+    return problem(
+      404,
+      `No staged file "${handle}" for ${input.target}. A staged file lasts 24 hours and belongs to the connection it was staged for.`,
+    );
+  }
+
+  return new Response(found.bytes, {
+    headers: {
+      'content-type': found.contentType ?? 'application/octet-stream',
+      'content-length': String(found.bytes.byteLength),
+      // `attachment` rather than `inline`: this is a file the caller asked for,
+      // and a browser rendering someone's mail attachment in the tab is not it.
+      'content-disposition': dispositionFor(found.filename),
+      // Handles are unguessable and short-lived, but a shared cache holding
+      // somebody's mail attachment is not a trade worth making.
+      'cache-control': 'no-store',
+    },
+  });
+}
+
+/**
+ * A `Content-Disposition` that survives a non-ASCII filename.
+ *
+ * RFC 6266: the bare `filename` is the fallback for old clients and must stay
+ * ASCII, and `filename*` carries the real one percent-encoded. Mail attachments
+ * are exactly where this bites — an invoice from a German sender is called
+ * `Rechnung_Kaufmännisch.pdf` and a raw header would be rejected outright.
+ */
+function dispositionFor(filename: string | null): string {
+  if (!filename) return 'attachment';
+
+  const ascii = filename.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_');
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
 }
 
 /** Whether this principal can reach that connection for anything at all. */
@@ -188,8 +280,40 @@ async function readCapped(request: Request): Promise<Uint8Array | null> {
  * `Content-Disposition` and stored beside the bytes, and neither wants a path.
  */
 function filenameFrom(header: string | null): string {
-  const candidate = (header ?? '').split(/[/\\]/).pop()?.trim() ?? '';
+  const candidate = decodeHeader(header ?? '').split(/[/\\]/).pop()?.trim() ?? '';
   return candidate === '' || candidate === '.' || candidate === '..' ? 'attachment' : candidate;
+}
+
+/**
+ * A header value as the bytes it actually was.
+ *
+ * An HTTP header carries bytes, and a runtime hands them back one character per
+ * byte — so a filename a client sent as UTF-8 arrives here as mojibake and is
+ * *stored* that way. `Rechnung_Kaufmännisch.pdf` became
+ * `Rechnung_KaufmÃ¤nnisch.pdf` in the metadata sidecar, and stayed wrong on the
+ * way back out; it was invisible while there was no way to fetch a file back.
+ *
+ * Pure ASCII is returned untouched, which is almost every filename. Anything
+ * that is not valid UTF-8 keeps whatever it was rather than being replaced with
+ * question marks — a name we cannot decode is still the name the client chose.
+ */
+function decodeHeader(value: string): string {
+  // Nothing to do for ASCII, and a code point above 0xff means the runtime has
+  // already decoded it — reinterpreting that would be the corruption, not the fix.
+  let latin1 = false;
+  for (const character of value) {
+    const code = character.codePointAt(0) ?? 0;
+    if (code > 0xff) return value;
+    if (code > 0x7f) latin1 = true;
+  }
+  if (!latin1) return value;
+
+  try {
+    const bytes = Uint8Array.from(value, (character) => character.charCodeAt(0));
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    return value;
+  }
 }
 
 function problem(status: number, message: string): Response {

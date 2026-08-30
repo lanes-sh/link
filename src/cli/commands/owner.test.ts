@@ -4,14 +4,16 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseConfig } from '#profile';
-import { assetStorage, memoryStorage, taskStorage } from '#providers/owner.ts';
+import { assetStorage, entityStorage, memoryStorage, taskStorage } from '#providers/owner.ts';
 import { openRuntime, ownerPrincipal } from '../runtime.ts';
 import { memoryStore, ownerConnection } from './owner.ts';
 import { tasksStore } from './owner/tasks.ts';
 import { assetsStore } from './owner/assets.ts';
+import { entitiesStore } from './owner/entities.ts';
+import { openCatalogue } from '#providers/entities/catalogue.ts';
 
 /**
- * `lanes link memory` / `tasks` / `assets` / `skills` / `vault`.
+ * `lanes link memory` / `tasks` / `assets` / `skills` / `vault` / `entities`.
  *
  * The property worth a test is not the printing — it is that these commands and
  * the providers address the **same bytes**. A control plane that writes its own
@@ -41,6 +43,7 @@ connections:
   - { id: owner, provider: assets, account: Assets }
   - { id: owner, provider: skills, account: Skills }
   - { id: owner, provider: vault,  account: Vault }
+  - { id: owner, provider: entities, account: Entities }
 
 policy:
   allow: ['*']
@@ -65,6 +68,72 @@ afterAll(async () => {
 });
 
 describe('the CLI and the provider address the same bytes', () => {
+  test('an entity written the CLI way is what entities.find returns', async () => {
+    await workspace();
+    const runtime = await openRuntime({ profile: 'personal', target: 'local' });
+
+    try {
+      const store = entitiesStore(runtime, {});
+      await entityStorage.write(store, {
+        id: 'jan-bakker',
+        type: 'person',
+        name: 'Jan Bakker',
+        aliases: ['Jan'],
+        tags: [],
+        attributes: [{ kind: 'email', value: 'jan@acme.test' }],
+        relations: [],
+        updatedAt: new Date(0).toISOString(),
+        body: '',
+        bytes: 0,
+      });
+
+      const outcome = await runtime.dispatcher.invoke({
+        principal: ownerPrincipal('personal'),
+        capabilityId: 'entities.find',
+        connectionKey: 'entities.owner',
+        arguments: { query: 'Jan' },
+      });
+
+      expect(outcome.ok).toBe(true);
+      expect(JSON.stringify(outcome)).toContain('jan@acme.test');
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  test('an entity written by entities.write is what the CLI reads, index and all', async () => {
+    await workspace();
+    const runtime = await openRuntime({ profile: 'personal', target: 'local' });
+
+    try {
+      await runtime.dispatcher.invoke({
+        principal: ownerPrincipal('personal'),
+        capabilityId: 'entities.write',
+        connectionKey: 'entities.owner',
+        arguments: {
+          name: 'Acme B.V.',
+          id: 'acme-bv',
+          type: 'company',
+          attributes: [{ kind: 'domain', value: 'acme.test' }],
+        },
+      });
+
+      const store = entitiesStore(runtime, {});
+      const entity = await entityStorage.read(store, 'acme-bv');
+      expect(entity?.name).toBe('Acme B.V.');
+      expect(entity?.attributes[0]?.value).toBe('acme.test');
+
+      // The derived index matters as much as the document here: a CLI that read
+      // the files but not `_index.json`, or a provider that wrote one the CLI
+      // could not read, would work until the two disagreed about who exists.
+      const catalogue = await openCatalogue(store);
+      expect(catalogue.fromIndex).toBe(true);
+      expect(catalogue.byId.get('acme-bv')?.type).toBe('company');
+    } finally {
+      await runtime.close();
+    }
+  });
+
   test('an entry written the CLI way is what memory.get returns', async () => {
     await workspace();
     const runtime = await openRuntime({ profile: 'personal', target: 'local' });

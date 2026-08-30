@@ -63,6 +63,76 @@ export function referenced(root: unknown, schemas: Record<string, unknown>): Set
 }
 
 /**
+ * Every component the document actually reaches, section by section.
+ *
+ * `referenced` above answers the same question for `schemas` alone, which was
+ * enough while every vendored document kept its other component sections small.
+ * Microsoft Graph does not: its published OpenAPI carries 726 shared responses
+ * and 1,419 examples, and copying those through untouched left a seven-operation
+ * spec at 962 KB with **733 dangling references** — because the responses that
+ * survived pointed at schemas the trim had just removed. The generator answered
+ * that with `Invalid OpenAPI document` and no tools at all.
+ *
+ * So reachability has to cross sections rather than stop at schemas: a path
+ * reaches a response, which reaches a schema, which reaches another. One walk,
+ * following `#/components/<section>/<name>` wherever it points, and whatever is
+ * not reached is not carried.
+ *
+ * `securitySchemes` is the exception and is never returned here — it is named by
+ * the `security` array rather than by `$ref`, so a reachability walk cannot see
+ * it and its caller keeps it whole.
+ */
+export function reachableComponents(
+  root: unknown,
+  components: Record<string, unknown>,
+): Record<string, Set<string>> {
+  const found: Record<string, Set<string>> = {};
+  const queue: unknown[] = [root];
+
+  const resolve = (pointer: string): unknown => {
+    const rest = pointer.slice('#/components/'.length);
+    const slash = rest.indexOf('/');
+    if (slash < 0) return undefined;
+
+    const section = rest.slice(0, slash);
+    // JSON Pointer escaping. Component names rarely need it, and a name that
+    // does would otherwise be recorded under a spelling the filter never matches.
+    const name = rest.slice(slash + 1).replace(/~1/g, '/').replace(/~0/g, '~');
+
+    const entries = components[section];
+    if (entries === null || typeof entries !== 'object') return undefined;
+    if (!(name in (entries as Record<string, unknown>))) return undefined;
+
+    const seen = (found[section] ??= new Set());
+    if (seen.has(name)) return undefined;
+    seen.add(name);
+
+    return (entries as Record<string, unknown>)[name];
+  };
+
+  while (queue.length > 0) {
+    const node = queue.pop();
+    if (node === null || typeof node !== 'object') continue;
+
+    if (Array.isArray(node)) {
+      queue.push(...node);
+      continue;
+    }
+
+    for (const [key, value] of Object.entries(node)) {
+      if (key === '$ref' && typeof value === 'string' && value.startsWith('#/components/')) {
+        const target = resolve(value);
+        if (target !== undefined) queue.push(target);
+        continue;
+      }
+      queue.push(value);
+    }
+  }
+
+  return found;
+}
+
+/**
  * Cut reference cycles, replacing the back-edge with an open object.
  *
  * Gmail's `MessagePart` contains `MessagePart[]` — a MIME tree, so the

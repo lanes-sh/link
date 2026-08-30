@@ -10,7 +10,7 @@ import { defineProvider } from '#connectivity';
  * - The REST provider (`gmail`) authorises in a browser, and an OAuth client
  *   left in "Testing" has every refresh token it issues expired after seven
  *   days. Publishing the client fixes that and is the better answer where it is
- *   available — see ADR-038 and `docs/detailed/setup/google.md`.
+ *   available — see ADR-038 and `https://lanes.sh/docs/link/google`.
  * - The key route (`auth.assertion` on `gmail`) does not apply at all. A service
  *   account has no mailbox of its own, so it can only reach one by acting as
  *   somebody, and that grant is domain-wide delegation — made in a Workspace
@@ -71,7 +71,7 @@ export const gmailImap = defineProvider({
       'browser and nothing has to be re-approved later. This is the personal-account route: ' +
       'Google turned off basic authentication for Workspace accounts in March 2025, and a Workspace ' +
       'administrator can disable app passwords for the whole domain.',
-    docs: 'docs/detailed/setup/google.md',
+    docs: 'https://lanes.sh/docs/link/google',
     docs_url: 'https://support.google.com/accounts/answer/185833',
     steps: [
       'Two-Step Verification has to be on. Without it Google does not offer app passwords at all, and the page below returns "the setting you are looking for is not available for your account" rather than saying why. Turn it on at https://myaccount.google.com/signinoptions/twosv.',
@@ -111,6 +111,11 @@ export const gmailImap = defineProvider({
     // Never the search terms — a query is content, and "who did I email about
     // the diagnosis" is the whole message.
     search_messages: ['mailbox', 'limit', 'unseen', 'flagged'],
+    // Identifiers only, and all of them: which mailbox, which message, which
+    // attachment. What the file turned out to be — name, size, type, digest —
+    // is recorded by the handler through `audit.annotate`, the same way the send
+    // path records what it attached.
+    get_attachment: ['mailbox', 'uid', 'message_id', 'attachment_id'],
     get_message: ['mailbox', 'uid', 'include_body'],
     mark_messages: ['mailbox', 'add_flags', 'remove_flags'],
     // `destination_flag` alongside `destination`: two spellings of the same

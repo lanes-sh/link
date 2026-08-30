@@ -388,6 +388,18 @@ describe('every command is runnable in the spelling it demands', () => {
     // either was refused on a command documented as taking it.
     expect(() => assertKnownFlags('memory', 'list', { tag: 'x' })).not.toThrow();
     expect(() => assertKnownFlags('mcp', 'list', { name: 'x', scope: 'user' })).not.toThrow();
+    // Three of these are repeatable and read from argv rather than from the
+    // parsed map, which is exactly the shape that gets left out of the
+    // allowlist because the parser never complained about it.
+    expect(() =>
+      assertKnownFlags('entities', 'write', {
+        type: 'person',
+        alias: 'JB',
+        attr: 'email=jan@example.test',
+        related: 'works_at=acme-bv',
+        name: 'jan-bakker',
+      }),
+    ).not.toThrow();
   });
 });
 
@@ -397,7 +409,7 @@ describe('the grammar is read wherever it lives', () => {
     // only read `main.ts` it would pass by not looking.
     const dispatched = await dispatchedCommands();
 
-    for (const command of ['memory get', 'skills add', 'vault key']) {
+    for (const command of ['memory get', 'skills add', 'vault key', 'entities find']) {
       expect(dispatched.has(command)).toBe(true);
     }
   });

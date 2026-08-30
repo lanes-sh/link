@@ -6,7 +6,9 @@ import { nonInteractivePrompter, terminalPrompter, type Prompter } from '../../p
 import { openRuntime, type GlobalFlags } from '../../runtime.ts';
 import { moveCredential, siblingAccountId } from './accounts.ts';
 import { grantProvider } from './grant.ts';
+import { acquireCredential } from './acquire.ts';
 import { declareConnection } from './declare.ts';
+import { resolveConnectionAddress, type ResolvedAddress } from './variables.ts';
 import { discoverCapabilities } from './discover.ts';
 import { connectFamily, familyMembers } from './family.ts';
 import { authoriseWithKey } from './assertion.ts';
@@ -14,6 +16,7 @@ import { authorise } from './authorise.ts';
 import { authorisePastedToken } from './pasted-token.ts';
 import { chooseAuthMethod } from './method.ts';
 import { preflight } from './requirements.ts';
+import { parseSet } from './variables.ts';
 import { ALREADY, NOTHING, renderOutcome, where, type ConnectOutcome } from './outcome.ts';
 import { nextAfterEdit, publishRuntimeEdit } from '#cli/publish.ts';
 import { bindNewCredential } from './bind-credential.ts';
@@ -40,6 +43,8 @@ import { unknownProvider } from './unknown.ts';
 export interface ConnectOptions extends GlobalFlags {
   readonly id?: string | undefined;
   readonly displayName?: string | undefined;
+  /** `--set key=value`, repeatable: where this connection's service is. */
+  readonly set?: readonly string[] | string | undefined;
   /**
    * `--label`: what to call this connection, instead of being asked.
    *
@@ -124,6 +129,9 @@ export async function runConnect(
   // The runtime is opened first because its registry includes workspace
   // manifests — a custom provider must be as connectable as a built-in.
   const runtime = await openRuntime(options);
+
+  // Declared out here so the `finally` can close whatever it built.
+  let address: ResolvedAddress | undefined;
 
   try {
     // After the runtime rather than before, like every other command that
@@ -214,66 +222,52 @@ export async function runConnect(
         credentials: runtime.credentials,
         spec: target,
         method: method.kind,
+        supplied: parseSet(options.set),
       });
 
       if (blocked) return { ...NOTHING, ok: false, ...blocked };
     }
 
-    if (method.kind === 'assertion') {
-      await authoriseWithKey({
-        manifest,
-        assertion: method.assertion,
-        connectionId: provisionalId,
-        credentials: runtime.credentials,
-        changes,
-        // Same reading as the static-credential arm below: naming a connection,
-        // or asking outright, is how someone says "that one again" — which is
-        // what a rotated key calls for.
-        replace: options.nonInteractive !== true && (options.replace === true || named !== undefined),
-        prompter,
-      });
-    } else if (method.kind === 'pasted') {
-      await authorisePastedToken({
-        manifest,
-        connectionId: provisionalId,
-        credentials: runtime.credentials,
-        prompter,
-      });
-    } else if (manifest.auth.kind === 'oauth') {
-      await authorise({
-        manifest,
-        connectionId: provisionalId,
-        credentials: runtime.credentials,
-        document,
-        changes,
-        firstForProvider: !runtime.config.connections.some((c) => c.provider === providerId),
-        target,
-        profile,
-        client: method.client,
-        prompter,
-        acceptBroadScopes: options.acceptBroadScopes === true,
-        ...(options.fetch ? { fetch: options.fetch } : {}),
-      });
-    } else if (manifest.auth.kind !== 'none') {
-      await ensureStaticCredential({
-        manifest,
-        connectionId: provisionalId,
-        credentials: runtime.credentials,
-        // Naming a connection is how someone says "this one, again" — which is
-        // what a rotated key or a revoked app-specific password calls for.
-        // `--replace` says the same thing about a family, where there is no
-        // single provider to name and the ids are not the operator's to know.
-        //
-        // Never non-interactively: there, "again" already happened. The new
-        // value was written with `secrets set` before this ran, so asking would
-        // be asking for something the store already holds.
-        replace: options.nonInteractive !== true && (options.replace === true || named !== undefined),
-        provisional: provisionalId === PROVISIONAL_ID,
-        prompter,
-      });
-    }
+    // 1a. Where this connection's service is, for a provider whose address is
+    //     not the same for everybody.
+    //
+    //     First, and before anything is written: step 0b's rule is that a
+    //     refusal leaves the profile as it was, and asked last a non-interactive
+    //     run with no `--set` acquired a credential before refusing.
+    address = await resolveConnectionAddress({
+      manifest,
+      prompter,
+      runtime,
+      providerId,
+      provisionalId,
+      interactive: options.nonInteractive !== true,
+      set: options.set,
+    });
 
-    // 1b. The vendor's own handshake — see `./strategy.ts`, including why here.
+    // 1b. Get the credential, whichever of the four ways this provider offers.
+    //     See `./acquire.ts` — the arms each live in their own module already,
+    //     and that file is the choosing.
+    await acquireCredential({
+      method,
+      manifest,
+      provisionalId,
+      credentials: runtime.credentials,
+      document,
+      changes,
+      providerId,
+      connections: runtime.config.connections,
+      target,
+      profile,
+      prompter,
+      named: named !== undefined,
+      provisional: provisionalId === PROVISIONAL_ID,
+      replace: options.replace === true,
+      nonInteractive: options.nonInteractive === true,
+      acceptBroadScopes: options.acceptBroadScopes === true,
+      ...(options.fetch ? { fetch: options.fetch } : {}),
+    });
+
+    // 1c. The vendor's own handshake — see `./strategy.ts`, including why here.
     await runStrategySetup(manifest, provisionalId, runtime);
 
     // 2. Ask the provider whose account that was.
@@ -288,7 +282,7 @@ export async function runConnect(
       explicitId: named,
       account: options.displayName,
       label: options.label,
-      runtime,
+      runtime: { ...runtime, connectorFor: address.connectorFor },
       prompter,
     });
 
@@ -309,7 +303,7 @@ export async function runConnect(
       manifest,
       connectionId,
       credentials: runtime.credentials,
-      connectorFor: runtime.connectorFor.bind(runtime),
+      connectorFor: address.connectorFor,
       remember: async (found) => {
         await runtime.state.kv.set('discovery', providerId, JSON.stringify(found));
         registry.setDiscovered(providerId, found);
@@ -326,6 +320,7 @@ export async function runConnect(
         account,
         label,
         method: method.id,
+        config: address.values,
       }),
     );
 
@@ -394,6 +389,9 @@ export async function runConnect(
       next: nextAfterEdit(publish),
     };
   } finally {
+    // Before the runtime, and separately: this one holds its own cache, so a
+    // provider whose connector is a socket would otherwise keep it until exit.
+    await address?.close();
     await runtime.close();
   }
 }
