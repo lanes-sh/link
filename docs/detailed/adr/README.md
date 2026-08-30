@@ -63,6 +63,7 @@ Nothing in the codebase depends on it.
 | [053](053-the-page-a-person-reads-is-the-app.md) | The page a person reads is the desktop app, and the endpoint stops serving one |
 | [054](054-the-surface-in-front-of-the-gate.md) | The surface in front of the gate is metered, and does not name itself |
 | [055](055-a-connection-may-say-where-its-service-is.md) | A connection may say where its service is, so a self-hosted or multi-tenant host can be a built-in |
+| [056](056-everyone-else-is-declared-too.md) | Everyone else is declared too, and a lookup answers with all of them |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 
@@ -160,3 +161,19 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
   Google Tasks to `google_tasks`, which the reserved-id check forces, and the redaction keys that
   had to lengthen with it. Both are recorded there because a redaction key that misses withholds
   every argument and reads exactly like working redaction, which is not a thing to rediscover.
+
+- **ADR-056** follows from ADR-042 and amends ADR-041. The first is the interesting relationship:
+  it applies identity's argument to everybody who is not the owner, and then diverges from it
+  twice on purpose — `entities` is agent-writable and granted by default, where `identity` is
+  neither. Both differences turn on the same test, and it is not "is it empty": memory arrives
+  empty and is granted. It is *can it be filled in from here*, which configuration cannot be
+  (ADR-007) and an owner's own store can. The amendment to ADR-041 is smaller than its title makes
+  it look — that exclusion was a discriminator rather than a count, and the structural part, the
+  absence of any field that could name the credential store or the vault, is untouched.
+
+  Read the ambiguity rule if nothing else. An earlier draft refused on more than one match; this
+  one returns them all and errors on nothing, because an assistant handed two people called Jan
+  asks which is meant rather than failing. What replaces the refusal is three rules — ordering is
+  not selection, the count comes first, and several matches render only what tells them apart —
+  and they are load-bearing in a way a refusal was not: with no error, they are the only thing
+  between two candidates and a message sent to the wrong person.

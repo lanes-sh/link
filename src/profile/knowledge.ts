@@ -13,7 +13,7 @@ import { credentialRef } from './primitives.ts';
  * readable from more than one machine, and the backend that suits an object
  * nobody reads is not the backend that suits those.
  *
- * ADR-041 said "memory and skills, and nothing else", and ADR-055 amends the
+ * ADR-041 said "memory and skills, and nothing else", and ADR-056 amends the
  * count without touching the rule. That exclusion was never arithmetic: its
  * argument is a discriminator — an artefact of one installation stays, a
  * document the owner wrote may move — and an entity file is a Markdown document

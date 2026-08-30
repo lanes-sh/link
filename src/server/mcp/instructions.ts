@@ -162,7 +162,7 @@ which is meant, not take the first.`;
  * apart (see `MAX_INSTRUCTIONS`).
  *
  * Worth noting which case is ordinary: `entities` is granted on a fresh profile
- * and `identity` is not (ADR-050, ADR-055), so `ENTITIES` alone is the common
+ * and `identity` is not (ADR-050, ADR-056), so `ENTITIES` alone is the common
  * form and this one arrives only once the owner has declared themselves.
  */
 const IDENTITY_AND_ENTITIES = `**Who someone is, is declared rather than inferred.** For the owner's own name,
@@ -265,7 +265,7 @@ function habitsFor(reachable: readonly string[]): string[] {
  * has already done so by the time a skill would have been loaded. The client
  * that most needs the rule is the one holding no skills directory.
  *
- * Raised a fourth time, to 2900, for `entities` (ADR-055), and the answer is
+ * Raised a fourth time, to 2900, for `entities` (ADR-056), and the answer is
  * `IDENTITY`'s restated one step outward. An agent that resolves "email Jan" to
  * the wrong address has already sent the message; the mistake happens at the
  * instant of the send, before a skill would have been loaded, and the client

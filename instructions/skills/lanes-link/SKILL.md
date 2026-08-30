@@ -174,6 +174,31 @@ inventing something; they add one with `lanes link identity add <kind> <value> -
 --target <target>` — both flags, because neither has a fallback.
 Nothing you can call writes here, deliberately.
 
+## Who you are writing *to* is declared as well
+
+`entities_find` holds the people, companies and projects this owner deals with,
+with the addresses and handles to reach each of them. Call it before using
+anyone's address — do not recall one from earlier in the conversation, and do
+not lift one off a message you happen to have read.
+
+**It answers with every match and never chooses between them.** One match is an
+answer. More than one is a question: the reply shows what separates the
+candidates, so settle it from what you already know if that is genuinely
+unambiguous, and otherwise **ask**. Do not take the first — the order is not a
+ranking, and nothing about the reply is an error you need to work around.
+
+None matching is not a failure either. It means the owner has not written that
+person down, so ask rather than using an address from somewhere else.
+
+Where an entity holds two of a kind — a work address and a personal one — the
+first is the default and the notes say when to prefer the other, exactly as
+identity works.
+
+Writing is a separate grant. Where you have it, `entities_write` declares one
+and `entities_link` relates two; a field you do not send is left as it is.
+`entities_forget` does not clean up edges pointing at what it removed, and says
+which ones will dangle.
+
 ## Attachments are named, not carried
 
 Where a tool takes `attachments`, each entry names **one** source and the endpoint

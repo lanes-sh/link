@@ -80,7 +80,7 @@ describe('a profile whose knowledge is in a repository', () => {
     });
 
     // The index travels with the documents because it is derived from what
-    // travels — the weaker half of ADR-055's argument, and worth pinning so it
+    // travels — the weaker half of ADR-056's argument, and worth pinning so it
     // is a decision rather than an accident.
     expect(Object.keys(github.files()).sort()).toEqual([
       'entities/main/_index.json',
@@ -189,7 +189,7 @@ describe('the repository layout', () => {
 
   test('what may move is still what a document is, and nothing else', () => {
     // ADR-041's exclusion is structural — there is no field that could name the
-    // credential store or the vault — and ADR-055 adds none. Asserted here
+    // credential store or the vault — and ADR-056 adds none. Asserted here
     // because "and nothing else may" is the sentence a third area looks like it
     // weakened, and the thing that makes it still true is the absence of a key.
     expect(Object.keys(KNOWLEDGE_LAYOUT).sort()).toEqual(['entities', 'memory', 'skills']);

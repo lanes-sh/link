@@ -332,7 +332,7 @@ const MAX_LINES = 400;
  * the test asserted a literal while the code reserved room against a second,
  * differently-derived number.
  *
- * It crossed the line adding `entities` (ADR-055): two paragraphs and a
+ * It crossed the line adding `entities` (ADR-056): two paragraphs and a
  * collapsed pair, the same shape as the eight around them. That is the
  * concession, and it is worth naming as one — the alternative was a shorter
  * paragraph, and a paragraph shortened to fit a line budget is a worse trade

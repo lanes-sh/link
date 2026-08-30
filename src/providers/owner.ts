@@ -41,7 +41,7 @@
  * consistent rather than in tension: identity is configuration, so an agent
  * able to edit it could edit the one fact that stops it signing as the wrong
  * person, while everyone else's details are ordinary owner material that
- * accumulates on the same surface that reads it (ADR-055).
+ * accumulates on the same surface that reads it (ADR-056).
  *
  * All eight ids are reserved (`RESERVED_PROVIDER_IDS`) and still refused by
  * default — the registry has to be built with `allowReserved` to hold them, so a
