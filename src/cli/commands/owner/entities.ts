@@ -7,6 +7,7 @@ import {
   rebuildCatalogue,
   writeCatalogue,
 } from '#providers/entities/catalogue.ts';
+import { forgetEntity, persistEntity } from '#providers/entities/writes.ts';
 import { matchEntities, type Criteria } from '#providers/entities/find.ts';
 import { describe, renderEntity } from '#providers/entities/render.ts';
 import { entityStorage, type Attribute, type Entity, type Relation } from '#providers/owner.ts';
@@ -144,7 +145,7 @@ export async function entitiesWrite(name: string | undefined, flags: OwnerFlags)
       bytes: 0,
     };
 
-    await persist(store, next);
+    await persistEntity(store, next);
     print(ok(`${existing ? 'updated' : 'declared'} entity ${style.bold(id)}`));
   });
 }
@@ -171,7 +172,7 @@ export async function entitiesLink(
       return;
     }
 
-    await persist(store, {
+    await persistEntity(store, {
       ...entity,
       relations: [...entity.relations, { predicate, entity: to }],
       updatedAt: new Date().toISOString(),
@@ -202,10 +203,7 @@ export async function entitiesForget(id: string | undefined, flags: OwnerFlags):
     }
     if (!(await agreed(flags, 'Remove this entity?'))) return;
 
-    await store.delete(entityStorage.key(entityId));
-    const remaining = catalogue.entities.filter((one) => one.id !== entityId);
-    const rebuilt = await rebuildCatalogue(store);
-    await writeCatalogue(store, remaining, rebuilt.fingerprint, new Date().toISOString());
+    await forgetEntity(store, catalogue, entityId, new Date().toISOString());
 
     print(ok(`removed entity ${style.bold(entityId)}`));
   });
@@ -232,13 +230,6 @@ export async function entitiesReindex(flags: OwnerFlags): Promise<void> {
     await writeCatalogue(store, catalogue.entities, catalogue.fingerprint, new Date().toISOString());
     print(ok(`rebuilt the index over ${catalogue.entities.length} entities — ${before.reason}`));
   });
-}
-
-/** Write one entity and leave the index describing what is now there. */
-async function persist(store: BlobStore, entity: Entity): Promise<void> {
-  await entityStorage.write(store, entity);
-  const rebuilt = await rebuildCatalogue(store);
-  await writeCatalogue(store, rebuilt.entities, rebuilt.fingerprint, entity.updatedAt);
 }
 
 /**

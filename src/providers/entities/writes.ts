@@ -99,7 +99,7 @@ export const writeCapabilities: readonly Capability[] = [
           bytes: 0,
         };
 
-        await persist(context.storage, next);
+        await persistEntity(context.storage, next);
 
         // `redact` maps keys to keep-or-typemark and cannot express "keep the
         // shape of this list, drop its values" — left to it alone, the log
@@ -168,7 +168,7 @@ export const writeCapabilities: readonly Capability[] = [
           updatedAt: new Date().toISOString(),
         };
 
-        const catalogue = await persist(context.storage, next);
+        const catalogue = await persistEntity(context.storage, next);
 
         // Recorded because a dangling edge is legal and useful, and is also how
         // a typo in an id looks. The log is where that becomes visible.
@@ -211,15 +211,7 @@ export const writeCapabilities: readonly Capability[] = [
           };
         }
 
-        await context.storage.delete(entityKey(id));
-
-        const remaining = catalogue.entities.filter((one) => one.id !== id);
-        await writeCatalogue(
-          context.storage,
-          remaining,
-          fingerprintAfter(catalogue.listing, { key: entityKey(id), deleted: true }),
-          new Date().toISOString(),
-        );
+        await forgetEntity(context.storage, catalogue, id, new Date().toISOString());
 
         // Deliberately not a cascade: a delete that rewrote five other people's
         // files could not be reviewed as one change. Saying who still points
@@ -246,8 +238,14 @@ export const writeCapabilities: readonly Capability[] = [
  * The fingerprint is computed from the listing taken *before* the put plus the
  * byte length being written, so there is no second `list()` and no read-back —
  * see `catalogue.ts` for why `key:size` is what makes that possible.
+ *
+ * Exported because `lanes link entities write` needs exactly this and an
+ * earlier version of it had its own: a rebuild-then-write that read every file
+ * on every call, which is one extra pass by hand and a quadratic bulk load from
+ * a script. Two implementations of index maintenance is the same drift the
+ * shared `entityStorage` exists to prevent, one layer up.
  */
-async function persist(storage: BlobStore, entity: Entity): Promise<Catalogue> {
+export async function persistEntity(storage: BlobStore, entity: Entity): Promise<Catalogue> {
   const catalogue = await openCatalogue(storage);
   const bytes = await writeEntity(storage, entity);
 
@@ -262,4 +260,20 @@ async function persist(storage: BlobStore, entity: Entity): Promise<Catalogue> {
   );
 
   return catalogue;
+}
+
+/** Remove one entity and leave the index describing what is left. */
+export async function forgetEntity(
+  storage: BlobStore,
+  catalogue: Catalogue,
+  id: string,
+  now: string,
+): Promise<void> {
+  await storage.delete(entityKey(id));
+  await writeCatalogue(
+    storage,
+    catalogue.entities.filter((one) => one.id !== id),
+    fingerprintAfter(catalogue.listing, { key: entityKey(id), deleted: true }),
+    now,
+  );
 }
