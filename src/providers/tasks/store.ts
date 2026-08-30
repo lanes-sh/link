@@ -4,6 +4,7 @@ import {
   stringList,
   withFrontmatter,
 } from '#providers/shared/frontmatter.ts';
+import { slugify as slugifyText } from '#providers/shared/slug.ts';
 
 /**
  * How a task is stored, and the only place that knows.
@@ -99,13 +100,7 @@ export function assertTaskId(id: string): void {
 
 /** A stable id from a title, so adding a task does not demand one be invented. */
 export function slugify(title: string): string {
-  const slug = title
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60);
-
-  return slug.length > 0 ? slug : `task-${title.length}`;
+  return slugifyText(title, 'task');
 }
 
 /**
