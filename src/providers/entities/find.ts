@@ -224,9 +224,19 @@ function rankOf(entity: CatalogueEntity, query: string): Candidate | null {
  * everything about both buries the one column that would have decided it.
  *
  * Fields shared by every candidate are omitted for that reason, not to save
- * space. An attribute *value* that no criterion named is never rendered here —
- * disambiguating two people by printing three people's phone numbers is worse
- * than the ambiguity.
+ * space: they cannot disambiguate, and they crowd out what can.
+ *
+ * Values *are* rendered, and that is a deliberate reversal of an earlier draft
+ * which withheld them. An address is usually the most distinguishing thing
+ * about a person, so withholding it leaves a row that says two people differ by
+ * their email without saying how — which is the ambiguity again, one level
+ * down. It discloses nothing either: `find` and `get` are both in the default
+ * read bundle, so anything that can see this list can already open either
+ * record. What it costs is verbosity, and only for fields that actually differ.
+ *
+ * The audit log is the separate question and is answered differently: the query
+ * is withheld there and only the ids that matched are recorded. A response goes
+ * to a caller that already has the read grant; the log outlives the call.
  */
 export function distinguish(candidates: readonly Candidate[]): string[][] {
   const facets = candidates.map(facetsOf);

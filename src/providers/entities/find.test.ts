@@ -239,6 +239,19 @@ describe('distinguish', () => {
     expect(distinguish(matchEntities(catalogue, { query: 'Jan' }).candidates)).toEqual([[], []]);
   });
 
+  test('it renders the differing value, not just the field name', () => {
+    const { candidates } = matchEntities(CATALOGUE, { query: 'Jan' });
+    const rows = new Map(
+      distinguish(candidates).map((facets, index) => [candidates[index]!.entity.id, facets.join(' ')]),
+    );
+
+    // A draft withheld these. "These two differ by email" without saying how is
+    // the same ambiguity one level down, and there is nothing to withhold —
+    // `find` and `get` are both in the default read bundle.
+    expect(rows.get('jan-bakker')).toContain('jan@acme.test');
+    expect(rows.get('jan-de-vries')).toContain('jdv@meridian.test');
+  });
+
   test('a field only one candidate has still counts as distinguishing', () => {
     const catalogue = catalogueFrom([
       entity('a-one', { name: 'Same', aliases: ['Same'], tags: ['vip'] }),

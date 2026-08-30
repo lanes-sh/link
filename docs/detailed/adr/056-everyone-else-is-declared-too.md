@@ -68,6 +68,13 @@ using the first:
    it. When nothing distinguishes them the answer says so — that is a duplicate to merge, not a
    choice to make.
 
+   A draft withheld the *values* of differing attributes and named only their kinds. That is worse:
+   "these two differ by email" without saying how is the same ambiguity one level down, and it
+   discloses nothing to withhold, since `find` and `get` are both in the default read bundle and
+   either record can already be opened. The audit log is the separate question and is answered the
+   other way — the query is withheld there and only the matched ids are kept, because a response
+   goes to a caller that already has the grant while the log outlives the call.
+
 Exact matches suppress prefix and substring ones. That is a boundary between *kinds* of match, not
 a precedence among equals: two exact alias matches both survive and both are returned.
 
