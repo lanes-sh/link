@@ -24,13 +24,24 @@ Those are engineering history rather than documentation, so they stay with the s
 
 ## Editing the docs
 
-The pages above are authored in the website repository, under `src/content/docs/link/`. Two test
-suites here read them, so point them at your checkout when you change a config example or the
-Google scope justifications:
+The pages above are authored in the website repository, under `src/content/docs/link/`. Three test
+files here read them, so point them at your checkout when you add a provider, change a config
+example, or edit the Google scope justifications:
 
 ```console
 $ LANES_DOCS_DIR=/path/to/web/src/content/docs/link bun test
 ```
 
-Without it, `src/profile/docs.test.ts` and the verification checks in
-`src/providers/google/specs/specs.test.ts` skip rather than passing by not looking.
+| | Reads | Checks |
+|---|---|---|
+| `src/readme.test.ts` | `connect.mdx` | Every provider manifest has a `lanes link connect` command, and the untested markers agree with `untested.ts` |
+| `src/profile/docs.test.ts` | `configuration.mdx`, `deployment-cloudrun.mdx`, `creating-a-provider.mdx`, `connectivity-coverage.mdx` | The documented config examples and provider manifests parse against the real schema |
+| `src/providers/google/specs/specs.test.ts` | `google-verification.mdx` | The Google scopes the code requests are the ones the page justifies to reviewers |
+
+Without `LANES_DOCS_DIR` those checks skip rather than passing by not looking, which is what happens
+in the `ci` workflow: it has no access to the website repository, which is private.
+
+They are run instead by the **`docs` workflow**, daily and on demand, against the pages as published
+on lanes.sh. That is the honest subject anyway, since what matters is whether the documentation a
+reader receives still names everything this code ships. If it goes red after you add a provider, the
+website side has not caught up yet.

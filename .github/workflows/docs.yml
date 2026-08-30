@@ -1,0 +1,97 @@
+# Does the published documentation still name everything this code ships?
+#
+# `sheets` and `docs` once shipped complete and unreachable, because nothing
+# told anyone `lanes link connect sheets` existed. Three test files exist to
+# stop that recurring, and when the documentation moved to lanes.sh they were
+# left reading `LANES_DOCS_DIR` and skipping when it is unset. In `ci` it is
+# unset, so they skip: the guards are written down and not run, which is the
+# state `bun run audit` was added to this repository to end.
+#
+# This runs them, against the pages a reader actually receives.
+#
+# Why fetch rather than check out the website repository: `ci` grants its job
+# nothing but tree read, and gives a fork PR the same gate as a branch PR. A
+# token for a private repository breaks both, since fork PRs receive no secrets
+# and would silently get a weaker check. The site publishes every page as
+# Markdown, so nothing here needs a credential at all.
+#
+# Why on a schedule rather than on a pull request: the subject is the *published*
+# documentation, which is deployed from another repository and lags a merge here
+# by however long that takes. Gating a PR on it would redden branches for a
+# deploy that is simply in flight. Daily is soon enough to catch drift and never
+# blocks anybody. `workflow_dispatch` is here for when you want the answer now.
+#
+# There is no event payload anywhere in this file: it runs on a timer or on a
+# button, and the only interpolation is an output this workflow itself wrote.
+name: docs
+
+on:
+  schedule:
+    # 07:00 UTC, before the working day in the timezone this is maintained from.
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: docs
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    name: published docs name everything
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+
+      - run: bun install --frozen-lockfile
+
+      # The article list comes from llms.txt rather than being spelled here, so
+      # a page added to the section is fetched without editing this file.
+      - name: Fetch the published documentation
+        id: fetch
+        run: |
+          set -euo pipefail
+          docs="${RUNNER_TEMP}/link-docs"
+          mkdir -p "$docs"
+
+          slugs=$(curl -fsS --retry 3 --retry-delay 5 https://lanes.sh/llms.txt \
+            | grep -oE 'https://lanes\.sh/docs/link/[a-z0-9-]+' \
+            | sed 's|.*/||' | sort -u)
+
+          if [ -z "$slugs" ]; then
+            echo "::error::llms.txt named no /docs/link pages. Has the section shipped?"
+            exit 1
+          fi
+
+          for slug in $slugs; do
+            # Saved as .mdx because that is what LANES_DOCS_DIR means: the
+            # section's source directory. The .md twin is the same document.
+            curl -fsS --retry 3 --retry-delay 5 \
+              "https://lanes.sh/docs/link/${slug}.md" -o "${docs}/${slug}.mdx"
+          done
+
+          echo "fetched $(find "$docs" -name '*.mdx' | wc -l | tr -d ' ') pages"
+
+          # A page that 404s into an HTML error body would otherwise reach the
+          # tests as prose that happens to name no providers.
+          grep -q 'lanes link connect' "${docs}/connect.mdx" \
+            || { echo "::error::connect.mdx carries no connect commands"; exit 1; }
+
+          echo "dir=${docs}" >> "$GITHUB_OUTPUT"
+
+      # Only the three files that read the documentation. `ci` already runs the
+      # rest, and running them twice would just double the time to a red X.
+      - name: Check the documentation against the code
+        env:
+          LANES_DOCS_DIR: ${{ steps.fetch.outputs.dir }}
+        run: |
+          bun test \
+            src/readme.test.ts \
+            src/profile/docs.test.ts \
+            src/providers/google/specs/specs.test.ts
