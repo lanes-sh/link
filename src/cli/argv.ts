@@ -107,7 +107,7 @@ export function globalFlags(flags: Flags): GlobalFlags {
  * The kebab-case spellings live here and nowhere else, so the one place that
  * knows `--display-name` is the one place that parses argv.
  */
-export function ownerFlags(flags: Flags): OwnerFlags {
+export function ownerFlags(flags: Flags, argv: readonly string[] = []): OwnerFlags {
   return {
     ...globalFlags(flags),
     show: flags['show'] === true,
@@ -124,8 +124,21 @@ export function ownerFlags(flags: Flags): OwnerFlags {
     due: text(flags, 'due'),
     name: text(flags, 'name'),
     contentType: text(flags, 'content-type'),
+    type: text(flags, 'type'),
+    // Repeatable, so read from argv rather than from the parsed map: `parseArgv`
+    // keeps only the last value of a repeated flag, and two email addresses on
+    // one entity is the case entities exists for. `customFlags` does the same.
+    alias: list(argv, 'alias'),
+    attr: list(argv, 'attr'),
+    related: list(argv, 'related'),
     yes: flags['yes'] === true,
   };
+}
+
+/** A repeatable flag's values, or undefined when it was not passed at all. */
+function list(argv: readonly string[], name: string): string[] | undefined {
+  const values = all(argv, name);
+  return values.length > 0 ? values : undefined;
 }
 
 /**

@@ -1,6 +1,6 @@
 /**
- * `lanes link memory`, `tasks`, `assets`, `skills`, `vault` — the owner layer's
- * control plane.
+ * `lanes link memory`, `tasks`, `assets`, `skills`, `vault`, `entities` — the
+ * owner layer's control plane.
  *
  * The layer shipped in M4 with no CLI at all, so the two stores holding the
  * owner's *own* data were reachable only by an agent, and the one thing that
@@ -22,7 +22,7 @@
  * MCP because ADR-014 §1 decided a policy-gated grant beats a missing path.
  *
  * One noun per file — `memory.ts`, `tasks.ts`, `assets.ts`, `skills.ts`,
- * `vault.ts` — over the shape they all share in `shared.ts`: the flag type, the
+ * `vault.ts`, `entities.ts` — over the shape they all share in `shared.ts`: the flag type, the
  * open-announce-act-close wrapper, connection resolution, and the two prompts.
  */
 
@@ -39,6 +39,16 @@ export { tasksAdd, tasksGet, tasksList, tasksRemove, tasksUpdate } from './owner
 export { assetsAdd, assetsGet, assetsList, assetsRemove } from './owner/assets.ts';
 
 export { skillsAdd, skillsList, skillsRemove, skillsShow } from './owner/skills.ts';
+
+export {
+  entitiesFind,
+  entitiesForget,
+  entitiesGet,
+  entitiesLink,
+  entitiesReindex,
+  entitiesStore,
+  entitiesWrite,
+} from './owner/entities.ts';
 
 export {
   vaultGet,

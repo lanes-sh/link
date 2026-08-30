@@ -100,6 +100,17 @@ ${style.bold('Your own context')}
   ${PROGRAM} skills add <name> [--file f]             document on stdin
   ${PROGRAM} skills remove <name>
 
+  ${PROGRAM} entities                 who and what everyone else is
+  ${PROGRAM} entities find [query] [--type t] [--tag t] [--attr kind[=value]]
+                                 [--related predicate=id]   every match, never a choice
+  ${PROGRAM} entities get <id>                   with its relationships, both ways
+  ${PROGRAM} entities write <name> [--type t] [--name id] [--alias a]
+                                 [--attr kind=value] [--related predicate=id]
+                                 notes on stdin; a flag you omit keeps what is stored
+  ${PROGRAM} entities link <from> <predicate>=<to>       one edge, written on <from> only
+  ${PROGRAM} entities forget <id>
+  ${PROGRAM} entities reindex                    rebuild the lookup index from the files
+
   ${PROGRAM} knowledge show            where memory and skills are kept, and how many
   ${PROGRAM} knowledge use github --repo <owner/name> [--branch b] [--path p]
                                  keep both in a private repository, over the GitHub API
@@ -152,8 +163,8 @@ ${style.bold('Naming what a command acts on')}
                                  command that names neither refuses and lists what exists.
 
 ${style.bold('Other flags')}
-  --connection <id>              which memory/tasks/assets/skills/vault connection, where
-                                 a profile has several of one kind
+  --connection <id>              which memory/tasks/assets/skills/vault/entities
+                                 connection, where a profile has several of one kind
   --yes                          skip the confirmation a destructive command would ask for
   --json                         machine-readable output, where a command offers it
   --non-interactive              never prompt: connect refuses with what to store,
