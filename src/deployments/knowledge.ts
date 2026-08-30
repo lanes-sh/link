@@ -1,6 +1,7 @@
 import type { SecretStore } from '#secrets';
 import type { BlobStore } from '#stores/blobs';
-import { knowledgeRoot, type KnowledgeArea, type KnowledgeConfig } from '#profile';
+import type { BlobRoute } from '#stores/blobs/route.ts';
+import { KNOWLEDGE_LAYOUT, knowledgeRoot, type KnowledgeArea, type KnowledgeConfig } from '#profile';
 import { requireSecret, type TargetInput } from './target.ts';
 import type { FetchLike } from './adapters/github-api.ts';
 // Type-only, so a target with no `knowledge` block never loads the adapter.
@@ -122,6 +123,22 @@ export async function knowledgeStores(
     });
 
   return { skills: build('skills'), memory: build('memory'), entities: build('entities') };
+}
+
+/**
+ * Which key prefixes of the profile's blob root lead to the repository.
+ *
+ * Here rather than at the call site because it is the same fact
+ * `KNOWLEDGE_LAYOUT` states: a directory name in the repository *is* the
+ * provider namespace that routes into it, and spelling the pair in two files is
+ * how they would come to disagree. `skills` is absent because it is not a
+ * prefix of that root — it is a store of its own, handed over whole.
+ */
+export function knowledgeRoutes(stores: KnowledgeStores): BlobRoute[] {
+  return [
+    { prefix: `${KNOWLEDGE_LAYOUT.memory}/`, store: stores.memory },
+    { prefix: `${KNOWLEDGE_LAYOUT.entities}/`, store: stores.entities },
+  ];
 }
 
 /** `github:owner/name#branch/path`, in one place so every reader agrees. */
