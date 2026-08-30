@@ -339,14 +339,53 @@ describe('the habits it teaches', () => {
         ),
       ]);
 
-    const everything = ['memory', 'tasks', 'assets', 'skills', 'vault', 'setup', 'identity'];
-    const withoutTasks = everything.filter((id) => id !== 'tasks');
+    const everything = [
+      'memory',
+      'tasks',
+      'assets',
+      'skills',
+      'vault',
+      'setup',
+      'identity',
+      'entities',
+    ];
+    const without = (...drop: string[]) => everything.filter((id) => !drop.includes(id));
+    const lengthOf = (ids: readonly string[]) =>
+      serverInstructions(profiles, owners(ids), true).length;
 
-    const paired = serverInstructions(profiles, owners(everything), true);
-    const unpaired = serverInstructions(profiles, owners(withoutTasks), true);
+    // Two independent pairs — memory/tasks and identity/entities — so there are
+    // four combinations and the widest is not the one with the most providers
+    // in it. Walking all four is the point: the last three raises to this
+    // ceiling were each certified against a case an endpoint does not serve.
+    const branches = [
+      lengthOf(everything),
+      lengthOf(without('tasks')),
+      lengthOf(without('entities')),
+      lengthOf(without('tasks', 'entities')),
+    ];
 
-    expect(unpaired.length).toBeGreaterThan(paired.length);
-    expect(unpaired.length).toBeLessThan(MAX_INSTRUCTIONS);
+    for (const length of branches) expect(length).toBeLessThan(MAX_INSTRUCTIONS);
+
+    // The maximum is memory *unpaired* while identity and entities are paired:
+    // it looks like the narrower configuration and costs the most, because
+    // `MEMORY_AND_TASKS` is shorter than `MEMORY` and `TASKS` apart.
+    expect(Math.max(...branches)).toBe(branches[1]!);
+  });
+
+  test('collapsing identity and entities is what keeps the ceiling where it is', () => {
+    const profiles = ['personal'];
+    const owners = (ids: readonly string[]) =>
+      new Map(ids.map((id) => [`${id}.list`, reaching({ personal: [`${id}.owner`] })]));
+
+    const neither = serverInstructions(profiles, owners(['memory']), true).length;
+    const identityOnly = serverInstructions(profiles, owners(['memory', 'identity']), true).length;
+    const entitiesOnly = serverInstructions(profiles, owners(['memory', 'entities']), true).length;
+    const both = serverInstructions(profiles, owners(['memory', 'identity', 'entities']), true).length;
+
+    // Written as an inequality rather than as four literals, so the assertion
+    // survives an edit to the prose while still failing if the collapse is
+    // removed — at which point `both` becomes the sum of the two halves.
+    expect(both).toBeLessThan(identityOnly + entitiesOnly - neither);
   });
 
   test('stays inside its budget', () => {

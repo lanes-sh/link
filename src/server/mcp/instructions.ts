@@ -127,6 +127,49 @@ const IDENTITY = `**Identity is declared, not inferred.** Where a name, address 
 owner's is needed, call \`identity_list\`: a profile may hold several, each with a
 note on when it applies.`;
 
+/**
+ * The one about addressing the wrong person.
+ *
+ * `IDENTITY` prevents an agent signing as the wrong person; this prevents it
+ * writing *to* the wrong one, which is the same mistake pointed outward and is
+ * the more expensive of the two — a message signed wrongly is embarrassing, a
+ * message sent to the wrong Jan has left.
+ *
+ * It carries two rules rather than one, because dropping the refusal made the
+ * second necessary. `entities_find` returns every match and sets no error, so a
+ * client is not stopped by anything: nothing but this sentence stands between
+ * "two candidates" and an agent using the first. The count and the wording of
+ * the tool result say it too, and this says it before the first call rather
+ * than after.
+ *
+ * Names nothing, for `IDENTITY`'s reason: a per-profile list inside a string
+ * with a fixed ceiling is summarised away first in exactly the workspace that
+ * has the most people to keep straight.
+ */
+const ENTITIES = `**Who you are writing to is declared.** Before using anyone's address or handle,
+call \`entities_find\` — the people, companies and projects this owner deals with
+are there. It returns every match and never chooses: more than one means ask
+which is meant, not take the first.`;
+
+/**
+ * The pair, when both are reachable.
+ *
+ * The same argument `MEMORY_AND_TASKS` makes. The mistake is a routing one —
+ * reaching for the wrong side of "the owner" and "everybody else" — and a
+ * routing rule is shorter and clearer said once, naming both, than implied by
+ * two paragraphs that each describe only themselves. It replaces `IDENTITY`
+ * rather than joining it, and measures 161 characters cheaper than the two
+ * apart (see `MAX_INSTRUCTIONS`).
+ *
+ * Worth noting which case is ordinary: `entities` is granted on a fresh profile
+ * and `identity` is not (ADR-050, ADR-055), so `ENTITIES` alone is the common
+ * form and this one arrives only once the owner has declared themselves.
+ */
+const IDENTITY_AND_ENTITIES = `**Who someone is, is declared rather than inferred.** For the owner's own name,
+address or handle, call \`identity_list\`. For anyone else — a person, a company,
+a project — call \`entities_find\`, which returns every match and never chooses:
+more than one means ask which is meant, not take the first.`;
+
 const FILES = `**Files are named, not carried.** Where a tool takes attachments, give a path, an
 HTTPS URL, or an attachment already on another message; the endpoint reads the
 bytes. Never encode a file into a call — that is the thing this replaces.`;
@@ -165,26 +208,34 @@ const OWNER_HABITS: Record<string, string> = {
   vault: VAULT,
   setup: SETUP,
   identity: IDENTITY,
+  entities: ENTITIES,
 };
 
 /**
  * The paragraphs this principal should be told, in `RESERVED_PROVIDER_IDS` order.
  *
  * A lookup per provider would be enough if every paragraph described exactly one
- * provider, and one does not: memory and tasks are only worth distinguishing
- * from each other, so when both are reachable they collapse into one. The
- * substitution is conditional rather than unconditional for the reason the
- * docstring at the top of this file gives — prose describing a tool that is not
- * there is worse than absent prose, and a profile carrying `deny: [tasks.*]` is
- * exactly the case that would produce it.
+ * provider, and two do not. Memory and tasks are only worth distinguishing from
+ * each other; identity and entities are the same question about different
+ * people. Each pair collapses into one paragraph when both halves are
+ * reachable. The substitutions are conditional rather than unconditional for
+ * the reason the docstring at the top of this file gives — prose describing a
+ * tool that is not there is worse than absent prose, and a profile carrying
+ * `deny: [tasks.*]` is exactly the case that would produce it.
+ *
+ * The two pairs are independent, which is why the budget below is certified
+ * against four combinations rather than two.
  */
 function habitsFor(reachable: readonly string[]): string[] {
   const present = new Set(reachable);
-  const paired = present.has('memory') && present.has('tasks');
+  const stores = present.has('memory') && present.has('tasks');
+  const people = present.has('identity') && present.has('entities');
 
   return reachable.flatMap((id) => {
-    if (paired && id === 'memory') return [MEMORY_AND_TASKS];
-    if (paired && id === 'tasks') return [];
+    if (stores && id === 'memory') return [MEMORY_AND_TASKS];
+    if (stores && id === 'tasks') return [];
+    if (people && id === 'identity') return [IDENTITY_AND_ENTITIES];
+    if (people && id === 'entities') return [];
     return OWNER_HABITS[id] ? [OWNER_HABITS[id]!] : [];
   });
 }
@@ -214,14 +265,33 @@ function habitsFor(reachable: readonly string[]): string[] {
  * has already done so by the time a skill would have been loaded. The client
  * that most needs the rule is the one holding no skills directory.
  *
- * The arithmetic, because the number is a measurement and not a round figure:
- * twenty profiles, twenty connections each, every owner provider reachable,
- * remote clients, is **2686**. That is the *unpaired* case — memory reachable
- * and tasks denied — which runs three characters longer than the ordinary one
- * (2683), because `MEMORY_AND_TASKS` is slightly shorter than `MEMORY` and
- * `TASKS` apart. Worth stating, because the last two raises were both certified
- * against a case an endpoint does not actually serve, and the widest case here
- * is the one that looks like the narrower configuration.
+ * Raised a fourth time, to 2900, for `entities` (ADR-055), and the answer is
+ * `IDENTITY`'s restated one step outward. An agent that resolves "email Jan" to
+ * the wrong address has already sent the message; the mistake happens at the
+ * instant of the send, before a skill would have been loaded, and the client
+ * most in need of the rule is again the one holding no skills directory. The
+ * paragraph also carries a rule nothing else can enforce: `entities_find` sets
+ * no error on an ambiguous result, so between "two candidates" and an agent
+ * using the first there is only prose.
+ *
+ * The arithmetic, because the number is a measurement and not a round figure.
+ * Twenty profiles, twenty connections each, every owner provider reachable,
+ * remote clients:
+ *
+ *   neither identity nor entities reachable   2500
+ *   + `IDENTITY` alone                        2686   (+186)
+ *   + `ENTITIES` alone                        2775   (+275)
+ *   + both, collapsed                         2800   (+300)
+ *   + both, if they were not collapsed        2961
+ *
+ * So the maximum is **2800**, and the collapse is worth 161 characters as well
+ * as being the clearer prose. Every figure above is the *unpaired* memory case
+ * — memory reachable and tasks denied — which runs three characters longer than
+ * the ordinary one, because `MEMORY_AND_TASKS` is shorter than `MEMORY` and
+ * `TASKS` apart. Worth stating again, because two earlier raises were certified
+ * against a case an endpoint does not actually serve, and the widest case is
+ * still the one that looks like the narrower configuration. There are now two
+ * independent pairs, so the test walks four combinations rather than two.
  *
  * Exported because the test asserted `2000` as a literal while the code
  * reserved room against a second, differently-derived number — so the two could
@@ -230,7 +300,7 @@ function habitsFor(reachable: readonly string[]): string[] {
  * exactly the final length, because `join` adds the same two characters the
  * reduce already counted.
  */
-export const MAX_INSTRUCTIONS = 2700;
+export const MAX_INSTRUCTIONS = 2900;
 
 /** Which of the owner-layer providers this principal can actually reach. */
 function ownerProviders(merged: ReadonlyMap<string, MergedCapability>): string[] {

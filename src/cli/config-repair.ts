@@ -27,6 +27,7 @@ const RESERVED_SURFACES = {
   vault: 'Vault',
   setup: 'Setup',
   identity: 'Identity',
+  entities: 'Entities',
 } as const;
 
 type ReservedSurface = keyof typeof RESERVED_SURFACES;
@@ -42,6 +43,14 @@ type ReservedSurface = keyof typeof RESERVED_SURFACES;
  * which is ADR-050's whole argument — so a profile written before those existed
  * gets them on the next command rather than needing five of its own.
  *
+ * `entities` is on the list and `identity` is not, which reads as inconsistent
+ * until the test is stated exactly. It is not "is it empty" — memory arrives
+ * empty and is granted. It is **can it be filled in from here**: identity is
+ * configuration, changed in the CLI under ADR-007, so a surface that reported
+ * an empty one could never do anything about it. Entities accumulate on the
+ * same surface that reads them, so an empty one is a store waiting to be used
+ * rather than a tool with nothing to say (ADR-055).
+ *
  * Ordered as `RESERVED_PROVIDER_IDS` is, so a repair reports in the order the
  * template writes and a diff between the two reads as a diff.
  */
@@ -52,6 +61,7 @@ export const DEFAULT_SURFACES: readonly ReservedSurface[] = [
   'skills',
   'vault',
   'setup',
+  'entities',
 ];
 
 /**

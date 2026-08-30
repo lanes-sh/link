@@ -552,7 +552,7 @@ policy:
   deny: []
 `;
 
-  test('all six arrive, both halves each, in the order the template writes', async () => {
+  test('all seven arrive, both halves each, in the order the template writes', async () => {
     const { root } = await profileFile(OLD);
 
     const document = await ConfigDocument.open(root, 'personal');
@@ -566,12 +566,14 @@ policy:
       'connections += skills.main',
       'connections += vault.main',
       'connections += setup.main',
+      'connections += entities.main',
       'policy.allow += memory.*',
       'policy.allow += tasks.*',
       'policy.allow += assets.*',
       'policy.allow += skills.*',
       'policy.allow += vault.*',
       'policy.allow += setup.*',
+      'policy.allow += entities.*',
     ]);
   });
 
@@ -662,6 +664,6 @@ policy:
     const added = repairLines(ensureOwnerLayer(document));
 
     expect(added.filter((line) => line.startsWith('policy.allow'))).toEqual([]);
-    expect(added).toHaveLength(6);
+    expect(added).toHaveLength(7);
   });
 });
