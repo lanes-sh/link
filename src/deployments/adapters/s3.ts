@@ -15,7 +15,7 @@ import type { BlobMetadata, BlobStore } from '#stores/blobs';
  *
  * Named for the protocol rather than the vendor, which is ADR-008's rule
  * applied to an adapter: Supabase Storage, Cloudflare R2, MinIO, and AWS differ
- * only in the endpoint. Supabase is what `docs/detailed/deployment-cloudrun.md`
+ * only in the endpoint. Supabase is what `https://lanes.sh/docs/link/deployment-cloudrun`
  * documents, because it is already the Postgres host and a second vendor for
  * the blobs would be one more thing to hold.
  *

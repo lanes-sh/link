@@ -49,7 +49,7 @@ export interface ConnectionInfo {
  * provider can do anything that credential permits. There is no provider
  * sandbox in M1. Installing a third-party provider is equivalent to running
  * arbitrary code with access to that account, and
- * `docs/detailed/creating-a-provider.md` says so plainly.
+ * `https://lanes.sh/docs/link/creating-a-provider` says so plainly.
  */
 export interface ProviderContext {
   readonly connection: ConnectionInfo;

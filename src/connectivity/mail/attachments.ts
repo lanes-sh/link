@@ -27,7 +27,7 @@ import { basename, guessContentType } from './content-type.ts';
  *
  * `path` is deliberately unrestricted: no allowlist, no confinement to a root.
  * The endpoint already holds its owner's credentials, so the filesystem is
- * treated the same way, and `docs/detailed/creating-a-provider.md`'s note that provider
+ * treated the same way, and `https://lanes.sh/docs/link/creating-a-provider`'s note that provider
  * code is trusted code applies here too. What makes that defensible is the audit
  * trail rather than a sandbox — every resolved attachment carries its origin and
  * a SHA-256, and the manifest's `redact` block keeps both, so "was this file ever

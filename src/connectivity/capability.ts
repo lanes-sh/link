@@ -8,7 +8,7 @@ import type { ProviderContext } from './context.ts';
  * Do not make everything a tool. Use resources for read-oriented document or
  * structured context, tools for actions and parameterised queries, prompts for
  * reusable procedures. Decide per capability and record the reasoning in
- * `docs/detailed/providers.md` — ADR-006.
+ * `https://lanes.sh/docs/link/capabilities` — ADR-006.
  */
 export type Capability = ToolCapability | ResourceCapability | PromptCapability;
 

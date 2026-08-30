@@ -208,7 +208,7 @@ export async function prepareSecrets(input: PrepareInput): Promise<PrepareResult
  *
  * Minted here for the same reason the profile token is: it is a random string
  * this process generates correctly and nobody can usefully choose. It used to be
- * three manual commands in `docs/detailed/deployment-cloudrun.md` — generate, store,
+ * three manual commands in `https://lanes.sh/docs/link/deployment-cloudrun` — generate, store,
  * mount — whose only failure mode was forgetting them and finding out when the
  * first `vault.*` call failed against a revision that had booted healthy.
  *

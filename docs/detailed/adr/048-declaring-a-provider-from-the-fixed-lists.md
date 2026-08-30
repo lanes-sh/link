@@ -38,7 +38,7 @@ Those unions are the whole surface: five connectivity types an operator can decl
 `basic`, `oauth`, `strategy`). Thirteen of the thirty-five pairs are legal; `defineProvider` closes
 the rest, each for a stated reason. Nothing is bolted on here for a service that fits no pair — that
 is a member missing from one of the lists, which is a folder and a schema entry away, and
-[`connectivity-coverage.md`](../connectivity-coverage.md) is the standing account of which.
+[`connectivity-coverage.md`](https://lanes.sh/docs/link/connectivity-coverage) is the standing account of which.
 
 `strategy` is offered rather than withheld, and it is the one that most needed deciding. A strategy
 names code that travels on a provider's definition rather than in a global registry
@@ -120,7 +120,7 @@ derivation must add — and validates it separately. The round-trip test is what
 is the assertion the design rests on: the text written is re-read by the exact code the loader
 runs and comes back the same manifest.
 
-It also records a real limit, in [`connectivity-coverage.md`](../connectivity-coverage.md): a YAML
+It also records a real limit, in [`connectivity-coverage.md`](https://lanes.sh/docs/link/connectivity-coverage): a YAML
 manifest cannot currently set `refresh_token: optional`, which a vendor issuing long-lived tokens
 without a refresh token needs. Nothing here works around it.
 

@@ -13,4 +13,4 @@
 - [ ] `bun test` passes
 - [ ] `bun run typecheck` passes
 - [ ] Tests added for what changed
-- [ ] If a guarantee got weaker, the table in `docs/detailed/security.md` was updated in the same commit
+- [ ] If a guarantee got weaker, the table in `https://lanes.sh/docs/link/security` was updated in the same commit

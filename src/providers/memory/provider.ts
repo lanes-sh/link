@@ -11,7 +11,7 @@ import {
  * `memory` — the owner's accumulated knowledge.
  *
  * **Reading and writing are separate capabilities**, and that separation is the
- * whole security argument for this provider (ADR-012 §2, `docs/detailed/security.md`).
+ * whole security argument for this provider (ADR-012 §2, `https://lanes.sh/docs/link/security`).
  * Upstream content is already treated as potentially prompt-injecting and passed
  * through unscreened; memory an agent can *write to* changes the shape of that
  * risk rather than its size, because an injected instruction is stored once and

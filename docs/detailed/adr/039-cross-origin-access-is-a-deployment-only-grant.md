@@ -18,7 +18,7 @@ what happened — the browser reports a CORS failure, and the endpoint's log rec
 request with `reason: missing`, which is exactly what it records for an ordinary unauthenticated
 call.
 
-The gap survived because nothing had asked. Every client `docs/clients.md` names connects from a
+The gap survived because nothing had asked. Every client `https://lanes.sh/docs/link/clients` names connects from a
 server: `claude mcp add` and Codex are local processes, and a claude.ai or ChatGPT connector performs
 its fetches in the vendor's backend, not in the page. A browser-origin MCP client is the case nobody
 had, so the missing header was never the reason for a failure anyone reported.

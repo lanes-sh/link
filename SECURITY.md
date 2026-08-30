@@ -21,7 +21,7 @@ escape a profile or connection boundary, reach a control-plane operation through
 recording.
 
 Explicitly **out of scope**, because they are documented properties rather than defects — see
-[`docs/detailed/security.md`](docs/detailed/security.md):
+[the security model](https://lanes.sh/docs/link/security):
 
 - Provider code doing anything its own connection's credential permits. Provider code is trusted and
   there is no sandbox.

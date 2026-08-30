@@ -35,7 +35,7 @@ import {
  * So this composes the two closed unions: a connectivity type and a credential
  * type. Anything not covered by a pair of them is not something to bolt on here
  * — it is a member missing from one of those lists, which is a folder and a
- * schema entry away. `docs/detailed/connectivity-coverage.md` is the standing
+ * schema entry away. `https://lanes.sh/docs/link/connectivity-coverage` is the standing
  * account of which pairs work, which are closed on purpose, and which are not
  * built yet.
  *

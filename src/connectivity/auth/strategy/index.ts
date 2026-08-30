@@ -133,6 +133,6 @@ export function strategyContextFrom(input: {
 export function refuseStrategy(strategy: string): never {
   throw new Error(
     `Auth strategy "${strategy}" is not registered. ` +
-      `Strategies are the only place per-vendor code belongs; see docs/detailed/creating-a-provider.md.`,
+      `Strategies are the only place per-vendor code belongs; see https://lanes.sh/docs/link/creating-a-provider.`,
   );
 }

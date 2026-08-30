@@ -75,7 +75,7 @@ when the choice is genuinely ambiguous.
 **Decision: reading and writing memory are different capability ids, in different bundles.**
 
 Upstream content is already treated as potentially prompt-injecting and passed through unscreened —
-`docs/detailed/security.md` says so. Memory an agent can *write to* changes the shape of that risk rather than
+`https://lanes.sh/docs/link/security` says so. Memory an agent can *write to* changes the shape of that risk rather than
 its size: an injected instruction is stored once and re-served to **every future session, including
 to a different agent**. A read-only memory cannot do this. Nothing else in the system has this
 property, because nothing else persists model-authored text and serves it back as context.
@@ -124,7 +124,7 @@ granted `vault.get.github_token` cannot see that `vault.get.bank_password` exist
 `vault.list`, deliberately — the policy-filtered tool list *is* the listing, and it is the only one
 that cannot over-report.
 
-**Tools only, never resources**, per `docs/detailed/providers.md`: resources are listable and cacheable, and
+**Tools only, never resources**, per `https://lanes.sh/docs/link/capabilities`: resources are listable and cacheable, and
 both are wrong for secrets.
 
 **A separate store and a separate key.** Never `CredentialStore`. Credentials authorise *the system*

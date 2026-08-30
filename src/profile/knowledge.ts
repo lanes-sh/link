@@ -16,7 +16,7 @@ import { credentialRef } from './primitives.ts';
  * So this block moves exactly those two, and it is the whole of what it can
  * move. There is no `credentials` or `vault` value here and there will not be:
  * a repository is a place to publish, and those two hold the material whose
- * entire value is that it is not published (`docs/detailed/security.md`). The
+ * entire value is that it is not published (`https://lanes.sh/docs/link/security`). The
  * exclusion is structural — a field that does not exist cannot be set by
  * accident, by a flag, or by an operator following an example.
  *

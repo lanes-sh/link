@@ -102,7 +102,7 @@ async function choosePrimary(
  *
  * References are flat — `gmail/main`, not `personal/gmail/main` — and a target
  * has one credential store, so two profiles deployed to the same project share
- * a namespace. `docs/detailed/configuration.md` admits this in an aside about
+ * a namespace. `https://lanes.sh/docs/link/configuration` admits this in an aside about
  * removing a profile; deploying both at once is where it stops being an aside.
  *
  * The failure is silent and it is the bad kind: `personal`'s Gmail refresh

@@ -71,7 +71,7 @@ ok    registered lanes-link with Codex
 
 Your agents can now use it. Memory, tasks, files, skills, and the vault hold your own material
 rather than an account, so they are already there — nothing to connect, no credentials, no browser.
-Mail and calendar are the next step. **[Full quickstart →](docs/quickstart.md)**
+Mail and calendar are the next step. **[Full quickstart →](https://lanes.sh/docs/link/quickstart)**
 
 ## In the Lanes desktop app
 
@@ -146,7 +146,7 @@ second calendar, a second anything.
 | **Content and data** | Contentful · Storyblok · Hygraph · Sanity · Webflow · Wix · Algolia · PostHog · Mixpanel · Amplitude · RudderStack |
 | **Everything else** | Reddit · Discord · Dropbox · Box · Airtable · Zapier · Attio · Klaviyo · Salesloft · Vimeo · Mux · Replicate · Apify · Tavily · Bright Data |
 
-**[The full list, with the command for each →](docs/connect.md)**
+**[The full list, with the command for each →](https://lanes.sh/docs/link/connect)**
 
 Most of them need nothing set up. Seventy of them run their own MCP server and offer dynamic client
 registration, so `connect` registers us on the spot: browser, approve, done. The rest are one of
@@ -172,11 +172,12 @@ token you paste rather than a browser sign-in, because it will not register a cl
 bunq — which wants a key from inside its app rather than a console at all — is the one that can move
 money, and it says so: its payment tool executes immediately and is not reversible. Set a spending
 limit on the API key while you are in there, and read
-[docs/detailed/setup/bunq.md](docs/detailed/setup/bunq.md) before connecting it.
+[Connecting bunq](https://lanes.sh/docs/link/bunq) before connecting it.
 
 Full guide — what each one gives your agent, what it needs, and adding your own:
-**[docs/connect.md](docs/connect.md)**. How the provider layer works, and the whole inventory by
-connector and credential type: **[src/providers/README.md](src/providers/README.md)**.
+**[Connect your accounts](https://lanes.sh/docs/link/connect)**. How the provider layer works, and
+the whole inventory by connector and credential type:
+**[src/providers/README.md](src/providers/README.md)**.
 
 ## Run it anywhere
 
@@ -199,19 +200,20 @@ than being rebuilt.
 
 ## Docs
 
-- **[Quickstart](docs/quickstart.md)** — from nothing to a working endpoint
+- **[Quickstart](https://lanes.sh/docs/link/quickstart)** — from nothing to a working endpoint
 - **[In the Lanes desktop app](https://lanes.sh/docs/desktop/lanes-link)** — the page that drives it
-- **[Connect your accounts](docs/connect.md)** — every provider, and what each one needs
-- **[Add it to your agent](docs/clients.md)** — Claude Code, Codex, Claude Desktop, claude.ai, ChatGPT
-- **[Deploy to your own cloud](docs/deploy.md)** — five commands to a URL
-- **[Every command](docs/detailed/commands.md)** — arguments and flags, one entry each
-- **[Full reference](docs/detailed/)** — architecture, configuration, the CLI, the security model,
-  writing a provider, and the decision records
+- **[Connect your accounts](https://lanes.sh/docs/link/connect)** — every provider, and what each one needs
+- **[Add it to your agent](https://lanes.sh/docs/link/clients)** — Claude Code, Codex, Claude Desktop, claude.ai, ChatGPT
+- **[Deploy to your own cloud](https://lanes.sh/docs/link/deploy)** — five commands to a URL
+- **[Every command](https://lanes.sh/docs/link/commands)** — arguments and flags, one entry each
+- **[Full reference](https://lanes.sh/docs/link)** — architecture, configuration, the CLI, the
+  security model, and writing a provider
+- **[Decision records](docs/detailed/adr/)** — why each choice was made, kept here with the source
 
 ## Security
 
 Lanes Link holds live credentials to your email and documents. The
-[security model](docs/detailed/security.md) states its limits plainly rather than implying
+[security model](https://lanes.sh/docs/link/security) states its limits plainly rather than implying
 guarantees the code does not deliver — read it before you trust it with an account. To report a
 vulnerability, see [`SECURITY.md`](SECURITY.md); please do not open a public issue.
 

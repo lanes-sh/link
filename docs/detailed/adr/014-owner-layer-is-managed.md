@@ -12,7 +12,7 @@ M4 built memory, skills, and vault, and left them unreachable except through an 
 to type it. To add a skill you edited a file and restarted the endpoint. To reach a memory entry you
 had to be an MCP client.
 
-`docs/detailed/workflow.md` — which `docs/detailed/init.md` calls *"the normative CLI user experience"* — has no command
+`https://lanes.sh/docs/link/workflow` — which `docs/detailed/init.md` calls *"the normative CLI user experience"* — has no command
 for any of the three, and never did. This was not a regression: the control plane for the owner layer
 was specified nowhere and so was never built.
 
@@ -155,7 +155,7 @@ is the owner's own control plane, and MCP because §1 above decided the grant is
 the absence.
 
 `lanes link vault get` prints a value, which `lanes link secrets` deliberately never does. That difference is the
-two-kinds-of-secret distinction (`docs/detailed/security.md`) doing its job: a credential authorises the
+two-kinds-of-secret distinction (`https://lanes.sh/docs/link/security`) doing its job: a credential authorises the
 system and is never disclosed; a vault item is the owner's own password, and a vault they cannot read
 without an agent is not a vault.
 

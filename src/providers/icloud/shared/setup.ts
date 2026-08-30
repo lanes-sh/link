@@ -28,7 +28,7 @@ export const icloudSetup = (product: string) => ({
     `${product} uses an app-specific password. Your Apple Account password will not work — Apple refuses it ` +
     `for third-party clients — and Lanes Link never sees it. You are asked once: the same password covers ` +
     `Mail, Calendar, and Contacts, because Apple issues it per account rather than per service.`,
-  docs: 'docs/detailed/setup/icloud.md',
+  docs: 'https://lanes.sh/docs/link/icloud',
   docs_url: 'https://support.apple.com/en-us/102654',
   steps: [
     'Sign in at https://account.apple.com and open "Sign-In and Security".',

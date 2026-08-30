@@ -28,7 +28,7 @@ import { createS3BlobStore, s3ObjectKey, s3Prefix } from './s3.ts';
  *
  * Supabase Storage works too, and is what the deployed target actually uses —
  * point it at the project's S3 endpoint to exercise the configuration
- * `docs/detailed/deployment-cloudrun.md` recommends.
+ * `https://lanes.sh/docs/link/deployment-cloudrun` recommends.
  */
 
 const BUCKET_ENV = 'LANES_LINK_TEST_S3_BUCKET';

@@ -16,7 +16,7 @@ import { GITHUB_REDACT } from './redact.ts';
  * The toolsets header is the whole reason `connector.headers` exists. GitHub
  * serves a different tool list per toolset and `all` is far more than an agent
  * reasons over; this asks for the ones an agent working in a repository
- * actually uses. It is one string to change, and `docs/detailed/setup/github.md`
+ * actually uses. It is one string to change, and `https://lanes.sh/docs/link/github`
  * records the read-only variant for someone who wants a narrower connection.
  */
 export const github = defineProvider({
@@ -41,7 +41,7 @@ export const github = defineProvider({
       'GitHub issues a fine-grained personal access token for this. There is no OAuth app to register: ' +
       'GitHub\'s MCP server does not support the dynamic registration Notion and Linear use, and an OAuth ' +
       'app of your own would need a fixed callback port, which this CLI does not have. You are asked once.',
-    docs: 'docs/detailed/setup/github.md',
+    docs: 'https://lanes.sh/docs/link/github',
     docs_url: 'https://github.com/settings/personal-access-tokens',
     steps: [
       'Open https://github.com/settings/personal-access-tokens and choose "Generate new token".',

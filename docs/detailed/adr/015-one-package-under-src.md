@@ -63,7 +63,7 @@ string. Two implementations of a format is two chances to get a format wrong.
 
 They now share `src/secrets/document.ts` and the adapters, and they share **nothing else** —
 separate documents, separate keys, separate environment variables. That boundary is
-[`security.md`](../security.md)'s central claim: system credentials authorise Lanes Link itself and
+[`security.md`](https://lanes.sh/docs/link/security)'s central claim: system credentials authorise Lanes Link itself and
 are unreachable from MCP, while a vault item belongs to the owner and an agent may be granted one
 under policy. Sharing the code that seals a document is the opposite of sharing the key that opens
 it.
