@@ -78,6 +78,9 @@ export type ProviderManifest = z.infer<typeof providerManifestSchema>;
  *
  * The order is read: `#server/mcp`'s instructions emit one paragraph per
  * reachable id in this sequence, so it is the order an agent meets them in.
+ * `entities` is appended rather than inserted alphabetically so that it lands
+ * beside `identity`: the two answer the same question about different people,
+ * and the instructions collapse them into one paragraph when both are reachable.
  */
 export const RESERVED_PROVIDER_IDS: readonly string[] = [
   'memory',
@@ -87,6 +90,7 @@ export const RESERVED_PROVIDER_IDS: readonly string[] = [
   'vault',
   'setup',
   'identity',
+  'entities',
 ];
 
 /**

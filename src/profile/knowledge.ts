@@ -2,18 +2,25 @@ import { z } from 'zod';
 import { credentialRef } from './primitives.ts';
 
 /**
- * Where a profile's memory and skills live, when that is not where everything
- * else lives.
+ * Where a profile's memory, skills and entities live, when that is not where
+ * everything else lives.
  *
  * A target's `storage:` block names one backend for everything a profile holds
  * — runtime state, the audit log, memory entries, skills, cached attachments.
- * That is right for most of it and wrong for two: state and the log are
- * artefacts of one installation, and memory entries and skills are documents
- * the owner wrote. Documents want history, review, and to be readable from more
- * than one machine, and the backend that suits an object nobody reads is not
- * the backend that suits those.
+ * That is right for most of it and wrong for three: state and the log are
+ * artefacts of one installation, and memory entries, skills and entity files
+ * are documents the owner wrote. Documents want history, review, and to be
+ * readable from more than one machine, and the backend that suits an object
+ * nobody reads is not the backend that suits those.
  *
- * So this block moves exactly those two, and it is the whole of what it can
+ * ADR-041 said "memory and skills, and nothing else", and ADR-056 amends the
+ * count without touching the rule. That exclusion was never arithmetic: its
+ * argument is a discriminator — an artefact of one installation stays, a
+ * document the owner wrote may move — and an entity file is a Markdown document
+ * with frontmatter, hand-editable, wanting history and review. It is on the
+ * same side of that line as a memory entry, by the same test.
+ *
+ * So this block moves exactly those three, and it is the whole of what it can
  * move. There is no `credentials` or `vault` value here and there will not be:
  * a repository is a place to publish, and those two hold the material whose
  * entire value is that it is not published (`https://lanes.sh/docs/link/security`). The
@@ -89,8 +96,8 @@ export type KnowledgeConfig = z.infer<typeof knowledgeTargetSchema>;
 /**
  * Where each area sits inside the repository.
  *
- * Two directories, named after the two things that move. `memory` is also the
- * memory provider's own blob namespace — the prefix core scopes it into under
+ * Three directories, named after the three things that move. `memory` is also
+ * the memory provider's own blob namespace — the prefix core scopes it into under
  * the profile's blob root — which is why the same word does both jobs: the
  * route that redirects it and the directory it lands in are the same fact, and
  * spelling them separately is how they would come to disagree.
@@ -101,6 +108,7 @@ export type KnowledgeConfig = z.infer<typeof knowledgeTargetSchema>;
 export const KNOWLEDGE_LAYOUT = {
   memory: 'memory',
   skills: 'skills',
+  entities: 'entities',
 } as const;
 
 export type KnowledgeArea = keyof typeof KNOWLEDGE_LAYOUT;

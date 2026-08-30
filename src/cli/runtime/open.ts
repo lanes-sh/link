@@ -6,7 +6,6 @@ import type { BlobStore } from '#stores/blobs';
 import type { AnyConnector, ProviderManifest } from '#connectivity';
 import { RateLimiter, allowedConnections } from '#policy';
 import {
-  KNOWLEDGE_LAYOUT,
   layout,
   listProfiles,
   workspacePath,
@@ -26,7 +25,7 @@ import {
   type StorageFactory,
   type TargetInput,
 } from '#deployments/target.ts';
-import { openKnowledge, type FetchLike, type KnowledgeStores } from '#deployments/knowledge.ts';
+import { knowledgeRoutes, openKnowledge, type FetchLike, type KnowledgeStores } from '#deployments/knowledge.ts';
 import { routeBlobStore } from '#stores/blobs/route.ts';
 import { connectorFactory } from '#connectivity/transports';
 import { requestAuthorizer } from '#connectivity/auth/index.ts';
@@ -174,9 +173,7 @@ export async function openRuntime(
   // The audit log, `state.kv`, the credential store and the vault keep their
   // own roots on the target's own storage and are untouched.
   const knowledge = await openKnowledge(adapters, credentials, options.fetch);
-  const storage = knowledge
-    ? routeBlobStore(storageFor(), [{ prefix: `${KNOWLEDGE_LAYOUT.memory}/`, store: knowledge.memory }])
-    : storageFor();
+  const storage = knowledge ? routeBlobStore(storageFor(), knowledgeRoutes(knowledge)) : storageFor();
   const state = openState(storageFor, config.instance.profile);
 
   // The durable log, plus any copies the target declares. `sink` is what

@@ -168,6 +168,7 @@ export const SELECTION: Record<string, Requires> = {
   assets: 'profile+target',
   skills: 'profile+target',
   vault: 'profile+target',
+  entities: 'profile+target',
   // Both halves open the target's adapters — `show` counts what is in the
   // stores, and `use` migrates between them — and both edit the profile's
   // config. Neither can be answered without being told which.
@@ -198,6 +199,9 @@ const SUBCOMMANDS: Record<string, readonly string[]> = {
   assets: ['list', 'get', 'add', 'remove'],
   skills: ['list', 'show', 'add', 'remove'],
   vault: ['list', 'get', 'set', 'remove', 'key'],
+  // No `list`: a bare `entities` is a listing, which is `find` with no
+  // criteria. One concept, one word.
+  entities: ['find', 'get', 'write', 'link', 'forget', 'reindex'],
   mcp: ['skill', 'add', 'stdio', 'list'],
   secrets: ['push', 'set', 'list'],
   knowledge: ['show', 'use'],
@@ -309,6 +313,10 @@ const ACCEPTS: Record<string, readonly string[]> = {
   assets: ['connection', 'name', 'content-type', 'yes'],
   skills: ['connection', 'title', 'description', 'file'],
   vault: ['connection'],
+  // `alias`, `attr` and `related` are repeatable — see `ownerFlags`. `name`
+  // overrides the id derived from the positional name, which is how you get
+  // `acme-bv` rather than `acme-b-v`.
+  entities: ['connection', 'type', 'name', 'alias', 'attr', 'related', 'tag', 'yes'],
   // `no-migrate` is listed beside `migrate` because they are three states
   // rather than two: neither one asks, and a run with no terminal has to be
   // able to say which it meant (ADR-041).

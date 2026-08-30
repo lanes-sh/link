@@ -3,6 +3,12 @@ import {
   assetsGet,
   assetsList,
   assetsRemove,
+  entitiesFind,
+  entitiesForget,
+  entitiesGet,
+  entitiesLink,
+  entitiesReindex,
+  entitiesWrite,
   memoryForget,
   memoryGet,
   memoryList,
@@ -25,7 +31,8 @@ import {
 } from './commands/owner.ts';
 
 /**
- * The commands over the owner's own data: memory, tasks, assets, skills, vault.
+ * The commands over the owner's own data: memory, tasks, assets, skills, vault,
+ * entities.
  *
  * Split out of `main.ts` for the reason the budget in `src/architecture.test.ts`
  * exists to find, rather than to satisfy a line count. These are one subject —
@@ -123,6 +130,28 @@ export function dispatchOwner(
           return vaultKeyGenerate(owner);
         default:
           throw new Error(`Unknown: ${program} vault ${second}`);
+      }
+
+    case 'entities':
+      switch (second) {
+        // Bare `entities` is a listing, which is `find` with no criteria — one
+        // name for one concept rather than a `list` that would be the same code
+        // under a second word.
+        case 'find':
+        case undefined:
+          return entitiesFind(rest[0], owner);
+        case 'get':
+          return entitiesGet(rest[0], owner);
+        case 'write':
+          return entitiesWrite(rest[0], owner);
+        case 'link':
+          return entitiesLink(rest[0], rest[1], owner);
+        case 'forget':
+          return entitiesForget(rest[0], owner);
+        case 'reindex':
+          return entitiesReindex(owner);
+        default:
+          throw new Error(`Unknown: ${program} entities ${second}`);
       }
 
     default:

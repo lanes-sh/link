@@ -160,3 +160,15 @@ wants to hear about.
 - **`#stores/blobs/conformance.ts` still holds every adapter to one contract.** The GitHub store
   passes the same suite the filesystem, S3, and in-memory stores do, twice: bare, and under a path
   prefix. A key one target refuses is still not one another accepts.
+
+---
+
+**Amended by [ADR-056](056-everyone-else-is-declared-too.md).** Entity files may move too. The
+exclusion in the title was never a count — its argument is a discriminator, an artefact of one
+installation stays and a document the owner wrote may move — and an entity file is a Markdown
+document with frontmatter, hand-editable, wanting history and review. The structural half is
+untouched: there is still no field here that could name the credential store or the vault, and
+that amendment adds none. What travels with the entity files that did not travel before is a
+derived `_index.json`, which is a cache landing in a documents repository and is the weaker half
+of that decision.
+

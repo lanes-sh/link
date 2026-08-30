@@ -26,6 +26,20 @@ export interface OwnerFlags extends GlobalFlags {
   readonly name?: string | undefined;
   /** `assets`: for the file whose extension does not say what it is. */
   readonly contentType?: string | undefined;
+  /** `entities`: person, company, project — free-form, never a closed list. */
+  readonly type?: string | undefined;
+  /**
+   * `entities`: repeatable, which is why `ownerFlags` needs argv.
+   *
+   * `parseArgv` keeps only the last value of a repeated flag, and an entity
+   * with two email addresses is the case this whole component exists for — so
+   * these three read the raw argv through `all()`, as `customFlags` does.
+   */
+  readonly alias?: readonly string[] | undefined;
+  /** `entities`: `email=jan@example.test`, or `github` to mean "has one". */
+  readonly attr?: readonly string[] | undefined;
+  /** `entities`: `works_at=acme-bv`, or `acme-bv` for any predicate. */
+  readonly related?: readonly string[] | undefined;
   /** Reveal a vault value on a terminal. */
   readonly show?: boolean | undefined;
   /** Print only the value, for `$(…)`. */

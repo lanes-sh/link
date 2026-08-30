@@ -58,7 +58,7 @@ export async function run(argv: readonly string[]): Promise<void> {
   const [first, second, ...rest] = command;
 
   const global = globalFlags(flags);
-  const owner = ownerFlags(flags);
+  const owner = ownerFlags(flags, argv);
 
   const show = flags['show'] === true;
   const raw = flags['raw'] === true;
@@ -260,6 +260,7 @@ export async function run(argv: readonly string[]): Promise<void> {
     case 'assets':
     case 'skills':
     case 'vault':
+    case 'entities':
       return dispatchOwner(first, second, rest, owner, PROGRAM);
 
     // Beside `memory` and `skills` because it is the question they raise next:

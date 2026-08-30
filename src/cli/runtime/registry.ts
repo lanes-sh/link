@@ -13,6 +13,7 @@ import {
   createSetupProvider,
   createSkillsProvider,
   createVaultProvider,
+  entitiesProvider,
   memoryProvider,
   tasksProvider,
   type IdentityProviderOptions,
@@ -87,7 +88,7 @@ export interface OwnerLayerOptions {
  * from, which is what lets workspace YAML register alongside these.
  *
  * `allowReserved` is what admits `memory`, `tasks`, `assets`, `skills`, `vault`,
- * `setup`, and `identity`. The guard
+ * `setup`, `identity` and `entities`. The guard
  * stays rather than being retired: it exists so a *third-party* provider cannot
  * claim a namespace whose policy rules would then silently mean something else,
  * and that reason survives the owner layer shipping. Only this one construction
@@ -104,6 +105,10 @@ export function buildRegistry(owner: OwnerLayerOptions = {}): ProviderRegistry {
   registry.register(memoryProvider);
   registry.register(tasksProvider);
   registry.register(assetsProvider);
+  // `entities` is a fourth of the same shape: what it holds is the owner's, and
+  // its derived index lives in the same scoped store, so there is nothing to
+  // hand in here either.
+  registry.register(entitiesProvider);
   registry.register(skillsProviderFor(owner));
   registry.register(
     createVaultProvider({

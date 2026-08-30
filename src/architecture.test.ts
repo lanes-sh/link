@@ -315,7 +315,35 @@ const MAX_LINES = 400;
  * `knowledge`, which is fourteen lines of the same shape as the twenty-seven
  * cases around it.
  */
+/**
+ * `server/mcp/instructions.ts` is the same case again, and the split it looks
+ * like it wants is the one thing that would damage it.
+ *
+ * The file is a list of paragraphs — one per owner surface an agent can reach,
+ * each carrying the story of the mistake it prevents — plus one assembler and
+ * one ceiling. Its length is a count of *surfaces*, which is `cli/main.ts`'s
+ * argument for being a count of *commands*.
+ *
+ * The obvious cut is prose into one module and assembly into another, and it is
+ * wrong here specifically: `MAX_INSTRUCTIONS` is a *measurement of the prose*,
+ * and its docstring carries the arithmetic that produced it. Putting the number
+ * in one file and the thing it measures in another is exactly how the two come
+ * to disagree — which that docstring records having already happened once, when
+ * the test asserted a literal while the code reserved room against a second,
+ * differently-derived number.
+ *
+ * It crossed the line adding `entities` (ADR-056): two paragraphs and a
+ * collapsed pair, the same shape as the eight around them. That is the
+ * concession, and it is worth naming as one — the alternative was a shorter
+ * paragraph, and a paragraph shortened to fit a line budget is a worse trade
+ * than a long file.
+ *
+ * What would earn a split is something here that is neither a paragraph nor its
+ * assembly: per-client branching, or prose built from configuration rather than
+ * declared. Both are visible in a diff.
+ */
 const KNOWN_LONG = new Set([
+  'server/mcp/instructions.ts',
   'cli/main.ts',
   'connectivity/transports/dav/ical.ts',
   'deployments/adapters/gcp-secret-manager.ts',
