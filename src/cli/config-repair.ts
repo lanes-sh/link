@@ -156,6 +156,13 @@ export function ensureReservedConnection(
 }
 
 /** Whether a repair did anything, without a caller adding up two lists. */
+/** `memory, tasks, assets, skills, vault, setup and entities`, in repair order. */
+function listSurfaces(): string {
+  const names = [...DEFAULT_SURFACES];
+  const last = names.pop();
+  return names.length === 0 ? String(last) : `${names.join(', ')} and ${last}`;
+}
+
 export function repaired(repair: SurfaceRepair): boolean {
   return repair.changes.length > 0 || repair.granted.length > 0;
 }
@@ -293,9 +300,11 @@ export async function repairOwnerLayer(
 
       say(ok(`gave ${style.bold(name)} its own owner layer`));
       for (const change of repairLines(repair)) say(`      ${style.dim(change)}`);
-      say(
-        `      ${style.dim('memory, tasks, assets, skills, vault and setup — your own material, no account behind any of them')}`,
-      );
+      // Built from `DEFAULT_SURFACES` rather than typed out. The typed-out
+      // version still named six after a seventh had been added, so a person
+      // watching a deploy was told entities had arrived on the line above and
+      // that the layer was six things on the line below.
+      say(`      ${style.dim(`${listSurfaces()} — your own material, no account behind any of them`)}`);
     } catch (error) {
       say(
         warn(

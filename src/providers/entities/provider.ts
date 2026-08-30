@@ -207,17 +207,21 @@ export const entitiesProvider: ProviderDefinition = defineLocalProvider({
         });
 
         if (matches.candidates.length === 0) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text:
-                  `Nothing on ${context.connection.key} matches ${describe(criteria)}. ` +
-                  'Do not use an address that is not here — `entities.write` declares a new one, ' +
-                  'or ask the owner.',
-              },
-            ],
-          };
+          // An empty directory and a query that matched nothing are different
+          // answers and a caller does something different with each. Told
+          // "matches no criteria" it learns neither: that is what `describe({})`
+          // produces when a bare listing finds an empty store, and it reads like
+          // a parser error rather than an empty one.
+          const text =
+            matches.scanned === 0
+              ? `No entities are declared on ${context.connection.key} yet. ` +
+                '`entities.write` declares one. Until then there is nothing here to address ' +
+                'anyone by, so ask rather than using an address from somewhere else.'
+              : `Nothing on ${context.connection.key} matches ${describe(criteria)}. ` +
+                'Do not use an address that is not here — `entities.write` declares a new one, ' +
+                'or ask the owner.';
+
+          return { content: [{ type: 'text', text }] };
         }
 
         if (matches.candidates.length > 1) {

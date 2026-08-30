@@ -5,7 +5,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ConfigDocument, newProfileTemplate } from './config-edit.ts';
 import {
+  DEFAULT_SURFACES,
   ensureOwnerLayer,
+  repairOwnerLayer,
   ensureReservedConnection,
   repairLines,
   type SurfaceRepair,
@@ -607,6 +609,24 @@ policy:
       account: 'ada.lovelace@example.com',
     });
     expect(config.policy.allow).toContain('gmail.*');
+  });
+
+  test('the prose after a repair names every surface it wrote', async () => {
+    // The summary line was typed out, and still named six after a seventh had
+    // been added: a deploy printed `connections += entities.main` and then said
+    // the layer was six things. Read out of the report rather than out of
+    // `repairLines`, because it was the *prose* that drifted and the lines were
+    // right all along.
+    const { root } = await profileFile(OLD);
+
+    const lines: string[] = [];
+    await repairOwnerLayer(root, ['personal'], { report: (line) => lines.push(line) });
+
+    const summary = lines.find((line) => line.includes('your own material'));
+    expect(summary).toBeDefined();
+    for (const surface of DEFAULT_SURFACES) {
+      expect(summary).toContain(surface);
+    }
   });
 
   test('a fresh profile from the template needs no repair at all', async () => {
