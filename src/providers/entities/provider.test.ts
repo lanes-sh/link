@@ -170,6 +170,26 @@ describe('several matches is a normal answer, not a failure', () => {
 });
 
 describe('no match', () => {
+  test('an empty directory says so, rather than "matches no criteria"', async () => {
+    // What a bare `entities_find` returned on a fresh profile. `describe({})`
+    // is "no criteria", so the sentence read "Nothing on entities.main matches
+    // no criteria", which tells a caller nothing and reads like a parser error.
+    const result = await harness().invoke('find', {});
+
+    expect('isError' in result && result.isError).toBeFalsy();
+    expect(textOf(result)).toContain('No entities are declared');
+    expect(textOf(result)).not.toContain('matches no criteria');
+  });
+
+  test('a query that matched nothing is a different sentence from an empty one', async () => {
+    const h = harness();
+    await declare(h, JAN);
+
+    const text = textOf(await h.invoke('find', { query: 'Nobody Here' }));
+    expect(text).toContain('matches "Nobody Here"');
+    expect(text).not.toContain('No entities are declared');
+  });
+
   test('is not an error either, and says not to invent an address', async () => {
     const h = harness();
     await declare(h, JAN);
