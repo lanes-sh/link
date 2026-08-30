@@ -79,7 +79,7 @@ export const reddit = defineProvider({
       'Reddit needs an app of your own, which takes a couple of minutes in a browser. There is no shared ' +
       'client for this one on purpose: Reddit rate-limits per client id, so a client everyone shared would ' +
       'mean strangers using up your hundred requests a minute. Your own app gets its own budget.',
-    docs: 'docs/detailed/setup/reddit.md',
+    docs: 'https://lanes.sh/docs/link/reddit',
     docs_url: 'https://www.reddit.com/prefs/apps',
     steps: [
       'Open https://www.reddit.com/prefs/apps and choose "create another app...".',

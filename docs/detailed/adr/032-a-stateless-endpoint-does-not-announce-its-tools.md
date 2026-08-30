@@ -12,7 +12,7 @@ reloads, a tool list that grew from two entries to forty-two.
 The client went on showing two.
 
 The endpoint was registered as a connector before any account was connected, which is the ordering
-`docs/deploy.md` describes: deploy, then connect. A first deploy necessarily publishes a profile
+`https://lanes.sh/docs/link/deploy` describes: deploy, then connect. A first deploy necessarily publishes a profile
 whose only connection is `setup.main`, because the accounts come afterwards. So the client's first
 `tools/list` returned `setup_overview` and `setup_provider`, and it stored those — which is what a
 client does with a tool list.
@@ -117,7 +117,7 @@ ADR removes.
 
 **It does not cover skills.** A skill registers as a prompt, so it moves neither the count nor the
 line `connect` prints — and skills refresh *within* a generation, on a poll, so no reload fires to
-report one either. `docs/connect.md` says so where it tells an operator to compare the number
+report one either. `https://lanes.sh/docs/link/connect` says so where it tells an operator to compare the number
 against their client, rather than leaving "nothing is stale" to cover a case it does not.
 
 **The count is not audited.** `tools/list` still dispatches nothing and still writes no audit event.

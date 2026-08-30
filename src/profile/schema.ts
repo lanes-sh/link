@@ -116,7 +116,7 @@ export const auditTargetSchema = z.object({
  *
  * Its own block rather than a reuse of `credentials`, because the vault must
  * never be the credential store — the two hold different things and collapsing
- * them is the single most damaging mistake available here (`docs/detailed/security.md`).
+ * them is the single most damaging mistake available here (`https://lanes.sh/docs/link/security`).
  *
  * Optional, defaulting to `file`: every profile written before ADR-014 keeps
  * working unchanged, and a local run needs no vault configuration at all.
@@ -242,7 +242,7 @@ export const deployTargetSchema = z.object({
    *
    * It is also what makes `limits.requests_per_minute` mean something in
    * aggregate. Those limits are per instance and always were; with no ceiling
-   * the aggregate had no value at all, and `docs/detailed/deployment-cloudrun.md`
+   * the aggregate had no value at all, and `https://lanes.sh/docs/link/deployment-cloudrun`
    * told the reader to cap this themselves because nothing here did.
    */
   max_instances: z.number().int().min(1).max(100).default(DEPLOY_DEFAULTS.max_instances),

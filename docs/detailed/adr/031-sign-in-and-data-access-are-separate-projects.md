@@ -83,7 +83,7 @@ that stays inside the thirteen already declared costs nothing at all.
 
 **Nothing in this repository can check any of this.** The projects are console state.
 `src/providers/google/specs/specs.test.ts` holds the manifests and
-[`google-verification.md`](../google-verification.md) to the same scope list, which catches a scope
+[`google-verification.md`](https://lanes.sh/docs/link/google-verification) to the same scope list, which catches a scope
 requested but not declared. It cannot catch a scope registered against the wrong project, or a
 sensitive scope quietly added to the identity one — and that second one is exactly what would put an
 unverified-app screen on sign-in. It is a step on a checklist, performed by a person, and

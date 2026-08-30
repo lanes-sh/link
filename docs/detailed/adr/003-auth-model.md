@@ -40,7 +40,7 @@ exclusion. What disappeared is indirection, not a boundary.
 
 ## What this trades
 
-Stated plainly, and repeated in `docs/detailed/security.md`:
+Stated plainly, and repeated in `https://lanes.sh/docs/link/security`:
 
 - Two agents cannot hold different permissions against the **same** profile. They need separate
   profiles, which is heavier: a separate database, credential store, and port.

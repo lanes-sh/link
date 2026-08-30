@@ -25,7 +25,7 @@ export const GOOGLE_APP = 'google';
  *
  * What this buys the operator is the whole of `setup/google.md`: no project, no
  * console, and no scope list to transcribe. What it costs is recorded in
- * ADR-028 and in the guarantee table in `docs/detailed/security.md` — chiefly
+ * ADR-028 and in the guarantee table in `https://lanes.sh/docs/link/security` — chiefly
  * that the exchange stops being local.
  *
  * What it does *not* buy, and used to claim to: escape from the seven-day

@@ -95,7 +95,7 @@ reading exactly as it does when redaction is working. `doctor`'s capability drif
 signal to re-read them.
 
 **Slack costs a console visit and always will.** ~~Creating a Slack app is the only way to obtain a
-user token, so `docs/connect.md` no longer claims no provider asks you to register anything.~~
+user token, so `https://lanes.sh/docs/link/connect` no longer claims no provider asks you to register anything.~~
 **Wrong, and corrected by [ADR-040](040-an-mcp-connector-may-use-a-pre-registered-client.md).** It
 is the only way to obtain a user token *of your own*; it is not the only way to obtain one. Lanes
 registered an app, and Slack accepts an `http://localhost:<port>` redirect registered against it —

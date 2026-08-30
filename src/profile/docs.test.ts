@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { readdir, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { workspaceSchema } from './schema.ts';
 import { installRoot } from './workspace.ts';
@@ -24,6 +24,22 @@ import { parseManifest } from '#providers/custom/index.ts';
 const ROOT = installRoot(import.meta.dir);
 
 /**
+ * Where the documentation now lives.
+ *
+ * The guides and the reference moved to lanes.sh, in the website repository;
+ * the decision records and `init.md` stayed here. So the examples these tests
+ * parse are no longer all in this checkout, and the honest arrangement is to
+ * name where they are rather than to keep a second copy that can disagree with
+ * the page somebody actually reads.
+ *
+ * `LANES_DOCS_DIR` points at `src/content/docs/link` in the website checkout.
+ * Set it and the checks run exactly as they did. Leave it unset and the ones
+ * needing it skip, rather than passing by not looking.
+ */
+const DOCS = process.env.LANES_DOCS_DIR;
+const onSite = (slug: string) => join(DOCS ?? '', `${slug}.mdx`);
+
+/**
  * Every fenced YAML block that is a whole document, split by which kind.
  *
  * Both declare a contract, which is what tells a complete document from an
@@ -35,7 +51,7 @@ const ROOT = installRoot(import.meta.dir);
 async function documentExamples(
   relative: string,
 ): Promise<{ profiles: string[]; workspaces: string[] }> {
-  const text = await readFile(join(ROOT, relative), 'utf8');
+  const text = await readFile(isAbsolute(relative) ? relative : join(ROOT, relative), 'utf8');
   const profiles: string[] = [];
   const workspaces: string[] = [];
 
@@ -52,9 +68,8 @@ async function documentExamples(
 
 describe('documented config examples parse', () => {
   test.each([
-    'docs/detailed/configuration.md',
+    ...(DOCS ? [onSite('configuration'), onSite('deployment-cloudrun')] : []),
     'docs/detailed/init.md',
-    'docs/detailed/deployment-cloudrun.md',
   ])('%s', async (relative) => {
     const { profiles, workspaces } = await documentExamples(relative);
     expect(profiles.length).toBeGreaterThan(0);
@@ -74,7 +89,7 @@ describe('documented config examples parse', () => {
 
 /** Every fenced YAML block that looks like a whole manifest. */
 async function manifestExamples(relative: string): Promise<string[]> {
-  const text = await readFile(join(ROOT, relative), 'utf8');
+  const text = await readFile(isAbsolute(relative) ? relative : join(ROOT, relative), 'utf8');
   const blocks: string[] = [];
 
   for (const match of text.matchAll(/```yaml\n([\s\S]*?)```/g)) {
@@ -98,9 +113,9 @@ describe('documented provider manifests parse', () => {
    * combinations no built-in exercises. A page that claims a cell works is worth
    * less than nothing if its example for that cell does not parse.
    */
-  const pages = ['docs/detailed/creating-a-provider.md', 'docs/detailed/connectivity-coverage.md'];
+  const pages = DOCS ? [onSite('creating-a-provider'), onSite('connectivity-coverage')] : [];
 
-  test.each(pages)('%s', async (page: string) => {
+  test.skipIf(pages.length === 0).each(pages)('%s', async (page: string) => {
     const examples = await manifestExamples(page);
     // Per file, not across them: the guard is against a page whose fences drift
     // out of the selector and then passes by not looking.

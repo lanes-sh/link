@@ -54,7 +54,7 @@ const manifest = defineProvider({
       'bunq issues an API key from inside the app, not from a web console. The key is bound to the IP addresses ' +
       'it is used from unless you mark it as a wildcard key — which you must do in the app if this endpoint will ' +
       'ever run anywhere but this machine.',
-    docs: 'docs/detailed/setup/bunq.md',
+    docs: 'https://lanes.sh/docs/link/bunq',
     docs_url: 'https://doc.bunq.com/basics/authentication/api-keys',
     steps: [
       'In the bunq app: Profile → Security & Settings → Developers → API keys → Add API key.',
@@ -63,7 +63,7 @@ const manifest = defineProvider({
       'If this endpoint will run deployed rather than on this machine, mark the key as a wildcard key in the same screen. bunq refuses to set that over the API, deliberately, so it cannot be done for you.',
       'Copy the key and paste it below. Nothing is sent anywhere until you do — the handshake that registers this device runs immediately afterwards.',
       'You will be asked what to call this connection. bunq has no endpoint that reports whose account a key belongs to, so the label is yours to choose.',
-      'To try this without a real account first, use bunq\'s sandbox: https://public-api.sandbox.bunq.com issues a test key and needs no bank account at all. Put a manifest of your own in providers.d/ naming that base_url — see docs/detailed/setup/bunq.md.',
+      'To try this without a real account first, use bunq\'s sandbox: https://public-api.sandbox.bunq.com issues a test key and needs no bank account at all. Put a manifest of your own in providers.d/ naming that base_url — see https://lanes.sh/docs/link/bunq.',
     ],
     troubleshooting:
       'bunq refused the key. The usual causes are a key that was revoked in the app, a request from an address the key ' +

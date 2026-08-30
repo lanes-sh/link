@@ -67,7 +67,7 @@ secret while serving, its own token blob.
 to the Lanes API, the refresh token comes back through it, and passes through it again on every
 refresh. Nothing in this repository can verify what that API does with what it sees. This is
 recorded as `credentials.exchange-is-local: NOT-GUARANTEED` in
-[`security.md`](../security.md), with the alternative named in the same paragraph.
+[`security.md`](https://lanes.sh/docs/link/security), with the alternative named in the same paragraph.
 
 **The hosted client is capped, and the cap is permanent.** Google limits an app with unapproved
 sensitive or restricted scopes to 100 accounts, counted over the entire lifetime of the project,

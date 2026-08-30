@@ -75,7 +75,7 @@ export const googleServiceAccount = (
           `route works only where a Google Workspace administrator has authorised the key to act ` +
           `as a user in their domain. On a personal Google account, use the browser instead` +
           (instead ? `, or ${instead}, which is an app password over IMAP and does not expire either.` : '.'),
-    docs: 'docs/detailed/setup/google.md',
+    docs: 'https://lanes.sh/docs/link/google',
     docs_url: 'https://console.cloud.google.com/iam-admin/serviceaccounts',
     steps: [
       'Create or pick a project at https://console.cloud.google.com',

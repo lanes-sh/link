@@ -154,7 +154,7 @@ interface Surface {
  * `tools` as a count, matching `/reload` and `connect`; the names beside it.
  *
  * One key, one meaning. `ReloadResult.tools` and `PublishOutcome.tools` are both
- * numbers, and the count is what `docs/connect.md` tells an operator to compare
+ * numbers, and the count is what `https://lanes.sh/docs/link/connect` tells an operator to compare
  * against their client — shipping the same key here as an array would make
  * `.tools > 5` true for a single tool.
  */

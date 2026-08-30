@@ -94,7 +94,7 @@ Refusing at 5 MB would have been a limit we invented.
 ### `path` is unrestricted, and the audit record is what makes that defensible
 
 No allowlist, no confinement to a root. The endpoint already holds its owner's credentials, so the
-filesystem is treated the same way, and `docs/detailed/creating-a-provider.md` already says provider code is
+filesystem is treated the same way, and `https://lanes.sh/docs/link/creating-a-provider` already says provider code is
 trusted code.
 
 What makes it defensible is the record rather than a sandbox. Every resolved attachment carries a

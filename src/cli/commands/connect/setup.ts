@@ -115,7 +115,7 @@ export function reuseStoredCredential(input: {
 /**
  * Ask for a static credential — an API key, or an app-specific password.
  *
- * This did not exist, which meant the custom-provider path `docs/detailed/creating-a-provider.md`
+ * This did not exist, which meant the custom-provider path `https://lanes.sh/docs/link/creating-a-provider`
  * documents did not work: a manifest declaring `auth: {kind: header}` connected
  * with no complaint, never asked for the key, and then reported itself
  * unauthorized forever — with `doctor` advising the very command that had just

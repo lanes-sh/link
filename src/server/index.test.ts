@@ -466,7 +466,7 @@ describe('audit over the wire', () => {
     // legacy leg answers `-32602 Tool ... not found`, and nothing is recorded.
     //
     // Documented as the second exception to `audit.every-invocation` in
-    // `docs/detailed/security.md`. Closing it means reading the body at the edge
+    // `https://lanes.sh/docs/link/security`. Closing it means reading the body at the edge
     // — `request.clone()` and a parse — which is what `stdio.ts` already does
     // because a pipe has no headers to read instead.
     //

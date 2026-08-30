@@ -150,6 +150,6 @@ describe('strategyContextFrom', () => {
 
 describe('refuseStrategy', () => {
   test('names the strategy and where to read about them', () => {
-    expect(() => refuseStrategy('handshake')).toThrow(/creating-a-provider\.md/);
+    expect(() => refuseStrategy('handshake')).toThrow(/docs\/link\/creating-a-provider/);
   });
 });

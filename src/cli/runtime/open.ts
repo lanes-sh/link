@@ -195,7 +195,7 @@ export async function openRuntime(
   // The vault's own store, beside the credential store and never it: a separate
   // document, a separate key, and a separate environment variable
   // (`LANES_LINK_VAULT_KEY`). One master secret reused across purposes turns any
-  // single compromise into a total one — `docs/detailed/security.md`, and the boundary
+  // single compromise into a total one — `https://lanes.sh/docs/link/security`, and the boundary
   // test that has existed since M1.
   //
   // Opened before the registry because each stored item becomes its own

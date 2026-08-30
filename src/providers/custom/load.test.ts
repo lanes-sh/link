@@ -193,7 +193,7 @@ describe('workspace loading', () => {
 
 describe('a relative openapi path', () => {
   test('resolves against the manifest, not the working directory', async () => {
-    // What `docs/detailed/creating-a-provider.md` tells an operator to write. It used to
+    // What `https://lanes.sh/docs/link/creating-a-provider` tells an operator to write. It used to
     // resolve against the *process* cwd, so it worked only when `lanes-link` was
     // run from the right folder and failed with a bare ENOENT everywhere else.
     const root = await workspaceWith({

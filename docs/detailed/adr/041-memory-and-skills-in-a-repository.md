@@ -54,7 +54,7 @@ target the profile declares, and moves what is already stored. `lanes link knowl
 
 There is no field in `knowledgeTargetSchema` that could name either, and there is no flag that
 adds one. This is deliberately not a default that could be overridden: a repository is a place to
-publish, and `docs/detailed/security.md` rests on those two documents not being published. A
+publish, and `https://lanes.sh/docs/link/security` rests on those two documents not being published. A
 schema with no such field cannot be talked into it by an operator following an example.
 
 The audit log stays too, for a smaller but real reason: it is append-only and hash-chained

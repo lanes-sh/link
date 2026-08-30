@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { join } from 'node:path';
 import type { ProviderManifest } from '#connectivity';
 import { calendar, contacts, docs, drive, gmail, googleTasks, sheets } from '../index.ts';
 import { manifestOf } from '#providers/index.ts';
@@ -52,7 +53,7 @@ function acceptedScopes(operation: Operation): string[] {
  * Google will not accept a submission until every sensitive and restricted
  * scope carries a justification, a data-usage statement and a demo video, and
  * none of those live in this repository — they are free text on a console form.
- * `docs/detailed/google-verification.md` is where the text is written and kept;
+ * `https://lanes.sh/docs/link/google-verification` is where the text is written and kept;
  * the console is where it is pasted. That leaves the same gap `vendor.ts` had
  * before the check above existed: prose stating a rule, and nothing enforcing
  * it.
@@ -62,14 +63,23 @@ function acceptedScopes(operation: Operation): string[] {
  * `drive`, both of which the doc tells a reviewer are refused — and matching on
  * those would invert the test.
  */
-const VERIFICATION_DOC = new URL(
-  '../../../../docs/detailed/google-verification.md',
-  import.meta.url,
-).pathname;
+/**
+ * The page moved to lanes.sh, in the website repository, so this reads it from
+ * there. `LANES_DOCS_DIR` points at `src/content/docs/link` in that checkout;
+ * unset, the justification check skips rather than passing by not looking.
+ *
+ * The markers are JSX comments on the page, because MDX has no HTML comments.
+ */
+const VERIFICATION_DOC = process.env.LANES_DOCS_DIR
+  ? join(process.env.LANES_DOCS_DIR, 'google-verification.mdx')
+  : undefined;
+
+const SCOPES_BLOCK = /\{\/\* scopes:begin \*\/\}([\s\S]*?)\{\/\* scopes:end \*\/\}/;
 
 async function justifiedScopes(): Promise<Set<string>> {
+  if (VERIFICATION_DOC === undefined) throw new Error('LANES_DOCS_DIR is not set');
   const source = await Bun.file(VERIFICATION_DOC).text();
-  const block = /<!-- scopes:begin -->([\s\S]*?)<!-- scopes:end -->/.exec(source)?.[1];
+  const block = source.match(SCOPES_BLOCK)?.[1];
   if (block === undefined) throw new Error(`${VERIFICATION_DOC}: no scopes block`);
 
   return new Set(block.match(/https:\/\/www\.googleapis\.com\/auth\/[\w.]+/g) ?? []);
@@ -142,7 +152,7 @@ describe.each([
    * unjustified, and Google answers weeks later by rejecting the whole
    * submission rather than the one scope. The check costs a file read.
    */
-  test('every scope the manifest requests is justified for verification', async () => {
+  test.skipIf(VERIFICATION_DOC === undefined)('every scope the manifest requests is justified for verification', async () => {
     if (manifest.auth.kind !== 'oauth') throw new Error('expected an oauth manifest');
     const justified = await justifiedScopes();
 
@@ -271,7 +281,7 @@ describe.each([
  * that does not exist while leaving the real one unjustified.
  */
 describe('verification', () => {
-  test('every scope justified for verification is one a manifest requests', async () => {
+  test.skipIf(VERIFICATION_DOC === undefined)('every scope justified for verification is one a manifest requests', async () => {
     const requested = new Set(
       [gmail, drive, sheets, docs, calendar, googleTasks, contacts].flatMap((entry) => {
         const manifest = manifestOf(entry);

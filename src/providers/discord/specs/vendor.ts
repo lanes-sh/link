@@ -83,7 +83,7 @@ const WRITES = [
  * announcement can read as the operator while an ordinary reply reads as the
  * integration, from one bot token.
  *
- * The cost is stated in `docs/detailed/security.md`: `create_webhook` and
+ * The cost is stated in `https://lanes.sh/docs/link/security`: `create_webhook` and
  * `list_channel_webhooks` return the webhook's token in their response, and a
  * webhook token is a standalone credential for posting to that channel.
  */

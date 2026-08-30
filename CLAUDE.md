@@ -50,7 +50,7 @@ cannot undo. Get to a green `bun test` unattended, then stop and ask.
 
 ## A release publishes, and npm does not give a version back
 
-[`docs/detailed/releasing.md`](docs/detailed/releasing.md) is the lifecycle end to end — the two
+[The development lifecycle](https://lanes.sh/docs/link/releasing) is the lifecycle end to end — the two
 paths `release.yml` takes, and the verification that a release shipped. What an agent gets wrong:
 
 - **Set the version on `develop`, before the pull request to `main`.** A merge whose version is
@@ -96,7 +96,7 @@ that is not.
 One package, one `src/`, thirteen components. Cross-component imports go through the
 package.json `imports` map: `#policy`, `#stores/state`, `#providers/google/gmail`. There
 are no workspace packages and no `apps/` or `packages/` — see the layout table in
-[`docs/detailed/architecture.md`](docs/detailed/architecture.md).
+[Architecture](https://lanes.sh/docs/link/architecture).
 
 A command whose subject is the *endpoint* — `status`, `deploy`, `sync targets` — names a
 `--target` and acts on every profile declaring it; `--profile` narrows that set rather than

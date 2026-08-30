@@ -110,7 +110,7 @@ letter apart; closing that is a separate change with its own compatibility quest
 ## What this does not do
 
 **Nothing here screens what a client does with any of it.** These documents shape behaviour by
-being read, which is exactly the property that makes a prompt injection durable — and `docs/detailed/security.md`
+being read, which is exactly the property that makes a prompt injection durable — and `https://lanes.sh/docs/link/security`
 already says upstream content is passed through unscreened. The difference is provenance: this text
 ships in the repository and is reviewed like code, where a memory entry is model-authored. That is a
 real difference and it is not a control.

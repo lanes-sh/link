@@ -98,11 +98,11 @@ export const slack = defineProvider({
       'Slack normally needs nothing set up — one browser round trip against the app Lanes ' +
       'registered. Pasting a token is the way past a workspace whose admin has not approved ' +
       'that app, using one from an app the workspace already trusts.',
-    docs: 'docs/detailed/setup/slack.md',
+    docs: 'https://lanes.sh/docs/link/slack',
     docs_url: 'https://api.slack.com/apps',
     steps: [
       'Open https://api.slack.com/apps and choose "Create New App" → "From scratch". Name it and pick the workspace.',
-      'Open "OAuth & Permissions" and add the scopes you need under USER TOKEN SCOPES — not Bot Token Scopes; the MCP server reads the user token. The full set this provider asks for in the browser is listed in docs/detailed/setup/slack.md.',
+      'Open "OAuth & Permissions" and add the scopes you need under USER TOKEN SCOPES — not Bot Token Scopes; the MCP server reads the user token. The full set this provider asks for in the browser is listed in https://lanes.sh/docs/link/slack.',
       'Choose "Install to Workspace" and approve. A Slack admin may have to approve it for you.',
       'Copy the "User OAuth Token". It starts with xoxp- — not the bot token, which starts with xoxb- and will not work here.',
       'The token does not expire unless you enable token rotation on the app. If you rotate or reinstall, run: lanes link connect slack --profile personal --target local --auth pasted_token --replace.',

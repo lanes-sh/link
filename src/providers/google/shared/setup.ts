@@ -38,7 +38,7 @@ export const googleSetup = (
 
   return {
     summary: `${product} signs in with Google. By default it authorises against the OAuth client Lanes operates, so there is nothing to register and no client secret on this machine — the code is exchanged for a token by the Lanes API, which holds that secret. Pass --own-client to register a client of your own instead; the steps below are that path, asked once per profile and then covering every Google account you connect.`,
-    docs: 'docs/detailed/setup/google.md',
+    docs: 'https://lanes.sh/docs/link/google',
     docs_url: 'https://console.cloud.google.com/auth',
     // AUDIENCE leads with Internal, and the ordering is the point rather than a
     // preference. The seven-day `invalid_grant` everyone hits is a property of

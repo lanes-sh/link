@@ -15,7 +15,7 @@ import {
  *
  * `lanes link vault get` prints a value, which `lanes link secrets` deliberately never does.
  * That is the two-kinds-of-secret distinction doing its job
- * (`docs/detailed/security.md`): a credential authorises the system and is never
+ * (`https://lanes.sh/docs/link/security`): a credential authorises the system and is never
  * disclosed, and a vault the owner cannot read without an agent is not a vault.
  */
 
@@ -136,5 +136,5 @@ export function vaultKeyGenerate(flags: OwnerFlags): void {
   print('');
   print(style.dim('  Store it as LANES_LINK_VAULT_KEY. It is not written anywhere by this command:'));
   print(style.dim('  a key kept beside the document it protects protects nothing.'));
-  print(style.dim('  Separate from the credential-store key, deliberately — docs/detailed/security.md.'));
+  print(style.dim('  Separate from the credential-store key, deliberately — https://lanes.sh/docs/link/security.'));
 }

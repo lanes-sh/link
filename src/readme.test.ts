@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { credentialApp } from '#cli/commands/connect/accounts.ts';
 import { RESERVED_BY_GRAMMAR } from '#cli/commands/connect/custom/spec.ts';
 import { PROVIDER_MANIFESTS, UNTESTED_PROVIDERS } from '#providers/index.ts';
@@ -40,10 +41,22 @@ const README = new URL('../README.md', import.meta.url).pathname;
  * file exists for is unchanged and is not about the README: **nothing ships that
  * the documentation never names**, because `sheets` and `docs` once shipped
  * complete and unreachable for want of one line. So completeness is asserted
- * against `docs/connect.md`, which is the list, and the README is asserted to
+ * against the connect guide, which is the list, and the README is asserted to
  * point at it.
+ *
+ * The guide is now `connect.mdx` on lanes.sh, in the website repository.
+ * `LANES_DOCS_DIR` points at `src/content/docs/link` in that checkout; unset,
+ * the completeness check skips rather than passing by not looking.
  */
-const CONNECT = new URL('../docs/connect.md', import.meta.url).pathname;
+const CONNECT = process.env.LANES_DOCS_DIR
+  ? join(process.env.LANES_DOCS_DIR, 'connect.mdx')
+  : undefined;
+
+/** The guide's path, for the checks `skipIf` already gates on it existing. */
+function connectGuide(): string {
+  if (CONNECT === undefined) throw new Error('LANES_DOCS_DIR is not set');
+  return CONNECT;
+}
 
 /** Every `lanes link connect <target>` the README tells someone to run. */
 function connectTargetsIn(text: string): string[] {
@@ -58,12 +71,12 @@ describe('the README', () => {
   test('points at the list rather than being it', async () => {
     const readme = await readFile(README, 'utf8');
 
-    expect(readme).toContain('docs/connect.md');
+    expect(readme).toContain('lanes.sh/docs/link/connect');
     expect(readme).toContain('src/providers/README.md');
   });
 
-  test('the connect guide gives a command for every provider', async () => {
-    const named = new Set(connectTargetsIn(await readFile(CONNECT, 'utf8')));
+  test.skipIf(CONNECT === undefined)('the connect guide gives a command for every provider', async () => {
+    const named = new Set(connectTargetsIn(await readFile(connectGuide(), 'utf8')));
 
     const missing = PROVIDER_MANIFESTS.map((manifest) => manifest.id).filter(
       (id) => !named.has(id),
@@ -72,12 +85,12 @@ describe('the README', () => {
     expect(missing).toEqual([]);
   });
 
-  test('the connect guide marks exactly the untested providers', async () => {
+  test.skipIf(CONNECT === undefined)('the connect guide marks exactly the untested providers', async () => {
     // A status maintained in two places is a status that is wrong in one of
     // them. `untested.ts` is the source; this is the check that the prose agrees
     // with it, in both directions — an unmarked untested provider overclaims,
     // and a marked tested one undersells something that works.
-    const guide = await readFile(CONNECT, 'utf8');
+    const guide = await readFile(connectGuide(), 'utf8');
 
     const marked = new Set(
       [...guide.matchAll(/†[^|]*\|\s*`lanes link connect ([a-z_]+)`/g)].map((match) => match[1]!),
@@ -105,9 +118,11 @@ describe('the README', () => {
       ...RESERVED_BY_GRAMMAR,
     ]);
 
+    // The README is always here; the guide only when LANES_DOCS_DIR names the
+    // website checkout, so this half narrows rather than skipping outright.
     const unknown = [
       ...connectTargetsIn(await readFile(README, 'utf8')),
-      ...connectTargetsIn(await readFile(CONNECT, 'utf8')),
+      ...(CONNECT ? connectTargetsIn(await readFile(CONNECT, 'utf8')) : []),
     ].filter((target) => !resolvable.has(target));
 
     expect(unknown).toEqual([]);

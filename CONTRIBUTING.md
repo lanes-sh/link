@@ -2,7 +2,7 @@
 
 ## Getting started
 
-See [`docs/detailed/local-development.md`](docs/detailed/local-development.md). Short version: Bun 1.3.11+,
+See [Local development](https://lanes.sh/docs/link/local-development). Short version: Bun 1.3.11+,
 `bun install`, `bun test`. There is no build step.
 
 ## Before you open a pull request
@@ -16,7 +16,7 @@ Both must pass. Add tests for what you changed.
 
 ## Adding a provider
 
-Read [`docs/detailed/creating-a-provider.md`](docs/detailed/creating-a-provider.md). It should be sufficient on its
+Read [Creating a provider](https://lanes.sh/docs/link/creating-a-provider). It should be sufficient on its
 own — if it is not, that is a bug worth reporting.
 
 ## Things that will be pushed back on
@@ -45,7 +45,7 @@ replaced them. If one fails, the fix is almost never to relax the rule — and
 where a concession is genuinely right, it goes in the named list in that file
 rather than into a raised limit.
 
-**Documentation that overstates a guarantee.** The table in [`docs/detailed/security.md`](docs/detailed/security.md)
+**Documentation that overstates a guarantee.** The table in [the security model](https://lanes.sh/docs/link/security)
 is meant to be honest, including its one documented exception. If a change makes a guarantee weaker,
 update the table in the same commit.
 
@@ -55,7 +55,7 @@ update the table in the same commit.
 to use this. Keep them short and free of reasoning — a "why" belongs there only when the reader has to
 make a decision from it.
 
-[`docs/detailed/`](docs/detailed/) is the reference, and it is long on purpose. It records why each
+[the docs](https://lanes.sh/docs/link) is the reference, and it is long on purpose. It records why each
 decision was made, which is the part that is expensive to reconstruct. Depth belongs here.
 
 Two tests hold the layers to the code, and both should stay green rather than be retargeted:
@@ -70,11 +70,11 @@ for the change. `gh pr merge <n> --squash --delete-branch`. Rebase-merging is di
 The single exception is the release pull request, `develop` → `main`, which is merged as a **merge
 commit**. Squashing it would leave `develop` no longer an ancestor of `main`, and the fast-forward
 that ends a release — the step that leaves the two branches identical — would be rejected. See
-[`docs/detailed/releasing.md`](docs/detailed/releasing.md#how-a-pull-request-is-merged).
+[The development lifecycle](https://lanes.sh/docs/link/releasing#how-a-pull-request-is-merged).
 
 ## Releasing
 
-[`docs/detailed/releasing.md`](docs/detailed/releasing.md) is the whole lifecycle in order — the
+[The development lifecycle](https://lanes.sh/docs/link/releasing) is the whole lifecycle in order — the
 branches, both release paths, the `develop` fast-forward that ends one, and how to verify a release
 shipped. The short version:
 

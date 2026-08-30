@@ -1,34 +1,36 @@
 # Lanes Link docs
 
-Four short guides. Read them in order the first time; after that, go straight to the one you need.
+The documentation lives at **[lanes.sh/docs/link](https://lanes.sh/docs/link)**.
 
 | | |
 |---|---|
-| **[Quickstart](quickstart.md)** | From nothing to a working endpoint, in four commands |
-| **[Connect your accounts](connect.md)** | Every provider, what each one needs, and how to add your own |
-| **[Add it to your agent](clients.md)** | Claude Code, Codex, Claude Desktop, claude.ai, ChatGPT, and anything else |
-| **[Deploy to your own cloud](deploy.md)** | Five commands to a URL you can reach from a phone |
+| **[Quickstart](https://lanes.sh/docs/link/quickstart)** | From nothing to a working endpoint |
+| **[Connect your accounts](https://lanes.sh/docs/link/connect)** | Every account, and what each one needs |
+| **[Add it to your agent](https://lanes.sh/docs/link/clients)** | Claude Code, Codex, Claude Desktop, claude.ai, ChatGPT |
+| **[Deploy to your own cloud](https://lanes.sh/docs/link/deploy)** | Five commands to a URL |
+| **[Every command](https://lanes.sh/docs/link/commands)** | Arguments and flags, one entry each |
 
-## Reference
+Every page is also served as plain Markdown: add `.md` to the path, for example
+[lanes.sh/docs/link/quickstart.md](https://lanes.sh/docs/link/quickstart.md).
 
-The full documentation lives in [`detailed/`](detailed/). It is longer on purpose — it records why
-each decision was made, not just what to type.
+## What is still in this repository
 
 | | |
 |---|---|
-| [`commands.md`](detailed/commands.md) | Every command, its arguments, and its flags |
-| [`workflow.md`](detailed/workflow.md) | The lifecycle end to end, in order |
-| [`configuration.md`](detailed/configuration.md) | The profile file, policy grammar, targets, environment variables |
-| [`providers.md`](detailed/providers.md) | Every capability, what it does, and what its audit entries withhold |
-| [`architecture.md`](detailed/architecture.md) | How it fits together, and the dispatch path a call takes |
-| [`security.md`](detailed/security.md) | The threat model and the guarantee table |
-| [`deployment-cloudrun.md`](detailed/deployment-cloudrun.md) | Cloud Run in full: cold starts, scaling, IAM, the image |
-| [`setup/google.md`](detailed/setup/google.md) | Registering your own Google OAuth client, step by step |
-| [`google-verification.md`](detailed/google-verification.md) | The scope justifications Google's review asks for, and why each scope is the narrowest that works |
-| [`setup/icloud.md`](detailed/setup/icloud.md) | One app-specific password for Mail, Calendar, and Contacts |
-| [`creating-a-provider.md`](detailed/creating-a-provider.md) | Add your own integration |
-| [`connectivity-coverage.md`](detailed/connectivity-coverage.md) | Which connectivity and credential types compose, which are closed, and what none of them covers |
-| [`local-development.md`](detailed/local-development.md) | Working on Lanes Link itself |
-| [`releasing.md`](detailed/releasing.md) | The development lifecycle: branches, the two release paths, and what to verify |
-| [`adr/`](detailed/adr/) | Architecture decision records |
-| [`init.md`](detailed/init.md) | The original specification, amended to match what was built |
+| [`detailed/adr/`](detailed/adr/) | The architecture decision records: why each choice was made, and what it cost |
+| [`detailed/init.md`](detailed/init.md) | The original specification, amended to match what was built |
+
+Those are engineering history rather than documentation, so they stay with the source.
+
+## Editing the docs
+
+The pages above are authored in the website repository, under `src/content/docs/link/`. Two test
+suites here read them, so point them at your checkout when you change a config example or the
+Google scope justifications:
+
+```console
+$ LANES_DOCS_DIR=/path/to/web/src/content/docs/link bun test
+```
+
+Without it, `src/profile/docs.test.ts` and the verification checks in
+`src/providers/google/specs/specs.test.ts` skip rather than passing by not looking.

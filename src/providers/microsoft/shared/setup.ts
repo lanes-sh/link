@@ -20,7 +20,7 @@ export const microsoftSetup = (product: string, permissions: readonly string[]) 
     `Registering one is free and takes a few minutes; it is a public client, so there is no secret ` +
     `to keep. The same registration covers Outlook mail, calendar, contacts, OneDrive and To Do — ` +
     `you do this once, not once per provider.`,
-  docs: 'docs/detailed/setup/microsoft.md',
+  docs: 'https://lanes.sh/docs/link/connect',
   docs_url: 'https://entra.microsoft.com',
   steps: [
     'Open https://entra.microsoft.com and go to Applications → App registrations → New registration.',

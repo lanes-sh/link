@@ -17,7 +17,7 @@ import type { BlobStore } from '#stores/blobs';
  *
  * What is *not* merged is the two stores themselves. They keep separate
  * documents, separate keys, and separate environment variables, because that is
- * the boundary `docs/detailed/security.md` is built on: one master secret reused across
+ * the boundary `https://lanes.sh/docs/link/security` is built on: one master secret reused across
  * purposes turns any single compromise into a total one. Sharing the code that
  * seals a document is the opposite of sharing the key that opens it.
  *

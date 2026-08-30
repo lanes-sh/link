@@ -25,7 +25,7 @@ adapters cannot tell the difference and neither can an operator.
 
 Supabase specifically because its free tier is the cheaper answer for single-user use, and because a
 gateway serving a handful of agent calls a day should not pay for a database that is idle 99% of the
-time. The tradeoff is stated in `docs/detailed/deployment-cloudrun.md` rather than hidden: the free tier pauses
+time. The tradeoff is stated in `https://lanes.sh/docs/link/deployment-cloudrun` rather than hidden: the free tier pauses
 a project after about a week idle, and the first call after a quiet fortnight fails rather than being
 slow.
 

@@ -323,7 +323,7 @@ Because the enum is built from resolved policy, a client cannot discover connect
 
 ### Tools versus resources (ADR-006)
 
-Do not make everything a tool. Use resources for read-oriented document or structured context; use tools for actions and parameterized queries. Decide per capability and record the reasoning in `docs/detailed/providers.md`. Verify current SDK resource patterns before implementing.
+Do not make everything a tool. Use resources for read-oriented document or structured context; use tools for actions and parameterized queries. Decide per capability and record the reasoning in `https://lanes.sh/docs/link/capabilities`. Verify current SDK resource patterns before implementing.
 
 ### Deliberately excluded from MCP (ADR-007)
 
@@ -427,7 +427,7 @@ Maintain this table and keep it honest. `ENFORCED` means code rejects or tests t
 | `config.no-secret-values` | ENFORCED | validator test with credential fixtures |
 | `credentials.connection-scoped` | ENFORCED | `ScopedCredentials` isolation test |
 | `state.provider-scoped` | ENFORCED | `ScopedStore` isolation test |
-| `audit.every-invocation` | ENFORCED, one documented exception | dispatch-path test; see `docs/detailed/security.md` |
+| `audit.every-invocation` | ENFORCED, one documented exception | dispatch-path test; see `https://lanes.sh/docs/link/security` |
 | `audit.redaction` | ENFORCED | provider redaction tests, including on denials |
 | `audit.append-only` | ENFORCED | store interface has no update or delete |
 | `discovery.policy-filtered` | ENFORCED | `tools/list` **and** `server/discover`, over the wire |
@@ -481,9 +481,9 @@ interface ProviderContext {
 
 The provider authoring experience is the most important internal interface, and it matters more because external contributors will use it. A provider declares metadata, a configuration schema (Zod), a connection schema, authentication requirements, tools and resources, permission identifiers, and its redaction rules for audit.
 
-A provider must be writable without reading the rest of the codebase, and installable without editing core. Built-in providers may be statically imported for now, but preserve the path to independently versioned packages (`lanes link add <provider>` later). The example provider must be small enough to reproduce verbatim in `docs/detailed/creating-a-provider.md`.
+A provider must be writable without reading the rest of the codebase, and installable without editing core. Built-in providers may be statically imported for now, but preserve the path to independently versioned packages (`lanes link add <provider>` later). The example provider must be small enough to reproduce verbatim in `https://lanes.sh/docs/link/creating-a-provider`.
 
-Because provider code is trusted (see Security model), `docs/detailed/creating-a-provider.md` must state plainly what a provider can reach and what installing a third-party provider implies.
+Because provider code is trusted (see Security model), `https://lanes.sh/docs/link/creating-a-provider` must state plainly what a provider can reach and what installing a third-party provider implies.
 
 ---
 
@@ -492,7 +492,7 @@ Because provider code is trusted (see Security model), `docs/detailed/creating-a
 > **Superseded.** This section described the workspace layout as originally
 > planned. It is kept because the rest of this document argues from it, but the
 > repository is one package under `src/` now — see
-> [`architecture.md`](architecture.md) for the current table and
+> [`architecture.md`](https://lanes.sh/docs/link/architecture) for the current table and
 > [ADR-015](adr/015-one-package-under-src.md) for why it changed.
 
 ```
@@ -644,7 +644,7 @@ Baking config into the image keeps deployment immutable and gives one mechanism 
 
 `lanes link outputs` prints the service URL and, on request, each client's bearer token, which is what an agent's MCP configuration needs.
 
-**`docs/detailed/workflow.md` is the normative CLI user experience.** It walks the full lifecycle end to end, including multi-profile setup, and shows expected output for each command. Implement against it, and keep it updated when a command changes.
+**`https://lanes.sh/docs/link/workflow` is the normative CLI user experience.** It walks the full lifecycle end to end, including multi-profile setup, and shows expected output for each command. Implement against it, and keep it updated when a command changes.
 
 ---
 
@@ -688,7 +688,7 @@ now a manifest rather than a project, which is the outcome that justified the de
 8. Gmail provider with read capabilities (`search`, `get_message`, `get_thread`, `list_labels`) and three connections.
 9. CLI as specified above, including the config-editing commands. Config writes must preserve comments and key ordering, and must validate the resulting document before writing.
 10. Tests per the testing section, including the control-plane exclusion assertion.
-11. `docs/detailed/architecture.md`, `docs/detailed/creating-a-provider.md`, `docs/detailed/security.md`, `SECURITY.md`, `README.md`, and the guarantee status table.
+11. `https://lanes.sh/docs/link/architecture`, `https://lanes.sh/docs/link/creating-a-provider`, `https://lanes.sh/docs/link/security`, `SECURITY.md`, `README.md`, and the guarantee status table.
 
 **Done when:** with three Gmail accounts connected by running `lanes link connect gmail` three times, Claude connects to the local endpoint, discovers the tools, and searches each account separately. A second **profile** with narrower policy can reach only what its rules allow, is denied the rest, cannot discover the connections or capabilities it lacks, and every call appears in the right audit log.
 
@@ -722,7 +722,7 @@ says so.
 3. Dockerfile under `src/deployments/gcp/`, plus `lanes link deploy` and `lanes link outputs` as specified in the CLI section.
 4. `lanes link secrets push --from local --to cloud` for migrating a locally built setup.
 5. Endpoint protected by bearer token, optionally behind Cloud Run IAM.
-6. `docs/detailed/deployment-cloudrun.md`, covering the Postgres host choice, cost, and cold starts.
+6. `https://lanes.sh/docs/link/deployment-cloudrun`, covering the Postgres host choice, cost, and cold starts.
 7. Update the guarantee status table where scaling changes a status (rate limits in particular).
 
 **Done when:** the same config, with only the target switched, runs on Cloud Run and serves the same agents with the same permissions. No application-layer code differs between M1 and M2, and the full loop of adding a connection, authorizing it, deploying, and using the printed URL from an agent works end to end.
@@ -817,7 +817,7 @@ grammar already handles — rather than by teaching policy about arguments, whic
 
 Three things, and only the first was foreseen.
 
-**A control plane.** `lanes link memory`, `lanes link skills`, `lanes link vault`. `docs/detailed/workflow.md` — which this document
+**A control plane.** `lanes link memory`, `lanes link skills`, `lanes link vault`. `https://lanes.sh/docs/link/workflow` — which this document
 calls the normative CLI experience — had no command for any of the three and never did, so this was
 never a regression, just something specified nowhere.
 
@@ -885,9 +885,9 @@ Integration tests for the example provider and Gmail. Gmail tests mock OAuth and
 
 ## Documentation
 
-Write alongside the code: `README.md`, `docs/detailed/architecture.md`, `docs/detailed/workflow.md`, `docs/detailed/configuration.md`, `docs/detailed/providers.md`, `docs/detailed/creating-a-provider.md`, `docs/detailed/security.md`, `docs/detailed/local-development.md`, `docs/detailed/deployment-cloudrun.md`, `CONTRIBUTING.md`, and `SECURITY.md`.
+Write alongside the code: `README.md`, `https://lanes.sh/docs/link/architecture`, `https://lanes.sh/docs/link/workflow`, `https://lanes.sh/docs/link/configuration`, `https://lanes.sh/docs/link/capabilities`, `https://lanes.sh/docs/link/creating-a-provider`, `https://lanes.sh/docs/link/security`, `https://lanes.sh/docs/link/local-development`, `https://lanes.sh/docs/link/deployment-cloudrun`, `CONTRIBUTING.md`, and `SECURITY.md`.
 
-`docs/detailed/workflow.md` is supplied as part of this specification and defines the CLI contract; it is normative rather than illustrative.
+`https://lanes.sh/docs/link/workflow` is supplied as part of this specification and defines the CLI contract; it is normative rather than illustrative.
 
 The provider creation guide is the highest-value document: a developer should add a provider from it without reading the rest of the codebase.
 
@@ -901,7 +901,7 @@ ADRs: `001-connection-routing`, `002-transport-and-statelessness`, `003-auth-mod
 2. Confirm the Google OAuth publishing and scope requirements described above.
 3. Define the provider interface, the `ProviderContext` scoping, and the infrastructure adapter interfaces.
 4. Define the config schema, the validation rules, and the reconcile algorithm.
-5. Write `docs/detailed/architecture.md`, then implement M1.
+5. Write `https://lanes.sh/docs/link/architecture`, then implement M1.
 
 When a choice is uncertain, optimize for portability, extensibility, security, simple provider development, minimal coupling, and user ownership. Do not optimize for enterprise scale. Do not add abstractions that do not serve a stated requirement here.
 

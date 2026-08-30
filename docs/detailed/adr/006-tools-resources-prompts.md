@@ -12,7 +12,7 @@ Do not make everything a tool.
 | **Resource** | read-oriented context addressed by a stable identifier | `example://note/{key}` |
 | **Prompt** | reusable procedures | skills |
 
-Decide per capability and record the reasoning in `docs/detailed/providers.md`.
+Decide per capability and record the reasoning in `https://lanes.sh/docs/link/capabilities`.
 
 ## Why this matters more than it looks
 

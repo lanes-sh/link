@@ -14,7 +14,7 @@
  * This barrel is also the **provider authoring surface**: a provider must be
  * writable without reading the rest of the codebase. If you need something not
  * exported here, that is a bug in this file rather than a reason to reach into
- * another component. See `docs/detailed/creating-a-provider.md`.
+ * another component. See `https://lanes.sh/docs/link/creating-a-provider`.
  */
 
 export type { ScopedStore, Logger, ConnectionInfo, ProviderContext } from './context.ts';

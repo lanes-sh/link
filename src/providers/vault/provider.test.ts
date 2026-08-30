@@ -188,7 +188,7 @@ describe('what reaches the audit log', () => {
 describe('the vault is not the credential store — the boundary asserted in M1', () => {
   test('this provider never names the system credential store', async () => {
     // Asserted by reading the source, because the mistake this prevents is an
-    // import someone adds for convenience. `docs/detailed/security.md`: collapsing the
+    // import someone adds for convenience. `https://lanes.sh/docs/link/security`: collapsing the
     // two would be the most damaging single mistake available here.
     //
     // The check names the *system* store rather than the whole `#secrets`

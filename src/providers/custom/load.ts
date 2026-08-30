@@ -86,7 +86,7 @@ function describe(workspaceRoot: string, key: string): string {
 /**
  * Make a relative `openapi` path mean what the operator meant.
  *
- * `docs/detailed/creating-a-provider.md` tells people to write `openapi: ./mything.json`,
+ * `https://lanes.sh/docs/link/creating-a-provider` tells people to write `openapi: ./mything.json`,
  * and until now that resolved against the *process* working directory — so it
  * worked when you happened to run `lanes` from the right folder and failed
  * with a confusing ENOENT everywhere else. The built-ins never noticed because

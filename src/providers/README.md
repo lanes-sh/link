@@ -1,7 +1,7 @@
 # Providers
 
 A hundred and five of them, and almost all are a folder and a line. This page is the inventory and the
-ins and outs; [`docs/connect.md`](../../docs/connect.md) is the same list written for someone
+ins and outs; [Connect your accounts](https://lanes.sh/docs/link/connect) is the same list written for someone
 deciding what to connect.
 
 ## What a provider is
@@ -13,7 +13,7 @@ OAuth and neither costs the other any code.
 
 - [`../connectivity/transports/README.md`](../connectivity/transports/README.md) — the six ways to reach a service
 - [`../connectivity/auth/README.md`](../connectivity/auth/README.md) — the credential types, and the ones not built yet
-- [`../../docs/detailed/connectivity-coverage.md`](../../docs/detailed/connectivity-coverage.md) — which pairs work, which are refused, and why
+- [Connectivity coverage](https://lanes.sh/docs/link/connectivity-coverage) — which pairs work, which are refused, and why
 
 Where they come from:
 
@@ -50,7 +50,7 @@ A folder here and a line in [`index.ts`](index.ts). That file says it too, and m
 holds *all* of the provider — the manifest, the scopes it asks for, what it redacts from the audit
 log, the setup walkthrough, and any vendored specification.
 
-The full walkthrough is [`docs/detailed/creating-a-provider.md`](../../docs/detailed/creating-a-provider.md),
+The full walkthrough is [Creating a provider](https://lanes.sh/docs/link/creating-a-provider),
 which opens by pointing out that most providers should not be built-ins at all — a YAML manifest in
 a profile's own `providers.d/` is validated by the same schema and loaded by [`custom/`](custom/).
 

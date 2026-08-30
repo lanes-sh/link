@@ -87,7 +87,7 @@ export const discord = defineProvider({
       'their developer portal, copy its bot token, and invite it to the servers you want ' +
       'reachable. Posts will carry an APP badge; the name and avatar on them are yours to set. ' +
       'You are asked for the token once.',
-    docs: 'docs/detailed/setup/discord.md',
+    docs: 'https://lanes.sh/docs/link/discord',
     docs_url: 'https://discord.com/developers/applications',
     steps: [
       'Open https://discord.com/developers/applications and choose "New Application". Name it whatever you want the posts to read as — this is the name people will see.',
