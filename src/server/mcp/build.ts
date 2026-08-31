@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { isPrompt, isResource, isTool } from '#connectivity';
 import { SERVER_ICONS } from './icon.ts';
+import { GUIDE_TITLE, GUIDE_URI, guideDocument } from './guide.ts';
 import { serverInstructions } from './instructions.ts';
 import { SERVER_NAME } from './naming.ts';
 import { registerPrompt } from './prompts.ts';
@@ -77,10 +78,28 @@ export function buildMcpServer(options: BuildServerOptions): McpServer {
       // server — to be told nothing is there.
       capabilities: {
         tools: { listChanged: false },
-        ...(offers(merged, isResource) ? { resources: { listChanged: false } } : {}),
+        // Unconditional now: `lanes://instructions` is registered below
+        // whatever policy said, so this endpoint always has at least one
+        // resource and gating the capability on the merged set would advertise
+        // nothing while serving something.
+        resources: { listChanged: false },
         ...(offers(merged, isPrompt) ? { prompts: { listChanged: false } } : {}),
       },
     },
+  );
+
+  // Always, and ahead of everything policy decided. This describes the surface
+  // rather than exposing any of it, so there is nothing here to grant — and a
+  // client whose owner has connected nothing at all still gets an account of
+  // what the thing is. It also means `resources` is advertised unconditionally,
+  // which `offers` below no longer decides on its own.
+  server.registerResource(
+    'instructions',
+    GUIDE_URI,
+    { title: GUIDE_TITLE, description: 'What this endpoint is and how to behave against it', mimeType: 'text/markdown' },
+    async (uri: URL) => ({
+      contents: [{ uri: uri.href, mimeType: 'text/markdown', text: guideDocument() }],
+    }),
   );
 
   for (const [id, entry] of merged) {

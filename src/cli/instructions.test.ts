@@ -262,17 +262,24 @@ describe('the skill covers the lifecycle, not only the calls', () => {
     // between: no deploy, no status, no way to add a profile. An agent asked to
     // deploy read the file, found nothing, and improvised from the CLI's help.
     // Listing them here means the operator half cannot quietly fall out again.
+    //
+    // The 0.8.0 entries are here for the same reason and are the ones most
+    // likely to be missed: a connection is granted to a profile rather than
+    // living in one, and a profile reaches nobody until its members say so.
     const asset = ASSETS.find((candidate) => candidate.kind === 'skill')!;
     const named = new Set(commandsNamedIn(await readAsset(asset)));
 
     const wanted = [
       'deploy',
       'status',
-      'sync targets',
+      'sync workspaces',
       'profile add',
       'profile remove',
       'profile list',
-      'target list',
+      'workspace list',
+      'connection list',
+      'grant add',
+      'profile members',
       'doctor',
       'mcp add',
       'mcp list',

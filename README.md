@@ -51,12 +51,14 @@ middle of your data.
 
 ## Quickstart
 
-Needs [Bun](https://bun.com) 1.3.11+. Nothing else — no account anywhere.
+Needs [Bun](https://bun.com) 1.3.11+, and a Lanes sign-in.
 
 ```console
 $ bun install -g @lanes-sh/link                # puts `lanes` on your PATH
-$ lanes link profile add personal --target local
-$ lanes link start --profile personal --target local
+$ lanes auth login                             # opens a browser once
+$ lanes link profile add personal --workspace local
+$ lanes link profile members add --me --profile personal --workspace local
+$ lanes link start --profile personal --workspace local
 ok    serving http://127.0.0.1:7337/mcp
       profiles: personal
 ```
@@ -64,7 +66,7 @@ ok    serving http://127.0.0.1:7337/mcp
 Then, in another shell:
 
 ```console
-$ lanes link mcp add --profile personal --target local                           # every agent installed; or name one: claude, codex
+$ lanes link mcp add --profile personal --workspace local     # every agent installed; or name one: claude, codex
 ok    registered lanes-link with Claude Code (user scope)
 ok    registered lanes-link with Codex
 ```
@@ -73,14 +75,22 @@ Your agents can now use it. Memory, tasks, files, skills, and the vault hold you
 rather than an account, so they are already there — nothing to connect, no credentials, no browser.
 Mail and calendar are the next step. **[Full quickstart →](https://lanes.sh/docs/link/quickstart)**
 
+**Why the sign-in.** A profile declares who may consume it, and there is nothing to check that
+against if the endpoint has no idea who is asking. That is a real dependency for a self-hostable
+tool and worth stating plainly; what it is not is a dependency per request. The network is needed
+to sign in and to refresh, and a machine offline for a day keeps serving. `lanes link token
+show` still mints a static token for CI, which has no browser to sign in with.
+
 ## In the Lanes desktop app
 
 Prefer not to use a terminal? The [Lanes desktop app](https://lanes.sh/desktop) drives this CLI from
-a settings page. **Settings → Integrations → Lanes Link** installs it, holds the profile and target
-every command runs against, connects your accounts, starts and stops the endpoint, and registers it
-with Claude Code or Codex.
+a settings page. **Settings → Integrations → Lanes Link** installs it, holds the profile and
+workspace every command runs against, starts and stops the endpoint, and registers it with Claude
+Code or Codex. From 0.8.0 your connections, profiles and audit log are on the
+[Lanes dashboard](https://lanes.sh/dashboard/link) instead, which reads your endpoint directly over
+loopback: run `lanes link pair` once to let it.
 
-![The Lanes Link page in the Lanes desktop app: the CLI status card and its version, the target and profile selectors, the endpoint row with its running state, and the list of connected accounts.](docs/images/lanes-link-desktop.png)
+![The Lanes Link page in the Lanes desktop app: the CLI status card and its version, the workspace and profile selectors, the endpoint row with its running state, and the list of connected accounts.](docs/images/lanes-link-desktop.png)
 
 It runs the commands above rather than reimplementing them, so consent and the token stay here where
 they belong, and an endpoint set up in the app is the same one you get from a shell. Available from

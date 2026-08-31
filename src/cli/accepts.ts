@@ -65,6 +65,7 @@ export const ACCEPTS: Record<string, readonly string[]> = {
   'target list': ['urls', 'workspace'],
   'workspace show': ['workspace'],
   'target show': ['workspace'],
+  'mcp install-instructions': ['client'],
   pair: ['print', 'rotate', 'yes'],
   'token show': ['show', 'raw'],
   'token rotate': ['show', 'raw', 'yes'],

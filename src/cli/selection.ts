@@ -170,6 +170,7 @@ export const SELECTION: Record<string, Requires> = {
   // reaches that target's endpoint.
   'identity add': 'profile+workspace',
   'identity remove': 'profile+workspace',
+  'mcp install-instructions': 'none',
   pair: 'profile+workspace',
   'token show': 'profile+workspace',
   'token rotate': 'profile+workspace',

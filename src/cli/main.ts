@@ -31,7 +31,7 @@ import { syncTargets } from './commands/sync.ts';
 import { targetList, targetShow, targetUse } from './commands/target.ts';
 import { identityAdd, identityList, identityRemove } from './commands/identity.ts';
 import { setupPlan } from './commands/setup.ts';
-import { mcpAdd, mcpList, mcpStdio, skillDocument } from './commands/mcp.ts';
+import { installInstructions, mcpAdd, mcpList, mcpStdio, skillDocument } from './commands/mcp.ts';
 import { deploy } from '#deployments/deploy.ts';
 import { secretsList, secretsPush, secretsSet } from './commands/secrets.ts';
 import { knowledgeShow, knowledgeUse } from './commands/knowledge.ts';
@@ -413,6 +413,8 @@ export async function run(argv: readonly string[]): Promise<void> {
             noSkill: flags['no-skill'] === true,
             headless: flags['headless'] === true,
           });
+        case 'install-instructions':
+          return installInstructions({ ...(text(flags, 'client') ? { client: text(flags, 'client') } : {}) });
         case 'stdio':
           return mcpStdio({ ...global, ...(flags['only'] === true ? { only: true } : {}) });
         case 'list':

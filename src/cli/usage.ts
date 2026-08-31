@@ -21,7 +21,8 @@ export const USAGE = `${style.bold(PROGRAM)} — a self-hostable MCP gateway for
 ${style.bold('Everyday')}
   ${PROGRAM} setup plan [--json]        what each provider needs, and which are connected
   ${PROGRAM} setup plan <provider>      the console steps, the values, and the command
-  ${PROGRAM} connect <provider>         add an account (run once per account)
+  ${PROGRAM} connect <provider>         authorise an account into this workspace
+                                        (once per account, not once per profile)
   ${PROGRAM} connect <provider>.<id>    re-authorise one existing account
   ${PROGRAM} connect <...> --replace    ask for the stored password or key again
   ${PROGRAM} connect <...> --auth <method>  pick how, where there is a choice
@@ -35,6 +36,9 @@ ${style.bold('Everyday')}
                                  asked for; the manifest it writes is yours to edit
                                         answer nothing from a terminal: take every value
                                         from the credential store, or say what is missing
+  ${PROGRAM} connection list [--json]   every account in this workspace, and who grants it
+  ${PROGRAM} grant add <provider>.<id>   let a profile reach one, with nothing allowed yet
+  ${PROGRAM} grant remove <provider>.<id>
   ${PROGRAM} start [--only]             reconcile and serve every profile on one endpoint
   ${PROGRAM} outputs [--show] [--json]  the endpoint an agent needs
   ${PROGRAM} desktop [--print] [--yes]  open the Lanes app on its Lanes Link page,
@@ -45,6 +49,10 @@ ${style.bold('Everyday')}
   ${PROGRAM} mcp list                   where it is registered, and whether the skill is current
   ${PROGRAM} mcp stdio                  serve on stdin/stdout, for a client that spawns it
   ${PROGRAM} mcp skill [--print]        the bundled skill — its path, or the document itself
+  ${PROGRAM} mcp install-instructions [--client claude|chatgpt|codex|cursor]
+                                 a block to paste where a client keeps its own
+                                 standing instructions, so it knows to look here
+  ${PROGRAM} pair [--print] [--rotate]  let the Lanes dashboard read this machine
   ${PROGRAM} status [--json]            connections, reachable capabilities, endpoint
 
 ${style.bold('Profiles')}
@@ -55,14 +63,13 @@ ${style.bold('Profiles')}
   ${PROGRAM} profile remove <name> [--workspace <name>] [--dry-run] [--yes] [--json]
                                  the profile, its credentials, and its data
 
-${style.bold('Targets')}
-  ${PROGRAM} target list [--urls]      where this profile can run
-  ${PROGRAM} target show <name>        one target's adapters, and the address it answers on
-  ${PROGRAM} sync targets --workspace <name> [--from gs://bucket] [--discover]
+${style.bold('Workspaces')}
+  ${PROGRAM} workspace list [--urls]   every workspace this one knows
+  ${PROGRAM} workspace show <name>     one workspace's adapters, and its address
+  ${PROGRAM} sync workspaces --workspace <name> [--from gs://bucket] [--discover]
                                  [--prefer local|remote] [--dry-run]
                                  reconcile this workspace with the copy the
-                                 deployment reads; recovers a target a profile
-                                 has lost
+                                 deployment reads; recovers one a profile has lost
 
 ${style.bold('Who you are')}
   ${PROGRAM} identity add <kind> <value> [--note text] [--json]
@@ -72,10 +79,15 @@ ${style.bold('Who you are')}
 
 ${style.bold('Permissions')}
   ${PROGRAM} policy list
-  ${PROGRAM} policy allow <capability>  e.g. gmail.* or gmail.send_message
-  ${PROGRAM} policy deny  <capability>
-  ${PROGRAM} token show [--show|--raw]  --raw prints only the token, for $(…)
-  ${PROGRAM} token rotate [--show]
+  ${PROGRAM} policy allow <capability> --connection <provider>.<id>
+                                 e.g. gmail.* or gmail.send_message. A rule lands
+                                 in one grant, so two accounts can differ
+  ${PROGRAM} policy deny  <capability> --connection <provider>.<id>
+  ${PROGRAM} profile members list       who may consume this profile, and who could
+  ${PROGRAM} profile members add <subject>|--me [--role owner|member]
+  ${PROGRAM} profile members remove <subject>
+  ${PROGRAM} token show [--show|--raw]  CI only: --raw prints only the token, for $(…)
+  ${PROGRAM} token rotate [--show]      also ends every session a member holds
 
 ${style.bold('Your own context')}
   ${PROGRAM} memory list [--tag t]      what you have stored
@@ -158,9 +170,13 @@ ${style.bold('Attachments')}
 
 ${style.bold('Naming what a command acts on')}
   --profile <name>               required by every command that reads or writes a profile
-  --workspace <name>                required by every command that opens a target's stores.
-                                 There is no default and no environment variable: a
-                                 command that names neither refuses and lists what exists.
+  --workspace <name>             required by every command that opens a workspace's
+                                 stores. "lanes set-workspace <name>" writes a default;
+                                 every command that uses it prints the name it resolved,
+                                 and deploy, sync, secrets push, profile remove,
+                                 disconnect and token rotate refuse it and want the flag.
+  --target <name>                the old spelling of --workspace. Accepted for one
+                                 minor, and it warns.
 
 ${style.bold('Other flags')}
   --connection <id>              which memory/tasks/assets/skills/vault/entities
