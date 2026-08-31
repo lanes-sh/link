@@ -119,7 +119,12 @@ export const SELECTION: Record<string, Requires> = {
   'identity list': 'profile+workspace',
   'secrets push': 'profile+workspace',
 
-  connect: 'profile+workspace',
+  // A connection belongs to the workspace (ADR-057), so connecting does not
+  // name a profile. `--profile` is what *also* grants it there, which is the
+  // second of the two acts and the one that is a profile's — without it the
+  // account is authorised and granted to nobody, and `connect` says how to
+  // grant it.
+  connect: 'workspace',
   // Workspace-scoped: it answers "what has this workspace authorised", and a
   // profile would narrow the column rather than the rows.
   connection: 'workspace',
@@ -138,7 +143,7 @@ export const SELECTION: Record<string, Requires> = {
   // key — and that is what keeps thirty declaration flags off
   // `connect <provider>`, where a mistyped one would otherwise be accepted and
   // ignored, which is the defect this whole file exists for.
-  'connect custom': 'profile+workspace',
+  'connect custom': 'workspace',
   setup: 'profile+workspace',
   token: 'profile+workspace',
   // One chain per workspace since contract 3, so the workspace is the subject

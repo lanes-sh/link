@@ -104,7 +104,12 @@ export function ensureReservedConnection(
   connections: ConfigDocument,
   profile: ConfigDocument,
   provider: ReservedSurface,
+  options: { grants?: boolean } = {},
 ): SurfaceRepair {
+  // Whether the profile half is written at all. `connect` without `--profile`
+  // repairs the workspace's connection rows and touches no profile, because it
+  // was not told which one to touch (ADR-057).
+  const grants = options.grants ?? true;
   // Raw YAML, so nothing here has been through a schema: this runs over sibling
   // profiles that were never validated, and every field is whatever was typed.
   const workspace = connections.toJSON() as { connections?: unknown } | null;
@@ -114,7 +119,7 @@ export function ensureReservedConnection(
   const covers = (pattern: string): boolean => pattern === '*' || pattern === rule;
 
   const rows = Array.isArray(workspace?.connections) ? workspace.connections : [];
-  const grants = Array.isArray(config?.grants) ? config.grants : [];
+  const held_grants = Array.isArray(config?.grants) ? config.grants : [];
 
   // The row this profile would use. Any instance of the provider will do, and
   // the *first* one is taken rather than `main` specifically: an operator who
@@ -125,7 +130,7 @@ export function ensureReservedConnection(
   const id = typeof existing?.id === 'string' ? existing.id : 'main';
   const key = `${provider}.${id}`;
 
-  const held = grants.find(
+  const held = held_grants.find(
     (row) => (row as { connection?: unknown } | null)?.connection === key,
   ) as { allow?: unknown; deny?: unknown } | undefined;
 
@@ -155,6 +160,8 @@ export function ensureReservedConnection(
     changes.push(`connections.yaml += ${key}`);
   }
 
+  if (!grants) return { changes, granted };
+
   if (held === undefined) {
     profile.addTo(['grants'], { connection: key, allow: [rule], deny: [] }, { inline: true });
     changes.push(`grants += ${key}`);
@@ -163,7 +170,7 @@ export function ensureReservedConnection(
     // A row that exists and grants nothing is a surface that is present and
     // silent. Widening it back is the repair; the deny check above is what stops
     // this undoing a deliberate narrowing.
-    const at = grants.indexOf(held as never);
+    const at = held_grants.indexOf(held as never);
     profile.addTo(['grants', at, 'allow'], rule, { inline: true });
     granted.push(rule);
   }
@@ -252,12 +259,13 @@ function patternsIn(rules: unknown, now = Date.now()): string[] {
 export function ensureOwnerLayer(
   connections: ConfigDocument,
   profile: ConfigDocument,
+  options: { grants?: boolean } = {},
 ): SurfaceRepair {
   const changes: string[] = [];
   const granted: string[] = [];
 
   for (const provider of DEFAULT_SURFACES) {
-    const repair = ensureReservedConnection(connections, profile, provider);
+    const repair = ensureReservedConnection(connections, profile, provider, options);
     changes.push(...repair.changes);
     granted.push(...repair.granted);
   }

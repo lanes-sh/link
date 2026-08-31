@@ -7,7 +7,12 @@ import { nonInteractivePrompter, terminalPrompter, type Prompter } from '../../p
 import type { ConnectOptions } from './options.ts';
 
 export type { ConnectOptions } from './options.ts';
-import { grantedConnections, openRuntime, type GlobalFlags } from '../../runtime.ts';
+import {
+  grantedConnections,
+  openRuntime,
+  primaryProfile,
+  type GlobalFlags,
+} from '../../runtime.ts';
 import { moveCredential, siblingAccountId } from './accounts.ts';
 import { grantConnection } from './grant.ts';
 import { acquireCredential } from './acquire.ts';
@@ -59,7 +64,13 @@ export async function runConnect(
 
   // The runtime is opened first because its registry includes workspace
   // manifests — a custom provider must be as connectable as a built-in.
-  const runtime = await openRuntime(options);
+  // A connection belongs to the workspace, so connecting does not need a
+  // profile (ADR-057). One is still resolved, because the registry that reads
+  // `providers.d/` is opened through a runtime and a runtime carries one — but
+  // it is not the subject, and nothing is written to it unless `--profile` was
+  // actually given.
+  const granting = options.profile !== undefined;
+  const runtime = await openRuntime({ ...options, profile: await primaryProfile(options) });
 
   // Declared out here so the `finally` can close whatever it built.
   let address: ResolvedAddress | undefined;
@@ -70,7 +81,7 @@ export async function runConnect(
     // `gs://` workspace is a second network read of the same YAML. Still long
     // before the browser opens, which is the part that matters. Inside the
     // `try` so the `finally` closes the runtime if the rendering throws.
-    if (!announced) announceConnectTarget(runtime, options.json);
+    if (!announced) announceConnectTarget(runtime, options.json, granting);
 
     const registry = runtime.registry;
     const entry = registry.get(providerId);
@@ -268,7 +279,14 @@ export async function runConnect(
     // 5. Grant it — one row naming the connection, carrying its provider's
     //    wildcard (ADR-058). The row *is* the grant, so neither half can be
     //    written without the other.
-    const granted = grantConnection(document, runtime.config, `${providerId}.${connectionId}`);
+    //    Only when a profile was named. Connecting authorises an account into
+    //    the workspace; deciding what may be done with it belongs to a profile,
+    //    and those are two acts — so `connect` without `--profile` leaves the
+    //    account granted to nobody and says how to grant it. Writing a grant
+    //    into a profile the operator did not name would be choosing for them.
+    const granted = granting
+      ? grantConnection(document, runtime.config, `${providerId}.${connectionId}`)
+      : [];
 
     // 6. Repair the owner layer if this profile predates it.
     //
@@ -285,7 +303,7 @@ export async function runConnect(
     //    sentence in it is something a caller counting edits has to recognise
     //    and skip, and `granted` is the field that answers "what did this widen"
     //    — an audit reading it would have missed `setup.*` entirely.
-    const repair = ensureOwnerLayer(connectionsDocument, document);
+    const repair = ensureOwnerLayer(connectionsDocument, document, { grants: granting });
     changes.push(...repair.changes);
     granted.push(...repair.granted);
 
@@ -312,7 +330,10 @@ export async function runConnect(
       };
     }
 
-    await document.save();
+    // Untouched when no profile was named, and `save()` on an unchanged document
+    // still rewrites the file — which would restamp a profile nobody asked to
+    // edit.
+    if (granting) await document.save();
 
     // Where the endpoint that has to serve this reads its config, and then a
     // nudge to re-read it. Neither is a deploy (ADR-029).
