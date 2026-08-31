@@ -25,9 +25,18 @@ import { openRuntime, type GlobalFlags } from '../../runtime.ts';
  * not end up in a Lanes access log, a proxy, or a referrer header.
  */
 
-export const PAIR_TOKEN_REF = 'workspace/pair.token';
-export const PAIR_CERT_REF = 'workspace/pair.cert';
-export const PAIR_KEY_REF = 'workspace/pair.key';
+/**
+ * Where the three pieces live in the credential store.
+ *
+ * Underscores, not dots. A secret reference is `[a-z0-9_-]` separated by `/`
+ * (see `isValidSecretRef`), and that is not arbitrary: these names become
+ * Secret Manager entries on a deployed workspace, and Google allows no dots
+ * there either. `workspace/pair.cert` was refused at the moment somebody first
+ * ran the command.
+ */
+export const PAIR_TOKEN_REF = 'workspace/pair_token';
+export const PAIR_CERT_REF = 'workspace/pair_cert';
+export const PAIR_KEY_REF = 'workspace/pair_key';
 
 /** Where the dashboard lives, overridable so `lanes dev` can pair against it. */
 const DASHBOARD_URL = process.env['LANES_WEB_URL'] ?? 'https://lanes.sh';

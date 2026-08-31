@@ -1,5 +1,6 @@
 import { clearSession, isFresh, readSession } from '#auth/lanes/session.ts';
 import { DEFAULT_API_URL, currentIdToken, login } from '#auth/lanes/login.ts';
+import { completionPage } from '../callback-page.ts';
 import { print, ok, style, warn } from '../output.ts';
 
 /**
@@ -30,6 +31,16 @@ export async function authLogin(flags: AuthFlags = {}): Promise<void> {
 
   const session = await login({
     apiUrl: flags.apiUrl,
+    // The same card a provider connect flow ends on. For a few seconds this
+    // page is the whole product, and it used to be an unstyled sentence on a
+    // white rectangle — in a browser set to dark, on a sign-in that had just
+    // worked. `brand.ts` carries the palette for both modes.
+    page: (outcome) =>
+      completionPage(
+        outcome.ok
+          ? { label: 'Lanes', heading: 'Signed in', detail: outcome.detail, ok: true }
+          : { label: 'Lanes', heading: 'That did not work', detail: outcome.detail, ok: false },
+      ),
     onUrl: (url) => opened.push(url),
     open: async (url) => {
       // Printed as well as opened. A machine with no browser — a container, an

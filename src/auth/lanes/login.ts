@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { awaitCallback, plainPage, type LandingPage } from './callback.ts';
 import { isFresh, readSession, writeSession, type LanesSession } from './session.ts';
 
 /**
@@ -51,6 +52,18 @@ export interface LoginOptions {
    * of it has to either skip or damage something to run.
    */
   readonly home?: string | undefined;
+  /**
+   * How the page the browser lands on is rendered.
+   *
+   * Injected because this component may not reach the CLI's, and the layering is
+   * right rather than merely enforced: signing somebody in has no business
+   * knowing what a page looks like. `lanes auth login` passes the same branded
+   * card a provider connect flow ends on, so the two look like one product.
+   *
+   * The fallback below is deliberately plain and exists for tests and for any
+   * caller that has no opinion. It is not what a person sees.
+   */
+  readonly page?: ((outcome: LandingPage) => Response) | undefined;
 }
 
 interface BrokerConfig {
@@ -98,110 +111,6 @@ async function brokerConfig(
   return { clientId, firebaseApiKey, firebaseProjectId };
 }
 
-/**
- * Serve exactly one callback, then stop.
- *
- * Bound to `127.0.0.1` on a port the kernel picks, which is RFC 8252's loopback
- * redirect. Google matches loopback by host and ignores the port, so nothing
- * has to be registered per machine — the property `link_auth.py`'s
- * `_is_loopback_redirect` relies on at the other end.
- */
-async function awaitCallback(
-  state: string,
-  onListening: (redirectUri: string) => Promise<void>,
-): Promise<{ code: string; redirectUri: string }> {
-  const { promise, resolve, reject } = Promise.withResolvers<string>();
-
-  const server = Bun.serve({
-    hostname: '127.0.0.1',
-    port: 0,
-    fetch(request) {
-      const url = new URL(request.url);
-      // Anything else, including the favicon a browser asks for unprompted.
-      // It closes its connection too, so a stray request cannot keep the server
-      // alive past the redirect it is waiting for.
-      if (url.pathname !== '/callback') {
-        return closingPage('Not found.', 404);
-      }
-
-      const error = url.searchParams.get('error');
-      if (error) {
-        reject(new Error(`Google refused the sign-in: ${error}`));
-        return closingPage('That did not work. You can close this tab.');
-      }
-
-      // Checked before the code is read. `state` is the only thing standing
-      // between this listener and a page on the machine feeding it a code from
-      // somebody else's authorization.
-      if (url.searchParams.get('state') !== state) {
-        reject(new Error('The sign-in came back with the wrong state, so it was discarded.'));
-        return closingPage('That did not work. You can close this tab.');
-      }
-
-      const code = url.searchParams.get('code');
-      if (!code) {
-        reject(new Error('The sign-in came back without a code.'));
-        return closingPage('That did not work. You can close this tab.');
-      }
-
-      resolve(code);
-      return closingPage('Signed in. You can close this tab.');
-    },
-  });
-
-  const timeout = setTimeout(
-    () => reject(new Error('Timed out waiting for the browser. Nothing was changed.')),
-    300_000,
-  );
-
-  // The redirect URI is returned rather than stashed. Google checks that the
-  // exchange sends back the *same* one, and a module-level variable holding it
-  // would be shared by two logins running at once — which is not hypothetical
-  // on a machine where somebody re-runs a command that seemed to hang.
-  const redirectUri = `http://127.0.0.1:${server.port}/callback`;
-
-  try {
-    await onListening(redirectUri);
-    return { code: await promise, redirectUri };
-  } finally {
-    clearTimeout(timeout);
-
-    // Graceful, and this is the whole of the fix for a login that worked and
-    // looked like it had not. `stop(true)` closes active connections
-    // immediately, and the active connection is the one carrying the page the
-    // person is waiting to see: `resolve` runs inside the handler, before Bun
-    // has written the response, so forcing here raced the browser and won every
-    // time. What they got was a connection error on a sign-in that had already
-    // succeeded, which is the worst possible way for this to fail.
-    //
-    // Nothing can hold a graceful stop open, because every response closes its
-    // own connection — see `closingPage`. That is what makes this safe to await
-    // rather than force.
-    await server.stop();
-  }
-}
-
-/**
- * The page the browser lands on, and the last thing this listener does.
- *
- * `Connection: close` on every response, including the 404s. The listener is
- * torn down the moment the code arrives, and a keep-alive connection would
- * either hold the graceful stop open or be severed mid-response — the second is
- * what used to happen. Telling the browser not to reuse the socket makes
- * "respond, then stop" a sequence rather than a race.
- */
-function closingPage(message: string, status = 200): Response {
-  return new Response(
-    `<!doctype html><meta charset="utf-8"><title>Lanes</title>` +
-      `<body style="font:16px system-ui;display:grid;place-items:center;height:100vh;margin:0">` +
-      `<p>${message}</p></body>`,
-    {
-      status,
-      headers: { 'content-type': 'text/html; charset=utf-8', connection: 'close' },
-    },
-  );
-}
-
 export async function login(options: LoginOptions = {}): Promise<LanesSession> {
   const apiUrl = options.apiUrl ?? process.env['LANES_API_URL'] ?? DEFAULT_API_URL;
   const call = options.fetch ?? globalThis.fetch;
@@ -210,24 +119,28 @@ export async function login(options: LoginOptions = {}): Promise<LanesSession> {
   const { verifier, challenge } = pkce();
   const state = randomBytes(16).toString('base64url');
 
-  const { code, redirectUri } = await awaitCallback(state, async (redirectUri) => {
-    const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-    url.searchParams.set('client_id', config.clientId);
-    url.searchParams.set('redirect_uri', redirectUri);
-    url.searchParams.set('response_type', 'code');
-    url.searchParams.set('scope', 'email profile openid');
-    url.searchParams.set('code_challenge', challenge);
-    url.searchParams.set('code_challenge_method', 'S256');
-    url.searchParams.set('state', state);
-    // Google issues a refresh token only when asked, and only on a consent
-    // screen it has actually shown. Without both, a second sign-in on the same
-    // machine returns no refresh token and the session lasts an hour.
-    url.searchParams.set('access_type', 'offline');
-    url.searchParams.set('prompt', 'consent');
+  const { code, redirectUri } = await awaitCallback(
+    state,
+    async (redirectUri) => {
+      const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+      url.searchParams.set('client_id', config.clientId);
+      url.searchParams.set('redirect_uri', redirectUri);
+      url.searchParams.set('response_type', 'code');
+      url.searchParams.set('scope', 'email profile openid');
+      url.searchParams.set('code_challenge', challenge);
+      url.searchParams.set('code_challenge_method', 'S256');
+      url.searchParams.set('state', state);
+      // Google issues a refresh token only when asked, and only on a consent
+      // screen it has actually shown. Without both, a second sign-in on the same
+      // machine returns no refresh token and the session lasts an hour.
+      url.searchParams.set('access_type', 'offline');
+      url.searchParams.set('prompt', 'consent');
 
-    options.onUrl?.(url.toString());
-    await options.open?.(url.toString());
-  });
+      options.onUrl?.(url.toString());
+      await options.open?.(url.toString());
+    },
+    options.page ?? plainPage,
+  );
 
   const google = await exchangeWithBroker(apiUrl, call, {
     code,
@@ -377,3 +290,5 @@ export async function currentIdToken(
   await writeSession(refreshed, options.home);
   return refreshed.idToken;
 }
+
+export type { LandingPage };
