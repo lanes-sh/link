@@ -1,7 +1,8 @@
 import { readSession } from '#auth/lanes/session.ts';
 import { ConfigError, readRegistry, resolveWorkspaceRoot } from '#profile';
 import { ConfigDocument } from '../config-edit.ts';
-import { announce, emit, ok, print, style, table } from '../output.ts';
+import { describeMember, workspaceMembers } from '#auth/lanes/members.ts';
+import { announce, emit, heading, ok, print, style, table } from '../output.ts';
 import { nextAfterEdit, publishProfileEdit } from '../publish.ts';
 import { resolveProfile, type GlobalFlags } from '../runtime.ts';
 
@@ -12,11 +13,15 @@ import { resolveProfile, type GlobalFlags } from '../runtime.ts';
  * and for the sharpest version of that argument: an agent able to edit this
  * could add itself.
  *
- * **A subject is validated against the Lanes workspace where there is one.** A
- * remote workspace binds to a Lanes workspace with `lanes_workspace:`, and a
- * member of that is somebody the server already vouches for. For `local` there
- * is no such list, so the only subject accepted is the signed-in one — a local
- * workspace delegating to a stranger is a typo, not a use case.
+ * **This is a selection from the Lanes workspace, not a list beside it.**
+ * Membership is managed on the dashboard — invited, accepted, given a role,
+ * removed — and a workspace bound with `lanes_workspace:` is asked who it holds.
+ * Somebody added there shows up here the moment they accept, and granting them a
+ * profile is a local edit naming a subject the server already vouches for.
+ *
+ * For `local` there is no such list, so the only subject accepted is the
+ * signed-in one — a local workspace delegating to a stranger is a typo, not a
+ * use case.
  */
 
 export interface MemberRow {
@@ -27,7 +32,7 @@ export interface MemberRow {
 }
 
 export async function membersList(flags: GlobalFlags & { json?: boolean }): Promise<void> {
-  const { resolution, config } = await resolveProfile(flags);
+  const { resolution, config, target } = await resolveProfile(flags);
   const session = await readSession();
 
   const rows: MemberRow[] = config.members.map((member) => ({
@@ -36,25 +41,63 @@ export async function membersList(flags: GlobalFlags & { json?: boolean }): Prom
     you: member.subject === session?.subject,
   }));
 
-  return emit(flags.json, { profile: resolution.profile, members: rows }, () => {
-    announce(resolution);
+  // The workspace's own people, so this listing answers both halves of the
+  // question: who may use this profile, and who *could* be given it. Without
+  // the second, adding somebody means going to the dashboard to copy a subject
+  // out of it.
+  const held = await workspaceMembers(await boundWorkspace(target));
+  const granted = new Set(rows.map((row) => row.subject));
+  const available = held.members.filter(
+    (member) => member.subject === null || !granted.has(member.subject),
+  );
 
-    if (rows.length === 0) {
-      // Empty is nobody, and saying so matters: the natural reading of a blank
-      // list is "no restriction", which is the opposite of what it means.
-      print(style.dim('No members. Nobody may consume this profile.'));
-      print(style.dim('  Add yourself with: lanes link profile members add --me'));
-      return;
-    }
+  return emit(
+    flags.json,
+    { profile: resolution.profile, members: rows, available: available },
+    () => {
+      announce(resolution);
 
-    table(
-      rows.map((row) => [
-        `  ${style.bold(row.subject)}`,
-        row.role,
-        row.you ? style.dim('you') : '',
-      ]),
-    );
-  });
+      if (rows.length === 0) {
+        // Empty is nobody, and saying so matters: the natural reading of a blank
+        // list is "no restriction", which is the opposite of what it means.
+        print(style.dim('No members. Nobody may consume this profile.'));
+        print(style.dim('  Add yourself with: lanes link profile members add --me'));
+      } else {
+        heading(`May consume ${resolution.profile} (${rows.length})`);
+        table(
+          rows.map((row) => [
+            `  ${style.bold(row.subject)}`,
+            row.role,
+            row.you ? style.dim('you') : '',
+          ]),
+        );
+      }
+
+      if (available.length > 0) {
+        heading(`In the workspace, not granted (${available.length})`);
+        table(
+          available.map((member) => [
+            `  ${style.bold(describeMember(member))}`,
+            member.role,
+            member.status === 'pending'
+              ? style.dim('invitation not accepted')
+              : style.dim(member.subject ?? ''),
+          ]),
+        );
+      }
+
+      if (held.unavailable !== null && held.unavailable !== 'this workspace is not bound to a Lanes workspace') {
+        print('');
+        print(style.dim(`Could not list the workspace's members: ${held.unavailable}`));
+      }
+    },
+  );
+}
+
+/** The Lanes workspace this one is bound to, if any. */
+async function boundWorkspace(target: string): Promise<string | undefined> {
+  const registry = await readRegistry(resolveWorkspaceRoot());
+  return registry[target]?.lanes_workspace;
 }
 
 export interface MembersFlags extends GlobalFlags {
@@ -147,19 +190,20 @@ export async function membersRemove(
  * The check exists because the alternative is a profile listing a subject
  * nobody can produce a token for — which reads exactly like a working
  * delegation until the person tries to use it.
+ *
+ * Bound to a Lanes workspace, the answer is the workspace's own member list:
+ * somebody added on the dashboard is delegatable here, and nobody else is.
+ * Unbound, there is no list to ask, so the only verifiable subject is the one at
+ * the keyboard.
  */
 async function assertDelegatable(
   subject: string,
   target: string,
   signedIn: string | undefined,
 ): Promise<void> {
-  const registry = await readRegistry(resolveWorkspaceRoot());
-  const bound = registry[target]?.lanes_workspace;
+  const bound = await boundWorkspace(target);
 
   if (bound === undefined) {
-    // No Lanes workspace behind this one, so there is no membership list to
-    // check against and the only subject that can be verified is the one at the
-    // keyboard.
     if (subject === signedIn) return;
 
     throw new ConfigError(
@@ -171,8 +215,38 @@ async function assertDelegatable(
     );
   }
 
-  // Bound: the server holds the list, and it is the authority. Not checked here
-  // over the network, deliberately — `profile members add` would then fail
-  // offline on a workspace that is otherwise entirely local to edit, and the
-  // endpoint verifies the subject at token time regardless.
+  const held = await workspaceMembers(bound);
+
+  // Unreachable rather than empty. Refusing on a network failure would make a
+  // local edit depend on our uptime, and the endpoint verifies the subject when
+  // it mints a token regardless — so this warns and proceeds.
+  if (held.unavailable !== null) {
+    print(
+      style.dim(
+        `  Could not check the workspace's members (${held.unavailable}), so this was not verified.`,
+      ),
+    );
+    return;
+  }
+
+  const match = held.members.find((member) => member.subject === subject);
+  if (match !== undefined) return;
+
+  // A pending invitation is the interesting refusal: the person exists, the
+  // operator can see them on the dashboard, and there is still no subject to
+  // write down. Saying "not a member" would send them to add somebody who is
+  // already there.
+  const pending = held.members.filter((member) => member.status === 'pending');
+
+  throw new ConfigError(
+    `${subject} is not a member of the Lanes workspace behind "${target}".\n` +
+      (held.members.length > 0
+        ? `  It holds: ${held.members.map(describeMember).join(', ')}\n`
+        : '  It holds nobody yet.\n') +
+      (pending.length > 0
+        ? `  ${pending.map(describeMember).join(', ')} ${pending.length === 1 ? 'has' : 'have'} not ` +
+          'accepted the invitation yet, so there is no subject for them to be granted.\n'
+        : '') +
+      '  Invite them on the dashboard first: https://lanes.sh/dashboard/settings/members',
+  );
 }

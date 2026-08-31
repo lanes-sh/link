@@ -310,9 +310,9 @@ async function firebaseSession(
  * verifies tokens and does not mint them.
  */
 export async function currentIdToken(
-  options: { fetch?: FetchLike; apiUrl?: string } = {},
+  options: { fetch?: FetchLike; apiUrl?: string; home?: string } = {},
 ): Promise<string | null> {
-  const session = await readSession();
+  const session = await readSession(options.home);
   if (session === null) return null;
   if (isFresh(session)) return session.idToken;
 
@@ -345,6 +345,6 @@ export async function currentIdToken(
     expiresAt: new Date(Date.now() + Number(body.expires_in ?? 3600) * 1000).toISOString(),
   };
 
-  await writeSession(refreshed);
+  await writeSession(refreshed, options.home);
   return refreshed.idToken;
 }
