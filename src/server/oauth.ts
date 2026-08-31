@@ -168,6 +168,9 @@ function render(result: OAuthResult, request: Request, target: string): Response
         // anything, but it cannot change where the code is sent.
         client: result.clientName ?? result.request.clientId,
         redirectHost: hostOf(result.request.redirectUri),
+        // The page's policy has to admit the redirect the page's own approval
+        // ends in, or the browser blocks it. See `formActionFor`.
+        ...formActionFor(result.request.redirectUri),
         action: `${publicOrigin(request)}${AUTHORIZE_PATH}`,
         fields: formFromRequest(result.request),
         retry: result.retry,
@@ -216,6 +219,37 @@ function hostOf(uri: string): string {
     return new URL(uri).host;
   } catch {
     return uri;
+  }
+}
+
+/**
+ * The redirect target as a CSP source, for the consent page's `form-action`.
+ *
+ * Chrome and Safari check that directive against the redirect a form submission
+ * produces, so the page has to name where its own approval is about to send the
+ * browser — `'self'` alone mints the code and then blocks its delivery.
+ *
+ * Taken from the request being approved rather than from what the client
+ * registered, because the two legitimately differ: a native client registers
+ * `http://localhost/callback` and binds whatever port it got (RFC 8252), and
+ * the origin the browser navigates to is the one carrying that port. It is
+ * already checked against the registration — by `authorize` before this page is
+ * rendered, and again by `approve` before anything is minted — and it cannot
+ * move the token, because the form's `action` is built here rather than read
+ * from the request.
+ *
+ * An origin and nothing else, because `isSafeRedirect` registers nothing else:
+ * https, or http on loopback. A private-use scheme — `vscode:`, the other shape
+ * RFC 8252 allows — would need a scheme-source here, and is refused two steps
+ * earlier, so a branch for it would be a branch nothing can reach.
+ */
+function formActionFor(uri: string): { formAction?: string } {
+  try {
+    const { protocol, origin } = new URL(uri);
+    if (protocol !== 'http:' && protocol !== 'https:') return {};
+    return { formAction: origin };
+  } catch {
+    return {};
   }
 }
 

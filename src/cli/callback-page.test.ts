@@ -181,6 +181,42 @@ describe('approving', () => {
     expect(withScript.headers.get('content-security-policy')).toContain("script-src 'unsafe-inline'");
     expect(without.headers.get('content-security-policy')).not.toContain('script-src');
   });
+
+  test('the policy admits the destination named on the page, and only that one', () => {
+    // `form-action` is checked against the redirect the approval produces, not
+    // just the `action` — so the one origin this page tells the reader about is
+    // the one origin it has to admit. Anything else and the browser refuses to
+    // deliver a code that has already been minted.
+    const csp =
+      approvalPage({
+        client: 'C',
+        redirectHost: 'client.example',
+        formAction: 'https://client.example',
+        fields: {},
+        action: '/authorize',
+        retry: false,
+        target: 'local',
+      }).headers.get('content-security-policy') ?? '';
+
+    expect(csp).toContain("form-action 'self' https://client.example;");
+    expect(csp).not.toContain('https://other.example');
+  });
+
+  test('a page given no destination keeps the narrow policy', () => {
+    // A redirect this endpoint could not parse never reaches consent, so the
+    // absence is a real state rather than a caller forgetting the field.
+    const csp =
+      approvalPage({
+        client: 'C',
+        redirectHost: 'client.example',
+        fields: {},
+        action: '/authorize',
+        retry: false,
+        target: 'local',
+      }).headers.get('content-security-policy') ?? '';
+
+    expect(csp).toContain("form-action 'self';");
+  });
 });
 
 describe('untrusted text', () => {

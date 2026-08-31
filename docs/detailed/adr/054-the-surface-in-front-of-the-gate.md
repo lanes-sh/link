@@ -88,9 +88,28 @@ request going somewhere else, and a proxy that genuinely rewrites it — a domai
 `Host` too. The scheme still comes from `X-Forwarded-Proto` because that is what the header is for
 here, and it is checked against `http` and `https` rather than echoed.
 
-`form-action 'self'` joins the page CSP as the second lock on the one form that carries the
-owner's token. It has to be named explicitly: `form-action` does not fall back to `default-src`,
-so the `'none'` already there said nothing about where a form may post.
+`form-action` joins the page CSP as the second lock on the one form that carries the owner's
+token. It has to be named explicitly: it does not fall back to `default-src`, so the `'none'`
+already there said nothing about where a form may post.
+
+**Amended.** It was written as `form-action 'self'`, and `'self'` alone cannot end an OAuth flow.
+Chrome and Safari check this directive against the *redirect* a submission produces as well as
+against the `action`, and the consent form exists to end in a 302 to the client that asked. So the
+POST was accepted, the code was minted, and the browser then refused to deliver it — a page that
+hangs on its spinner, with a console error naming this endpoint's own `/authorize` rather than the
+blocked destination, because a violation report deliberately names the pre-redirect URL. Firefox
+does not enforce it on redirects, so it failed in half the browsers and worked in the other half.
+Whether the directive *should* apply to redirects has been open since
+[w3c/webappsec-csp#8](https://github.com/w3c/webappsec-csp/issues/8); the browsers that ship it are
+the ones that decide.
+
+The consent page now names the redirect target of the request it is rendering, beside `'self'` —
+taken from the request rather than from the registration, since a native client registers
+`http://localhost/callback` and binds a port. This widens nothing that matters. The origin admitted
+is the one already printed on the page as where the code will be sent, it has been checked against
+the registration before the page renders and again before anything is minted, and `form-action`
+only ever *refuses* a destination: the `action` that carries the token is still built server-side
+from `Host`, so no source added here can move it.
 
 ## Consequences
 
