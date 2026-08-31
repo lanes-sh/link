@@ -171,7 +171,11 @@ export const SELECTION: Record<string, Requires> = {
   'identity add': 'profile+workspace',
   'identity remove': 'profile+workspace',
   'mcp install-instructions': 'none',
-  pair: 'profile+workspace',
+  // What it pairs is the workspace: the surface it opens lists every connection
+  // and profile there, and the credential it mints reads all of them. Asking
+  // which profile was a question with no answer. `--profile` still narrows, and
+  // is how a port is chosen when profiles disagree about one.
+  pair: 'workspace',
   'token show': 'profile+workspace',
   'token rotate': 'profile+workspace',
   'audit tail': 'profile+workspace',

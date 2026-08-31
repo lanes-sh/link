@@ -2,10 +2,17 @@ import { randomBytes } from 'node:crypto';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ConfigError } from '#profile';
+import {
+  ConfigError,
+  loadWorkspaceProfiles,
+  openTarget,
+  type LoadedProfile,
+  resolveWorkspaceRoot,
+} from '#profile';
 import { ok, print, style, warn } from '../../output.ts';
 import { confirm, isInteractive } from '../../prompt.ts';
-import { openRuntime, type GlobalFlags } from '../../runtime.ts';
+import type { SecretStore } from '#secrets';
+import { openSecretStoreFor, type GlobalFlags } from '../../runtime.ts';
 
 /**
  * `lanes link pair` — let the Lanes dashboard read this machine (ADR-063).
@@ -23,6 +30,13 @@ import { openRuntime, type GlobalFlags } from '../../runtime.ts';
  * **The token travels in a fragment.** `#pair=` is never sent to a server, so a
  * credential for a surface whose entire point is that Lanes cannot see it does
  * not end up in a Lanes access log, a proxy, or a referrer header.
+ *
+ * **It names a workspace, not a profile**, because that is what it pairs. The
+ * surface it opens lists every connection and every profile the workspace holds,
+ * and the credential it mints reads all of them — so asking which profile was
+ * asking a question with no answer, and implying a per-profile pairing that does
+ * not exist. `--profile` is still accepted, and picks the port when profiles
+ * disagree about one.
  */
 
 /**
@@ -61,60 +75,94 @@ export interface PairDeps {
 }
 
 export async function pair(flags: PairFlags, deps: PairDeps = {}): Promise<void> {
-  const runtime = await openRuntime(flags);
+  const target = flags.target!;
+  const root = resolveWorkspaceRoot();
+  const resolved = await openTarget(root, target);
+  const { loaded: profiles } = await loadWorkspaceProfiles(resolved.workspaceRoot);
 
-  try {
-    const host = runtime.config.instance.host;
-    if (!isLoopback(host)) {
-      // A deployed endpoint is already reachable by URL and needs none of this.
-      // Pairing one would mean installing a certificate for an address this
-      // machine does not answer on.
-      throw new ConfigError(
-        `This workspace's endpoint is bound to ${host}, not loopback, so there is nothing here to pair.\n` +
-          '  Pairing exists so a browser can read an endpoint on *this* machine.',
-      );
-    }
-
-    const readPort = runtime.config.instance.port + 1;
-
-    if (flags.print === true) {
-      const existing = await runtime.credentials.get(PAIR_TOKEN_REF);
-      if (existing === null) {
-        throw new ConfigError('Not paired yet. Run: lanes link pair');
-      }
-      print(link(existing));
-      return;
-    }
-
-    const certificate = await ensureCertificate(runtime, flags, deps);
-
-    const rotating = flags.rotate === true;
-    const existing = rotating ? null : await runtime.credentials.get(PAIR_TOKEN_REF);
-    const token = existing ?? `llp_${randomBytes(32).toString('base64url')}`;
-    if (existing === null) await runtime.credentials.set(PAIR_TOKEN_REF, token);
-
-    print(ok(certificate === 'reused' ? 'certificate already installed' : 'certificate installed'));
-    if (rotating) {
-      print(style.dim('      The previous pairing link no longer works. Re-open the new one.'));
-    }
-    print('');
-    print(ok(`the dashboard may now read ${style.bold(`https://127.0.0.1:${readPort}`)}`));
-    print('');
-    print(link(token));
-    print('');
-    print(
-      style.dim(
-        '      Open that in a browser on this machine. The token is in the URL fragment,\n' +
-          '      so it never reaches a Lanes server.\n' +
-          '      It reads every connection, profile and audit entry in this workspace, and\n' +
-          '      can change nothing. Take it back with: lanes link pair --rotate\n' +
-          '\n' +
-          '      The endpoint has to be running: lanes link start',
-      ),
+  if (profiles.length === 0) {
+    throw new ConfigError(
+      `Workspace "${target}" holds no profiles, so there is no endpoint to pair.\n` +
+        `  Create one with: lanes link profile add <name> --workspace ${target}`,
     );
-  } finally {
-    await runtime.close();
   }
+
+  // One endpoint serves every profile in a workspace, so they normally agree on
+  // a port and the choice is not a choice. Where they do not, the ambiguity is
+  // real and `--profile` is how it is settled — refused rather than guessed,
+  // because pairing the wrong port produces a dashboard that says "not
+  // connected" with everything working.
+  const named = flags.profile
+    ? profiles.find((one: LoadedProfile) => one.profile === flags.profile)
+    : undefined;
+
+  if (flags.profile && !named) {
+    throw new ConfigError(
+      `Workspace "${target}" has no profile "${flags.profile}".\n` +
+        `  It holds: ${profiles.map((one: LoadedProfile) => one.profile).join(', ')}`,
+    );
+  }
+
+  const ports = new Set(profiles.map((one: LoadedProfile) => one.config.instance.port));
+  if (!named && ports.size > 1) {
+    throw new ConfigError(
+      `The profiles in "${target}" do not agree on a port, so it is not clear which endpoint to pair.\n` +
+        profiles
+          .map((one: LoadedProfile) => `    ${one.profile}  ${one.config.instance.port}`)
+          .join('\n') +
+        '\n  Name one: lanes link pair --profile <name>',
+    );
+  }
+
+  const chosen = named ?? profiles[0]!;
+  const host = chosen.config.instance.host;
+
+  if (!isLoopback(host)) {
+    // A deployed endpoint is already reachable by URL and needs none of this.
+    // Pairing one would mean installing a certificate for an address this
+    // machine does not answer on.
+    throw new ConfigError(
+      `"${target}" is bound to ${host}, not loopback, so there is nothing here to pair.\n` +
+        '  Pairing exists so a browser can read an endpoint on *this* machine.',
+    );
+  }
+
+  const readPort = chosen.config.instance.port + 1;
+  const credentials = await openSecretStoreFor(chosen.config, root, target);
+
+  if (flags.print === true) {
+    const existing = await credentials.get(PAIR_TOKEN_REF);
+    if (existing === null) throw new ConfigError('Not paired yet. Run: lanes link pair');
+    print(link(existing));
+    return;
+  }
+
+  const certificate = await ensureCertificate(credentials, flags, deps);
+
+  const rotating = flags.rotate === true;
+  const existing = rotating ? null : await credentials.get(PAIR_TOKEN_REF);
+  const token = existing ?? `llp_${randomBytes(32).toString('base64url')}`;
+  if (existing === null) await credentials.set(PAIR_TOKEN_REF, token);
+
+  print(ok(certificate === 'reused' ? 'certificate already installed' : 'certificate installed'));
+  if (rotating) {
+    print(style.dim('      The previous pairing link no longer works. Re-open the new one.'));
+  }
+  print('');
+  print(ok(`the dashboard may now read ${style.bold(`https://127.0.0.1:${readPort}`)}`));
+  print('');
+  print(link(token));
+  print('');
+  print(
+    style.dim(
+      '      Open that in a browser on this machine. The token is in the URL fragment,\n' +
+        '      so it never reaches a Lanes server.\n' +
+        '      It reads every connection, profile and audit entry in this workspace, and\n' +
+        '      can change nothing. Take it back with: lanes link pair --rotate\n' +
+        '\n' +
+        `      The endpoint has to be running: lanes link start --workspace ${target}`,
+    ),
+  );
 }
 
 function link(token: string): string {
@@ -135,13 +183,13 @@ function isLoopback(host: string): boolean {
  * the worst of both: the work is done and the feature does not work.
  */
 async function ensureCertificate(
-  runtime: Awaited<ReturnType<typeof openRuntime>>,
+  credentials: SecretStore,
   flags: PairFlags,
   deps: PairDeps,
 ): Promise<'reused' | 'installed'> {
   const held =
-    (await runtime.credentials.get(PAIR_CERT_REF)) !== null &&
-    (await runtime.credentials.get(PAIR_KEY_REF)) !== null;
+    (await credentials.get(PAIR_CERT_REF)) !== null &&
+    (await credentials.get(PAIR_KEY_REF)) !== null;
 
   if (held && flags.rotate !== true) return 'reused';
 
@@ -172,8 +220,8 @@ async function ensureCertificate(
     // Into the credential store rather than left on disk. The private key is a
     // secret by any reading, and the store is the one place in a workspace that
     // is encrypted at rest.
-    await runtime.credentials.set(PAIR_CERT_REF, await readFile(certPath, 'utf8'));
-    await runtime.credentials.set(PAIR_KEY_REF, await readFile(keyPath, 'utf8'));
+    await credentials.set(PAIR_CERT_REF, await readFile(certPath, 'utf8'));
+    await credentials.set(PAIR_KEY_REF, await readFile(keyPath, 'utf8'));
   } finally {
     await rm(scratch, { recursive: true, force: true });
   }
