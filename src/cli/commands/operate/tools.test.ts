@@ -83,7 +83,7 @@ describe('grouping names by provider', () => {
 
   test('a name matching nothing known is marked unattributed, not guessed', () => {
     // Reachable in normal use: the registry is the invoking profile's, and the
-    // endpoint may serve several — or, under `--target cloud`, run an image
+    // endpoint may serve several — or, under `--workspace cloud`, run an image
     // this checkout does not have. Filing `drive_files_list` under a confident
     // `drive` heading would be a guess wearing a count.
     const grouped = groupByProvider(['drive_files_list'], ids);

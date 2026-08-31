@@ -1,3 +1,4 @@
+import { wasDefaulted } from '../../selection-require.ts';
 import {
   isPointer,
   listProfiles,
@@ -11,7 +12,7 @@ import {
 import { oneProfile, visibleCapabilities } from '#server/mcp';
 import { toPolicyDocument } from '#registry';
 import { announce, emit, heading, print, style, table } from '../../output.ts';
-import { openRuntime, ownerPrincipal, type GlobalFlags } from '../../runtime.ts';
+import { grantedConnections, openRuntime, ownerPrincipal, type GlobalFlags } from '../../runtime.ts';
 import { deploymentIdentity } from '../../endpoint-url.ts';
 
 /** `lanes link status` — connections, what is reachable through them, and where. */
@@ -29,7 +30,7 @@ export interface StatusFlags extends GlobalFlags {
  *
  * Which is why a deployed target prints its *identity* rather than its address.
  * This used to print `http://<host>:<port>/mcp` unconditionally, so
- * `status --target cloud` named a loopback port with nothing behind it — the
+ * `status --workspace cloud` named a loopback port with nothing behind it — the
  * bug `endpoint-url.ts` records having already fixed in `mcp add`. Reaching for
  * `endpointUrl` here would fix the lie by surrendering the property above: it
  * shells out to `gcloud`, costs seconds, needs the CLI installed and
@@ -48,7 +49,7 @@ export async function status(flags: StatusFlags): Promise<void> {
     const records = await runtime.state.connections.list();
     const byKey = new Map(records.map((record) => [`${record.provider}.${record.id}`, record]));
 
-    const connections = runtime.config.connections.map((connection) => {
+    const connections = grantedConnections(runtime).map((connection) => {
       const key = `${connection.provider}.${connection.id}`;
       return {
         key,
@@ -197,12 +198,12 @@ async function workspaceStatus(flags: StatusFlags): Promise<void> {
     unreachable = error instanceof Error ? error.message : String(error);
   }
 
-  const root = resolved?.workspaceRoot ?? (isPointer(entry) ? entry.workspace : localRoot);
+  const root = resolved?.workspaceRoot ?? (isPointer(entry) ? entry.at : localRoot);
   const workspace = resolved ? await loadWorkspaceProfiles(root) : undefined;
 
   const profiles = (workspace?.loaded ?? []).map((loaded) => ({
     name: loaded.profile,
-    connections: loaded.config.connections.length,
+    grants: loaded.config.grants.length,
   }));
 
   const deployment = deploymentIdentity(resolved?.declared.deploy);
@@ -220,7 +221,14 @@ async function workspaceStatus(flags: StatusFlags): Promise<void> {
       unreadable: workspace?.unreadable ?? [],
     },
     () => {
-      print(style.dim(`workspace ${style.bold(root)}  target ${style.bold(target)}`));
+      // The same shape `announce` prints, including whether the workspace was
+      // typed or defaulted — a command that reported it differently would make
+      // ADR-061's echo a thing an operator has to learn twice.
+      print(
+        style.dim(
+          `workspace ${style.bold(target)}${wasDefaulted(target) ? ' (default)' : ''}  ${root}`,
+        ),
+      );
 
       if (unreachable !== undefined) {
         heading('Unreachable');
@@ -234,12 +242,12 @@ async function workspaceStatus(flags: StatusFlags): Promise<void> {
       heading('Profiles');
       if (profiles.length === 0) {
         print(style.dim('  None yet.'));
-        print(style.dim(`  Create one with: lanes link profile add <name> --target ${target}`));
+        print(style.dim(`  Create one with: lanes link profile add <name> --workspace ${target}`));
       } else {
         table(
           profiles.map((profile) => [
             `  ${style.bold(profile.name)}`,
-            style.dim(`${profile.connections} connection(s)`),
+            style.dim(`${profile.grants} grant(s)`),
           ]),
         );
       }
@@ -257,7 +265,7 @@ async function workspaceStatus(flags: StatusFlags): Promise<void> {
       print(
         style.dim(
           "  the address is the platform's to assign — run: " +
-            `lanes link outputs --target ${target} --profile ${profiles[0]?.name ?? '<name>'}`,
+            `lanes link outputs --workspace ${target} --profile ${profiles[0]?.name ?? '<name>'}`,
         ),
       );
     },

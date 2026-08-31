@@ -158,7 +158,7 @@ function summarise(name: string, entry: WorkspaceTarget, isSelected: boolean): T
     return {
       name,
       isSelected,
-      pointsAt: entry.workspace,
+      pointsAt: entry.at,
       credentials: null,
       storage: null,
       vault: null,
@@ -200,7 +200,7 @@ function summarise(name: string, entry: WorkspaceTarget, isSelected: boolean): T
  * line above, from the same object.
  */
 export function resolvedEntry(resolved: ResolvedTarget): WorkspaceTarget {
-  const { workspace: _followed, ...record } = resolved.entry;
+  const { at: _followed, ...record } = resolved.entry;
   return { ...resolved.declared, ...record };
 }
 
@@ -299,10 +299,12 @@ function deploymentCell(target: TargetSummary): string {
  */
 export function targetUse(name: string | undefined): never {
   throw new ConfigError(
-    'lanes link target use was removed.\n' +
-      '  Nothing reads instance.default_target any more — pass --target on every\n' +
-      '  command instead:\n' +
-      `    lanes link status --profile <name> --target ${name ?? '<target>'}\n` +
+    'lanes link workspace use was removed, and came back under a new name.\n' +
+      '  `instance.default_target` is still inert — nothing reads it. What does\n' +
+      '  read a default is `default_workspace` in lanes-link.yaml (ADR-061):\n' +
+      `    lanes set-workspace ${name ?? '<name>'}\n` +
+      '  Or name it per command:\n' +
+      `    lanes link status --profile <name> --workspace ${name ?? '<name>'}\n` +
       '  If the key is still in your profile it is inert, and safe to delete.',
   );
 }

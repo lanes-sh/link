@@ -336,7 +336,7 @@ describe('first-run provisioning', () => {
     // conditions have no `matches`, and refused the whole expression. The
     // binding carries `tolerateFailure`, so the narrowing silently did not apply
     // and the bucket kept whatever condition was already on it.
-    expect(condition).toContain('/objects/data/personal/providers.d/');
+    expect(condition).toContain('/objects/data/providers.d/');
     expect(condition).not.toContain('matches(');
     expect(condition).not.toMatch(/startsWith\("[^"]*\/objects\/data\/"\)/);
   });
@@ -361,7 +361,7 @@ describe('first-run provisioning', () => {
     expect(write).not.toContain('profiles/');
     expect(write).not.toContain('lanes-link.yaml');
     expect(write).toContain('!(resource.name.startsWith(');
-    expect(write).toContain('/objects/data/personal/providers.d/');
+    expect(write).toContain('/objects/data/providers.d/');
     expect(write).not.toContain('matches(');
 
     expect(conditions.some((condition) => condition.includes('reads-its-config'))).toBe(true);

@@ -76,7 +76,7 @@ export interface SetupNeeds {
 function storeCommand(ref: string, placeholder: string, where: Selection): string {
   return (
     `printf %s "${placeholder}" | lanes link secrets set ${ref}` +
-    ` --profile ${where.profile} --target ${where.target}`
+    ` --profile ${where.profile} --workspace ${where.target}`
   );
 }
 

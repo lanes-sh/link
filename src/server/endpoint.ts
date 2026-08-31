@@ -134,19 +134,16 @@ async function openReconciled(options: {
     }
 
     for (const [name, runtime] of runtimes) {
-      const result = await planReconcile(
-        runtime.config,
-        runtime.state,
-        runtime.credentials,
-        runtime.manifestFor,
-      );
+      // The accounts this profile reaches, which is what reconcile is about.
+      const granted = runtime.connections.map(({ connection }) => connection);
+      const result = await planReconcile(granted, runtime.state, runtime.credentials, runtime.manifestFor);
       if (!planIsNoop(result)) {
         reporter.reconciled({
           profile: name,
           plan: formatPlan(result),
           ofMany: runtimes.size > 1,
         });
-        await applyReconcile(runtime.config, runtime.state, result);
+        await applyReconcile(granted, runtime.state, result);
       }
     }
 
@@ -278,7 +275,7 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
       if (!token) {
         throw new Error(
           `No profile token at "${primary.config.auth.token_ref}" in this target's credential store. ` +
-            'A deployed instance never mints its own — run `lanes link token rotate --target <target>` ' +
+            'A deployed instance never mints its own — run `lanes link token rotate --workspace <name>` ' +
             'from your machine, or `lanes link secrets push --from local --to cloud`, then redeploy.',
         );
       }

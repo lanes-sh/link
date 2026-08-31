@@ -77,9 +77,10 @@ export function bucketGrants(bucket: string, profiles: readonly string[]): Condi
    */
   const theBucket = `resource.name == "projects/_/buckets/${bucket}"`;
 
-  const manifestPrefixes = profiles.map((profile) =>
-    objectsUnder(`${layout.providers(profile)}/`),
-  );
+  // One prefix, not one per profile. Manifests are the workspace's since
+  // ADR-057 — a manifest defines a connection, and connections do not live in a
+  // profile — so the carve-out no longer varies with the profile set.
+  const manifestPrefixes = [objectsUnder(`${layout.providers()}/`)];
   // No profiles leaves the carve-out off rather than guessing at one: the
   // revision keeps write on its own data, as it did before this existed.
   const manifests = manifestPrefixes.length > 0 ? `(${manifestPrefixes.join(' || ')})` : null;

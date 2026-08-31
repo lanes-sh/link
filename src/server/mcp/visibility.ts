@@ -3,8 +3,9 @@ import type { Principal } from '#auth';
 import type { Config } from '#profile';
 import type { ProviderRegistry } from '#registry';
 import type { Dispatcher } from '#dispatch';
-import type { PolicyDocument } from '#policy';
+import type { PolicyDocument, ProfilePolicy } from '#policy';
 import { allowedConnections } from '#policy';
+import { mayReach } from '#auth';
 
 /**
  * What this principal can see, and therefore what gets registered at all.
@@ -25,7 +26,7 @@ export interface ProfileRuntime {
   readonly config: Config;
   readonly registry: ProviderRegistry;
   readonly dispatcher: Dispatcher;
-  readonly policy: PolicyDocument;
+  readonly policy: ProfilePolicy;
   readonly floor?: PolicyDocument | undefined;
   /**
    * Re-read the skills into `registry`, if they have changed on the store.
@@ -72,8 +73,16 @@ export function oneProfile(
   return new Map([[name, runtime]]);
 }
 
+/**
+ * The connections this profile can reach at all, before policy narrows further.
+ *
+ * The grant rows *are* the answer (ADR-058). A profile reaches what it grants
+ * and nothing else, so this needs no view of the workspace's connections — which
+ * is the useful half of decoupling them: what a profile can see is written in
+ * the profile, and cannot widen when somebody connects a new account.
+ */
 function connectionsOf(runtime: ProfileRuntime): string[] {
-  return runtime.config.connections.map((connection) => `${connection.provider}.${connection.id}`);
+  return runtime.config.grants.map((grant) => grant.connection);
 }
 
 /**
@@ -94,6 +103,12 @@ export function mergeCapabilities(options: BuildServerOptions): Map<string, Merg
   const merged = new Map<string, MergedCapability>();
 
   for (const [name, runtime] of options.profiles) {
+    // The same list the dispatcher enforces with. A member does not merely fail
+    // to call a profile they are not on — it is absent from the `profile` enum,
+    // so they never learn it exists (ADR-060). Discovery and enforcement share
+    // one answer here for the same reason they share `allowedConnections`.
+    if (!mayReach(options.principal, name)) continue;
+
     const connections = connectionsOf(runtime);
 
     for (const { id, capability, discovered } of runtime.registry.capabilities()) {

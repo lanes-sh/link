@@ -7,8 +7,8 @@ import { openSecretStoreFor, resolveProfile, resolveProfileOnly, type GlobalFlag
  * `lanes link secrets` — moving credential values between a profile's targets.
  *
  * Credentials follow the target, because each target has its own credential
- * store: `lanes link connect gmail.side --target cloud` writes the refresh token into
- * Secret Manager, and the same command with `--target local` writes it into
+ * store: `lanes link connect gmail.side --workspace cloud` writes the refresh token into
+ * Secret Manager, and the same command with `--workspace local` writes it into
  * the encrypted file. That is the right default and it leaves one gap, which
  * this command fills — a setup built locally first, and now wanted in the
  * cloud, without re-running every OAuth flow.
@@ -104,7 +104,7 @@ export async function secretsSet(ref: string | undefined, flags: GlobalFlags): P
   if (!ref) {
     throw new ConfigError(
       'Usage: lanes link secrets set <ref>   (the value is read from stdin)\n' +
-        '  e.g. printf %s "$DATABASE_URL" | lanes link secrets set cloud/database_url --target cloud',
+        '  e.g. printf %s "$DATABASE_URL" | lanes link secrets set cloud/database_url --workspace cloud',
     );
   }
   assertValidSecretRef(ref);

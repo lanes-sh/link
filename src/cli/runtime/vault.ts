@@ -1,4 +1,5 @@
-import { layout, workspacePath } from '#profile';
+import {
+  soleGrantFor, layout, workspacePath } from '#profile';
 import type { SecretStore } from '#secrets';
 import {
   createBlobVaultStore,
@@ -36,10 +37,15 @@ export function openVault(
   const { declared, config, root } = input;
   const vault = declared.vault ?? { adapter: 'file' as const };
 
+  // The vault connection this profile grants (ADR-059). `main` when it grants
+  // none, which keeps a profile that denied the vault opening against the same
+  // document every other profile uses rather than inventing a second one.
+  const connection = soleGrantFor(config, 'vault') ?? 'main';
+
   switch (vault.adapter) {
     case 'file':
       return createFileVaultStore({
-        path: workspacePath(root, vault.path ?? layout.vault(config.instance.profile)),
+        path: workspacePath(root, vault.path ?? layout.vault(connection)),
       });
 
     case 'secret':

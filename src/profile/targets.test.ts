@@ -37,7 +37,7 @@ const declared = (name: string, deploy = false): Registry[string] => ({
 
 const twoTargets: Registry = {
   local: declared('local'),
-  cloud: { workspace: 'gs://your-bucket' },
+  cloud: { at: 'gs://your-bucket' },
 };
 
 const localOnly: Registry = { local: declared('local') };
@@ -57,7 +57,7 @@ describe('target resolution', () => {
     // The case the whole change exists for. Falling back here is what let an
     // ignored `--target` produce a working command and surface one command
     // later, detached from its cause.
-    expect(() => requireTarget(twoTargets, undefined)).toThrow('--target is required');
+    expect(() => requireTarget(twoTargets, undefined)).toThrow('--workspace is required');
     expect(() => requireTarget(twoTargets, undefined)).toThrow('local');
     expect(() => requireTarget(twoTargets, undefined)).toThrow('cloud');
   });
@@ -110,6 +110,6 @@ describe('target resolution', () => {
 
   test('two deployable targets are both nameable, and neither is a default', () => {
     expect(requireTarget(twoDeployable, 'staging')).toBe('staging');
-    expect(() => requireTarget(twoDeployable, undefined)).toThrow('--target is required');
+    expect(() => requireTarget(twoDeployable, undefined)).toThrow('--workspace is required');
   });
 });

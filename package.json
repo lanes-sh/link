@@ -61,6 +61,7 @@
     "#audit": "./src/audit/index.ts",
     "#audit/*": "./src/audit/*",
     "#auth": "./src/auth/index.ts",
+    "#auth/*": "./src/auth/*",
     "#cli/*": "./src/cli/*",
     "#connectivity": "./src/connectivity/index.ts",
     "#connectivity/*": "./src/connectivity/*",

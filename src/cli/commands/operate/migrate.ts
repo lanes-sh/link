@@ -1,4 +1,6 @@
-import { ConfigError, resolveSelection, resolveTargetWorkspace, resolveWorkspaceRoot } from '#profile';
+import {
+  CONNECTIONS_FILE,
+  listProfiles, ConfigError, resolveSelection, resolveTargetWorkspace, resolveWorkspaceRoot } from '#profile';
 import { ConfigDocument } from '../../config-edit.ts';
 import { migrateRenamedProviders, pendingRenames, shapeOf } from '../../config-migrate.ts';
 import { migrateWorkspace, needsMigration } from '../../workspace-migrate.ts';
@@ -52,16 +54,25 @@ export async function migratedRenamedProviders(
   const root = await resolveTargetWorkspace(localRoot, target).catch(() => localRoot);
 
   const selection = await resolveSelection({ profileFlag: flags.profile, root });
-  const document = await ConfigDocument.open(root, selection.profile);
+
+  // The rename is a property of the *connection*, so it is found in the
+  // workspace's file (ADR-057) — and applied across every profile, because any
+  // of them may grant the row being renamed.
+  const document = await ConfigDocument.openKey(root, CONNECTIONS_FILE);
   if (pendingRenames(document).length === 0) return false;
+
+  const profiles: ConfigDocument[] = [];
+  for (const name of await listProfiles(root)) {
+    profiles.push(await ConfigDocument.open(root, name));
+  }
 
   // Shape-only, because the check this document fails runs after the schema.
   // Throws when it is malformed beyond a rename, which is a better sentence
   // than the referential one it would otherwise be reported under.
-  const config = shapeOf(document);
+  const config = shapeOf(await ConfigDocument.open(root, selection.profile));
   const credentials = await openSecretStoreFor(config, root, target);
 
-  const migration = await migrateRenamedProviders(document, credentials, {
+  const migration = await migrateRenamedProviders(document, profiles, credentials, {
     apply: flags.fix === true,
   });
 
@@ -177,15 +188,15 @@ export async function migratedContract(flags: RenameFlags, refusal: unknown): Pr
           style.dim(
             applied
               ? '  The endpoint serving this bucket is running an older image and cannot read\n' +
-                `  what was just written. Roll a new one: lanes link deploy --target ${target}`
-              : `  lanes link deploy --target ${target} migrates it and ships the image that\n` +
+                `  what was just written. Roll a new one: lanes link deploy --workspace ${target}`
+              : `  lanes link deploy --workspace ${target} migrates it and ships the image that\n` +
                 '  understands it, in one step. Prefer that to --fix here.',
           ),
         );
         return;
       }
 
-      if (!applied) print(style.dim(`  Fix it with: lanes link doctor --fix --target ${target}`));
+      if (!applied) print(style.dim(`  Fix it with: lanes link doctor --fix --workspace ${target}`));
     },
   );
 

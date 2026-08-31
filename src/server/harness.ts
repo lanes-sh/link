@@ -8,7 +8,8 @@ import {
   tokensMatch,
 } from '#auth';
 import { oneProfile, type ProfileRuntime } from './mcp/index.ts';
-import { parseConfig, type Config } from '#profile';
+import {
+  type ConnectionConfig, parseConfig, type Config } from '#profile';
 import { ProviderRegistry, toPolicyDocument } from '#registry';
 import { Dispatcher } from '#dispatch';
 import { createMemoryCredentials, createMemoryState } from '#stores/state/testing.ts';
@@ -33,26 +34,55 @@ import { serveOverStdio } from './stdio.ts';
  * the right calls, and a mocked transport cannot demonstrate that.
  */
 
+/**
+ * The connections a harness config implies, derived from its grants.
+ *
+ * A test config declares grants and no `connections.yaml` — there is no
+ * workspace on disk to read one from. Deriving the rows from the grant refs
+ * keeps the harness honest about the only thing dispatch uses them for, which is
+ * resolving `<provider>.<id>` to a provider and an id. Anything richer (an
+ * account label, a credential ref) belongs to a real workspace and a test that
+ * needs one builds it.
+ */
+function harnessConnections(config: Config): ConnectionConfig[] {
+  return config.grants.map((grant) => {
+    const [provider = '', id = ''] = grant.connection.split('.');
+    return { provider, id, account: grant.connection };
+  });
+}
+
 export const TEST_TOKEN = 'llk_test_token_value';
 
+/**
+ * A profile for the harness, from the `allow`/`deny` a test hands over.
+ *
+ * The two `example` accounts are the point: every test here is about a rule
+ * covering both, or one of them, so the harness gives each its own grant row
+ * carrying the same rules (ADR-058). That is what the flat block used to mean,
+ * which keeps every existing test asserting what it was written to assert.
+ */
 export function configFor(profile: string, port: number, policy: string): Config {
+  const rules = policy
+    .split('\n')
+    .filter((line) => line.trim().length > 0)
+    .map((line) => `    ${line.trim()}`)
+    .join('\n');
+
+  const grant = (id: string): string =>
+    `  - connection: example.${id}\n${rules.replace(/^ {4}(allow|deny):/gm, '    $1:')}`;
+
   return parseConfig(`
-contract: 2
+contract: 3
 instance:
   profile: ${profile}
   port: ${port}
 limits:
   requests_per_minute: 1000
   upstream_calls_per_minute: 1000
-connections:
-  - id: a
-    provider: example
-    account: Scratch A
-  - id: b
-    provider: example
-    account: Scratch B
-policy:
-${policy}
+grants:
+${grant('a')}
+${grant('b')}
+members: []
 `).config;
 }
 
@@ -162,6 +192,8 @@ export function wireProfiles(options: HarnessOptions): WiredProfiles {
 
   const dispatcher = new Dispatcher({
     config,
+    connections: harnessConnections(config),
+    oauthApps: [],
     registry,
     connectorFor: (providerId): AnyConnector | undefined => {
       const entry = registry.get(providerId);
@@ -199,6 +231,8 @@ export function wireProfiles(options: HarnessOptions): WiredProfiles {
       policy: extraPolicy,
       dispatcher: new Dispatcher({
         config: extraConfig,
+        connections: harnessConnections(extraConfig),
+        oauthApps: [],
         registry,
         connectorFor: (providerId): AnyConnector | undefined => {
           const entry = registry.get(providerId);

@@ -54,7 +54,7 @@ describe('hoisting a profile’s targets into the workspace', () => {
     const registry = await readRegistry(root);
 
     expect(registry['local']?.storage?.adapter).toBe('filesystem');
-    expect(registry['cloud']?.workspace).toBe('gs://personal-lanes');
+    expect(registry['cloud']?.at).toBe('gs://personal-lanes');
     expect(registry['cloud']?.storage).toBeUndefined();
   });
 
@@ -66,6 +66,8 @@ describe('hoisting a profile’s targets into the workspace', () => {
     await migrateWorkspace(root);
     const written = await readFile(join(root, 'profiles', 'personal.yaml'), 'utf8');
 
+    // This migration produces contract 2, and `migrateToContract3` takes it the
+    // rest of the way — so the number here is literally 2, not the newest.
     expect(written).toContain('contract: 2');
     expect(written).not.toContain('targets:');
     expect(written).not.toContain('default_target');
@@ -115,10 +117,10 @@ describe('migrating the workspace a target already lives in', () => {
     // `openTarget` refuses as a loop — leaving `deploy` unable to run against the
     // bucket it had just migrated, on the one command the refusal names as the fix.
     const fromLaptop = toEntry('cloud', parse('gcs'), 'personal', '/Users/x/.lanes-link');
-    expect(fromLaptop?.workspace).toBe('gs://personal-lanes');
+    expect(fromLaptop?.at).toBe('gs://personal-lanes');
 
     const fromBucket = toEntry('cloud', parse('gcs'), 'personal', 'gs://personal-lanes');
-    expect(fromBucket?.workspace).toBeUndefined();
+    expect(fromBucket?.at).toBeUndefined();
     expect(fromBucket?.storage?.bucket).toBe('personal-lanes');
   });
 

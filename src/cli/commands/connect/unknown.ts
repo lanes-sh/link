@@ -28,7 +28,7 @@ export function unknownProvider(input: {
   const yours = available.filter((c) => c.origin === 'workspace').map((c) => c.manifest.id);
 
   const selection = `--profile ${input.profile} --target ${input.target}`;
-  const directory = `${input.workspaceRoot}/${layout.providers(input.profile)}`;
+  const directory = `${input.workspaceRoot}/${layout.providers()}`;
 
   return new Error(
     `Unknown provider "${input.providerId}".\n` +

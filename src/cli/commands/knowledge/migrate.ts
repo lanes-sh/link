@@ -45,13 +45,29 @@ export interface Movable {
  */
 type LocalArea = { readonly store: BlobStore; readonly prefix: string };
 
-function localAreas(storage: BlobStore, skills: BlobStore): Record<KnowledgeArea, LocalArea> {
+function localAreas(
+  storage: BlobStore,
+  skills: BlobStore | null,
+): Record<KnowledgeArea, LocalArea> {
   return {
     memory: { store: storage, prefix: `${KNOWLEDGE_LAYOUT.memory}/` },
-    skills: { store: skills, prefix: '' },
+    // Null becomes an empty area rather than a refusal: a profile granting no
+    // skills connection has none to move, and `knowledge use` should still move
+    // its memory and entities rather than failing on the one area that is empty
+    // by construction (ADR-059).
+    skills: { store: skills ?? EMPTY_AREA, prefix: '' },
     entities: { store: storage, prefix: `${KNOWLEDGE_LAYOUT.entities}/` },
   };
 }
+
+/** Nothing to list, nothing to delete. See `localAreas`. */
+const EMPTY_AREA: BlobStore = {
+  get: async () => null,
+  put: async () => {},
+  has: async () => false,
+  delete: async () => {},
+  list: async () => [],
+};
 
 const AREAS = ['memory', 'skills', 'entities'] as const;
 
@@ -66,7 +82,8 @@ const AREAS = ['memory', 'skills', 'entities'] as const;
  */
 export async function localContents(
   storage: BlobStore,
-  skills: BlobStore,
+  /** Null when the profile grants no skills connection (ADR-059). */
+  skills: BlobStore | null,
   knowledge: KnowledgeConfig,
 ): Promise<Movable[]> {
   const areas = localAreas(storage, skills);
@@ -128,7 +145,8 @@ export async function moveIn(
 /** Remove what has been verified elsewhere. Never called before `moveIn`. */
 export async function removeLocal(
   storage: BlobStore,
-  skills: BlobStore,
+  /** Null when the profile grants no skills connection (ADR-059). */
+  skills: BlobStore | null,
   movable: readonly Movable[],
 ): Promise<void> {
   const areas = localAreas(storage, skills);
@@ -152,7 +170,8 @@ export async function moveOut(
   repository: GithubRepository,
   knowledge: KnowledgeConfig,
   storage: BlobStore,
-  skills: BlobStore,
+  /** Null when the profile grants no skills connection (ADR-059). */
+  skills: BlobStore | null,
 ): Promise<Record<KnowledgeArea, number>> {
   const { entries } = await repository.entries();
   const areas = localAreas(storage, skills);

@@ -1,7 +1,9 @@
 import { ConfigError } from '#profile';
 import type { Flags } from './argv.ts';
-import { CONNECT_CUSTOM_FLAGS } from './commands/connect/custom/spec.ts';
+import { ACCEPTS } from './accepts.ts';
 import { nearest } from './nearest.ts';
+
+export { ACCEPTS } from './accepts.ts';
 
 /**
  * Which commands must name a profile and a target, and which flags each accepts.
@@ -10,7 +12,7 @@ import { nearest } from './nearest.ts';
  * one makes the other legible.
  *
  * **A flag that is silently ignored is the defect.** `lanes link profile add
- * work --target cloud` printed `ok` and dropped the flag: `main.ts` built a
+ * work --workspace cloud` printed `ok` and dropped the flag: `main.ts` built a
  * literal for that command and never spread the global flags into it. Nothing
  * refused, because nothing had a list of what the command accepts. That is what
  * `assertKnownFlags` is — and it matters more than the requirement, because
@@ -39,7 +41,7 @@ import { nearest } from './nearest.ts';
  * there is no file to read. The level is gone rather than left empty, so nobody
  * adds a sixth command to a level that cannot resolve.
  */
-export type Requires = 'none' | 'target' | 'profile+target';
+export type Requires = 'none' | 'workspace' | 'profile+workspace';
 
 /**
  * The rule, per command path.
@@ -54,7 +56,7 @@ export type Requires = 'none' | 'target' | 'profile+target';
  * `check`, `config show` and `policy list` take no `--target`. All three are
  * target-independent — a YAML file, the whole of it, and a policy block that is
  * declared once and applies everywhere. Demanding a target would be the
- * ceremony that teaches people to type `--target local` without reading it,
+ * ceremony that teaches people to type `--workspace local` without reading it,
  * which is how a required flag stops being a guard.
  *
  * `target list` takes no required `--target` either, and that is not an
@@ -85,55 +87,67 @@ export const SELECTION: Record<string, Requires> = {
   // `lanes link profile` is `profile list`, and needs the same as it.
   mcp: 'none',
   'profile default': 'none',
+  'workspace use': 'none',
   'target use': 'none',
   'vault key': 'none',
   // Listing the registry is what you run to find out what `--target` accepts, so
   // requiring the answer as input would be circular (ADR-052).
+  workspace: 'none',
+  // The old word, kept for one minor (ADR-061).
   target: 'none',
+  'workspace list': 'none',
   'target list': 'none',
 
   // A profile lives in one target's workspace, so listing or creating one names
   // which workspace. `target show` follows the pointer, which `list` does not.
-  profile: 'target',
-  'profile list': 'target',
-  'profile add': 'target',
-  'profile remove': 'target',
-  'target show': 'target',
+  profile: 'workspace',
+  'profile list': 'workspace',
+  'profile add': 'workspace',
+  'profile remove': 'workspace',
+  // Editing who may consume one profile, so it names the profile.
+  'profile members': 'profile+workspace',
+  'target show': 'workspace',
 
   // These read one profile's file and open nothing. The target is what says
   // which workspace holds it — required to *locate* the profile, not to open it.
-  check: 'profile+target',
-  config: 'profile+target',
-  'config show': 'profile+target',
-  policy: 'profile+target',
-  'policy list': 'profile+target',
-  identity: 'profile+target',
-  'identity list': 'profile+target',
-  'secrets push': 'profile+target',
+  check: 'profile+workspace',
+  config: 'profile+workspace',
+  'config show': 'profile+workspace',
+  policy: 'profile+workspace',
+  'policy list': 'profile+workspace',
+  identity: 'profile+workspace',
+  'identity list': 'profile+workspace',
+  'secrets push': 'profile+workspace',
 
-  connect: 'profile+target',
+  connect: 'profile+workspace',
+  // Workspace-scoped: it answers "what has this workspace authorised", and a
+  // profile would narrow the column rather than the rows.
+  connection: 'workspace',
+  'connection list': 'workspace',
+  grant: 'profile+workspace',
+  revoke: 'profile+workspace',
   // Both edit the profile config, and `disconnect` also opens the target's
   // credential store to delete from it. Same requirement as `connect` for the
   // same reasons.
-  disconnect: 'profile+target',
-  relabel: 'profile+target',
+  disconnect: 'profile+workspace',
+  relabel: 'profile+workspace',
   // Its own row rather than an inheritance from `connect`. Both need the same
   // two things, but the row is what makes `selectionKey` return the two-word
   // key — and that is what keeps thirty declaration flags off
   // `connect <provider>`, where a mistyped one would otherwise be accepted and
   // ignored, which is the defect this whole file exists for.
-  'connect custom': 'profile+target',
-  setup: 'profile+target',
-  token: 'profile+target',
-  audit: 'profile+target',
-  secrets: 'profile+target',
-  plan: 'profile+target',
-  doctor: 'profile+target',
-  auth: 'profile+target',
+  'connect custom': 'profile+workspace',
+  setup: 'profile+workspace',
+  token: 'profile+workspace',
+  audit: 'profile+workspace',
+  secrets: 'profile+workspace',
+  plan: 'profile+workspace',
+  doctor: 'profile+workspace',
+  auth: 'profile+workspace',
   // Target-scoped: see the note above. `--profile` narrows each to one profile.
-  status: 'target',
-  outputs: 'profile+target',
-  tools: 'profile+target',
+  status: 'workspace',
+  outputs: 'profile+workspace',
+  tools: 'profile+workspace',
   // It resolves nothing and opens nothing — it hands macOS a URL (ADR-053).
   // `target list` is the precedent for a `'none'` command that still takes a
   // flag of its own. Both spellings need a row: `selection.test.ts` reads
@@ -141,38 +155,39 @@ export const SELECTION: Record<string, Requires> = {
   // the `profile+target` default.
   dashboard: 'none',
   desktop: 'none',
-  attach: 'profile+target',
-  start: 'profile+target',
-  deploy: 'target',
+  attach: 'profile+workspace',
+  start: 'profile+workspace',
+  deploy: 'workspace',
   // Both spellings: `sync` alone is `sync targets`, which is the only thing
   // there is to sync, and naming it leaves room for the next one.
-  sync: 'target',
-  'sync targets': 'target',
-  'policy allow': 'profile+target',
-  'policy deny': 'profile+target',
+  sync: 'workspace',
+  'sync targets': 'workspace',
+  'sync workspaces': 'workspace',
+  'policy allow': 'profile+workspace',
+  'policy deny': 'profile+workspace',
   // Both, unlike `identity list`, and for the same reason the policy edits are:
   // each publishes the edit, which opens the target's credential store and
   // reaches that target's endpoint.
-  'identity add': 'profile+target',
-  'identity remove': 'profile+target',
-  'token show': 'profile+target',
-  'token rotate': 'profile+target',
-  'audit tail': 'profile+target',
-  'audit verify': 'profile+target',
-  'secrets set': 'profile+target',
-  'secrets list': 'profile+target',
-  'mcp add': 'profile+target',
-  'mcp stdio': 'profile+target',
-  memory: 'profile+target',
-  tasks: 'profile+target',
-  assets: 'profile+target',
-  skills: 'profile+target',
-  vault: 'profile+target',
-  entities: 'profile+target',
+  'identity add': 'profile+workspace',
+  'identity remove': 'profile+workspace',
+  'token show': 'profile+workspace',
+  'token rotate': 'profile+workspace',
+  'audit tail': 'profile+workspace',
+  'audit verify': 'profile+workspace',
+  'secrets set': 'profile+workspace',
+  'secrets list': 'profile+workspace',
+  'mcp add': 'profile+workspace',
+  'mcp stdio': 'profile+workspace',
+  memory: 'profile+workspace',
+  tasks: 'profile+workspace',
+  assets: 'profile+workspace',
+  skills: 'profile+workspace',
+  vault: 'profile+workspace',
+  entities: 'profile+workspace',
   // Both halves open the target's adapters — `show` counts what is in the
   // stores, and `use` migrates between them — and both edit the profile's
   // config. Neither can be answered without being told which.
-  knowledge: 'profile+target',
+  knowledge: 'profile+workspace',
 };
 
 /**
@@ -186,7 +201,9 @@ export const SELECTION: Record<string, Requires> = {
  * asserts this stays true.
  */
 const SUBCOMMANDS: Record<string, readonly string[]> = {
-  profile: ['add', 'list', 'default', 'remove'],
+  profile: ['add', 'list', 'default', 'remove', 'members'],
+  connection: ['list'],
+  workspace: ['list', 'use', 'show'],
   target: ['list', 'use', 'show'],
   policy: ['list', 'allow', 'deny'],
   identity: ['add', 'list', 'remove'],
@@ -205,7 +222,7 @@ const SUBCOMMANDS: Record<string, readonly string[]> = {
   mcp: ['skill', 'add', 'stdio', 'list'],
   secrets: ['push', 'set', 'list'],
   knowledge: ['show', 'use'],
-  sync: ['targets'],
+  sync: ['targets', 'workspaces'],
 };
 
 /**
@@ -235,99 +252,41 @@ export function selectionKey(first: string, second: string | undefined): string 
 
 /** Whether this command needs a profile, a target, both, or neither. */
 export function requirementFor(first: string, second: string | undefined): Requires {
-  return SELECTION[selectionKey(first, second)] ?? 'profile+target';
+  return SELECTION[selectionKey(first, second)] ?? 'profile+workspace';
 }
 
-const UNIVERSAL = ['help', 'json', 'quiet'];
-
 /**
- * What each command accepts beyond the universal set and its own selection.
+ * The commands that refuse `default_workspace` and make you type the name.
  *
- * Only commands with flags of their own appear. Anything absent accepts the
- * universal set plus whatever `SELECTION` says it must be told.
+ * ADR-037 removed every implicit selection, on reasoning worth keeping: a
+ * persisted context is the standard way an operator runs a destructive command
+ * against the wrong thing. ADR-061 gives the default back for the forty
+ * commands a day that only read, and keeps the refusal exactly where that
+ * argument bites — anything that publishes or destroys.
+ *
+ * `connect` is deliberately absent. It creates rather than destroys, it is the
+ * command someone runs while learning the tool, and it prints the workspace it
+ * wrote to. Requiring a flag there is the ceremony ADR-043 identified as the way
+ * a required flag stops being a guard.
  */
-const ACCEPTS: Record<string, readonly string[]> = {
-  // Imported rather than written out. Thirty-odd entries here would take this
-  // file past the size budget for a data literal, and the command's own
-  // `spec.ts` already derives most of them from the per-kind field tables — so
-  // a flag added there cannot be forgotten here.
-  'connect custom': CONNECT_CUSTOM_FLAGS,
-  // `own-client` is the older spelling of one of the routes `auth` names, kept
-  // because it is in scripts and a year of documentation (ADR-038).
-  connect: [
-    'id',
-    'display-name',
-    // Repeatable: `--set host=cloud.example.com`. The only way to give a
-    // provider its address without a terminal to ask at.
-    'set',
-    'label',
-    'replace',
-    'non-interactive',
-    'accept-broad-scopes',
-    'own-client',
-    'auth',
-  ],
-  setup: ['id'],
-  'profile add': ['target', 'non-interactive'],
-  // `--target` decommissions one target's stores and leaves the profile file in
-  // place (`removal.ts`). It is documented in `usage.ts` and read by
-  // `removalPlan`, and was refused here — the flag existed everywhere except in
-  // the list that decides whether it may be typed.
-  'profile remove': ['dry-run', 'yes', 'target'],
-  disconnect: ['yes', 'keep-credential'],
-  // The one repair `doctor` can apply rather than only name. Narrow on purpose:
-  // it undoes a provider rename this project shipped, and every other finding
-  // there is something only the operator can decide.
-  doctor: ['fix'],
-  // A filter, not a second subject: it narrows the answer to one connection so
-  // a caller can re-ask about the row it just repaired. Same shape as `attach`.
-  auth: ['connection'],
-  relabel: [],
-  'target list': ['urls', 'target'],
-  'target show': ['target'],
-  'token show': ['show', 'raw'],
-  'token rotate': ['show', 'raw', 'yes'],
-  'audit tail': ['limit', 'denied-only', 'format'],
-  'audit verify': ['limit', 'format'],
-  attach: ['connection'],
-  outputs: ['show'],
-  start: ['port', 'only'],
-  'mcp stdio': ['only'],
-  'mcp add': ['name', 'scope', 'token-env', 'dry-run', 'force', 'no-skill'],
-  'mcp skill': ['print', 'force'],
-  'mcp list': ['name', 'scope'],
-  // `--yes` because it installs the app when nothing answers the scheme, and
-  // that is the one prompt in this CLI that puts an application on the machine.
-  dashboard: ['print', 'yes'],
-  desktop: ['print', 'yes'],
-  skill: ['print', 'force'],
-  deploy: ['dry-run', 'iam', 'access', 'service-account', 'tag', 'yes', 'non-interactive'],
-  'secrets push': ['from', 'to', 'overwrite', 'dry-run'],
-  sync: ['dry-run', 'from', 'discover', 'prefer'],
-  'sync targets': ['dry-run', 'from', 'discover', 'prefer'],
-  update: ['check'],
-  'identity add': ['note'],
-  memory: ['connection', 'title', 'description', 'file', 'tag'],
-  // `--yes` on both, because both have a delete that asks first.
-  tasks: ['connection', 'title', 'status', 'due', 'tag', 'yes'],
-  assets: ['connection', 'name', 'content-type', 'yes'],
-  skills: ['connection', 'title', 'description', 'file'],
-  vault: ['connection'],
-  // `alias`, `attr` and `related` are repeatable — see `ownerFlags`. `name`
-  // overrides the id derived from the positional name, which is how you get
-  // `acme-bv` rather than `acme-b-v`.
-  entities: ['connection', 'type', 'name', 'alias', 'attr', 'related', 'tag', 'yes'],
-  // `no-migrate` is listed beside `migrate` because they are three states
-  // rather than two: neither one asks, and a run with no terminal has to be
-  // able to say which it meant (ADR-041).
-  knowledge: ['repo', 'branch', 'path', 'migrate', 'no-migrate', 'keep', 'allow-public', 'replace', 'yes'],
-};
+export const EXPLICIT_WORKSPACE = new Set([
+  'deploy',
+  'sync',
+  'sync targets',
+  'sync workspaces',
+  'secrets push',
+  'profile remove',
+  'disconnect',
+  'token rotate',
+]);
+
+const UNIVERSAL = ['help', 'json', 'quiet'];
 
 /**
  * Refuse a flag this command does not read, and guess what was meant.
  *
  * This is the fix for the reported bug rather than a nicety. `profile add
- * --target cloud` was accepted and dropped, and nothing could refuse it because
+ * --workspace cloud` was accepted and dropped, and nothing could refuse it because
  * `parseArgv` returns every `--anything` it sees and no command ever inspected
  * the leftovers. A typo was swallowed the same way on every command in the CLI.
  */
@@ -345,7 +304,7 @@ export function assertKnownFlags(first: string, second: string | undefined, flag
   if (dispatchWillRefuse(first, second)) return;
 
   const key = selectionKey(first, second);
-  const needs = SELECTION[key] ?? 'profile+target';
+  const needs = SELECTION[key] ?? 'profile+workspace';
 
   const allowed = new Set<string>([
     ...UNIVERSAL,
@@ -353,7 +312,7 @@ export function assertKnownFlags(first: string, second: string | undefined, flag
     // `target` accepts both: the target is what it acts on, and `--profile`
     // narrows it to one of the profiles behind it.
     ...(needs !== 'none' && !POSITIONAL_PROFILE.has(key) ? ['profile'] : []),
-    ...(needs === 'target' || needs === 'profile+target' ? ['target'] : []),
+    ...(needs === 'workspace' || needs === 'profile+workspace' ? ['workspace'] : []),
   ]);
 
   const named = [first, second].filter(Boolean).join(' ');

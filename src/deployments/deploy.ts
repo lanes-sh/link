@@ -17,7 +17,7 @@ import { prepareSecrets, readableRefs, rotatableRefs } from './prepare.ts';
 import { repairOwnerLayer } from '#cli/config-repair.ts';
 import { migrateWorkspace } from '#cli/workspace-migrate.ts';
 import { deployedWorkspace, uploadWorkspace } from './upload.ts';
-import { collidingRefs, collisionRefusal, servingProfiles } from './serving.ts';
+import { servingProfiles } from './serving.ts';
 import { healthLine, reachability, registerLine, reportUnauthorised } from './report.ts';
 
 /**
@@ -112,14 +112,13 @@ export async function deploy(flags: DeployFlags): Promise<void> {
     print(style.dim(`         serving ${serving.join(', ')} — ${primary} owns the token`));
   }
 
-  // Before anything external, beside `check`, and for the same reason: two
-  // profiles writing one flat credential ref into one store is a failure with
-  // no later symptom worth having.
-  const colliding = await collidingRefs(resolution.workspaceRoot, serving);
-  if (colliding.length > 0) {
-    heading('Cannot share a credential store');
-    throw new ConfigError(collisionRefusal(colliding, target));
-  }
+  // The credential-collision preflight is gone. It existed because two profiles
+  // each held their own `gmail.main` and both derived the flat ref `gmail/main`
+  // into one store — the last deploy winning, with no later symptom worth
+  // having. A connection belongs to the workspace now and `<provider>.<id>` is
+  // unique by construction (ADR-057), so the state it guarded against cannot be
+  // written: `assertConnectionsUnique` refuses it at load, before a deploy runs
+  // at all.
 
   // `check` before anything external, per the gate order: a config that will be
   // rejected on boot should be rejected here, not after a five-minute build.
@@ -240,7 +239,7 @@ export async function deploy(flags: DeployFlags): Promise<void> {
     for (const problem of prepared.blocking) print(fail(problem));
     throw new ConfigError(
       'The deployed instance cannot start without these. Store them with ' +
-        `lanes link secrets set <ref> --profile ${resolution.profile} --target ${target}, or ` +
+        `lanes link secrets set <ref> --profile ${resolution.profile} --workspace ${target}, or ` +
         `copy a local setup with lanes link secrets push --profile ${resolution.profile} ` +
         `--from local --to ${target}.`,
     );
@@ -325,7 +324,7 @@ export async function deploy(flags: DeployFlags): Promise<void> {
   if (!url) {
     print(
       warn(
-        `deployed, but the platform reported no URL yet — run: lanes link outputs --profile ${resolution.profile} --target ${target}`,
+        `deployed, but the platform reported no URL yet — run: lanes link outputs --profile ${resolution.profile} --workspace ${target}`,
       ),
     );
     return;
@@ -383,6 +382,6 @@ async function migrateTargetWorkspace(target: string, apply: boolean): Promise<b
   print(style.dim('  Nothing was written, and nothing else was checked: the rest of this'));
   print(style.dim('  command opens the target, which is not readable until this has run.'));
   print('');
-  print(style.dim(`  Run it for real:  lanes link deploy --target ${target}`));
+  print(style.dim(`  Run it for real:  lanes link deploy --workspace ${target}`));
   return false;
 }

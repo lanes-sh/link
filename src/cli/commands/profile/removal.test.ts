@@ -31,25 +31,47 @@ const target = (over: Partial<TargetConfig> = {}): TargetConfig =>
 
 const config = (over: Partial<Config> = {}): Config =>
   ({
-    contract: 2,
+    contract: 3,
     instance: { profile: 'personal' },
     auth: { mode: 'bearer', token_ref: 'profile/token' },
-    oauth_apps: {
-      google: { client_id_ref: 'google/client_id', client_secret_ref: 'google/client_secret' },
-    },
-    connections: [{ id: 'someone', provider: 'gmail', account: 'someone@example.com' }],
-    policy: { allow: [] },
+    grants: [{ connection: 'gmail.someone', allow: [], deny: [] }],
+    members: [],
     ...over,
   }) as unknown as Config;
 
 describe('declaredRefs', () => {
-  test('covers the profile token, the connection, and the oauth client', () => {
-    const refs = declaredRefs(config(), registry, target());
+  test("covers the profile's own token, and nothing an account owns", () => {
+    const refs = declaredRefs(config(), target());
 
     expect(refs).toContain('profile/token');
-    expect(refs).toContain('gmail/someone');
-    expect(refs).toContain('google/client_id');
-    expect(refs).toContain('google/client_secret');
+
+    // **Not the connection, and not the OAuth client.** Both belong to the
+    // workspace now (ADR-057), and every one of them may be granted by a profile
+    // that is staying — so removing a profile removes no account and no
+    // credential. `lanes link disconnect` is the command that does that, and it
+    // is the one that knows how to check whether anybody else still needs it.
+    expect(refs).not.toContain('gmail/someone');
+    expect(refs).not.toContain('google/client_id');
+  });
+
+  test('an oidc audience ref travels with the profile, because it is the profile\'s', () => {
+    const refs = declaredRefs(
+      config({
+        auth: {
+          mode: 'bearer',
+          token_ref: 'profile/token',
+          authorization: {
+            mode: 'oidc',
+            issuer: 'https://issuer.example',
+            client_id_ref: 'oidc/audience',
+            allowed_subjects: ['someone'],
+          },
+        },
+      } as never),
+      target(),
+    );
+
+    expect(refs).toContain('oidc/audience');
   });
 
   test('the vault ref comes from the target, because that is where it is declared', () => {
@@ -58,14 +80,14 @@ describe('declaredRefs', () => {
     // would attach one target's vault to another's removal.
     const sealed = target({ vault: { adapter: 'secret', ref: 'vault/document' } } as never);
 
-    expect(declaredRefs(config(), registry, sealed)).toContain('vault/document');
-    expect(declaredRefs(config(), registry, target())).not.toContain('vault/document');
+    expect(declaredRefs(config(), sealed)).toContain('vault/document');
+    expect(declaredRefs(config(), target())).not.toContain('vault/document');
   });
 
   test('a secret adapter with no ref falls back to the documented default', () => {
     const sealed = target({ vault: { adapter: 'secret' } } as never);
 
-    expect(declaredRefs(config(), registry, sealed)).toContain('vault/document');
+    expect(declaredRefs(config(), sealed)).toContain('vault/document');
   });
 
   test('a connection whose provider no longer resolves contributes nothing', () => {
@@ -75,37 +97,30 @@ describe('declaredRefs', () => {
       connections: [{ id: 'x', provider: 'no_such_provider', account: 'x' }],
     } as never);
 
-    const refs = declaredRefs(gone, registry, target());
+    const refs = declaredRefs(gone, target());
 
     expect(refs).not.toContain('no_such_provider/x');
     expect(refs).toContain('profile/token');
   });
 
-  test('an explicit credential_ref still counts when the manifest is gone', () => {
-    // `credentialRefFor` is the single authority: the manifest answers first,
-    // and the connection's own field is the answer when it gives none.
-    const explicit = config({
-      connections: [
-        { id: 'x', provider: 'no_such_provider', account: 'x', credential_ref: 'mything/api_key' },
+  test('the vault key is still the profile\'s to lose, and the connections are not', () => {
+    // The asymmetry is the whole of ADR-057 at this seam. A vault document is
+    // sealed per target and named by the target, so it goes with the removal;
+    // a connection's credential belongs to an account that outlives the
+    // profile, so it does not — whatever else the profile happened to say.
+    const withConnections = config({
+      grants: [
+        { connection: 'gmail.a', allow: [], deny: [] },
+        { connection: 'drive.b', allow: [], deny: [] },
       ],
     } as never);
 
-    expect(declaredRefs(explicit, registry, target())).toContain('mything/api_key');
-  });
+    const refs = declaredRefs(
+      withConnections,
+      target({ vault: { adapter: 'secret', ref: 'vault/document' } } as never),
+    );
 
-  test('returns each ref once, even when two connections share a client', () => {
-    const two = config({
-      connections: [
-        { id: 'a', provider: 'gmail', account: 'a@example.com' },
-        { id: 'b', provider: 'drive', account: 'b@example.com' },
-      ],
-    } as never);
-
-    const refs = declaredRefs(two, registry, target());
-
-    expect(refs.filter((ref) => ref === 'google/client_id')).toHaveLength(1);
-    expect(refs).toContain('gmail/a');
-    expect(refs).toContain('drive/b');
+    expect(refs).toEqual(['profile/token', 'vault/document']);
   });
 });
 
@@ -156,19 +171,26 @@ describe('removalPlan', () => {
     expect(ids(plan, 'config').filter((id) => !id.startsWith('profiles/'))).toHaveLength(1);
   });
 
-  test('deletes secrets before blobs, because the file store is itself a blob', async () => {
-    // `layout.credentials(p)` is `data/<p>/credentials.enc`, inside the blob
-    // root `data/<p>`. Delete blobs first and the store the secret deletions
-    // read through is gone.
+
+  test('plans no blob deletion at all, because a profile owns no bytes', async () => {
+    // The property that replaced six tests about a sweep. Under contract 2 the
+    // blob root *was* the profile's directory and `rm -r data/work` was the
+    // whole answer to "what could this profile reach". The root is the
+    // workspace's now (ADR-057, ADR-059), and the stores under it belong to
+    // connections other profiles may grant — so listing it here would queue
+    // every byte in the workspace for deletion because one profile is going.
     const plan = await removalPlan(config(), '/ws', 'personal', registry, {
       target: 'local',
       declared: target(),
       openSecrets: async () => fakeSecrets(['profile/token']),
-      openBlobs: async () => fakeBlobs(['credentials.enc']),
+      openBlobs: async () => fakeBlobs(['memory/main/note.md', 'skills.d/main/triage.md']),
     });
 
-    const kinds = plan.items.filter((i) => i.target === 'local').map((i) => i.kind);
-    expect(kinds.indexOf('secret')).toBeLessThan(kinds.indexOf('blob'));
+    expect(plan.items.filter((item) => item.kind === 'blob')).toEqual([]);
+    expect(plan.items.filter((item) => item.kind === 'file')).toEqual([]);
+    // The profile's own token still goes, and the profile file still goes.
+    expect(ids(plan, 'secret')).toContain('profile/token');
+    expect(plan.items.some((item) => item.kind === 'config')).toBe(true);
   });
 
   test('the local config is the last item, because it is the record of where things are', async () => {
@@ -222,93 +244,10 @@ describe('removalPlan', () => {
     expect(plan.warnings.join(' ')).toMatch(/keep answering|still answer/i);
   });
 
-  test('a credential store that cannot be opened warns, and the blobs still plan', async () => {
-    // There is no sibling target left to carry on with, so what this pins is the
-    // other half: one unreachable store does not abandon the rest of the plan.
-    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
-      target: 'cloud',
-      declared: target(),
-      openSecrets: async () => {
-        throw new Error('no credentials for this project');
-      },
-      openBlobs: async () => fakeBlobs(['a']),
-    });
 
-    expect(plan.warnings.join(' ')).toMatch(/cloud/);
-    expect(plan.items.some((item) => item.kind === 'blob')).toBe(true);
-  });
 
-  test('skills and manifests go with the profile that owns them — ADR-030', async () => {
-    // They used to be workspace-wide, and this test used to assert the
-    // opposite: that removal never touched them, because every profile saw
-    // them. Now they are inside the profile's own blob root, so the sweep has
-    // them for the same reason it has state and the log.
-    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
-      target: 'local',
-      declared: target(),
-      openSecrets: async () => fakeSecrets([]),
-      openBlobs: async () =>
-        fakeBlobs([
-          'state.kv/a',
-          'audit.log/b',
-          'skills.d/review-diff/SKILL.md',
-          'providers.d/acme.yaml',
-        ]),
-    });
 
-    const blobs = plan.items.filter((item) => item.kind === 'blob').map((item) => item.id);
-    expect(blobs).toContain('skills.d/review-diff/SKILL.md');
-    expect(blobs).toContain('providers.d/acme.yaml');
-  });
 
-  test('a declared storage path does not leave the authored areas behind', async () => {
-    // `layout.skills` and `layout.providers` are explicit areas, like state and
-    // the log — so a profile that points `storage.path` elsewhere moves its
-    // provider blobs and nothing else. The sweep walks the declared root, so
-    // without these two items the skills and manifests would survive a removal
-    // that reported success.
-    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
-      target: 'local',
-      declared: target({ storage: { adapter: 'filesystem', path: './elsewhere' } }),
-      openSecrets: async () => fakeSecrets([]),
-      openBlobs: async () => fakeBlobs([]),
-    });
-
-    const files = plan.items.filter((item) => item.kind === 'file').map((item) => item.id);
-    expect(files).toContain('./elsewhere');
-    expect(files).toContain('data/personal/skills.d');
-    expect(files).toContain('data/personal/providers.d');
-  });
-
-  test('the ordinary layout names them once, not twice', async () => {
-    // Inside the blob root, the sweep already has them. A second `file` item
-    // for the same bytes would read as two things to delete in the preview the
-    // operator confirms.
-    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
-      target: 'local',
-      declared: target(),
-      openSecrets: async () => fakeSecrets([]),
-      openBlobs: async () => fakeBlobs(['skills.d/review-diff/SKILL.md']),
-    });
-
-    const files = plan.items.filter((item) => item.kind === 'file').map((item) => item.id);
-    expect(files).toEqual(['data/personal']);
-  });
-
-  test('"./data/personal" is the same directory as "data/personal"', async () => {
-    // What `newProfileTemplate` actually writes, against what `layout` returns.
-    // Compared as strings these differ, and every default profile would have
-    // its skills and manifests named twice in the preview.
-    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
-      target: 'local',
-      declared: target({ storage: { adapter: 'filesystem', path: './data/personal' } }),
-      openSecrets: async () => fakeSecrets([]),
-      openBlobs: async () => fakeBlobs([]),
-    });
-
-    const files = plan.items.filter((item) => item.kind === 'file').map((item) => item.id);
-    expect(files).toEqual(['./data/personal']);
-  });
 });
 
 // --- renderPlan ------------------------------------------------------------

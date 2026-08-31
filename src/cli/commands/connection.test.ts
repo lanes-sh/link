@@ -4,11 +4,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { RESERVED_PROVIDER_IDS } from '#connectivity';
 import type { ProviderManifest } from '#connectivity';
-import { parseConfig, type Config } from '#profile';
+import {
+  CONNECTIONS_FILE,
+  parseConfig,
+  readConnections,
+  type Config,
+  type ConnectionConfig,
+} from '#profile';
 import { PROVIDER_MANIFESTS } from '#providers/index.ts';
 import { planAll } from '#providers/setup/plan.ts';
 import { createProfile } from './profile.ts';
-import { connectionsSharingCredential, removeConnection, renameConnection } from './connection.ts';
+import { connectionsSharingCredential, removeConnection } from './connection.ts';
+import { renameConnection } from './relabel.ts';
 
 /**
  * `lanes link disconnect` and `lanes link relabel`.
@@ -31,17 +38,20 @@ import { connectionsSharingCredential, removeConnection, renameConnection } from
 
 const WHERE = { profile: 'personal', target: 'local' } as const;
 
-// Only the accounts. The owner layer is not declared here: a fresh profile
-// arrives with `memory.main` and its siblings already granted (ADR-050), and
-// declaring one of them a second time is a duplicate the parser refuses — which
-// would fail every test in this file for a reason none of them is about.
+// Only the accounts. The owner layer is not declared here: a fresh workspace
+// arrives with `memory.main` and its siblings already in `connections.yaml`
+// (ADR-050, ADR-059), and declaring one of them a second time is a duplicate the
+// parser refuses — which would fail every test in this file for a reason none of
+// them is about.
 const CONNECTIONS = `
-  - id: main
-    provider: gmail
-    account: first@example.com
-  - id: side
-    provider: gmail
-    account: second@example.com
+  - { id: main, provider: gmail, account: first@example.com }
+  - { id: side, provider: gmail, account: second@example.com }
+`;
+
+/** The grants a profile needs to reach the two accounts above. */
+const GRANTS = `
+  - { connection: gmail.main, allow: [gmail.*], deny: [] }
+  - { connection: gmail.side, allow: [gmail.*], deny: [] }
 `;
 
 const roots: string[] = [];
@@ -54,10 +64,15 @@ async function workspace(): Promise<string> {
   await createProfile('personal', { targets: ['local'] });
 
   // Declared by hand rather than through `connect`, which would want a browser
-  // and a real Google account.
+  // and a real Google account. Two files now: the account belongs to the
+  // workspace and the permission to use it to the profile (ADR-057).
+  const connections = join(root, CONNECTIONS_FILE);
+  const held = await Bun.file(connections).text();
+  await Bun.write(connections, held.replace('connections:', `connections:${CONNECTIONS}`));
+
   const path = join(root, 'profiles', 'personal.yaml');
   const text = await Bun.file(path).text();
-  await Bun.write(path, text.replace('connections:', `connections:${CONNECTIONS}`));
+  await Bun.write(path, text.replace('grants:', `grants:${GRANTS}`));
   return root;
 }
 
@@ -72,8 +87,14 @@ async function onDisk(root: string): Promise<Config> {
   return parseConfig(text).config;
 }
 
+/** What the workspace holds, which is where a connection lives now. */
+async function held(root: string): Promise<string[]> {
+  return (await readConnections(root)).connections.map((one) => `${one.provider}.${one.id}`);
+}
+
+/** What the profile grants, which is a different question. */
 function keys(config: Config): string[] {
-  return config.connections.map((one) => `${one.provider}.${one.id}`);
+  return config.grants.map((grant) => grant.connection);
 }
 
 describe('disconnect', () => {
@@ -85,9 +106,11 @@ describe('disconnect', () => {
     expect(outcome).not.toBeNull();
     expect(outcome!.disconnected.key).toBe('gmail.side');
     expect(outcome!.disconnected.account).toBe('second@example.com');
+    expect(await held(root)).not.toContain('gmail.side');
+    expect(await held(root)).toContain('gmail.main');
+    expect(await held(root)).toContain('memory.main');
+    // And the grant that named it goes with it.
     expect(keys(await onDisk(root))).not.toContain('gmail.side');
-    expect(keys(await onDisk(root))).toContain('gmail.main');
-    expect(keys(await onDisk(root))).toContain('memory.main');
   });
 
   test('keeps the operator’s comments', async () => {
@@ -96,7 +119,7 @@ describe('disconnect', () => {
 
     const text = await Bun.file(join(root, 'profiles', 'personal.yaml')).text();
     // The template's own commentary, which a reformatting writer would drop.
-    expect(text).toContain('# One entry per authorised account');
+    expect(text).toContain('# One row per connection this profile may reach');
   });
 
   test('reports the credential it deleted', async () => {
@@ -118,7 +141,7 @@ describe('disconnect', () => {
 
     expect(outcome!.disconnected.credential).toBeNull();
     // The declaration still goes; only the secret stays.
-    expect(keys(await onDisk(await roots[roots.length - 1]!))).not.toContain('gmail.side');
+    expect(await held(roots[roots.length - 1]!)).not.toContain('gmail.side');
   });
 
   test('refuses a bare provider, and says which connections it has', async () => {
@@ -132,41 +155,62 @@ describe('disconnect', () => {
     );
   });
 
-  test('refuses a key the profile does not declare', async () => {
+  test('refuses a key the workspace does not hold', async () => {
     await workspace();
     await expect(removeConnection('gmail.nope', { ...WHERE, yes: true })).rejects.toThrow(
-      /does not declare "gmail\.nope"/,
+      /holds no connection "gmail\.nope"/,
     );
   });
 
-  test('refuses the owner layer, and says to edit the file', async () => {
+  test('refuses the last instance of a built-in, and says to deny it instead', async () => {
+    // Not a blanket refusal any more. An owner-layer surface is a connection
+    // like any other (ADR-059), so a second instance can be disconnected; the
+    // *last* one cannot, because `ensureOwnerLayer` puts it back on the next
+    // command and a success line the next command undoes is worse than a
+    // refusal.
     const root = await workspace();
 
     await expect(removeConnection('memory.main', { ...WHERE, yes: true })).rejects.toThrow(
-      /part of what this profile is[\s\S]*by hand/,
+      /only memory connection[\s\S]*policy deny/,
     );
     // And refuses before writing anything.
-    expect(keys(await onDisk(root))).toContain('memory.main');
+    expect(await held(root)).toContain('memory.main');
+  });
+
+  test('a second instance of a built-in disconnects normally', async () => {
+    const root = await workspace();
+    const connections = join(root, CONNECTIONS_FILE);
+    const text = await Bun.file(connections).text();
+    await Bun.write(
+      connections,
+      text.replace('connections:', 'connections:\n  - { id: work, provider: memory, account: Memory }'),
+    );
+
+    const outcome = await removeConnection('memory.work', { ...WHERE, yes: true });
+
+    expect(outcome!.disconnected.key).toBe('memory.work');
+    expect(await held(root)).not.toContain('memory.work');
+    expect(await held(root)).toContain('memory.main');
   });
 
   // Every reserved id, so one added to `RESERVED_PROVIDER_IDS` is covered here
   // the moment it exists rather than the next time somebody remembers.
-  test.each([...RESERVED_PROVIDER_IDS])('refuses %s', async (provider) => {
+  test.each([...RESERVED_PROVIDER_IDS])('refuses the last %s', async (provider) => {
     const root = await workspace();
-    const path = join(root, 'profiles', 'personal.yaml');
-    const text = await Bun.file(path).text();
-    // The template already declares every reserved id but `identity`; declaring
-    // one twice is a config the parser refuses, which would fail this for the
-    // wrong reason.
+    const connections = join(root, CONNECTIONS_FILE);
+    const text = await Bun.file(connections).text();
+    // The template already holds every reserved id but `identity`; declaring one
+    // twice is a config the parser refuses, which would fail this for the wrong
+    // reason.
     if (!text.includes(`provider: ${provider}`)) {
       await Bun.write(
-        path,
-        text.replace('connections:', `connections:\n  - id: main\n    provider: ${provider}\n    account: X\n`),
+        connections,
+        text.replace('connections:', `connections:\n  - { id: main, provider: ${provider}, account: X }`),
       );
     }
 
     await expect(removeConnection(`${provider}.main`, { ...WHERE, yes: true })).rejects.toThrow(
-      /part of what this profile is/,
+      /is the only .* connection in this workspace/,
     );
   });
 
@@ -175,7 +219,7 @@ describe('disconnect', () => {
     // script hits.
     const root = await workspace();
     await expect(removeConnection('gmail.side', WHERE)).rejects.toThrow(/Pass --yes/);
-    expect(keys(await onDisk(root))).toContain('gmail.side');
+    expect(await held(root)).toContain('gmail.side');
   });
 });
 
@@ -188,23 +232,22 @@ describe('a credential two connections resolve to', () => {
     capabilities: [],
   } as unknown as ProviderManifest;
 
-  const config = {
-    connections: [
-      { id: 'one', provider: 'shared', account: 'a' },
-      { id: 'two', provider: 'shared', account: 'b' },
-    ],
-  } as unknown as Config;
+  // Rows, not a profile. The accounts belong to the workspace now (ADR-057),
+  // and this check is about which of them resolve to one credential reference.
+  const rows: ConnectionConfig[] = [
+    { id: 'one', provider: 'shared', account: 'a' },
+    { id: 'two', provider: 'shared', account: 'b' },
+  ];
 
   test('is named, not deleted', () => {
     // The whole reason the check exists: a manifest-level `credential_ref` is one
     // reference for every connection of that provider.
-    const found = connectionsSharingCredential(config, 'shared/key', 0, () => shared);
+    const found = connectionsSharingCredential(rows, 'shared/key', 0, () => shared);
     expect(found).toEqual(['shared.two']);
   });
 
   test('is deleted once nothing else resolves to it', () => {
-    const only = { connections: [config.connections[0]] } as unknown as Config;
-    expect(connectionsSharingCredential(only, 'shared/key', 0, () => only && shared)).toEqual([]);
+    expect(connectionsSharingCredential([rows[0]!], 'shared/key', 0, () => shared)).toEqual([]);
   });
 
   test('does not confuse two OAuth connections, whose refs differ', () => {
@@ -215,12 +258,10 @@ describe('a credential two connections resolve to', () => {
       auth: { kind: 'oauth' },
       capabilities: [],
     } as unknown as ProviderManifest;
-    const two = {
-      connections: [
-        { id: 'main', provider: 'gmail', account: 'a' },
-        { id: 'side', provider: 'gmail', account: 'b' },
-      ],
-    } as unknown as Config;
+    const two: ConnectionConfig[] = [
+      { id: 'main', provider: 'gmail', account: 'a' },
+      { id: 'side', provider: 'gmail', account: 'b' },
+    ];
 
     expect(connectionsSharingCredential(two, 'gmail/main', 0, () => oauth)).toEqual([]);
   });
@@ -234,8 +275,8 @@ describe('relabel', () => {
 
     expect(relabelled.from).toBe('first@example.com');
     expect(relabelled.to).toBe('Work Mail');
-    const config = await onDisk(root);
-    expect(config.connections.find((c) => c.provider === 'gmail' && c.id === 'main')?.label)
+    const rows = (await readConnections(root)).connections;
+    expect(rows.find((one) => one.provider === 'gmail' && one.id === 'main')?.label)
       .toBe('Work Mail');
   });
 
@@ -255,8 +296,8 @@ describe('relabel', () => {
 
     await renameConnection('gmail.main', 'Work Mail', WHERE);
 
-    const config = await onDisk(root);
-    expect(config.connections.find((c) => c.provider === 'gmail' && c.id === 'main')?.account)
+    const rows = (await readConnections(root)).connections;
+    expect(rows.find((one) => one.provider === 'gmail' && one.id === 'main')?.account)
       .toBe('first@example.com');
   });
 
@@ -264,10 +305,11 @@ describe('relabel', () => {
     const root = await workspace();
     await renameConnection('gmail.main', 'Work Mail', WHERE);
 
-    const config = await onDisk(root);
-    expect(keys(config)).toContain('gmail.side');
-    expect(config.connections.find((c) => c.id === 'side')?.account).toBe('second@example.com');
-    expect(config.connections.find((c) => c.id === 'side')?.label).toBeUndefined();
+    expect(keys(await onDisk(root))).toContain('gmail.side');
+
+    const rows = (await readConnections(root)).connections;
+    expect(rows.find((one) => one.id === 'side')?.account).toBe('second@example.com');
+    expect(rows.find((one) => one.id === 'side')?.label).toBeUndefined();
   });
 
   test('reports the label it replaced, not the account, once there is one', async () => {
@@ -286,13 +328,13 @@ describe('relabel', () => {
     const root = await workspace();
     await renameConnection('memory.main', 'My notes', WHERE);
 
-    const config = await onDisk(root);
-    expect(config.connections.find((c) => c.provider === 'memory')?.label).toBe('My notes');
+    const rows = (await readConnections(root)).connections;
+    expect(rows.find((one) => one.provider === 'memory')?.label).toBe('My notes');
   });
 
-  test('refuses a key the profile does not declare', async () => {
+  test('refuses a key the workspace does not hold', async () => {
     await workspace();
-    await expect(renameConnection('gmail.nope', 'X', WHERE)).rejects.toThrow(/does not declare/);
+    await expect(renameConnection('gmail.nope', 'X', WHERE)).rejects.toThrow(/holds no connection/);
   });
 });
 
@@ -321,56 +363,62 @@ describe('the plan reports which providers are reserved', () => {
 });
 
 /**
- * The rule goes with the last connection that justified it.
+ * The grant goes with the connection, because it *is* the connection.
  *
- * Not a tidiness feature. `assertReferentialIntegrity` refuses an allow rule
+ * The bug this replaced: `assertReferentialIntegrity` refused an allow rule
  * naming a provider with no connection, and `removeConnection` saves through
  * `validateConfig` — so disconnecting the last account of a provider failed, on
  * a policy line the operator had not touched, and removed nothing. Every
  * single-account provider was undisconnectable, which is most of them.
+ *
+ * That state is now unrepresentable. A grant names its connection (ADR-058), so
+ * "the rule that outlived its account" is not a thing a file can say, and the
+ * hunting `dropProviderRules` did — find every rule whose capability begins
+ * `gmail.`, decide whether each is now dangling — collapsed into removing one
+ * row.
  */
 describe('disconnecting the last connection of a provider', () => {
-  /** The policy line itself — the template's comments quote `allow: [` too. */
-  const POLICY = 'allow: [memory.*';
-
-  /** The fixture's profile, plus the `gmail.*` rule `connect` would have written. */
-  async function granted(): Promise<string> {
-    const root = await workspace();
-    const path = join(root, 'profiles', 'personal.yaml');
-    const text = await Bun.file(path).text();
-    await Bun.write(path, text.replace(POLICY, 'allow: [gmail.*, gmail.send_message, memory.*'));
-    return root;
-  }
-
   test('works at all, which is the whole of the bug', async () => {
-    // It did not. `save` validates, and the loader refuses an allow rule naming
-    // a provider with no connection — so removing the last Gmail failed on a
-    // policy line the operator had not touched, and removed nothing.
-    const root = await granted();
-
-    await removeConnection('gmail.main', { ...WHERE, yes: true });
-    await removeConnection('gmail.side', { ...WHERE, yes: true });
-
-    const config = await onDisk(root);
-    expect(keys(config).filter((key) => key.startsWith('gmail.'))).toEqual([]);
-    expect(config.policy.allow.map((rule) => rule.capability)).not.toContain('gmail.*');
-  });
-
-  test('leaves the rule while a sibling still needs it', async () => {
-    const root = await granted();
-    await removeConnection('gmail.side', { ...WHERE, yes: true });
-
-    expect((await onDisk(root)).policy.allow.map((rule) => rule.capability)).toContain('gmail.*');
-  });
-
-  test('never touches a blanket allow, which names no provider', async () => {
     const root = await workspace();
-    const path = join(root, 'profiles', 'personal.yaml');
-    await Bun.write(path, (await Bun.file(path).text()).replace(POLICY, "allow: ['*', memory.*"));
 
     await removeConnection('gmail.main', { ...WHERE, yes: true });
     await removeConnection('gmail.side', { ...WHERE, yes: true });
 
-    expect((await onDisk(root)).policy.allow.map((rule) => rule.capability)).toContain('*');
+    expect((await held(root)).filter((key) => key.startsWith('gmail.'))).toEqual([]);
+    expect(keys(await onDisk(root)).filter((key) => key.startsWith('gmail.'))).toEqual([]);
+  });
+
+  test('leaves the sibling grant while the sibling is still there', async () => {
+    const root = await workspace();
+    await removeConnection('gmail.side', { ...WHERE, yes: true });
+
+    expect(keys(await onDisk(root))).toContain('gmail.main');
+    expect(keys(await onDisk(root))).not.toContain('gmail.side');
+  });
+
+  test('reports which profiles lost a grant', async () => {
+    // A connection belongs to the workspace, so disconnecting one reaches every
+    // profile that named it — including profiles the operator was not thinking
+    // about. Naming them is the whole point of computing this before asking.
+    const root = await workspace();
+    const outcome = await removeConnection('gmail.side', { ...WHERE, yes: true });
+
+    expect(outcome!.disconnected.ungranted).toEqual(['personal']);
+    expect(await held(root)).not.toContain('gmail.side');
+  });
+
+  test('a connection nothing grants still disconnects, and says nobody lost it', async () => {
+    const root = await workspace();
+    const connections = join(root, CONNECTIONS_FILE);
+    const text = await Bun.file(connections).text();
+    await Bun.write(
+      connections,
+      text.replace('connections:', 'connections:\n  - { id: spare, provider: gmail, account: third@example.com }'),
+    );
+
+    const outcome = await removeConnection('gmail.spare', { ...WHERE, yes: true });
+
+    expect(outcome!.disconnected.ungranted).toEqual([]);
+    expect(await held(root)).not.toContain('gmail.spare');
   });
 });

@@ -1,8 +1,9 @@
+import type { ConnectionConfig } from '#profile';
 import { credentialResolver, ReauthRequired } from '#connectivity/auth/index.ts';
 import type { ResolvedCredential } from '#connectivity/auth/credential.ts';
 import { credentialRefFor } from '#registry';
 import { announce, emit, fail, ok, print, warn } from '../../output.ts';
-import { openRuntime, type GlobalFlags, type Runtime } from '../../runtime.ts';
+import { grantedConnections, openRuntime, type GlobalFlags, type Runtime } from '../../runtime.ts';
 
 /**
  * Whether each connection could still authenticate, asked rather than guessed.
@@ -146,13 +147,13 @@ export interface AuthFlags extends GlobalFlags {
  */
 export async function probeConnections(
   runtime: Runtime,
-  connections: readonly Runtime['config']['connections'][number][],
+  connections: readonly ConnectionConfig[],
   forSelection: (command: string) => string,
 ): Promise<ConnectionAuth[]> {
   const resolve = credentialResolver(runtime.registry, runtime.credentials);
 
   const probe = async (
-    connection: Runtime['config']['connections'][number],
+    connection: ConnectionConfig,
   ): Promise<ConnectionAuth> => {
     const key = `${connection.provider}.${connection.id}`;
     const manifest = runtime.manifestFor(connection.provider);
@@ -249,12 +250,12 @@ export async function auth(flags: AuthFlags): Promise<void> {
 
   try {
     const { profile, target } = runtime.resolution;
-    const forSelection = (command: string) => `${command} --profile ${profile} --target ${target}`;
+    const forSelection = (command: string) => `${command} --profile ${profile} --workspace ${target}`;
 
     const wanted = flags.connection;
     const connections = wanted
-      ? runtime.config.connections.filter((c) => `${c.provider}.${c.id}` === wanted)
-      : runtime.config.connections;
+      ? grantedConnections(runtime).filter((c) => `${c.provider}.${c.id}` === wanted)
+      : grantedConnections(runtime);
 
     if (wanted && connections.length === 0) {
       throw new Error(

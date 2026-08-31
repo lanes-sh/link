@@ -161,7 +161,8 @@ export async function resolveConnectionAddress(input: {
   readonly runtime: {
     readonly registry: ProviderRegistry;
     readonly credentials: SecretStore;
-    readonly config: { readonly connections: readonly ConnectionRow[] };
+    /** Every account the workspace holds, for the address a sibling already gave (ADR-057). */
+    readonly workspaceConnections: readonly ConnectionRow[];
     connectorFor(providerId: string, connectionId: string): AnyConnector | undefined;
   };
 }): Promise<ResolvedAddress> {
@@ -178,7 +179,7 @@ export async function resolveConnectionAddress(input: {
     // the id is not settled yet, and a second Nextcloud on a *different* host is
     // rarer than reconnecting the one there is. It is offered, not imposed —
     // pressing Enter accepts it and typing replaces it.
-    existing: previousAddress(runtime.config.connections, input.providerId, manifest),
+    existing: previousAddress(runtime.workspaceConnections, input.providerId, manifest),
     interactive: input.interactive,
     supplied: parseSet(input.set),
   });

@@ -1,4 +1,5 @@
 import {
+  readConnections,
   ConfigError,
   listProfiles,
   loadWorkspaceProfiles,
@@ -56,9 +57,9 @@ export async function servingProfiles(input: {
       `No profile lives in "${target}", so there is no set to deploy.\n` +
         '  A first deploy creates the target, and has to be told which profile\n' +
         '  it belongs to:\n' +
-        `    lanes link deploy --target ${target} --profile <name>\n\n` +
+        `    lanes link deploy --workspace ${target} --profile <name>\n\n` +
         `  If "${target}" was deployed before and the pointer to it was lost:\n` +
-        `    lanes link sync targets --target ${target} --discover`,
+        `    lanes link sync targets --workspace ${target} --discover`,
     );
   }
 
@@ -89,7 +90,7 @@ async function choosePrimary(
       "of them owns the endpoint's token. One token opens the endpoint and\n" +
       'reaches every profile behind it, so this cannot be picked for you.\n\n' +
       `  Name it once and it is remembered:\n` +
-      `    lanes link deploy --target ${target} --profile ${declaring[0]!}` +
+      `    lanes link deploy --workspace ${target} --profile ${declaring[0]!}` +
       declaring
         .slice(1)
         .map((name) => ` --profile ${name}`)
@@ -97,73 +98,3 @@ async function choosePrimary(
   );
 }
 
-/**
- * A credential reference two profiles would both write, in one store.
- *
- * References are flat — `gmail/main`, not `personal/gmail/main` — and a target
- * has one credential store, so two profiles deployed to the same project share
- * a namespace. `https://lanes.sh/docs/link/configuration` admits this in an aside about
- * removing a profile; deploying both at once is where it stops being an aside.
- *
- * The failure is silent and it is the bad kind: `personal`'s Gmail refresh
- * token is overwritten by `work`'s, both profiles go on listing their own
- * account in config, and the first symptom is one of them reading the other's
- * mailbox. Nothing downstream can catch it, because by then there is one
- * credential and it is valid.
- *
- * `profile/token` is deliberately not a collision. Every profile defaults to
- * that ref and the endpoint has exactly one token by design — sharing it is
- * what ADR-009 says happens, rather than an accident.
- */
-export interface Collision {
-  readonly ref: string;
-  readonly profiles: string[];
-}
-
-export async function collidingRefs(
-  workspaceRoot: string,
-  profiles: readonly string[],
-  workspace?: WorkspaceProfiles,
-): Promise<Collision[]> {
-  const loaded = (workspace ?? (await loadWorkspaceProfiles(workspaceRoot))).loaded.filter(
-    (entry) => profiles.includes(entry.profile),
-  );
-
-  const owners = new Map<string, string[]>();
-
-  for (const entry of loaded) {
-    const registry = await buildRegistryWithWorkspace(workspaceRoot, entry.profile);
-    const refs = new Set<string>();
-
-    for (const connection of entry.config.connections) {
-      const manifest = registry.manifest(connection.provider);
-      for (const ref of rotatableCredentialRefsFor(connection, manifest)) refs.add(ref);
-      if (connection.credential_ref) refs.add(connection.credential_ref);
-    }
-
-    for (const ref of refs) {
-      if (ref === entry.config.auth.token_ref) continue;
-      owners.set(ref, [...(owners.get(ref) ?? []), entry.profile]);
-    }
-  }
-
-  return [...owners.entries()]
-    .filter(([, names]) => names.length > 1)
-    .map(([ref, names]) => ({ ref, profiles: names.sort() }))
-    .sort((a, b) => a.ref.localeCompare(b.ref));
-}
-
-/** The refusal, as a block, so the wording is testable without a deploy. */
-export function collisionRefusal(found: readonly Collision[], target: string): string {
-  const rows = found.map((one) => `    ${one.ref}   ${one.profiles.join(', ')}`).join('\n');
-
-  return (
-    `${found.length} credential reference(s) would be written by more than one\n` +
-    `profile into the one credential store "${target}" has:\n\n${rows}\n\n` +
-    '  References are flat, so these are the same secret and the last deploy\n' +
-    '  wins — after which one profile is reading the other\'s account, and\n' +
-    '  both still name their own in config.\n\n' +
-    '  Give the connections different ids, or deploy the profiles to targets\n' +
-    '  in separate projects.'
-  );
-}

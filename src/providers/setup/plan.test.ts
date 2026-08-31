@@ -50,14 +50,14 @@ describe('planFor', () => {
     const plan = planFor(KEYED, context);
 
     expect(plan.needsId).toBe(true);
-    expect(plan.command).toBe('lanes link connect thing --profile personal --target local --id <name>');
+    expect(plan.command).toBe('lanes link connect thing --profile personal --workspace local --id <name>');
   });
 
   test('a named connection puts its id in the command instead of a placeholder', () => {
     const plan = planFor(KEYED, context, 'work');
 
     expect(plan.needsId).toBe(false);
-    expect(plan.command).toBe('lanes link connect thing --profile personal --target local --id work');
+    expect(plan.command).toBe('lanes link connect thing --profile personal --workspace local --id work');
     expect(plan.requires[0]?.ref).toBe('thing/work');
   });
 
@@ -131,7 +131,7 @@ describe('a provider whose client somebody else operates', () => {
     expect(plan.brokered).toBe(true);
     expect(plan.clientOperator).toBe('Someone');
     expect(plan.ownClientCommand).toBe(
-      'lanes link connect vendor_mail --profile personal --target local --own-client',
+      'lanes link connect vendor_mail --profile personal --workspace local --own-client',
     );
   });
 
@@ -175,7 +175,7 @@ describe('a provider whose client somebody else operates', () => {
 describe('the target in a command', () => {
   test('names the target beside the profile, always', () => {
     expect(planFor(KEYED, context, 'work').command).toBe(
-      'lanes link connect thing --profile personal --target local --id work',
+      'lanes link connect thing --profile personal --workspace local --id work',
     );
   });
 
@@ -183,7 +183,7 @@ describe('the target in a command', () => {
     const targeted = { ...context, target: 'local' };
 
     expect(planFor(KEYED, targeted).command).toBe(
-      'lanes link connect thing --profile personal --target local --id <name>',
+      'lanes link connect thing --profile personal --workspace local --id <name>',
     );
   });
 
@@ -192,13 +192,13 @@ describe('the target in a command', () => {
     // would send the reader to a different store than the line above it.
     const plan = planFor(BROWSER, { ...context, target: 'cloud' });
 
-    expect(plan.command).toContain('--target cloud');
+    expect(plan.command).toContain('--workspace cloud');
   });
 
   test('every shipped provider carries it', () => {
     for (const plan of planAll(PROVIDER_MANIFESTS, { ...context, target: 'cloud' })) {
-      expect(plan.command).toContain('--target cloud');
-      if (plan.ownClientCommand) expect(plan.ownClientCommand).toContain('--target cloud');
+      expect(plan.command).toContain('--workspace cloud');
+      if (plan.ownClientCommand) expect(plan.ownClientCommand).toContain('--workspace cloud');
     }
   });
 });
@@ -244,7 +244,7 @@ describe('a provider that offers a pasted token as well as a browser', () => {
 
   test('offers the token as a route --auth selects, naming what it asks for', () => {
     expect(plan.tokenCommand).toBe(
-      'lanes link connect vendor_chat --profile personal --target local --auth pasted_token',
+      'lanes link connect vendor_chat --profile personal --workspace local --auth pasted_token',
     );
     expect(plan.pastedCredential).toBe('User token');
   });

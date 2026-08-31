@@ -105,12 +105,12 @@ export const slack = defineProvider({
       'Open "OAuth & Permissions" and add the scopes you need under USER TOKEN SCOPES — not Bot Token Scopes; the MCP server reads the user token. The full set this provider asks for in the browser is listed in https://lanes.sh/docs/link/slack.',
       'Choose "Install to Workspace" and approve. A Slack admin may have to approve it for you.',
       'Copy the "User OAuth Token". It starts with xoxp- — not the bot token, which starts with xoxb- and will not work here.',
-      'The token does not expire unless you enable token rotation on the app. If you rotate or reinstall, run: lanes link connect slack --profile personal --target local --auth pasted_token --replace.',
+      'The token does not expire unless you enable token rotation on the app. If you rotate or reinstall, run: lanes link connect slack --profile personal --workspace local --auth pasted_token --replace.',
     ],
     troubleshooting:
       'Slack refused the token. The usual causes are a bot token (xoxb-) pasted where the user token (xoxp-) belongs, ' +
       'a scope missing from USER TOKEN SCOPES, or an app that was reinstalled since — reinstalling mints a new token. ' +
-      'Copy the User OAuth Token from https://api.slack.com/apps and re-run: lanes link connect slack --profile personal --target local --auth pasted_token --replace.',
+      'Copy the User OAuth Token from https://api.slack.com/apps and re-run: lanes link connect slack --profile personal --workspace local --auth pasted_token --replace.',
     prompts: [
       {
         key: 'token',

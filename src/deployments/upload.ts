@@ -1,6 +1,7 @@
 import {
   openTarget,
   DATA_DIR,
+  CONNECTIONS_FILE,
   WORKSPACE_FILE,
   layout,
   listProfiles,
@@ -55,13 +56,18 @@ export function deployedWorkspace(declared: TargetConfig): string | undefined {
  * forgets means an endpoint that will not boot, and a credential this includes
  * by accident means a credential in a bucket. Forgetting is loud.
  *
- * **Two areas inside `data/` are authored rather than accumulated**, since
- * ADR-030 moved skills and provider manifests into the profile that owns them.
- * They have to go up or a deployed instance loses both — the regression ADR-014
- * §2 fixed for skills, reintroduced by where they now live. So this reaches
- * into `data/` for exactly those two, by whole path segment and never by
- * prefix: `data/personal/skills.detour/` is not `skills.d`, and the difference
- * between matching it and not is a credential in a bucket.
+ * **Two areas inside `data/` are authored rather than accumulated.** Skills and
+ * provider manifests have to go up or a deployed instance loses both — the
+ * regression ADR-014 §2 fixed for skills. So this reaches into `data/` for
+ * exactly those two, by whole path segment and never by prefix:
+ * `data/skills.detour/` is not `skills.d`, and the difference between matching
+ * it and not is a credential in a bucket.
+ *
+ * Neither is filtered by the profile set any more. Both are keyed by connection
+ * now rather than by profile (ADR-057, ADR-059), and a connection can be
+ * granted by any profile in the workspace — so sending "only this profile's
+ * skills" is not a thing that can be computed, and withholding them would
+ * deploy an endpoint whose prompts are missing.
  */
 export function isWorkspaceConfig(key: string, profiles?: readonly string[]): boolean {
   // **Never the workspace file.** It was sent, and it is the one file that must
@@ -74,14 +80,19 @@ export function isWorkspaceConfig(key: string, profiles?: readonly string[]): bo
   // the upload is done.
   if (key === WORKSPACE_FILE) return false;
 
+  // **The connections file always goes up.** It is configuration, the endpoint
+  // cannot resolve a single grant without it, and unlike the registry above
+  // there is nothing machine-specific in it — a connection is a connection
+  // wherever the workspace is read from (ADR-057).
+  if (key === CONNECTIONS_FILE) return true;
+
+  if (isAuthoredArea(key)) return true;
+
   // A set rather than one name, because a deploy now sends every profile that
   // declares the target rather than the single one it was told. `undefined`
   // still means the whole workspace, and an *empty* set means nothing — which
   // is a distinction a bare string could not make.
   const wanted = profiles === undefined ? undefined : new Set(profiles);
-
-  const owner = authoredAreaOwner(key);
-  if (owner !== null) return wanted === undefined || wanted.has(owner);
 
   if (!key.startsWith('profiles/') || !key.endsWith('.yaml')) return false;
   const name = key.slice('profiles/'.length, -'.yaml'.length);
@@ -89,22 +100,25 @@ export function isWorkspaceConfig(key: string, profiles?: readonly string[]): bo
 }
 
 /**
- * The profile whose authored area holds `key`, or null for anything else.
+ * Whether `key` is inside one of the two authored areas.
  *
  * Composed back out of `layout` rather than compared against literals, so a
  * renamed directory moves both this and the store that reads it, or neither.
- * Requires a fourth segment: `data/personal/skills.d` names the directory, and
- * a directory is not a file to send.
+ *
+ * The segment counts differ because the layouts do, and both are the "a
+ * directory is not a file to send" rule: a manifest is `data/providers.d/<file>`
+ * and a skill is `data/skills.d/<connection>/<file>`, so requiring one more
+ * segment than the area itself has is what stops the bare directory key
+ * matching.
  */
-function authoredAreaOwner(key: string): string | null {
+function isAuthoredArea(key: string): boolean {
   const segments = key.split('/');
-  if (segments.length < 4 || segments[0] !== DATA_DIR) return null;
+  if (segments.length < 3 || segments[0] !== DATA_DIR) return false;
 
-  const owner = segments[1]!;
-  if (owner.length === 0) return null;
-
-  const area = `${DATA_DIR}/${owner}/${segments[2]}`;
-  return area === layout.skills(owner) || area === layout.providers(owner) ? owner : null;
+  const area = `${DATA_DIR}/${segments[1]}`;
+  if (area === layout.providers()) return segments.length >= 3;
+  if (area === layout.skillsRoot()) return segments.length >= 4;
+  return false;
 }
 
 /**

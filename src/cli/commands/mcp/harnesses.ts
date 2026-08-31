@@ -142,7 +142,7 @@ export const HARNESSES: readonly Harness[] = [
       // anywhere else: an unresolvable substitution yields the empty string, the
       // header becomes "Bearer ", and the only symptom is a 401 that reads as a
       // bad token rather than a command that refused.
-      `    export ${tokenEnv}="$(lanes link token show --raw --profile ${profile} --target ${target})"`,
+      `    export ${tokenEnv}="$(lanes link token show --raw --profile ${profile} --workspace ${target})"`,
       '',
       'Add that to your shell profile. This is the better half of the bargain: the token never',
       'reaches ~/.codex/config.toml, and a "lanes link token rotate" is picked up on next launch',

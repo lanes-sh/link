@@ -68,8 +68,8 @@ const target: TargetConfig = {
  * one that was broken — a provider's own store, which asks for no area at all.
  */
 const AREAS: Record<string, [string | undefined, string]> = {
-  'connection state': [layout.state(PROFILE), 'connections.v1/gmail.ada_lovelace'],
-  'the audit log': [layout.audit(PROFILE), '2026/08/13/1755075600000-abc.json'],
+  'connection state': [layout.state(), 'connections.v1/gmail.ada_lovelace'],
+  'the audit log': [layout.audit(), '2026/08/13/1755075600000-abc.json'],
   'a memory entry': [undefined, 'memory/main/note.md'],
   'an attachment': [undefined, 'gmail/ada_lovelace/attachments/x.pdf'],
   'a skill': [layout.skills(PROFILE), 'review-diff/SKILL.md'],
@@ -114,7 +114,7 @@ beforeAll(async () => {
 
     // And one listing, which is the call that has no object in it at all.
     captured.length = 0;
-    await storage(layout.state(PROFILE)).list('connections.v1/');
+    await storage(layout.state()).list('connections.v1/');
     LISTED = captured[0]!;
   } finally {
     globalThis.fetch = real;
@@ -131,7 +131,7 @@ const READS = {
   'the workspace file': 'lanes-link.yaml',
   // Inside `data/` since ADR-030, so the write condition has to carve it back
   // out rather than simply not mentioning it.
-  'a provider manifest': `${layout.providers(PROFILE)}/acme.yaml`,
+  'a provider manifest': `${layout.providers()}/acme.yaml`,
 };
 
 /** The CEL of the one conditioned binding whose title carries `name`. */

@@ -56,7 +56,7 @@ export async function recordDeployment(record: DeploymentRecord): Promise<void> 
   // there pointed the bucket at itself, and the revision that came up refused to
   // open its own target.
   await recordTarget(resolveWorkspaceRoot(), record.target, {
-    workspace: record.workspace,
+    at: record.workspace,
     ...stamp,
   });
 }

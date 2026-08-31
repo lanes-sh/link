@@ -3,19 +3,17 @@ import { parse as parseYaml } from 'yaml';
 import { ConfigError, parseConfig, validateConfig } from './load.ts';
 import { legacyTargetSchema } from './legacy.ts';
 import { DEPLOY_DEFAULTS, workspaceSchema } from './schema.ts';
+import { assertNoRenamedProviders } from './connections.ts';
 
 /** A minimal valid config; each test overrides the part it is about. */
 const VALID = `
-contract: 2
+contract: 3
 instance:
   profile: personal
-connections:
-  - id: a
-    provider: example
-    account: Scratch
-policy:
-  allow:
-    - "example.*"
+grants:
+  - connection: example.a
+    allow:
+      - "example.*"
 `;
 
 describe('a valid config', () => {
@@ -30,37 +28,37 @@ describe('a valid config', () => {
     expect(connectionKeys).toEqual(['example.a']);
   });
 
-  test('an absent policy block grants nothing', () => {
-    const { config } = parseConfig(VALID.replace(/policy:[\s\S]*$/, ''));
-    expect(config.policy.allow).toEqual([]);
-    expect(config.policy.deny).toEqual([]);
+  test('an absent grants block grants nothing', () => {
+    const { config } = parseConfig(VALID.replace(/grants:[\s\S]*$/, ''));
+    expect(config.grants).toEqual([]);
+    expect(config.members).toEqual([]);
   });
 });
 
 describe('contract major fails closed', () => {
   test('rejects a newer major outright', () => {
-    expect(() => parseConfig(VALID.replace('contract: 2', 'contract: 3'))).toThrow(
-      /contract 3 is newer than.*Upgrade lanes-link/s,
+    expect(() => parseConfig(VALID.replace('contract: 3', 'contract: 4'))).toThrow(
+      /contract 4 is newer than.*Upgrade lanes-link/s,
     );
   });
 
   test('rejects an older major outright', () => {
-    expect(() => parseConfig(VALID.replace('contract: 2', 'contract: 0'))).toThrow(/older than/);
+    expect(() => parseConfig(VALID.replace('contract: 3', 'contract: 0'))).toThrow(/older than/);
   });
 
   // Contract 1 is the shape this release replaced, and it is refused here rather
   // than read: `profile/legacy.ts` understands it and only the migration uses
   // that, so a profile still carrying `targets:` fails at the boundary with a
   // sentence naming the migration (ADR-052).
-  test('rejects contract 1, which the migration handles instead', () => {
-    expect(() => parseConfig(VALID.replace('contract: 2', 'contract: 1'))).toThrow(
-      /contract 1 is older than/,
+  test('rejects contract 2, which the migration handles instead', () => {
+    expect(() => parseConfig(VALID.replace('contract: 3', 'contract: 2'))).toThrow(
+      /contract 2 is older than/,
     );
   });
 
   test('rejects a missing or non-integer contract', () => {
-    expect(() => parseConfig(VALID.replace('contract: 2\n', ''))).toThrow(/"contract" is required/);
-    expect(() => parseConfig(VALID.replace('contract: 2', 'contract: "2"'))).toThrow(
+    expect(() => parseConfig(VALID.replace('contract: 3\n', ''))).toThrow(/"contract" is required/);
+    expect(() => parseConfig(VALID.replace('contract: 3', 'contract: "2"'))).toThrow(
       /must be an integer/,
     );
   });
@@ -68,7 +66,7 @@ describe('contract major fails closed', () => {
   test('the contract check runs before anything else', () => {
     // A config that is wrong in several ways must report the contract, because
     // under an unknown major we cannot claim to know what the rest means.
-    const broken = VALID.replace('contract: 2', 'contract: 99').replace(
+    const broken = VALID.replace('contract: 3', 'contract: 99').replace(
       'profile: personal',
       'profile: "not an identifier"',
     );
@@ -178,48 +176,88 @@ describe('referential integrity', () => {
   const rejects = (mutate: (yaml: string) => string, pattern: RegExp) =>
     expect(() => parseConfig(mutate(VALID))).toThrow(pattern);
 
-  test('an allow rule naming a provider with no connection fails rather than granting nothing', () => {
-    rejects((y) => y.replace('- "example.*"', '- "gmail.search"'), /has no connection/);
+  // Nothing here checks whether a granted connection *exists*. That question
+  // needs `connections.yaml`, which a single profile cannot see, so
+  // `assertGrantsResolve` answers it once both have been read (ADR-057). What
+  // is checkable from one profile alone is checked here, and only that.
+
+  test('a rule naming another provider is refused rather than matching nothing', () => {
+    // The sharpest of these. `allowedConnections` filters candidates to the
+    // capability's own provider before policy is consulted, so a rule like this
+    // matches nothing, ever, while reading exactly like a grant that works.
+    rejects(
+      (y) => y.replace('- "example.*"', '- "gmail.search"'),
+      /names provider "gmail", but this row grants "example\.a"/,
+    );
   });
 
-  test('a deny rule may name a provider you have not connected yet', () => {
-    // Denying something ahead of connecting it is a reasonable thing to write,
-    // and refusing it would punish the cautious ordering.
-    expect(() =>
-      parseConfig(`${VALID}  deny:\n    - "gmail.send_message"\n`),
-    ).not.toThrow();
-  });
-
-  test('a bare * needs no provider to exist', () => {
+  test('a bare * is allowed, because a row is already scoped to one connection', () => {
     expect(() => parseConfig(VALID.replace('- "example.*"', '- "*"'))).not.toThrow();
   });
 
-  test('duplicate connection ids within a provider fail', () => {
-    const yaml = VALID.replace(
-      '  - id: a\n    provider: example\n    account: Scratch',
-      '  - id: a\n    provider: example\n    account: Scratch\n  - id: a\n    provider: example\n    account: Dupe',
-    );
-    expect(() => parseConfig(yaml)).toThrow(/duplicate connection "example\.a"/);
+  test('two grants for one connection fail rather than one winning silently', () => {
+    const yaml = `${VALID}  - connection: example.a\n    allow:\n      - "example.echo"\n`;
+    expect(() => parseConfig(yaml)).toThrow(/duplicate grant for "example\.a"/);
   });
 
-  test('the same connection id under different providers is fine', () => {
+  test('two accounts of the same provider get their own rows', () => {
     const yaml = VALID.replace(
-      '  - id: a\n    provider: example\n    account: Scratch',
-      '  - id: main\n    provider: example\n    account: Scratch\n  - id: main\n    provider: gmail\n    account: Mail',
-    );
-    expect(() => parseConfig(yaml)).not.toThrow();
-  });
-
-  test('two accounts of the same provider coexist', () => {
-    // The shape that replaced main/main2: distinct ids, distinct accounts, one
-    // rule covering both.
-    const yaml = VALID.replace(
-      '  - id: a\n    provider: example\n    account: Scratch',
-      '  - id: work\n    provider: example\n    account: me@work.example\n  - id: home\n    provider: example\n    account: me@home.example',
+      '  - connection: example.a\n    allow:\n      - "example.*"',
+      '  - connection: example.work\n    allow:\n      - "example.*"\n' +
+        '  - connection: example.home\n    allow:\n      - "example.echo"',
     );
     const { config } = parseConfig(yaml);
-    expect(config.connections.map((c) => c.account)).toEqual(['me@work.example', 'me@home.example']);
-    expect(config.policy.allow).toEqual([{ capability: 'example.*' }]);
+
+    expect(config.grants.map((grant) => grant.connection)).toEqual([
+      'example.work',
+      'example.home',
+    ]);
+    expect(config.grants[1]?.allow).toEqual([{ capability: 'example.echo' }]);
+  });
+
+  test('a subject listed twice fails, because the second row decides nothing', () => {
+    const subject = 'lanes:3QBmAxJLLrYSMTVUIeCN1SKFbdD3';
+    const yaml = `${VALID}members:\n  - { subject: ${subject}, role: owner }\n  - { subject: ${subject}, role: member }\n`;
+    expect(() => parseConfig(yaml)).toThrow(/duplicate subject/);
+  });
+
+  test('a bare subject is refused before the schema even sees it', () => {
+    // Two defences, and the outer one fires first: a Lanes subject is a
+    // 28-character mixed-case alphanumeric string, which is exactly what
+    // `secret-detection.ts` refuses as a high-entropy blob. That is why the
+    // stored form carries a `lanes:` prefix — the colon takes it out of
+    // `OPAQUE_TOKEN`'s character class, so saying which provider vouched for a
+    // subject and being storable at all are the same decision.
+    const yaml = `${VALID}members:\n  - { subject: 3QBmAxJLLrYSMTVUIeCN1SKFbdD3, role: owner }\n`;
+    expect(() => parseConfig(yaml)).toThrow(/high-entropy string, which looks like a credential/);
+  });
+
+  test('and a prefixed one is accepted', () => {
+    const yaml = `${VALID}members:\n  - { subject: lanes:3QBmAxJLLrYSMTVUIeCN1SKFbdD3, role: owner }\n`;
+    expect(parseConfig(yaml).config.members[0]?.role).toBe('owner');
+  });
+
+  test('a subject that is neither is refused by the schema', () => {
+    const yaml = `${VALID}members:\n  - { subject: someone, role: owner }\n`;
+    expect(() => parseConfig(yaml)).toThrow(/lanes:<subject>/);
+  });
+
+  test('one skills grant is fine and two are refused', () => {
+    // Not a limit of the store — a limit of the surface. A skill is a prompt,
+    // selected by flat name with nothing to route on, so two instances would be
+    // one name for two procedures (ADR-059).
+    const one = VALID.replace('example.a', 'skills.main').replace('example.*', 'skills.*');
+    expect(() => parseConfig(one)).not.toThrow();
+
+    const two = `${one}  - connection: skills.work\n    allow:\n      - "skills.*"\n`;
+    expect(() => parseConfig(two)).toThrow(/may grant one "skills" connection/);
+  });
+
+  test('two memory grants are fine, because its tools route on a connection', () => {
+    const yaml =
+      VALID.replace('example.a', 'memory.main').replace('example.*', 'memory.*') +
+      '  - connection: memory.work\n    allow:\n      - "memory.*"\n';
+    expect(() => parseConfig(yaml)).not.toThrow();
   });
 
   test('a default_target naming nothing is harmless, because nothing reads it', () => {
@@ -227,12 +265,8 @@ describe('referential integrity', () => {
     // (ADR-037), so failing `check` on a stale value would teach that it still
     // matters — and every profile written before the change carries one.
     expect(() =>
-      parseConfig(VALID.replace('default_target: local', 'default_target: clod'), 'x.yaml'),
+      parseConfig(`${VALID}default_target: clod\n`, 'x.yaml'),
     ).not.toThrow();
-  });
-
-  test('and so is leaving it out entirely', () => {
-    expect(() => parseConfig(VALID.replace('  default_target: local\n', ''), 'x.yaml')).not.toThrow();
   });
 });
 
@@ -244,68 +278,40 @@ describe('referential integrity', () => {
  * loses their Google Tasks tools with nothing saying why.
  */
 describe('a provider whose id has been renamed', () => {
+  // Moved off the profile with the connections it inspects (ADR-057). The
+  // evidence is the row's *account* — "is this really Google Tasks?" — and an
+  // account lives in connections.yaml, so the check reads it there.
+  const repair = 'lanes link doctor --fix --profile personal --workspace <name>';
+
   const withTasks = (id: string, account: string) =>
-    VALID.replace(
-      '  - id: a\n    provider: example\n    account: Scratch',
-      `  - id: a\n    provider: example\n    account: Scratch\n  - id: ${id}\n    provider: tasks\n    account: ${account}`,
+    assertNoRenamedProviders(
+      [
+        { id: 'a', provider: 'example', account: 'Scratch' },
+        { id, provider: 'tasks', account },
+      ],
+      repair,
     );
 
   test('a tasks row wearing any other label is refused, and names google_tasks', () => {
-    expect(() => parseConfig(withTasks('ada', 'ada.lovelace@example.com'))).toThrow(
-      /set provider to google_tasks/,
-    );
+    expect(() => withTasks('ada', 'ada.lovelace@example.com')).toThrow(/google_tasks/);
   });
 
   test('a label that is not an address is caught too — the case a heuristic missed', () => {
-    // The first version of this check keyed on an `@`, reasoning that `connect`
-    // recorded the address that was typed. What `connect` asks an accountless
-    // provider for is a *label*, and the real profile this was written for holds
-    // `account: personal` — so the heuristic passed it and would have rebound
-    // Google Tasks to the built-in in silence.
-    expect(() => parseConfig(withTasks('personal', 'personal'))).toThrow(
-      /set provider to google_tasks/,
-    );
+    // The check is "does it keep the built-in's own label", not "does it look
+    // like an email". A row called "Work" is exactly as likely to be Google's.
+    expect(() => withTasks('work', 'Work')).toThrow(/google_tasks/);
   });
 
-  test("the built-in's own row is not mistaken for it", () => {
-    expect(() => parseConfig(withTasks('main', 'Tasks'))).not.toThrow();
-  });
-
-  test('a second task list is allowed, as long as it is labelled like the first', () => {
-    // Keying on `id !== "main"` would have refused this forever to catch a
-    // one-release migration. Every accountless provider labels its rows the same
-    // way — every memory connection is `Memory` — so this is the existing shape.
-    expect(() => parseConfig(withTasks('work', 'Tasks'))).not.toThrow();
+  test('the built-in keeps its own label and passes', () => {
+    expect(() => withTasks('main', 'Tasks')).not.toThrow();
   });
 
   test('the refusal offers the other fix too, for a hand-edited built-in row', () => {
-    expect(() => parseConfig(withTasks('work', 'Work'))).toThrow(/set account to Tasks/);
+    expect(() => withTasks('ada', 'ada.lovelace@example.com')).toThrow(/set account to Tasks/);
   });
 
   test('the refusal names the command that applies it, with the selection it needs', () => {
-    // The refusal is at *load*, so it takes every command down with it and the
-    // operator's only way back was to hand-edit YAML. Both flags come off the
-    // document rather than off whatever command tripped over it, because nothing
-    // has resolved anything at this point.
-    expect(() => parseConfig(withTasks('personal', 'personal'))).toThrow(
-      /lanes link doctor --fix --profile personal --target <target>/,
-    );
-  });
-
-  test('the target stays a placeholder, because the profile no longer names one', () => {
-    // It used to read the profile's own `targets:` block and name the target
-    // when there was exactly one. A profile declares none (ADR-052) — it lives
-    // in one — so the honest answer is the placeholder, and whoever is reading
-    // this refusal just typed which target they meant.
-    expect(() => parseConfig(withTasks('personal', 'personal'))).toThrow(/--target <target>/);
-  });
-
-  test('google_tasks itself is fine, which is the whole point', () => {
-    const yaml = VALID.replace(
-      '  - id: a\n    provider: example\n    account: Scratch',
-      '  - id: a\n    provider: example\n    account: Scratch\n  - id: ada\n    provider: google_tasks\n    account: ada.lovelace@example.com',
-    );
-    expect(() => parseConfig(yaml)).not.toThrow();
+    expect(() => withTasks('ada', 'ada.lovelace@example.com')).toThrow(/doctor --fix/);
   });
 });
 
@@ -321,7 +327,7 @@ describe('where a target deploys', () => {
   const withTarget = (block: string) =>
     workspaceSchema.parse(
       parseYaml(
-        'contract: 2\ntargets:\n  cloud:\n' +
+        'contract: 3\nworkspaces:\n  cloud:\n' +
           '    credentials: { adapter: gcp-secret-manager, project: my-project }\n' +
           '    storage: { adapter: s3, bucket: link-blobs }\n' +
           block,
@@ -334,7 +340,7 @@ describe('where a target deploys', () => {
         '      region: europe-west1\n      service: lanes-link\n',
     );
 
-    expect(workspace.targets['cloud']?.deploy).toEqual({
+    expect(workspace.workspaces['cloud']?.deploy).toEqual({
       platform: 'cloudrun',
       project: 'my-project',
       region: 'europe-west1',
@@ -386,7 +392,7 @@ describe('where a target deploys', () => {
       '    cloudrun:\n      project: my-project\n      region: europe-west1\n      service: lanes-link\n',
     );
 
-    expect(workspace.targets['cloud']?.deploy).toBeUndefined();
+    expect(workspace.workspaces['cloud']?.deploy).toBeUndefined();
   });
 
   test('an unknown platform is refused at load, not at deploy', () => {
@@ -444,7 +450,7 @@ describe('policy grammar', () => {
     const { config } = parseConfig(
       VALID.replace('- "example.*"', '- { capability: "example.*", expires_at: "2027-01-01T00:00:00Z" }'),
     );
-    expect(config.policy.allow[0]).toEqual({
+    expect(config.grants[0]?.allow[0]).toEqual({
       capability: 'example.*',
       expires_at: '2027-01-01T00:00:00Z',
     });
@@ -459,7 +465,7 @@ describe('malformed input', () => {
   });
 
   test('reports unparseable YAML as such', () => {
-    expect(() => parseConfig('contract: 2\n  bad: [indent')).toThrow(/could not parse YAML/);
+    expect(() => parseConfig('contract: 3\n  bad: [indent')).toThrow(/could not parse YAML/);
   });
 
   test('rejects an out-of-range port', () => {

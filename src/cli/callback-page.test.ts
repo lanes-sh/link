@@ -140,9 +140,9 @@ describe('approving', () => {
     // and a trailing period is a character that gets copied with it.
     const body = await html(page());
 
-    expect(body).toContain('<code>lanes link outputs --show --target local</code>');
+    expect(body).toContain('<code>lanes link outputs --show --workspace local</code>');
     expect(body).not.toContain('Printed by');
-    expect(body).not.toContain('--target local</code>.');
+    expect(body).not.toContain('--workspace local</code>.');
   });
 
   test('the button becomes busy, and stops accepting clicks', async () => {
@@ -256,14 +256,14 @@ describe('the approval page', () => {
     // will refuse or holds none and has one minted on the spot.
     const body = await html(approval('cloud'));
 
-    expect(body).toContain('lanes link outputs --show --target cloud');
+    expect(body).toContain('lanes link outputs --show --workspace cloud');
     expect(body).not.toContain('outputs --show</code>');
   });
 
   test('names it even when it is the default, so the flag is never ambiguous', async () => {
     const body = await html(approval('local'));
 
-    expect(body).toContain('lanes link outputs --show --target local');
+    expect(body).toContain('lanes link outputs --show --workspace local');
   });
 
   test('a target name cannot inject markup', async () => {

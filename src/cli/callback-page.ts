@@ -124,7 +124,7 @@ ${hidden}
 <input class="field" type="password" name="token" placeholder="Endpoint token" autocomplete="off" autofocus required>
 <button class="go" type="submit">Approve</button>
 </form>
-<p class="small"><code>lanes link outputs --show --target ${escapeHtml(page.target)}</code></p>`;
+<p class="small"><code>lanes link outputs --show --workspace ${escapeHtml(page.target)}</code></p>`;
 
   return shell(body, 'Authorise', page.retry ? 401 : 200, '', {
     script: SUBMIT_SPINNER,

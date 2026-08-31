@@ -3,7 +3,8 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseConfig } from '#profile';
+import {
+  CONNECTIONS_FILE, parseConfig } from '#profile';
 import { assetStorage, entityStorage, memoryStorage, taskStorage } from '#providers/owner.ts';
 import { openRuntime, ownerPrincipal } from '../runtime.ts';
 import { memoryStore, ownerConnection } from './owner.ts';
@@ -28,15 +29,27 @@ import { openCatalogue } from '#providers/entities/catalogue.ts';
 const roots: string[] = [];
 const previousHome = process.env['LANES_LINK_HOME'];
 
-const PROFILE = `contract: 2
+const PROFILE = `contract: 3
 
 instance:
   profile: personal
 
-# Labelled the way the CLI writes them: the provider's own name. A tasks row
-# under any other label is refused, because that is the only signal a config
-# carries that it used to be Google Tasks (ADR-051). The ids stay "owner",
-# since what these tests are about is that --connection resolves.
+# The ids stay "owner", since what these tests are about is that --connection
+# resolves — and a grant names the connection, so the id is visible here too.
+grants:
+  - { connection: memory.owner, allow: ['memory.*'], deny: [] }
+  - { connection: tasks.owner, allow: ['tasks.*'], deny: [] }
+  - { connection: assets.owner, allow: ['assets.*'], deny: [] }
+  - { connection: skills.owner, allow: ['skills.*'], deny: [] }
+  - { connection: vault.owner, allow: ['vault.*'], deny: [] }
+  - { connection: entities.owner, allow: ['entities.*'], deny: [] }
+members: []
+`;
+
+// Labelled the way the CLI writes them: the provider's own name. A tasks row
+// under any other label is refused, because that is the only signal a config
+// carries that it used to be Google Tasks (ADR-051).
+const CONNECTIONS = `contract: 3
 connections:
   - { id: owner, provider: memory, account: Memory }
   - { id: owner, provider: tasks,  account: Tasks }
@@ -44,9 +57,7 @@ connections:
   - { id: owner, provider: skills, account: Skills }
   - { id: owner, provider: vault,  account: Vault }
   - { id: owner, provider: entities, account: Entities }
-
-policy:
-  allow: ['*']
+oauth_apps: {}
 `;
 
 async function workspace(): Promise<string> {
@@ -56,6 +67,7 @@ async function workspace(): Promise<string> {
   await mkdir(join(root, 'profiles'), { recursive: true });
   await writeFile(join(root, 'lanes-link.yaml'), workspaceYaml(['local'], {defaultProfile: 'personal'}));
   await writeFile(join(root, 'profiles', 'personal.yaml'), PROFILE);
+  await writeFile(join(root, CONNECTIONS_FILE), CONNECTIONS);
 
   process.env['LANES_LINK_HOME'] = root;
   return root;
@@ -355,7 +367,7 @@ describe('which connection a command acts on', () => {
   });
 
   test('none at all says how to make one', () => {
-    const bare = parseConfig(PROFILE.replace(/connections:[\s\S]*?\npolicy:/, 'policy:')).config;
+    const bare = parseConfig(PROFILE.replace(/grants:[\s\S]*?\nmembers:/, 'grants: []\nmembers:')).config;
 
     expect(() => ownerConnection(bare, 'memory', {})).toThrow(/lanes link connect memory/);
   });
@@ -363,8 +375,9 @@ describe('which connection a command acts on', () => {
   test('two is ambiguous, and refuses rather than picking', () => {
     const two = parseConfig(
       PROFILE.replace(
-        '  - { id: owner, provider: memory, account: Memory }',
-        '  - { id: owner, provider: memory, account: Memory }\n  - { id: work, provider: memory, account: Memory }',
+        "  - { connection: memory.owner, allow: ['memory.*'], deny: [] }",
+        "  - { connection: memory.owner, allow: ['memory.*'], deny: [] }\n" +
+          "  - { connection: memory.work, allow: ['memory.*'], deny: [] }",
       ),
     ).config;
 

@@ -1,7 +1,7 @@
 import { createMcpConnector } from '#connectivity/transports';
 import { bearerTokenAsStored } from '#connectivity/auth/index.ts';
 import type { SecretStore } from '#secrets';
-import type { Config } from '#profile';
+import type { ConnectionConfig, Config } from '#profile';
 import type { AnyConnector, ProviderManifest } from '#connectivity';
 import { idFromAccount, resolveAccount } from '../../identity.ts';
 import { style } from '../../output.ts';
@@ -38,6 +38,8 @@ export async function settleIdentity(input: {
   label?: string | undefined;
   runtime: {
     config: Config;
+    /** Every account the workspace holds, for sibling matching (ADR-057). */
+    workspaceConnections: readonly ConnectionConfig[];
     credentials: SecretStore;
     registry: { manifest(id: string): ProviderManifest | undefined };
     connectorFor(providerId: string, connectionId: string): AnyConnector | undefined;
@@ -51,7 +53,7 @@ export async function settleIdentity(input: {
   // Siblings across the whole vendor account, not just this provider — so
   // connecting iCloud Calendar after iCloud Mail lands on the same id, and
   // therefore the same credential, rather than a second `will2`.
-  const siblings = accountSiblings(manifest, runtime.config, runtime.registry);
+  const siblings = accountSiblings(manifest, runtime.workspaceConnections, runtime.registry);
 
   let account = input.account ?? null;
 

@@ -64,7 +64,7 @@ async function locateRemote(
   }
 
   const entry = (await readRegistry(root))[target];
-  if (entry?.workspace) return { workspace: entry.workspace, how: 'already recorded' };
+  if (entry?.at) return { workspace: entry.at, how: 'already recorded' };
 
   if (flags.discover !== true) {
     throw new ConfigError(
@@ -72,7 +72,7 @@ async function locateRemote(
         '  No pointer to it in lanes-link.yaml, and nothing else records one.\n\n' +
         '  If you know the bucket:  lanes link sync targets --target ' +
         `${target} --from gs://<bucket>\n` +
-        `  If you do not:           lanes link sync targets --target ${target} --discover`,
+        `  If you do not:           lanes link sync targets --workspace ${target} --discover`,
     );
   }
 
@@ -99,7 +99,7 @@ async function locateRemote(
   if (candidates.length > 1 || !isInteractive()) {
     throw new ConfigError(
       `Found ${candidates.length} deployment(s). Name the one you mean:\n` +
-        `  lanes link sync targets --target ${target} --from ${first.workspace}`,
+        `  lanes link sync targets --workspace ${target} --from ${first.workspace}`,
     );
   }
 
@@ -132,7 +132,7 @@ export async function syncTargets(flags: SyncFlags): Promise<void> {
   const remoteRegistry = await readRegistry(workspace);
   const declaresIt = remoteRegistry[target] !== undefined;
   const existing = (await readRegistry(root))[target];
-  const already = existing?.workspace === workspace;
+  const already = existing?.at === workspace;
 
   const payload = { workspace: root, remote: workspace, target, how, declaresIt, applied: false };
 
@@ -163,7 +163,7 @@ export async function syncTargets(flags: SyncFlags): Promise<void> {
     }
 
     heading('Would write');
-    print(`  targets.${target}.workspace: ${workspace}`);
+    print(`  workspaces.${target}.at: ${workspace}`);
     print(style.dim('  The bucket keeps everything else; this records where it is.'));
   };
 
@@ -184,11 +184,11 @@ export async function syncTargets(flags: SyncFlags): Promise<void> {
   // deploy block, whose token opens it — is declared where it lives, and reading
   // it from there is what makes this safe to run on a workspace that has lost
   // its own copy of anything.
-  await recordTarget(root, target, { workspace });
+  await recordTarget(root, target, { at: workspace });
 
   print('');
   print(ok(`"${target}" now points at ${workspace}`));
-  print(style.dim(`  lanes link status --target ${target}   reads it from there`));
+  print(style.dim(`  lanes link status --workspace ${target}   reads it from there`));
 
   return emit(flags.json, { ...payload, applied: true }, () => {});
 }

@@ -22,7 +22,7 @@ and personal apart; they share no database and no credential store.
 **Ask which profile is meant when it is ambiguous. Do not default to whichever
 is listed first.** Quietly picking one crosses the line the profile exists to
 draw. There is no "current profile" to switch — the choice is made per call, and
-`lanes link profile list --target <name>` shows what exists *in that target*. A
+`lanes link profile list --workspace <name>` shows what exists *in that target*. A
 profile lives in exactly one, so `personal` on `local` and `personal` on `cloud`
 are two profiles that share a name rather than one profile in two places.
 
@@ -34,10 +34,10 @@ failure. Four levels:
 
 - **Neither.** `lanes link target list`, `lanes link mcp list`,
   `lanes link version`.
-- **`--target` alone.** `lanes link profile list`, `lanes link profile add`,
+- **`--workspace` alone.** `lanes link profile list`, `lanes link profile add`,
   `lanes link profile remove`, `lanes link target show`. A profile lives inside
   one target's workspace, so listing or creating one names which workspace.
-- **`--target`, with the profiles derived from it.** `lanes link status`,
+- **`--workspace`, with the profiles derived from it.** `lanes link status`,
   `lanes link deploy` and `lanes link sync targets` act on one endpoint serving
   every profile that declares that target. `--profile` is accepted and *narrows*
   the answer; it does not choose the subject.
@@ -90,7 +90,7 @@ try more than one wording before deciding it is not there.
 Writing is a separate grant, and it should be. What you write is served back to
 every later session, including to a different agent, so **write when you are
 asked to remember something, not as a habit.** The owner reaches the same
-entries with `lanes link memory list --profile <name> --target <name>` and a text editor.
+entries with `lanes link memory list --profile <name> --workspace <name>` and a text editor.
 
 ## Tasks have a status, so finish them rather than deleting them
 
@@ -116,7 +116,7 @@ being suggested again next week. Remove is for something recorded by mistake.
 Do not mute a task on your own initiative. It means "stop telling me about
 this", which is the owner's judgement, not yours.
 
-They manage these with `lanes link tasks list --profile <name> --target <name>`.
+They manage these with `lanes link tasks list --profile <name> --workspace <name>`.
 
 ## Assets are files kept by name
 
@@ -131,11 +131,11 @@ no form of a read that hands you a PDF, and a megabyte of base64 in the
 conversation would not help you if there were.
 
 To attach a stored file to something you are sending, ask the owner to run
-`lanes link attach <file> --profile <name> --target <name> --connection <provider>.<account>`,
+`lanes link attach <file> --profile <name> --workspace <name> --connection <provider>.<account>`,
 which prints a handle the send tools take. An asset's own store is not reachable
 from a mailbox's, deliberately.
 
-They manage these with `lanes link assets list --profile <name> --target <name>`.
+They manage these with `lanes link assets list --profile <name> --workspace <name>`.
 
 ## Skills are theirs, not yours
 
@@ -145,7 +145,7 @@ cannot read a skill's body; that is deliberate, not a gap to work around.
 
 So when a task has a skill for it, **say the skill exists and let them invoke
 it** rather than improvising your own version of their procedure. They manage
-these with `lanes link skills list --profile <name> --target <name>` and `lanes link skills show <skill> --profile <name> --target <name>`.
+these with `lanes link skills list --profile <name> --workspace <name>` and `lanes link skills show <skill> --profile <name> --workspace <name>`.
 
 ## Vault values are credentials
 
@@ -171,7 +171,7 @@ crossing is the specific mistake this exists to prevent.
 
 If the tool is not there, the profile has declared nothing. Ask rather than
 inventing something; they add one with `lanes link identity add <kind> <value> --profile <profile>
---target <target>` — both flags, because neither has a fallback.
+--workspace <target>` — both flags, because neither has a fallback.
 Nothing you can call writes here, deliberately.
 
 ## Who you are writing *to* is declared as well
@@ -228,7 +228,7 @@ its content.
 
 **If the endpoint is not on the same machine as the file**, `path` names the
 *server's* filesystem rather than theirs, and will not find it. Ask them to run
-`lanes link attach <file> --profile <name> --target <name> --connection <provider>.<account>`, which prints a
+`lanes link attach <file> --profile <name> --workspace <name> --connection <provider>.<account>`, which prints a
 handle to use instead.
 
 **`draft_only: true`** saves instead of sending, where they should see it before
@@ -248,9 +248,9 @@ granted, and retrying will not reveal it. A call that *is* refused was refused b
 policy on purpose.
 
 Report it plainly and let the owner decide whether to widen the grant —
-`lanes link policy list --profile <name> --target <name>` shows the rules, `lanes link policy allow <capability> --profile <name> --target <name>`
+`lanes link policy list --profile <name> --workspace <name>` shows the rules, `lanes link policy allow <capability> --connection <provider>.<id> --profile <name> --workspace <name>`
 changes them, and that is their call, not yours. **Do not look for another route
-to the same data.** Every call is audited either way; `lanes link audit tail --profile <name> --target <name>`
+to the same data.** Every call is audited either way; `lanes link audit tail --profile <name> --workspace <name>`
 shows what was attempted, refusals included.
 
 ## Setting something up
@@ -276,9 +276,9 @@ credential — those are `lanes link` in a terminal, deliberately. What you can 
 know exactly what to hand over, and say what it will ask for before they start.
 
 If you have a shell, you can run it yourself for anything that does *not* need a
-browser: `lanes link setup plan <provider> --profile <name> --target <name> --json` lists what to store,
-`lanes link secrets set <ref> --profile <name> --target <name>` takes the value on stdin, and
-`lanes link connect <provider> --profile <name> --target <name> --id <id> --non-interactive --json` finishes.
+browser: `lanes link setup plan <provider> --profile <name> --workspace <name> --json` lists what to store,
+`lanes link secrets set <ref> --profile <name> --workspace <name>` takes the value on stdin, and
+`lanes link connect <provider> --profile <name> --workspace <name> --id <id> --non-interactive --json` finishes.
 Anything with a browser sign-in belongs to whoever owns the account — give them
 the line.
 
@@ -325,9 +325,9 @@ key on — do not treat the absence of JSON as a failure. `status`, `doctor`,
 `config show`, `audit tail` and every `mcp` subcommand do not.
 
 **A profile is created and removed, never switched.** `lanes link profile add
-<name> --target <name>` writes a new one *into that target's workspace* — one
+<name> --workspace <name>` writes a new one *into that target's workspace* — one
 target, not a list, because a profile lives in exactly one.
-`lanes link profile remove <name> --target <name>` takes `--dry-run` and then
+`lanes link profile remove <name> --workspace <name>` takes `--dry-run` and then
 `--yes`, and removes the profile itself along with its stores: the file is in
 that workspace, so there is nowhere left for it to survive. Neither reads
 `--profile`; both name the profile positionally.
@@ -386,10 +386,10 @@ existed in two copies that could disagree, and there is one copy now.
 
 ## Registering it, and re-registering it
 
-`lanes link mcp add --profile <name> --target <name>` runs each harness's own registration command and installs
+`lanes link mcp add --profile <name> --workspace <name>` runs each harness's own registration command and installs
 this skill where that harness keeps them. With no argument it does every harness
 installed; name one (`claude`, `codex`) to be specific. Run it again after
-`lanes link token rotate --profile <name> --target <name>` — add `--force`, since Claude Code stores the token as
+`lanes link token rotate --profile <name> --workspace <name>` — add `--force`, since Claude Code stores the token as
 a value rather than a command.
 
 **Never paste the token.** There is a right way and a wrong way, and the
@@ -398,7 +398,7 @@ difference matters:
 ```bash
 # RIGHT — the token goes from the CLI to the harness. You never see it.
 claude mcp add --transport http lanes-link http://127.0.0.1:7337/mcp \
-  --header "Authorization: Bearer $(lanes link token show --raw --profile <name> --target <name>)"
+  --header "Authorization: Bearer $(lanes link token show --raw --profile <name> --workspace <name>)"
 
 # WRONG — the token is now in your context, and in the transcript, forever.
 lanes link token show --show          # then copying the value into the command
@@ -406,12 +406,12 @@ lanes link token show --show          # then copying the value into the command
 
 The token reaches every account of every profile the endpoint serves. Use the
 substitution form. If you have already printed one by accident, say so and offer
-`lanes link token rotate --profile <name> --target <name>`.
+`lanes link token rotate --profile <name> --workspace <name>`.
 
-Prefer `lanes link mcp add --profile <name> --target <name>` to writing the command yourself: it checks the
+Prefer `lanes link mcp add --profile <name> --workspace <name>` to writing the command yourself: it checks the
 endpoint is reachable, refuses to silently shadow an existing registration, and
 cannot mistype the token. For a harness it does not know, take the command from
-`lanes link outputs --profile <name> --target <name>` rather than writing it blind — that command checks whether
+`lanes link outputs --profile <name> --workspace <name>` rather than writing it blind — that command checks whether
 `lanes` resolves on this machine and prints a longer working form if it does
 not, where guessing gives you an empty substitution, a `Bearer ` header, and a
 401 that reads as a bad token.
@@ -420,7 +420,7 @@ If you register Codex, tell the user to export the token — Codex stores only t
 variable name, so nothing works until it is set:
 
 ```bash
-export LANES_LINK_TOKEN="$(lanes link token show --raw --profile <name> --target <name>)"
+export LANES_LINK_TOKEN="$(lanes link token show --raw --profile <name> --workspace <name>)"
 ```
 
 One registration covers every profile. Do not add one per profile; they share a
@@ -433,12 +433,12 @@ copy means the rules you are reading are not the ones that shipped.
 
 Claude Desktop cannot be handed a URL, so it spawns the endpoint over stdio
 instead. That one is named in the client's own config file rather than registered
-by a command, as `lanes link mcp stdio --profile <name> --target <name>`; both
+by a command, as `lanes link mcp stdio --profile <name> --workspace <name>`; both
 flags are required, and nothing may be written to stdout.
 
 ## When it is not running
 
-`lanes link start --profile <name> --target <name>` runs in the foreground and
+`lanes link start --profile <name> --workspace <name>` runs in the foreground and
 serves until stopped. Tell the
 user the command rather than backgrounding it silently on their behalf.
 Registration works while it is down — the harness simply cannot reach it yet,

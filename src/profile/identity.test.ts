@@ -14,14 +14,11 @@ import { parseConfig } from './load.ts';
  * directions: prose passes, and a credential pasted into a value does not.
  */
 
-const PROFILE = `contract: 2
+const PROFILE = `contract: 3
 instance:
   profile: personal
-connections:
-  - { id: main, provider: identity, account: Identity }
-policy:
-  allow: [identity.*]
-  deny: []
+grants: []
+members: []
 `;
 
 /** The profile above, with an `identity` block appended. */

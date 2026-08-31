@@ -50,7 +50,38 @@ export function parseArgv(argv: readonly string[]): Parsed {
     }
   }
 
-  return { command, flags };
+  return { command, flags: normaliseWorkspace(flags) };
+}
+
+/**
+ * `--target` is the old spelling of `--workspace`, accepted for one minor.
+ *
+ * A workspace *is* a target and has been since ADR-052; contract 3 finishes the
+ * rename (ADR-061). The alias exists because the word is in a year of notes and
+ * in the desktop app's hardcoded argument arrays, and cutting it in the same
+ * release would break the app for anyone who updates the CLI first.
+ *
+ * Normalised here rather than in `selection.ts` so exactly one table knows the
+ * new word. A command reading `flags['target']` after this would be reading a
+ * key that is never set, which is the kind of silent miss `assertKnownFlags`
+ * exists to prevent.
+ *
+ * Both spellings is a mistake rather than a preference, so it is refused: they
+ * could name different workspaces, and picking either would be a guess.
+ */
+export function normaliseWorkspace(flags: Flags): Flags {
+  const legacy = flags['target'];
+  if (legacy === undefined) return flags;
+
+  if (flags['workspace'] !== undefined && flags['workspace'] !== legacy) {
+    throw new Error(
+      `--target and --workspace name different things ("${String(legacy)}" and ` +
+        `"${String(flags['workspace'])}"). --target is the old spelling of --workspace; pass one.`,
+    );
+  }
+
+  const { target: _legacy, ...rest } = flags;
+  return { ...rest, workspace: legacy };
 }
 
 /**
@@ -91,11 +122,20 @@ export function all(argv: readonly string[], name: string): string[] {
   return values.flatMap((value) => value.split(',').map((part) => part.trim())).filter(Boolean);
 }
 
-/** The flags every command accepts. */
+/**
+ * The flags every command accepts.
+ *
+ * Read from `workspace`, which is what `parseArgv` normalises both spellings
+ * into. The field it lands on is still called `target` and that is deliberate
+ * rather than missed: `#profile` resolves a *target* — an adapter set, a
+ * credential store, a bucket — and renaming the internal identifier is a
+ * separate change from renaming the word an operator types (ADR-061). The
+ * boundary is here, in one function, rather than scattered.
+ */
 export function globalFlags(flags: Flags): GlobalFlags {
   return {
     profile: text(flags, 'profile'),
-    target: text(flags, 'target'),
+    target: text(flags, 'workspace'),
     quiet: flags['quiet'] === true,
   };
 }

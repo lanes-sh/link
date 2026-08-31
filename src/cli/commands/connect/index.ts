@@ -1,11 +1,15 @@
+import { CONNECTIONS_FILE } from '#profile';
 import { credentialRefForConnection, WRITE_BUNDLE } from '#connectivity';
 import { ConfigDocument } from '../../config-edit.ts';
 import { ensureOwnerLayer, repaired } from '../../config-repair.ts';
 import { emit, print } from '../../output.ts';
 import { nonInteractivePrompter, terminalPrompter, type Prompter } from '../../prompt.ts';
-import { openRuntime, type GlobalFlags } from '../../runtime.ts';
+import type { ConnectOptions } from './options.ts';
+
+export type { ConnectOptions } from './options.ts';
+import { grantedConnections, openRuntime, type GlobalFlags } from '../../runtime.ts';
 import { moveCredential, siblingAccountId } from './accounts.ts';
-import { grantProvider } from './grant.ts';
+import { grantConnection } from './grant.ts';
 import { acquireCredential } from './acquire.ts';
 import { declareConnection } from './declare.ts';
 import { resolveConnectionAddress, type ResolvedAddress } from './variables.ts';
@@ -26,79 +30,6 @@ import { runStrategySetup } from './strategy.ts';
 import { announceConnectTarget } from './target-note.ts';
 import { unknownProvider } from './unknown.ts';
 
-/**
- * `lanes link connect <provider>` — the one command that adds an account.
- *
- * The same command regardless of connectivity. A local provider declares a
- * connection and stops; an MCP provider authorises, asks the upstream server
- * what it exposes, and grants it. Core learns nothing about any vendor: the
- * manifest says how to reach them and what to ask the operator for.
- *
- * The five numbered steps below are the whole command, and each one that grew
- * past a paragraph moved out: `authorise.ts` gets the token, `setup.ts` asks the
- * operator for what the vendor's console produced, `settle.ts` works out whose
- * account it was, and `accounts.ts` knows which connections are siblings.
- */
-
-export interface ConnectOptions extends GlobalFlags {
-  readonly id?: string | undefined;
-  readonly displayName?: string | undefined;
-  /** `--set key=value`, repeatable: where this connection's service is. */
-  readonly set?: readonly string[] | string | undefined;
-  /**
-   * `--label`: what to call this connection, instead of being asked.
-   *
-   * Distinct from `--display-name`, which answers *whose account this is* for a
-   * provider that cannot report it. This one never touches the identity, so it
-   * is safe to pass anything a person would say out loud.
-   */
-  readonly label?: string | undefined;
-  /** Ask for the stored credential again — a key rotated, or a password revoked. */
-  readonly replace?: boolean | undefined;
-  /**
-   * Answer nothing from a terminal: resolve every declared value from the
-   * credential store, and refuse with instructions where one is missing.
-   */
-  readonly nonInteractive?: boolean | undefined;
-  /** The operator has already agreed to scopes broader than the provider needs. */
-  readonly acceptBroadScopes?: boolean | undefined;
-  /**
-   * Register an OAuth client of your own rather than using a hosted one.
-   *
-   * Sticky by consequence rather than by flag: it writes the `oauth_apps` entry,
-   * and a profile that declares one is never moved off it. So this is typed once
-   * and then forgotten, which is the right shape for a decision about a client
-   * that is shared by every connection of that vendor.
-   */
-  /**
-   * `--own-client`, the older spelling of one of the routes `--auth` now names.
-   *
-   * Kept because it is in scripts and in a year of documentation, and because
-   * it still says something true. It resolves to `--auth own_client`.
-   */
-  readonly ownClient?: boolean | undefined;
-  /**
-   * `--auth <method>`: which way in, for a provider that offers more than one.
-   *
-   * Unset means ask, where there is somebody to ask and something to ask
-   * about. It is not sticky the way `--own-client` is: `--own-client` writes an
-   * `oauth_apps` entry that every connection of the vendor then reads, whereas
-   * this decides one connection's credential and is recorded by that credential
-   * existing. Two accounts on the same profile may honestly differ.
-   */
-  readonly auth?: string | undefined;
-  /** Injected for tests. The broker is the only thing `connect` fetches. */
-  readonly fetch?: typeof globalThis.fetch | undefined;
-  readonly json?: boolean | undefined;
-}
-
-
-/**
- * The connection id used before the provider has said whose account this is.
- *
- * It is a placeholder rather than a name, and `setup.ts` reads it as one: a
- * credential filed under it belongs to a `connect` that did not finish.
- */
 const PROVISIONAL_ID = 'pending';
 
 export async function connect(target: string, options: ConnectOptions): Promise<void> {
@@ -171,7 +102,17 @@ export async function runConnect(
     }
 
     const manifest = entry.manifest;
-    const document = await ConfigDocument.open(runtime.resolution.workspaceRoot, runtime.resolution.profile);
+    // Two documents, because a connection and a grant live in two files
+    // (ADR-057). Both opened here, so a failure to open either happens before
+    // anything is written to the other.
+    const document = await ConfigDocument.open(
+      runtime.resolution.workspaceRoot,
+      runtime.resolution.profile,
+    );
+    const connectionsDocument = await ConfigDocument.openKey(
+      runtime.resolution.workspaceRoot,
+      CONNECTIONS_FILE,
+    );
     const changes: string[] = [];
 
     // 1. Authorise, if this provider needs it.
@@ -183,7 +124,7 @@ export async function runConnect(
     //    Unless a sibling already knows: when several providers of one vendor
     //    share a per-account credential, the second one should adopt the first's
     //    id rather than invent `pending` and ask for a password already held.
-    const adopted = siblingAccountId(manifest, runtime.config, registry);
+    const adopted = siblingAccountId(manifest, runtime.workspaceConnections, registry);
     const named = options.id ?? namedId;
     const provisionalId = named ?? adopted ?? PROVISIONAL_ID;
 
@@ -255,7 +196,7 @@ export async function runConnect(
       document,
       changes,
       providerId,
-      connections: runtime.config.connections,
+      connections: grantedConnections(runtime),
       target,
       profile,
       prompter,
@@ -313,8 +254,8 @@ export async function runConnect(
     // 4. Declare the connection, or update the one this account already has.
     changes.push(
       ...declareConnection({
-        document,
-        connections: runtime.config.connections,
+        document: connectionsDocument,
+        connections: runtime.workspaceConnections,
         providerId,
         connectionId,
         account,
@@ -324,8 +265,10 @@ export async function runConnect(
       }),
     );
 
-    // 5. Grant it — one rule per provider; `grant.ts` says why not per capability.
-    const granted = grantProvider(document, runtime.config.policy.allow, providerId);
+    // 5. Grant it — one row naming the connection, carrying its provider's
+    //    wildcard (ADR-058). The row *is* the grant, so neither half can be
+    //    written without the other.
+    const granted = grantConnection(document, runtime.config, `${providerId}.${connectionId}`);
 
     // 6. Repair the owner layer if this profile predates it.
     //
@@ -342,7 +285,7 @@ export async function runConnect(
     //    sentence in it is something a caller counting edits has to recognise
     //    and skip, and `granted` is the field that answers "what did this widen"
     //    — an audit reading it would have missed `setup.*` entirely.
-    const repair = ensureOwnerLayer(document);
+    const repair = ensureOwnerLayer(connectionsDocument, document);
     changes.push(...repair.changes);
     granted.push(...repair.granted);
 

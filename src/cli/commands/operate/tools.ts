@@ -50,7 +50,7 @@ export async function tools(flags: ToolsFlags): Promise<void> {
       {
         url,
         target: runtime.target,
-        // Both, because `--target cloud` reaching loopback is indistinguishable
+        // Both, because `--workspace cloud` reaching loopback is indistinguishable
         // from success without them.
         deployed: deployed !== null,
         answering: mine,
@@ -297,7 +297,7 @@ export function parse(text: string): Record<string, unknown> {
  * `capabilityIdForToolName` answers it exactly against a set of known ids, and
  * falls back to that first-underscore split when it recognises none — which is
  * reachable here, because the registry is the *invoking profile's* while the
- * endpoint may serve several, and under `--target cloud` may run an image this
+ * endpoint may serve several, and under `--workspace cloud` may run an image this
  * checkout does not have. So the fallback is detected rather than trusted: a
  * name that resolves to nothing known is grouped as unattributed, because a
  * guessed heading with a confident count is worse than an honest "these did not

@@ -48,17 +48,17 @@ ${style.bold('Everyday')}
   ${PROGRAM} status [--json]            connections, reachable capabilities, endpoint
 
 ${style.bold('Profiles')}
-  ${PROGRAM} profile add <name> --target <name> [--target <name>] [--json]
+  ${PROGRAM} profile add <name> --workspace <name> [--workspace <name>] [--json]
                                  a target per place it runs; local is derived, the
                                  rest are copied from a sibling profile
   ${PROGRAM} profile list [--json]
-  ${PROGRAM} profile remove <name> [--target t] [--dry-run] [--yes] [--json]
+  ${PROGRAM} profile remove <name> [--workspace <name>] [--dry-run] [--yes] [--json]
                                  the profile, its credentials, and its data
 
 ${style.bold('Targets')}
   ${PROGRAM} target list [--urls]      where this profile can run
   ${PROGRAM} target show <name>        one target's adapters, and the address it answers on
-  ${PROGRAM} sync targets --target t [--from gs://bucket] [--discover]
+  ${PROGRAM} sync targets --workspace <name> [--from gs://bucket] [--discover]
                                  [--prefer local|remote] [--dry-run]
                                  reconcile this workspace with the copy the
                                  deployment reads; recovers a target a profile
@@ -126,10 +126,10 @@ ${style.bold('Your own context')}
   ${PROGRAM} vault key generate         a fresh LANES_LINK_VAULT_KEY, printed once
 
 ${style.bold('Deploying')}
-  ${PROGRAM} deploy --target t [--dry-run]
+  ${PROGRAM} deploy --workspace <name> [--dry-run]
                                  set up, build, and roll one revision serving
                                  every profile that declares the target
-  ${PROGRAM} deploy --target t --profile a --profile b
+  ${PROGRAM} deploy --workspace <name> --profile a --profile b
                                  only these; the first owns the endpoint token
   ${PROGRAM} deploy --non-interactive   take the stored answers, never prompt
   ${PROGRAM} deploy --access iam|public who gets past the platform's own door
@@ -158,7 +158,7 @@ ${style.bold('Attachments')}
 
 ${style.bold('Naming what a command acts on')}
   --profile <name>               required by every command that reads or writes a profile
-  --target <name>                required by every command that opens a target's stores.
+  --workspace <name>                required by every command that opens a target's stores.
                                  There is no default and no environment variable: a
                                  command that names neither refuses and lists what exists.
 

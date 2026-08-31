@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { Generations, type OpenedWorkspace } from './generations.ts';
 import { defineProvider, type ProviderManifest } from '#connectivity';
 import { ASSERTION_GRANT, clearMintedTokens, resolveAssertionToken } from '#connectivity/auth/index.ts';
-import { EMPTY_POLICY } from '#policy';
+import { EMPTY_PROFILE_POLICY } from '#policy';
 import type { ProfileRuntime } from './mcp/index.ts';
 
 /**
@@ -27,9 +27,9 @@ const SILENT = { debug() {}, info() {}, warn() {}, error() {} };
  */
 function emptyRuntime(): ProfileRuntime {
   return {
-    config: { connections: [] },
+    config: { grants: [] },
     registry: { revision: 0, capabilities: () => [] },
-    policy: EMPTY_POLICY,
+    policy: EMPTY_PROFILE_POLICY,
   } as unknown as ProfileRuntime;
 }
 

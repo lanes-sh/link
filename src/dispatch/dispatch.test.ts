@@ -104,28 +104,25 @@ const testProvider = defineLocalProvider({
 });
 
 const CONFIG = parseConfig(`
-contract: 2
+contract: 3
 instance:
   profile: personal
 limits:
   requests_per_minute: 100
   upstream_calls_per_minute: 100
-connections:
-  - id: a
-    provider: example
-    account: A
-  - id: b
-    provider: example
-    account: B
-  - id: c
-    provider: example
-    account: C
-policy:
-  allow:
-    - "example.*"
-  deny:
-    - "example.purge"
+grants:
+  - { connection: example.a, allow: ['example.*'], deny: ['example.purge'] }
+  - { connection: example.b, allow: ['example.*'], deny: ['example.purge'] }
+  - { connection: example.c, allow: ['example.*'], deny: ['example.purge'] }
+members: []
 `).config;
+
+/** The workspace's accounts, which the dispatcher resolves against (ADR-057). */
+const CONNECTIONS = [
+  { id: 'a', provider: 'example', account: 'A' },
+  { id: 'b', provider: 'example', account: 'B' },
+  { id: 'c', provider: 'example', account: 'C' },
+];
 
 const PRINCIPAL = ownerPrincipal('personal');
 const silent = { debug() {}, info() {}, warn() {}, error() {} };
@@ -148,6 +145,8 @@ function harness(overrides: { limits?: { profile: number; connection: number } }
 
   const dispatcher = new Dispatcher({
     config,
+    connections: CONNECTIONS,
+    oauthApps: [],
     registry,
     connectorFor: (providerId): AnyConnector | undefined => {
       const entry = registry.get(providerId);

@@ -3,6 +3,7 @@ import { join, sep } from 'node:path';
 import { installRoot, resolveWorkspaceRoot } from '#profile';
 import { repairOwnerLayer } from '../config-repair.ts';
 import { migrateWorkspace, needsMigration } from '../workspace-migrate.ts';
+import { migrateToContract3, needsContract3 } from '../contract3.ts';
 import { emit, fail, ok, print, printErr, progress, style, warn } from '../output.ts';
 import { PACKAGE, release, type ReleaseState } from '../release.ts';
 import { version } from '../version.ts';
@@ -306,27 +307,64 @@ async function runInstall(argv: readonly string[], json: boolean): Promise<boole
  * about, in a sentence naming the fix, rather than a reason for the upgrade to
  * fail. `check` and `doctor` both refuse loudly on the next run.
  */
+/**
+ * Contract 2 to contract 3, reported the same way its predecessor is.
+ *
+ * Loud about what moved, because this one moves credentials. An operator whose
+ * fifteen accounts were merged into one store should see that happen rather than
+ * discover it from a directory listing.
+ */
+async function migrateContract3(root: string, say: (line: string) => void): Promise<void> {
+  if (!(await needsContract3(root))) return;
+
+  const migration = await migrateToContract3(root);
+  if (migration.alreadyCurrent) return;
+
+  say(
+    `migrated ${migration.profiles.length} profile(s) to contract 3 — connections belong to the ` +
+      'workspace now, and a profile grants them one by one',
+  );
+  for (const change of migration.changes) say(`  ${change}`);
+
+  if (migration.renames.length > 0) {
+    say('  Two profiles named different accounts with the same id, so one was renamed.');
+    say('  Check the grants in each profile before running an agent against them.');
+  }
+
+  say(`  The old per-profile credential stores are left in place; remove them once this works.`);
+}
+
 async function migrateLocal(root: string, say: (line: string) => void): Promise<void> {
   try {
-    if (!(await needsMigration(root))) return;
-
-    const migration = await migrateWorkspace(root);
-    if (migration.alreadyCurrent) return;
-
-    say(
-      `migrated ${migration.profiles.length} profile(s) to contract 2 — a target is declared by ` +
-        'the workspace now, not by each profile',
-    );
-    for (const change of migration.changes) say(`  ${change}`);
-
-    const pointers = migration.targets.filter((one) => one.kind === 'pointer');
-    for (const pointer of pointers) {
-      say(
-        `  "${pointer.name}" points at ${pointer.where} — run ` +
-          `lanes link deploy --target ${pointer.name} to migrate what is there`,
-      );
-    }
+    // Contract 1 first, then contract 2, in that order. A workspace that
+    // predates both walks through them rather than jumping, so each step's
+    // reasoning applies to the shape it was written for — and a contract-1
+    // workspace reaches contract 3 in one run rather than needing two.
+    await migrateLegacyTargets(root, say);
+    await migrateContract3(root, say);
   } catch (error) {
     say(`could not migrate this workspace: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
+
+/** Contract 1 to contract 2: targets move from the profile to the workspace. */
+async function migrateLegacyTargets(root: string, say: (line: string) => void): Promise<void> {
+  if (!(await needsMigration(root))) return;
+
+  const migration = await migrateWorkspace(root);
+  if (migration.alreadyCurrent) return;
+
+  say(
+    `migrated ${migration.profiles.length} profile(s) to contract 2 — a target is declared by ` +
+      'the workspace now, not by each profile',
+  );
+  for (const change of migration.changes) say(`  ${change}`);
+
+  for (const pointer of migration.targets.filter((one) => one.kind === 'pointer')) {
+    say(
+      `  "${pointer.name}" points at ${pointer.where} — run ` +
+        `lanes link deploy --workspace ${pointer.name} to migrate what is there`,
+    );
+  }
+}
+

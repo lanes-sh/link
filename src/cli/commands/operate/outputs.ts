@@ -151,12 +151,12 @@ export async function tokenInvocation(
   target: string,
 ): Promise<{ command: string; onPath: boolean }> {
   // Both, always, and from the *resolved* selection rather than the flags. A
-  // token is per-target, so `outputs --target cloud` printing a bare
+  // token is per-target, so `outputs --workspace cloud` printing a bare
   // `token show --raw` hands over the local one beside a deployed URL — a
   // credential that looks like an answer and fails as a wrong password. Naming
   // the profile as well makes the line pasteable into any shell rather than
   // only into one where the same default happens to resolve.
-  const selection = ` --profile ${profile} --target ${target}`;
+  const selection = ` --profile ${profile} --workspace ${target}`;
   const short = `lanes link token show --raw${selection}`;
   const argv = ['link', 'token', 'show', '--raw', '--profile', profile, '--target', target];
 

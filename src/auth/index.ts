@@ -28,11 +28,42 @@ import type { SecretRef, SecretStore } from '#secrets';
 export interface Principal {
   readonly id: string;
   readonly profile: string;
-  readonly kind: 'owner';
+  readonly kind: 'owner' | 'member' | 'machine';
+  /**
+   * Every profile this caller may reach, or `undefined` for "all of them".
+   *
+   * `undefined` is the machine token and the stdio pipe: neither is a person,
+   * both reach the whole workspace, and saying so explicitly is better than
+   * enumerating a list that would then need keeping in step. A `member` always
+   * carries a list, because the list *is* the delegation (ADR-060).
+   */
+  readonly profiles?: readonly string[] | undefined;
 }
 
 export function ownerPrincipal(profile: string): Principal {
   return { id: `${profile}:owner`, profile, kind: 'owner' };
+}
+
+/**
+ * A person, and the profiles whose `members:` name them.
+ *
+ * `profile` carries the one this call is acting within, which is what the audit
+ * log records and what policy is evaluated against. `profiles` is the whole set
+ * they may choose from, and `mayReach` is the check — kept here rather than in
+ * the dispatcher so discovery and enforcement cannot answer it differently,
+ * which is the same rule `allowedConnections` follows on the capability axis.
+ */
+export function memberPrincipal(
+  subject: string,
+  profile: string,
+  profiles: readonly string[],
+): Principal {
+  return { id: subject, profile, kind: 'member', profiles };
+}
+
+/** Whether this caller may act within the named profile. */
+export function mayReach(principal: Principal, profile: string): boolean {
+  return principal.profiles === undefined || principal.profiles.includes(profile);
 }
 
 export type AuthOutcome =

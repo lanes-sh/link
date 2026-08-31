@@ -3,9 +3,14 @@
 These decisions were made in `docs/detailed/init.md` and are transcribed here with their reasoning. They are
 not open questions; changing one means revisiting the reasoning, not re-litigating the choice.
 
-The exception is marked as one. **ADR-025 is proposed rather than accepted** — it is a question
-with the case already argued, filed here so the next person to ask does not start from nothing.
-Nothing in the codebase depends on it.
+The exceptions are marked as such. **ADR-025, ADR-062 and ADR-063 are proposed rather than
+accepted** — each is a question with the case already argued, filed here so the next person to ask
+does not start from nothing. Nothing in the codebase depends on any of them yet.
+
+The two new ones are the second half of 0.8.0 and are recorded now because the first half was
+shaped around them: `members:`, `Principal.profiles` and `lanes auth` all exist so that ADR-062 has
+somewhere to land. Reading them as shipped would be wrong — the endpoint still asks for a pasted
+token, and there is no read listener.
 
 | | Decision |
 |---|---|
@@ -64,6 +69,13 @@ Nothing in the codebase depends on it.
 | [054](054-the-surface-in-front-of-the-gate.md) | The surface in front of the gate is metered, and does not name itself |
 | [055](055-a-connection-may-say-where-its-service-is.md) | A connection may say where its service is, so a self-hosted or multi-tenant host can be a built-in |
 | [056](056-everyone-else-is-declared-too.md) | Everyone else is declared too, and a lookup answers with all of them |
+| [057](057-a-connection-belongs-to-the-workspace.md) | A connection belongs to the workspace, and a profile selects it |
+| [058](058-a-grant-names-a-connection.md) | A grant names a connection, so scopes differ per account |
+| [059](059-the-owner-layer-is-instances.md) | The owner layer is instances, and two profiles may share one |
+| [060](060-a-caller-is-a-person.md) | A caller is a person, and a profile declares who may consume it |
+| [061](061-a-workspace-is-the-only-word.md) | A workspace is the only word, and a default may be sticky where nothing is destroyed |
+| [062](062-the-consent-page-asks-lanes-who-you-are.md) | *(proposed)* The consent page asks Lanes who you are, and the pasted token is for CI |
+| [063](063-one-origin-may-read-a-loopback-endpoint.md) | *(proposed)* One origin may read a loopback endpoint, over a certificate it installs |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 
@@ -161,6 +173,50 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
   Google Tasks to `google_tasks`, which the reserved-id check forces, and the redaction keys that
   had to lengthen with it. Both are recorded there because a redaction key that misses withholds
   every argument and reads exactly like working redaction, which is not a thing to rediscover.
+
+- **ADR-057 and ADR-058 are one change in two halves**, and reading either alone misleads. The
+  first moves a connection out of the profile and into the workspace; the second moves the
+  granularity that move destroys back into the rule. Taken together they retire ADR-003's central
+  trade — "a narrower grant is a narrower profile" — which was sound only while a second profile
+  was the only way to hold a second set of rules over one account.
+
+  What survives is every invariant anyone relies on: default deny, deny-wins, tighten-only, and
+  one implementation shared by discovery and enforcement. What is given up is stated in ADR-057
+  under its own heading, and the load-bearing sentence is that a workspace is now the only
+  isolation boundary — `rm -r data/work` stopped being the whole answer to "what could work
+  reach", and `profile remove` prints what outlives it because of that.
+
+- **ADR-059** is what keeps ADR-030 true after ADR-057 moved everything else out of the profile.
+  Read the two together or the second reads as a retreat. ADR-030 argued that a procedure is as
+  private as the knowledge it operates on, and that argument is untouched — what changes is that
+  privacy is now expressed by which instance a profile is granted rather than by a file path the
+  owner had no say in. The sentence to carry away is that ADR-009's "profiles share nothing"
+  becomes a default rather than a guarantee, and the shipped default shares.
+
+- **ADR-060 fills the slot ADR-003 kept empty on purpose.** That decision passed one principal
+  everywhere and said, in as many words, that carrying it explicitly was what would make delegated
+  access additive rather than a rewrite. This is the addition, and the seam held — it is new rows
+  and one check ahead of policy, not a new signature on the dispatch path.
+
+  It also closes most of what ADR-009 admitted was open. Not all: `kind: 'machine'` still reaches
+  every profile behind one string, because a headless runner has no browser. The gap moved from
+  every registration to one credential, which is a narrowing rather than a fix, and ADR-009 stays
+  the place it is described.
+
+- **ADR-061 finishes ADR-052 and reopens a piece of ADR-037.** The first half is bookkeeping: that
+  decision made a workspace *be* a target and left two words for it. The second half is not, and
+  should be read as the trade it is. ADR-037's objection was to "the dotfile nothing prints", and
+  the answer here is a default that prints itself on every command and is refused outright by every
+  command that publishes or destroys. If the echo is ever dropped for tidiness, the decision has
+  been reversed.
+
+- **ADR-062 and ADR-063 both take something back from a decision that was right when it was made.**
+  ADR-062 replaces the consent form's pasted token, which ADR-018 shipped and ADR-039 named as the
+  most valuable thing on a loopback bind — so the endpoint gets safer and gains a dependency in the
+  same change. ADR-063 grants one browser origin a read of a loopback endpoint, which ADR-039
+  refuses in a paragraph written to be read by whoever tried this. It is closed on a separate
+  listener, with a separate credential, on a surface with no mutation, rather than by relaxing the
+  rule.
 
 - **ADR-056** follows from ADR-042 and amends ADR-041. The first is the interesting relationship:
   it applies identity's argument to everybody who is not the owner, and then diverges from it

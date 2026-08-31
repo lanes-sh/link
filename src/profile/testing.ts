@@ -58,7 +58,7 @@ export function workspaceYaml(
   return (
     `contract: ${SUPPORTED_CONTRACT}\n` +
     (options.defaultProfile ? `default_profile: ${options.defaultProfile}\n` : '') +
-    `targets:\n${blocks}\n`
+    `workspaces:\n${blocks}\n`
   );
 }
 
@@ -73,6 +73,73 @@ export function pointerYaml(
   return (
     `contract: ${SUPPORTED_CONTRACT}\n` +
     (options.defaultProfile ? `default_profile: ${options.defaultProfile}\n` : '') +
-    `targets:\n${local}  ${target}:\n    workspace: ${workspace}\n`
+    `workspaces:\n${local}  ${target}:\n    at: ${workspace}\n`
+  );
+}
+
+/**
+ * A `connections.yaml` holding the owner layer plus whatever a test names.
+ *
+ * Every fixture that opens a runtime needs one now: a profile's grants name rows
+ * in this file, and `assertGrantsResolve` refuses a grant with nothing behind it
+ * (ADR-057). Thirty tests writing the seven owner-layer rows by hand is how a
+ * fixture ends up subtly different from what `newConnectionsTemplate` writes.
+ */
+export function connectionsYaml(
+  extra: readonly { id: string; provider: string; account: string }[] = [],
+): string {
+  const owner = [
+    { id: 'main', provider: 'memory', account: 'Memory' },
+    { id: 'main', provider: 'tasks', account: 'Tasks' },
+    { id: 'main', provider: 'assets', account: 'Assets' },
+    { id: 'main', provider: 'skills', account: 'Skills' },
+    { id: 'main', provider: 'vault', account: 'Vault' },
+    { id: 'main', provider: 'setup', account: 'Setup' },
+    { id: 'main', provider: 'entities', account: 'Entities' },
+  ];
+
+  const rows = [...owner, ...extra]
+    .map((row) => `  - { id: ${row.id}, provider: ${row.provider}, account: ${row.account} }`)
+    .join('\n');
+
+  return `contract: ${SUPPORTED_CONTRACT}\nconnections:\n${rows}\noauth_apps: {}\n`;
+}
+
+/** The owner-layer grant rows a fresh profile carries, plus whatever a test names. */
+export function grantsYaml(
+  extra: readonly { connection: string; allow?: readonly string[]; deny?: readonly string[] }[] = [],
+): string {
+  const owner = ['memory', 'tasks', 'assets', 'skills', 'vault', 'setup', 'entities'].map(
+    (provider) => ({ connection: `${provider}.main`, allow: [`${provider}.*`], deny: [] }),
+  );
+
+  return [...owner, ...extra]
+    .map(
+      (grant) =>
+        `  - { connection: ${grant.connection}, allow: [${(grant.allow ?? []).join(', ')}], ` +
+        `deny: [${(grant.deny ?? []).join(', ')}] }`,
+    )
+    .join('\n');
+}
+
+/** A whole profile document at the current contract, for a test that needs one. */
+export function profileYaml(
+  profile: string,
+  options: {
+    port?: number;
+    grants?: readonly { connection: string; allow?: readonly string[]; deny?: readonly string[] }[];
+    members?: readonly string[];
+  } = {},
+): string {
+  const members = (options.members ?? [])
+    .map((subject) => `  - { subject: ${subject}, role: owner }`)
+    .join('\n');
+
+  return (
+    `contract: ${SUPPORTED_CONTRACT}\n` +
+    `instance:\n  profile: ${profile}\n  port: ${options.port ?? 7337}\n  host: 127.0.0.1\n` +
+    `auth:\n  mode: bearer\n  token_ref: profile/token\n` +
+    `grants:\n${grantsYaml(options.grants ?? [])}\n` +
+    `members:${members ? `\n${members}` : ' []'}\n`
   );
 }

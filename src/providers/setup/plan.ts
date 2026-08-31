@@ -137,7 +137,7 @@ export function planFor(
   // missing either is one that refuses, or worse, writes a credential into a
   // store the endpoint that asked for it does not read.
   const command =
-    `lanes link connect ${manifest.id} --profile ${context.profile} --target ${context.target}` +
+    `lanes link connect ${manifest.id} --profile ${context.profile} --workspace ${context.target}` +
     (needsId ? ' --id <name>' : connectionId ? ` --id ${connectionId}` : '');
 
   return {

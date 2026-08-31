@@ -1,5 +1,6 @@
 import { credentialRefFor, ownClientRefsFor, rotatableCredentialRefsFor } from '#registry';
-import { listProfiles, loadProfileConfig, type Config, type TargetConfig } from '#profile';
+import {
+  readConnections, listProfiles, loadProfileConfig, type Config, type TargetConfig } from '#profile';
 import { VAULT_DOCUMENT_REF, VAULT_KEY_REF, generateVaultKey, type SecretStore } from '#secrets';
 import { ok, print, style, warn } from '#cli/output.ts';
 import { buildRegistryWithWorkspace, ensureProfileToken } from '#cli/runtime.ts';
@@ -80,16 +81,22 @@ export async function rotatableRefs(
       continue;
     }
 
-    // Inside the loop because manifests are the profile's own (ADR-030): a
-    // connection in `work` naming a provider only `work` declares resolves to
-    // nothing against `personal`'s registry, and a missed ref here is a 403 an
-    // hour after the revision reports healthy.
-    const registry = await buildRegistryWithWorkspace(root, name);
+    void config;
+  }
 
-    for (const connection of config.connections) {
-      const manifest = registry.manifest(connection.provider);
-      for (const ref of rotatableCredentialRefsFor(connection, manifest)) refs.add(ref);
-    }
+  // Once, outside the profile loop. Connections and the manifests that describe
+  // them belong to the workspace (ADR-057), so the per-profile registry ADR-030
+  // required is gone — and with it the failure it guarded against, where a
+  // connection in `work` resolved to nothing against `personal`'s registry and
+  // the missed ref became a 403 an hour after the revision reported healthy.
+  //
+  // Every connection, not just granted ones: a credential a revision cannot read
+  // is a broken account, and whether some profile currently grants it is a
+  // question that changes without redeploying.
+  const registry = await buildRegistryWithWorkspace(root);
+  for (const connection of (await readConnections(root)).connections) {
+    const manifest = registry.manifest(connection.provider);
+    for (const ref of rotatableCredentialRefsFor(connection, manifest)) refs.add(ref);
   }
 
   // Sorted, and a set: two Gmail connections share one dynamically registered
@@ -158,17 +165,18 @@ export async function readableRefs(
       refs.add(config.auth.authorization.client_id_ref);
     }
 
-    // Per profile, for the reason `rotatableRefs` gives: a manifest is this
-    // profile's, so the registry that resolves its connections must be too.
-    const registry = await buildRegistryWithWorkspace(root, name);
+  }
 
-    for (const connection of config.connections) {
-      const manifest = registry.manifest(connection.provider);
-      const ref = credentialRefFor(connection, manifest);
-      if (ref) refs.add(ref);
-      for (const rotatable of rotatableCredentialRefsFor(connection, manifest)) refs.add(rotatable);
-      for (const client of ownClientRefsFor(manifest, config.oauth_apps)) refs.add(client);
-    }
+  // Once, for the reason `rotatableRefs` gives.
+  const connectionsFile = await readConnections(root);
+  const registry = await buildRegistryWithWorkspace(root);
+
+  for (const connection of connectionsFile.connections) {
+    const manifest = registry.manifest(connection.provider);
+    const ref = credentialRefFor(connection, manifest);
+    if (ref) refs.add(ref);
+    for (const rotatable of rotatableCredentialRefsFor(connection, manifest)) refs.add(rotatable);
+    for (const client of ownClientRefsFor(manifest, connectionsFile.oauth_apps)) refs.add(client);
   }
 
   return [...refs].sort();
@@ -190,13 +198,13 @@ export async function prepareSecrets(input: PrepareInput): Promise<PrepareResult
   // The command is spelled out rather than described. This is the one manual
   // step a deploy genuinely cannot take for you, so it should cost a paste
   // rather than a trip to the docs to work out how the id is spelled.
-  const registry = await buildRegistryWithWorkspace(root, config.instance.profile);
-  for (const connection of config.connections) {
+  const registry = await buildRegistryWithWorkspace(root);
+  for (const connection of (await readConnections(root)).connections) {
     const ref = credentialRefFor(connection, registry.manifest(connection.provider));
     if (!ref || (await credentials.has(ref))) continue;
     warnings.push(
       `${connection.provider}.${connection.id} is not authorised yet — no credential at "${ref}"\n` +
-        `    lanes link connect ${connection.provider} --profile ${input.config.instance.profile} --target ${target} --id ${connection.id}`,
+        `    lanes link connect ${connection.provider} --profile ${input.config.instance.profile} --workspace ${target} --id ${connection.id}`,
     );
   }
 

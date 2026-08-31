@@ -1,6 +1,10 @@
 import { connect } from './commands/connect/index.ts';
 import { connectCustom } from './commands/connect/custom/index.ts';
-import { disconnect, relabel } from './commands/connection.ts';
+import { disconnect } from './commands/connection.ts';
+import { grantConnectionTo, revokeConnectionFrom } from './commands/grant.ts';
+import { connectionList } from './commands/connection-list.ts';
+import { membersAdd, membersList, membersRemove } from './commands/members.ts';
+import { relabel } from './commands/relabel.ts';
 import {
   attachFile,
   auditTail,
@@ -32,7 +36,17 @@ import { secretsList, secretsPush, secretsSet } from './commands/secrets.ts';
 import { knowledgeShow, knowledgeUse } from './commands/knowledge.ts';
 import { dispatchOwner } from './dispatch-owner.ts';
 import { update } from './commands/update.ts';
-import { all, customFlags, globalFlags, knowledgeFlags, ownerFlags, parseArgv, text } from './argv.ts';
+import {
+  all,
+  customFlags,
+  globalFlags,
+  knowledgeFlags,
+  ownerFlags,
+  parseArgv,
+  text,
+} from './argv.ts';
+import type { GlobalFlags } from './runtime.ts';
+import type { OwnerFlags } from './commands/owner/shared.ts';
 import { assertKnownFlags } from './selection.ts';
 import { requireSelection } from './selection-require.ts';
 import { PROGRAM, USAGE } from './usage.ts';
@@ -57,8 +71,12 @@ export async function run(argv: readonly string[]): Promise<void> {
   const { command, flags } = parseArgv(argv);
   const [first, second, ...rest] = command;
 
-  const global = globalFlags(flags);
-  const owner = ownerFlags(flags, argv);
+  // Both are read *after* `requireSelection`, which is what resolves
+  // `default_workspace` onto `flags` (ADR-061). Capturing them before it would
+  // hand every command an undefined workspace on the path the default exists to
+  // serve — the flag would be resolved and nothing would be looking.
+  let global: GlobalFlags;
+  let owner: OwnerFlags;
 
   const show = flags['show'] === true;
   const raw = flags['raw'] === true;
@@ -76,6 +94,9 @@ export async function run(argv: readonly string[]): Promise<void> {
   // leaves room for.
   assertKnownFlags(first, second, flags);
   await requireSelection(first, second, flags);
+
+  global = globalFlags(flags);
+  owner = ownerFlags(flags, argv);
 
   switch (first) {
     case 'connect':
@@ -117,6 +138,20 @@ export async function run(argv: readonly string[]): Promise<void> {
           });
       }
 
+    // The command connecting no longer implies. A connection belongs to the
+    // workspace (ADR-057), so which profiles may reach it is a separate say.
+    case 'connection':
+      if (second !== 'list' && second !== undefined) {
+        throw new Error(`Unknown: ${PROGRAM} connection ${second}`);
+      }
+      return connectionList({ ...global, json });
+
+    case 'grant':
+      return grantConnectionTo(second, { ...global, json });
+
+    case 'revoke':
+      return revokeConnectionFrom(second, { ...global, json });
+
     case 'setup':
       if (second !== 'plan' && second !== undefined) {
         throw new Error(`Unknown: ${PROGRAM} setup ${second}`);
@@ -127,27 +162,46 @@ export async function run(argv: readonly string[]): Promise<void> {
       switch (second) {
         case 'add':
           if (!rest[0]) {
-            throw new Error(`Usage: ${PROGRAM} profile add <name> --target <name>`);
+            throw new Error(`Usage: ${PROGRAM} profile add <name> --workspace <name>`);
           }
           return profileAdd(rest[0], {
             // One target, not a list. A profile declared every target it could
             // run on under contract 1, which is why this read the repeated flag
             // out of argv; it lives in exactly one now (ADR-052), so a second
             // --target would be naming a second place to put the same file.
-            targets: [text(flags, 'target')!],
+            targets: [text(flags, 'workspace')!],
             nonInteractive: flags['non-interactive'] === true,
             json,
           });
         case 'list':
         case undefined:
-          return profileList(text(flags, 'target')!, { json });
+          return profileList(text(flags, 'workspace')!, { json });
         case 'default':
           if (!rest[0]) throw new Error(`Usage: ${PROGRAM} profile default <name>`);
           return profileDefault(rest[0]);
+        case 'members': {
+          const [action, subject] = rest;
+          switch (action) {
+            case 'add':
+              return membersAdd(subject, {
+                ...global,
+                json,
+                me: flags['me'] === true,
+                role: text(flags, 'role'),
+              });
+            case 'remove':
+              return membersRemove(subject, { ...global, json });
+            case 'list':
+            case undefined:
+              return membersList({ ...global, json });
+            default:
+              throw new Error(`Unknown: ${PROGRAM} profile members ${action}`);
+          }
+        }
         case 'remove':
           if (!rest[0]) {
             throw new Error(
-              `Usage: ${PROGRAM} profile remove <name> [--target t] [--dry-run] [--yes]`,
+              `Usage: ${PROGRAM} profile remove <name> [--workspace <name>] [--dry-run] [--yes]`,
             );
           }
           return profileRemove(rest[0], {
@@ -160,18 +214,22 @@ export async function run(argv: readonly string[]): Promise<void> {
           throw new Error(`Unknown: ${PROGRAM} profile ${second}`);
       }
 
+    // `target` was the old word for the same thing (ADR-061). Kept as its own
+    // case rather than aliased, so `selection.test.ts` sees both spellings and
+    // neither can default quietly.
     case 'target':
+    case 'workspace':
       switch (second) {
         case 'list':
         case undefined:
           return targetList({ ...global, json, urls: flags['urls'] === true });
         case 'use':
-          if (!rest[0]) throw new Error(`Usage: ${PROGRAM} target use <name>`);
+          if (!rest[0]) throw new Error(`Usage: ${PROGRAM} workspace use <name>`);
           return targetUse(rest[0]);
         case 'show':
           return targetShow(rest[0], { ...global, json });
         default:
-          throw new Error(`Unknown: ${PROGRAM} target ${second}`);
+          throw new Error(`Unknown: ${PROGRAM} workspace ${second}`);
       }
 
     case 'identity': {
@@ -206,11 +264,15 @@ export async function run(argv: readonly string[]): Promise<void> {
           const [capability] = rest;
           if (!capability) {
             throw new Error(
-              `Usage: ${PROGRAM} policy ${second} <capability>\n` +
-                `  e.g. ${PROGRAM} policy ${second} gmail.send_message, or gmail.* for the whole provider`,
+              `Usage: ${PROGRAM} policy ${second} <capability> --connection <provider>.<id>\n` +
+                `  e.g. ${PROGRAM} policy ${second} gmail.send_message --connection gmail.personal,\n` +
+                `       or gmail.* for everything that connection's provider offers`,
             );
           }
-          return policyRule(second, capability, global);
+          return policyRule(second, capability, {
+            ...global,
+            ...(typeof flags.connection === 'string' ? { connection: flags.connection } : {}),
+          });
         }
         default:
           throw new Error(`Unknown: ${PROGRAM} policy ${second}`);
@@ -398,6 +460,7 @@ export async function run(argv: readonly string[]): Promise<void> {
       switch (second) {
         case undefined:
         case 'targets':
+        case 'workspaces':
           return syncTargets({
             ...global,
             dryRun: flags['dry-run'] === true,

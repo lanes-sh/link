@@ -21,13 +21,23 @@ const AREAS: Record<string, string> = {
   link: 'a self-hostable MCP gateway for all your connections, memory, tasks, files, and secrets',
 };
 
+/** Commands that belong to the binary rather than to any one area. */
+const TOP_LEVEL: Record<string, string> = {
+  auth: 'sign in to Lanes, so a profile can say who may use it',
+  'set-workspace': 'which workspace a command means when it does not say',
+};
+
 function areasUsage(): string {
   const rows = Object.entries(AREAS)
     .map(([name, blurb]) => `  ${style.bold(`lanes ${name}`)}  ${blurb}`)
     .join('\n');
 
+  const top = Object.entries(TOP_LEVEL)
+    .map(([name, blurb]) => `  ${style.bold(`lanes ${name}`)}  ${blurb}`)
+    .join('\n');
+
   return (
-    `${style.bold('lanes')} — your own tools, wherever you work\n\n${rows}\n\n` +
+    `${style.bold('lanes')} — your own tools, wherever you work\n\n${rows}\n\n${top}\n\n` +
     `Run ${style.bold('lanes <area> help')} for what an area can do, ` +
     `or ${style.bold('lanes --version')} for which release this is.\n`
   );
@@ -49,6 +59,20 @@ async function main(argv: readonly string[]): Promise<void> {
   if (area === '--version' || area === '-v') {
     print(version());
     return;
+  }
+
+  // A top-level command rather than an area, because it selects the workspace
+  // *the CLI* acts in — every area's commands read the same answer (ADR-061).
+  if (area === 'auth') {
+    const { runAuth } = await import('./commands/auth-dispatch.ts');
+    return await runAuth(rest);
+  }
+
+  if (area === 'set-workspace') {
+    const { setWorkspace } = await import('./commands/set-workspace.ts');
+    const { parseArgv } = await import('./argv.ts');
+    const { command, flags } = parseArgv(rest);
+    return await setWorkspace(command[0], { json: flags['json'] === true });
   }
 
   if (area === 'link') {

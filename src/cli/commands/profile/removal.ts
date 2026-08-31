@@ -30,36 +30,29 @@ import { print, style, warn } from '../../output.ts';
  * reports those rather than guessing, which is the honest position: a guess
  * here is indistinguishable from another profile's credential.
  */
-export function declaredRefs(
-  config: Config,
-  registry: ProviderRegistry,
-  declared: TargetConfig,
-): string[] {
+export function declaredRefs(config: Config, declared: TargetConfig): string[] {
   const refs = new Set<string>([config.auth.token_ref]);
 
   // Read off the *target*, not the profile. `vaultTargetSchema` sits inside
-  // `targetSchema`, so two targets may seal the same profile's items in
-  // different places; taking it from the profile would attach one target's
-  // vault to another target's removal.
+  // `targetSchema`, so two targets may seal the same items in different places;
+  // taking it from the profile would attach one target's vault to another
+  // target's removal.
   if (declared.vault?.adapter === 'secret') {
     refs.add(declared.vault.ref ?? 'vault/document');
   }
 
-  for (const connection of config.connections) {
-    const manifest = registry.manifest(connection.provider);
-
-    // `credentialRefFor` rather than `credentialRefForConnection`: it is the
-    // single authority on where a connection's credential lives, and it exists
-    // because two callers once derived the answer differently and disagreed.
-    // Asking the lower-level one here would open that gap again from a third
-    // side — and it would miss a `local` provider, whose only ref is the one
-    // the connection declares itself.
-    const ref = credentialRefFor(connection, manifest);
-    if (ref) refs.add(ref);
-
-    if (manifest) {
-      for (const own of ownClientRefsFor(manifest, config.oauth_apps)) refs.add(own);
-    }
+  // **No connection credentials.** They belong to the workspace now (ADR-057),
+  // and every one of them may be granted by a profile that is staying. Removing
+  // a profile therefore removes no account and no credential — `lanes link
+  // disconnect` is the command that does that, and it is the one that knows how
+  // to check whether anybody else still needs the credential first.
+  //
+  // This is the sharpest edge in the whole decoupling, so `renderPlan` says it
+  // out loud rather than leaving an operator to infer it from a short list:
+  // "remove the work profile" used to mean "revoke what work could reach", and
+  // it does not any more.
+  if (config.auth.authorization?.mode === 'oidc') {
+    refs.add(config.auth.authorization.client_id_ref);
   }
 
   return [...refs];
@@ -152,7 +145,7 @@ export async function removalPlan(
     try {
       const secrets = await options.openSecrets(name);
       const present = await secrets.list();
-      const mine = new Set(declaredRefs(config, registry, declared));
+      const mine = new Set(declaredRefs(config, declared));
 
       for (const ref of present) if (mine.has(ref)) items.push({ target: name, kind: 'secret', id: ref });
 
@@ -164,54 +157,16 @@ export async function removalPlan(
       );
     }
 
-    try {
-      const blobs = await options.openBlobs(name);
-      for (const blob of await blobs.list()) items.push({ target: name, kind: 'blob', id: blob.key });
-    } catch (cause) {
-      warnings.push(
-        `Target "${name}": its storage could not be opened (${reason(cause)}), so nothing in it will be removed.`,
-      );
-    }
-
-    // The blob store's root is the profile's own directory, and an adapter must
-    // never delete the root it was configured with — so emptying it leaves the
-    // directory. `layout.ts` frames that directory as the unit ("rm -r
-    // data/work is exactly remove the work profile's data"), and one left
-    // behind is silently reused by a later `profile add` of the same name.
-    if (declared.storage.adapter === 'filesystem') {
-      const blobRoot = declared.storage.path ?? layout.blobs(profile);
-      items.push({
-        target: name,
-        kind: 'file',
-        id: blobRoot,
-        note: 'the profile directory, once emptied',
-      });
-
-      // Skills and manifests sit at fixed areas under `data/<profile>/`, the
-      // same way state and the log do — an explicit area, so a profile that
-      // declares its own `storage.path` moves its provider blobs and leaves
-      // these where `layout` says they are. The sweep above walks the blob root
-      // and would then walk straight past them, so they are named. Ordinary
-      // case: both are already inside `blobRoot` and the sweep has them, which
-      // is why this only fires when the two have been pointed apart.
-      //
-      // Resolved before comparing, because they are not compared as paths
-      // otherwise: `newProfileTemplate` writes `./data/<profile>` and
-      // `layout.blobs` returns `data/<profile>`, which is one directory spelled
-      // two ways — the same leading `./` that `profile/layout.ts` has a
-      // paragraph about. Comparing the strings names every default profile's
-      // skills twice in the preview an operator confirms.
-      if (workspacePath(root, blobRoot) !== workspacePath(root, layout.blobs(profile))) {
-        for (const area of [layout.skills(profile), layout.providers(profile)]) {
-          items.push({
-            target: name,
-            kind: 'file',
-            id: area,
-            note: 'outside the declared storage path, so not swept with it',
-          });
-        }
-      }
-    }
+    // **No blob sweep, and no profile directory.** Both existed because a
+    // profile owned `data/<profile>/`, and `rm -r` on it was exactly "what could
+    // this profile reach". It owns nothing now (ADR-057, ADR-059): the blob root
+    // is the workspace's, and the stores under it belong to connections other
+    // profiles may grant. Listing it here would queue every byte in the
+    // workspace for deletion because one profile is going.
+    //
+    // What replaces it is `lanes link disconnect`, which takes one connection,
+    // its grants, and its credential — after checking whether anything else
+    // still needs them. That check is the whole reason this cannot happen here.
 
     // A deployed revision reads its config from the bucket rather than the
     // image (ADR-023), so that copy is the profile too — and it is outside the

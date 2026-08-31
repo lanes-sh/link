@@ -26,7 +26,7 @@ import { capabilityDiff, discoveryProbe, isEmptyDiff } from './discovery.ts';
 const roots: string[] = [];
 const previousHome = process.env['LANES_LINK_HOME'];
 
-const PROFILE = `contract: 2
+const PROFILE = `contract: 3
 
 instance:
   profile: personal
