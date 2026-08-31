@@ -150,6 +150,26 @@ export function announce(resolution: Resolution): void {
 }
 
 /**
+ * The same line, for a command whose subject is the workspace.
+ *
+ * It names no profile, and that is the point rather than a saving. A
+ * workspace-level command still opens a runtime, and a runtime carries a
+ * profile — so `announce` would print whichever one happened to be picked, and
+ * a reader would take it for the thing being acted on. The audit log is one
+ * chain for the whole workspace; saying `profile personal` above it describes a
+ * log that does not exist.
+ */
+export function announceWorkspace(resolution: Resolution): void {
+  const provenance = wasDefaulted(resolution.target) ? ' (default)' : '';
+
+  print(
+    style.dim(
+      `workspace ${style.bold(resolution.target)}${provenance}  ${resolution.workspaceRoot}`,
+    ),
+  );
+}
+
+/**
  * Print a machine-readable result, or fall through to the human rendering.
  *
  * The early return is the whole point. `announce` is the first thing every

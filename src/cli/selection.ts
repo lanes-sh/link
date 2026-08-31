@@ -139,7 +139,9 @@ export const SELECTION: Record<string, Requires> = {
   'connect custom': 'profile+workspace',
   setup: 'profile+workspace',
   token: 'profile+workspace',
-  audit: 'profile+workspace',
+  // One chain per workspace since contract 3, so the workspace is the subject
+  // and `--profile` filters the rows rather than choosing which log to read.
+  audit: 'workspace',
   secrets: 'profile+workspace',
   plan: 'profile+workspace',
   doctor: 'profile+workspace',
@@ -178,8 +180,8 @@ export const SELECTION: Record<string, Requires> = {
   pair: 'workspace',
   'token show': 'profile+workspace',
   'token rotate': 'profile+workspace',
-  'audit tail': 'profile+workspace',
-  'audit verify': 'profile+workspace',
+  'audit tail': 'workspace',
+  'audit verify': 'workspace',
   'secrets set': 'profile+workspace',
   'secrets list': 'profile+workspace',
   'mcp add': 'profile+workspace',
