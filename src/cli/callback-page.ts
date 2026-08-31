@@ -26,7 +26,7 @@
  * else — not on emphasis, and not on the heading.
  */
 
-import { escapeHtml, FONTS, FOOTER, PAGE_CSP, PAGE_HEADERS, TOKENS } from './brand.ts';
+import { escapeHtml, FONTS, FOOTER, pageCsp, PAGE_HEADERS, TOKENS } from './brand.ts';
 
 export interface CallbackPage {
   /** The focal line, set in Lora. A provider name, or the outcome itself. */
@@ -74,6 +74,11 @@ export interface ApprovalPage {
   readonly client: string;
   /** Where the code would be sent. The part of the request that cannot be faked. */
   readonly redirectHost: string;
+  /**
+   * The same destination as a CSP source, so the browser will follow the
+   * redirect this form's approval ends in rather than blocking it.
+   */
+  readonly formAction?: string;
   /** Hidden fields carrying the authorization request through the POST. */
   readonly fields: Readonly<Record<string, string>>;
   readonly action: string;
@@ -121,7 +126,10 @@ ${hidden}
 </form>
 <p class="small"><code>lanes link outputs --show --target ${escapeHtml(page.target)}</code></p>`;
 
-  return shell(body, 'Authorise', page.retry ? 401 : 200, '', SUBMIT_SPINNER);
+  return shell(body, 'Authorise', page.retry ? 401 : 200, '', {
+    script: SUBMIT_SPINNER,
+    ...(page.formAction ? { formAction: [page.formAction] } : {}),
+  });
 }
 
 /**
@@ -152,8 +160,9 @@ function shell(
   title: string,
   status: number,
   cardClass = '',
-  script = '',
+  policy: { readonly script?: string; readonly formAction?: readonly string[] } = {},
 ): Response {
+  const script = policy.script ?? '';
   return new Response(
     `<!doctype html>
 <html lang="en">
@@ -182,7 +191,10 @@ ${script ? `<script>\n${script}\n</script>` : ''}
       status,
       headers: {
         ...PAGE_HEADERS,
-        ...(script ? { 'content-security-policy': `${PAGE_CSP}; script-src 'unsafe-inline'` } : {}),
+        'content-security-policy': pageCsp({
+          ...(script ? { script: true } : {}),
+          ...(policy.formAction ? { formAction: policy.formAction } : {}),
+        }),
       },
     },
   );

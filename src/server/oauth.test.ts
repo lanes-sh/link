@@ -95,6 +95,22 @@ async function authorise(
   });
 }
 
+/**
+ * The `form-action` sources a page was served with.
+ *
+ * Parsed rather than matched as a substring because what matters is the list a
+ * browser checks a navigation against, and `'self'` alone passing a
+ * `toContain('form-action')` is exactly the assertion that missed this.
+ */
+function formActionOf(response: Response): string[] {
+  const directive = (response.headers.get('content-security-policy') ?? '')
+    .split(';')
+    .map((part) => part.trim())
+    .find((part) => part.startsWith('form-action '));
+
+  return directive ? directive.split(/\s+/).slice(1) : [];
+}
+
 async function codeFrom(response: Response): Promise<string> {
   return new URL(response.headers.get('location')!).searchParams.get('code')!;
 }
@@ -404,6 +420,42 @@ describe('the authorization code flow', () => {
 
     expect(response.status).toBe(302);
     expect(response.headers.get('location')).toStartWith('http://localhost:51763/callback?');
+  });
+
+  test('the consent page permits the redirect its own approval performs', async () => {
+    // Chrome and Safari re-check `form-action` when a form submission redirects,
+    // so a policy naming only `'self'` blocks the 302 that ends the flow: the
+    // POST is accepted, the code is minted, and the browser then refuses to
+    // deliver it. Nothing about that is visible in the page or the response —
+    // the spinner simply never stops.
+    //
+    // So this asks the policy the consent page was served with about the
+    // destination that page's own approval produces, rather than asserting a
+    // string. The string was right; what it named was not enough.
+    const clientId = await register();
+    const consent = await fetch(
+      `${origin}/authorize?response_type=code&client_id=${clientId}` +
+        `&redirect_uri=${encodeURIComponent(REDIRECT)}` +
+        `&code_challenge=${pkceChallengeFor(VERIFIER)}&code_challenge_method=S256`,
+    );
+    const approved = await authorise(clientId);
+
+    expect(approved.status).toBe(302);
+    expect(formActionOf(consent)).toContain(new URL(approved.headers.get('location')!).origin);
+  });
+
+  test('a native client on loopback is permitted the port it actually bound', async () => {
+    // The registered URI has no port and the redirect has one, so a policy
+    // built from what was registered would name an origin the browser never
+    // navigates to. It has to come from the request being approved.
+    const clientId = await register(['http://localhost/callback']);
+    const consent = await fetch(
+      `${origin}/authorize?response_type=code&client_id=${clientId}` +
+        `&redirect_uri=${encodeURIComponent('http://localhost:51763/callback')}` +
+        `&code_challenge=${pkceChallengeFor(VERIFIER)}&code_challenge_method=S256`,
+    );
+
+    expect(formActionOf(consent)).toContain('http://localhost:51763');
   });
 });
 

@@ -150,6 +150,19 @@ a { color: inherit; }
 .footer a { text-decoration: underline; }
 `.trim();
 
+/** What a page may widen its policy by, for the two pages that need to. */
+export interface PagePolicy {
+  /** The page carries an inline script, and has to say so. */
+  readonly script?: boolean;
+  /**
+   * Where this page's form is allowed to end up, beyond `'self'`.
+   *
+   * A source expression, not a URL: an origin (`https://client.example`) or a
+   * bare scheme (`vscode:`) for a native client's redirect.
+   */
+  readonly formAction?: readonly string[];
+}
+
 /**
  * What every page these modules serve loads, and nothing else.
  *
@@ -158,16 +171,32 @@ a { color: inherit; }
  * a page here has no script by default — the consent screen, which has one
  * listener for its submit spinner, extends this rather than replacing it.
  */
-export const PAGE_CSP =
-  "frame-ancestors 'none'; default-src 'none'; " +
-  // `form-action` does **not** fall back to `default-src`, so `'none'` above
-  // says nothing about where a form may post. One page here posts the owner's
-  // endpoint token, and its `action` is built from the request's own `Host` —
-  // this is the second lock on that, so a form target that ever came from
-  // somewhere else is refused by the browser rather than followed.
-  "form-action 'self'; " +
-  "style-src 'unsafe-inline' https://fonts.googleapis.com; " +
-  'font-src https://fonts.gstatic.com';
+export function pageCsp(policy: PagePolicy = {}): string {
+  return [
+    "frame-ancestors 'none'",
+    "default-src 'none'",
+    // `form-action` does **not** fall back to `default-src`, so `'none'` above
+    // says nothing about where a form may post. One page here posts the owner's
+    // endpoint token, and its `action` is built from the request's own `Host` —
+    // this is the second lock on that, so a form target that ever came from
+    // somewhere else is refused by the browser rather than followed.
+    //
+    // It takes sources beyond `'self'` because Chrome and Safari re-check this
+    // directive against the *redirect* a submission produces, not only against
+    // the `action` — and the consent form's whole purpose is to end in a 302 to
+    // the client that asked. Named nothing else, the directive accepts the
+    // POST, mints the code, and then blocks the browser from delivering it,
+    // which is indistinguishable from a hung page. Firefox does not do this, so
+    // it stays broken in exactly half the browsers. See ADR-054.
+    ["form-action 'self'", ...(policy.formAction ?? [])].join(' '),
+    "style-src 'unsafe-inline' https://fonts.googleapis.com",
+    'font-src https://fonts.gstatic.com',
+    ...(policy.script ? ["script-src 'unsafe-inline'"] : []),
+  ].join('; ');
+}
+
+/** The policy a page with nothing to widen answers with. */
+export const PAGE_CSP = pageCsp();
 
 /**
  * Headers every page here answers with.
