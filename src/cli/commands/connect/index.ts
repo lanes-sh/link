@@ -330,6 +330,20 @@ export async function runConnect(
       };
     }
 
+    // The connections file first, always, and the profile second.
+    //
+    // First because a grant naming a connection the workspace does not hold is
+    // refused at load by `assertGrantsResolve` — so if only one of these two
+    // writes lands, it has to be this one. The other order leaves a workspace
+    // that will not open.
+    //
+    // Always because this is where the connection is *declared*, and until this
+    // release it was never written at all: `declareConnection` edited a document
+    // in memory and nothing saved it, so a connect stored the credential, wrote
+    // the grant, and left no row. The account was authorised, invisible, and
+    // unusable.
+    await connectionsDocument.save();
+
     // Untouched when no profile was named, and `save()` on an unchanged document
     // still rewrites the file — which would restamp a profile nobody asked to
     // edit.
