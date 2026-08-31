@@ -74,8 +74,13 @@ export function readState(
   profiles: ReadonlyMap<string, ProfileRuntime>,
   rows: readonly ConnectionRow[] = [],
 ): ReadState {
-  const declared = new Map(rows.map((row) => [`${row.provider}.${row.id}`, row]));
-  const connections = new Map<string, ReadConnection & { profiles: string[] }>();
+  // The workspace's own list is the source of truth for *which connections
+  // exist*. Deriving it from the grants instead made an account that no profile
+  // grants invisible — and that is precisely the state `connect` leaves one in
+  // when it is run without `--profile`, so a freshly authorised account did not
+  // appear at all. Grants say who can reach a connection, not whether it is
+  // there.
+  const grantedBy = new Map<string, string[]>();
   const described: ReadProfile[] = [];
 
   for (const [name, runtime] of profiles) {
@@ -83,22 +88,7 @@ export function readState(
 
     for (const grant of runtime.config.grants) {
       const ref = grant.connection;
-      const [provider = ref, id = ''] = ref.split('.');
-
-      const existing = connections.get(ref);
-      if (existing) {
-        existing.profiles.push(name);
-      } else {
-        const row = declared.get(ref);
-        connections.set(ref, {
-          ref,
-          provider,
-          id,
-          label: row?.label ?? null,
-          account: row?.account ?? null,
-          profiles: [name],
-        });
-      }
+      grantedBy.set(ref, [...(grantedBy.get(ref) ?? []), name]);
 
       const reachable = runtime.registry
         .capabilities()
@@ -122,5 +112,36 @@ export function readState(
     });
   }
 
-  return { workspace, connections: [...connections.values()], profiles: described };
+  const connections: ReadConnection[] = rows.map((row) => {
+    const ref = `${row.provider}.${row.id}`;
+    return {
+      ref,
+      provider: row.provider,
+      id: row.id,
+      label: row.label ?? null,
+      account: row.account ?? null,
+      profiles: grantedBy.get(ref) ?? [],
+    };
+  });
+
+  // A grant naming a connection the workspace no longer holds. `assertGrantsResolve`
+  // refuses this at load, so it is unreachable through the CLI — but the read
+  // surface should describe what is there rather than assume, and a row that
+  // appeared only in a grant would otherwise vanish from the listing while
+  // still governing a profile.
+  const known = new Set(connections.map((one) => one.ref));
+  for (const ref of grantedBy.keys()) {
+    if (known.has(ref)) continue;
+    const [provider = ref, id = ''] = ref.split('.');
+    connections.push({
+      ref,
+      provider,
+      id,
+      label: null,
+      account: null,
+      profiles: grantedBy.get(ref) ?? [],
+    });
+  }
+
+  return { workspace, connections, profiles: described };
 }
