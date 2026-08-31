@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { approvalPage, completionPage } from './callback-page.ts';
+import { completionPage, noticePage } from './callback-page.ts';
 
 /**
  * The page nobody sees until the one moment it is the whole product.
@@ -124,98 +124,53 @@ describe('light and dark', () => {
   });
 });
 
-describe('approving', () => {
-  const page = () =>
-    approvalPage({
-      client: 'Claude',
-      redirectHost: 'claude.ai',
-      fields: {},
-      action: '/authorize',
-      retry: false,
-      target: 'local',
-    });
+describe('a refusal, read by the person it happened to', () => {
+  test('says what to do next, which is the whole reason it is a page', async () => {
+    // The message that matters: somebody signed in successfully and no profile
+    // on this endpoint lists them. Returned as bare text it read as a protocol
+    // error to a client; the audience is a person at a browser who needs to
+    // know what to ask their operator for.
+    const body = await html(
+      noticePage(
+        'You are signed in as her@example.com, and no profile on this endpoint lists ' +
+          'you as a member.\n\nIts owner can add you with:\n  lanes link profile members add lanes:ABC --profile <name>',
+        403,
+      ),
+    );
 
-  test('names the command and nothing around it', async () => {
-    // No lead-in and no full stop: the line is there to be selected and run,
-    // and a trailing period is a character that gets copied with it.
-    const body = await html(page());
-
-    expect(body).toContain('<code>lanes link outputs --show --workspace local</code>');
-    expect(body).not.toContain('Printed by');
-    expect(body).not.toContain('--workspace local</code>.');
+    expect(body).toContain('Not authorised');
+    expect(body).toContain('no profile on this endpoint lists you');
+    expect(body).toContain('lanes link profile members add lanes:ABC');
   });
 
-  test('the button becomes busy, and stops accepting clicks', async () => {
-    // Approving is a round trip. Until it returns the page looks untouched,
-    // which reads as "nothing happened" — and the second click is the one that
-    // sends a duplicate. Disabling is the half that matters; the spinner says why.
-    const body = await html(page());
-
-    expect(body).toContain("addEventListener('submit'");
-    expect(body).toContain("classList.add('busy')");
-    expect(body).toContain('button.disabled = true');
-    expect(body).toContain('.go.busy::after');
-    expect(body).toContain('animation: spin');
+  test('keeps the status, so a client following the redirect still sees a failure', () => {
+    expect(noticePage('nope', 403).status).toBe(403);
+    expect(noticePage('nope', 400).status).toBe(400);
   });
 
-  test('the spinner is monochrome, because a request in flight is not a verdict', async () => {
-    const body = await html(page());
+  test('is the error card, not the success one', async () => {
+    const body = await html(noticePage('nope', 400));
 
-    expect(body).toContain('border-top-color: var(--foreground)');
-    expect(body).not.toContain('border-top-color: var(--accent-gold)');
+    expect(body).toContain('card surface err');
   });
 
-  test('a page with script says so in its policy, and one without does not', () => {
-    // The consent screen is the page that asks for the endpoint token, so the
-    // inline listener it now carries is the one place this widening is spent.
-    const withScript = approvalPage({
-      client: 'C',
-      redirectHost: 'example.com',
-      fields: {},
-      action: '/authorize',
-      retry: false,
-      target: 'local',
-    });
-    const without = completionPage({ heading: 'Connected', detail: '.', ok: true });
+  test('carries no script, so the policy stays narrow', () => {
+    // The page this replaces asked for the endpoint token and ran an inline
+    // listener to disable its button. Nothing here submits anything, so the
+    // widening that paid for goes away with it (ADR-062).
+    const csp = noticePage('nope', 400).headers.get('content-security-policy') ?? '';
 
-    expect(withScript.headers.get('content-security-policy')).toContain("script-src 'unsafe-inline'");
-    expect(without.headers.get('content-security-policy')).not.toContain('script-src');
-  });
-
-  test('the policy admits the destination named on the page, and only that one', () => {
-    // `form-action` is checked against the redirect the approval produces, not
-    // just the `action` — so the one origin this page tells the reader about is
-    // the one origin it has to admit. Anything else and the browser refuses to
-    // deliver a code that has already been minted.
-    const csp =
-      approvalPage({
-        client: 'C',
-        redirectHost: 'client.example',
-        formAction: 'https://client.example',
-        fields: {},
-        action: '/authorize',
-        retry: false,
-        target: 'local',
-      }).headers.get('content-security-policy') ?? '';
-
-    expect(csp).toContain("form-action 'self' https://client.example;");
-    expect(csp).not.toContain('https://other.example');
-  });
-
-  test('a page given no destination keeps the narrow policy', () => {
-    // A redirect this endpoint could not parse never reaches consent, so the
-    // absence is a real state rather than a caller forgetting the field.
-    const csp =
-      approvalPage({
-        client: 'C',
-        redirectHost: 'client.example',
-        fields: {},
-        action: '/authorize',
-        retry: false,
-        target: 'local',
-      }).headers.get('content-security-policy') ?? '';
-
+    expect(csp).not.toContain('script-src');
     expect(csp).toContain("form-action 'self';");
+  });
+
+  test('cannot be made to carry markup', async () => {
+    // The subject in that message comes from an assertion, and the email from
+    // whatever the person signed in with.
+    const body = await html(noticePage('<script>alert(1)</script>', 403));
+
+    expect(body).not.toContain('<script>alert(1)</script>');
+    expect(body).toContain('&lt;script&gt;');
   });
 });
 
@@ -238,41 +193,3 @@ describe('untrusted text', () => {
   });
 });
 
-describe('the approval page', () => {
-  const approval = (target: string) =>
-    approvalPage({
-      client: 'Claude',
-      redirectHost: 'claude.ai',
-      action: 'https://endpoint.example/authorize',
-      fields: { client_id: 'abc' },
-      retry: false,
-      target,
-    });
-
-  test('names the target whose store holds the token it is asking for', async () => {
-    // The reader runs this in a shell that resolves a target of its own, and
-    // credentials are per-target. A bare `--show` sends the owner of a deployed
-    // endpoint to the local store, which either holds a token this endpoint
-    // will refuse or holds none and has one minted on the spot.
-    const body = await html(approval('cloud'));
-
-    expect(body).toContain('lanes link outputs --show --workspace cloud');
-    expect(body).not.toContain('outputs --show</code>');
-  });
-
-  test('names it even when it is the default, so the flag is never ambiguous', async () => {
-    const body = await html(approval('local'));
-
-    expect(body).toContain('lanes link outputs --show --workspace local');
-  });
-
-  test('a target name cannot inject markup', async () => {
-    // It comes from config rather than from a request, but everything else on
-    // this page is escaped and a value reaching HTML is not where to make an
-    // exception.
-    const body = await html(approval('<script>alert(1)</script>'));
-
-    expect(body).not.toContain('<script>alert(1)</script>');
-    expect(body).toContain('&lt;script&gt;alert(1)&lt;/script&gt;');
-  });
-});

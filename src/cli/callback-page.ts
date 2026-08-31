@@ -69,100 +69,44 @@ const ICON =
   'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
   '<path d="M20 6 9 17l-5-5"/></svg>';
 
-export interface ApprovalPage {
-  /** What is asking. A client's self-reported name, or a stand-in. */
-  readonly client: string;
-  /** Where the code would be sent. The part of the request that cannot be faked. */
-  readonly redirectHost: string;
-  /**
-   * The same destination as a CSP source, so the browser will follow the
-   * redirect this form's approval ends in rather than blocking it.
-   */
-  readonly formAction?: string;
-  /** Hidden fields carrying the authorization request through the POST. */
-  readonly fields: Readonly<Record<string, string>>;
-  readonly action: string;
-  /** A previous attempt presented the wrong token. */
-  readonly retry: boolean;
-  /** The target this endpoint runs as, so the hint below names the right store. */
-  readonly target: string;
+/**
+ * Something went wrong, said to the person it went wrong for.
+ *
+ * This replaces the consent form (ADR-062), and the two are worth contrasting.
+ * The form asked a browser on loopback for the endpoint token — the one
+ * credential that opened everything — which made it the most valuable thing a
+ * hostile local page could reach. Identity now comes from lanes.sh, so the only
+ * page this endpoint renders is one that *tells* rather than asks.
+ *
+ * Rendered as a page rather than returned as text because of who reads it. The
+ * important message here is "you signed in, and no profile on this endpoint
+ * lists you" — which arrives at a browser, at the end of a sign-in, addressed
+ * to somebody who needs to know what to ask their operator for.
+ */
+export function noticePage(message: string, status: number): Response {
+  // Deliberately whole-text-escaped and then split on blank lines: these
+  // messages carry a subject and sometimes a command, and neither is markup.
+  const body =
+    `<h1>Not authorised</h1>` +
+    message
+      .split('\n\n')
+      .map((paragraph) => `<p class="detail">${escapeHtml(paragraph)}</p>`)
+      .join('\n');
+
+  return shell(body, 'Not authorised', status, ' err');
 }
 
 /**
- * The one screen a remote client's authorization stops at.
+ * One document, both pages.
  *
- * Same card as the page above, because it is the same product and the reader
- * arrived here from a connector rather than from a terminal. What it asks for is
- * the endpoint token — the string `lanes link outputs` prints — because that is
- * already the proof of being the owner and inventing a second one would mean
- * inventing a password to go with it.
- *
- * The hint names the target rather than leaving it out. Credentials are
- * per-target, and the reader runs that command in a shell resolving a target of
- * its own — `local` by default, which is the one store a deployed endpoint's
- * token is never in. Omitting it sends them to fetch the wrong secret, and
- * `outputs` mints a fresh one when that store is empty rather than saying so.
- *
- * `autocomplete="off"` and `type="password"` are not theatre: this form is
- * submitted in whatever browser the phone opened, and a token remembered by a
- * shared browser is a token in the hands of whoever borrows the phone.
+ * No script hook any more, and no `form-action` parameter. Both existed for the
+ * consent form: it ran an inline listener to disable its own button, and it had
+ * to name in its policy the client origin its approval redirected to. Identity
+ * moved to lanes.sh (ADR-062) and the form went with it, so the policy narrows
+ * back to what it was before — which is the rare direction for a CSP to move
+ * and worth saying out loud.
  */
-export function approvalPage(page: ApprovalPage): Response {
-  const hidden = Object.entries(page.fields)
-    .map(([name, value]) => `<input type="hidden" name="${escapeHtml(name)}" value="${escapeHtml(value)}">`)
-    .join('\n');
-
-  // The name is self-reported and the host is not, so the host is what the
-  // reader is asked to recognise. Registration is open by design, which means
-  // anything can call itself anything — but an impostor still has to nominate
-  // somewhere for the code to go, and that is on the screen.
-  const body = `
-${page.retry ? '<p class="label err-text">That token was not accepted.</p>\n' : ''}<h1>Authorise ${escapeHtml(page.client)}?</h1>
-<p class="detail">It will be sent back to <strong>${escapeHtml(page.redirectHost)}</strong>, and will be able to reach every profile this endpoint serves, within the policy each one declares.</p>
-<form method="post" action="${escapeHtml(page.action)}">
-${hidden}
-<input class="field" type="password" name="token" placeholder="Endpoint token" autocomplete="off" autofocus required>
-<button class="go" type="submit">Approve</button>
-</form>
-<p class="small"><code>lanes link outputs --show --workspace ${escapeHtml(page.target)}</code></p>`;
-
-  return shell(body, 'Authorise', page.retry ? 401 : 200, '', {
-    script: SUBMIT_SPINNER,
-    ...(page.formAction ? { formAction: [page.formAction] } : {}),
-  });
-}
-
-/**
- * What runs while the approval is in flight.
- *
- * Approving is a round trip to an authorization server, and until it returns the
- * page looks exactly as it did before the click — so the honest reading is that
- * nothing happened, and the second click is the one that produces a duplicated
- * request. The button disables itself, which is the part that matters; the
- * spinner is what says why.
- *
- * The cost is real and worth naming: this is the one page that asks for the
- * endpoint token, and an inline listener means its policy admits inline script.
- * It is the minimum that does the job — one listener, no interpolation, nothing
- * read from the page — and the alternative, a static file, is an asset pipeline
- * this repository does not have.
- */
-const SUBMIT_SPINNER = `
-document.querySelector('form').addEventListener('submit', function (event) {
-  var button = event.currentTarget.querySelector('.go');
-  button.classList.add('busy');
-  button.disabled = true;
-});
-`.trim();
-
-function shell(
-  inner: string,
-  title: string,
-  status: number,
-  cardClass = '',
-  policy: { readonly script?: string; readonly formAction?: readonly string[] } = {},
-): Response {
-  const script = policy.script ?? '';
+function shell(inner: string, title: string, status: number, cardClass = ''): Response {
   return new Response(
     `<!doctype html>
 <html lang="en">
@@ -184,48 +128,25 @@ ${inner}
 </div>
 ${FOOTER}
 </div>
-${script ? `<script>\n${script}\n</script>` : ''}
 </body>
 </html>`,
     {
       status,
-      headers: {
-        ...PAGE_HEADERS,
-        'content-security-policy': pageCsp({
-          ...(script ? { script: true } : {}),
-          ...(policy.formAction ? { formAction: policy.formAction } : {}),
-        }),
-      },
+      headers: { ...PAGE_HEADERS, 'content-security-policy': pageCsp({}) },
     },
   );
 }
 
+/**
+ * What is left of the form styles.
+ *
+ * `.small` alone: the consent form's field, button and spinner went with the
+ * form (ADR-062). Kept as its own constant rather than folded into `STYLE`
+ * because the completion page still uses it for the line under the card.
+ */
 const FORM_STYLE = `
-.field { width: 100%; margin: 20px 0 12px; padding: 11px 13px; font: inherit; font-size: 15px;
-         color: inherit; background: var(--background); border: 1px solid var(--border);
-         border-radius: 6px; }
-.field:focus { outline: none; border-color: var(--accent-gold); }
-.go { width: 100%; padding: 11px 13px; font: inherit; font-size: 15px; font-weight: 500;
-      color: var(--foreground); background: transparent; border: 1px solid var(--border);
-      border-radius: 6px; cursor: pointer; }
-.go:hover { background: var(--muted); }
 .small { margin-top: 16px; font-size: 12px; color: var(--muted-foreground); opacity: 0.8; }
 .small code { font-size: 12px; }
-.err-text { color: var(--destructive); }
-
-/* The button, mid-flight. The label goes transparent rather than away, so the
-   button keeps the width it had and the card does not reflow under the cursor. */
-.go.busy { color: transparent; position: relative; pointer-events: none; }
-.go.busy::after { content: ''; position: absolute; inset: 0; margin: auto;
-                  width: 15px; height: 15px; border-radius: 50%;
-                  border: 2px solid var(--border); border-top-color: var(--foreground);
-                  animation: spin 0.6s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-/* Monochrome deliberately: gold says a thing turned out well, and a request in
-   flight has not turned out yet. */
-@media (prefers-reduced-motion: reduce) {
-  .go.busy::after { animation-duration: 2.4s; }
-}
 `.trim();
 
 export function completionPage(page: CallbackPage): Response {

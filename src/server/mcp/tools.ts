@@ -1,3 +1,4 @@
+import { forProfile } from '#auth';
 import { fromJsonSchema, type McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { isToolResult } from '#connectivity';
@@ -147,7 +148,7 @@ function makeHandler(capabilityId: string, entry: MergedCapability, options: Bui
     }
 
     const outcome = await runtime.dispatcher.invoke({
-      principal: options.principal,
+      principal: forProfile(options.principal, name),
       capabilityId,
       connectionKey: String(connection),
       arguments: rest,

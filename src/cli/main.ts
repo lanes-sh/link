@@ -402,6 +402,7 @@ export async function run(argv: readonly string[]): Promise<void> {
             dryRun: flags['dry-run'] === true,
             force: flags['force'] === true,
             noSkill: flags['no-skill'] === true,
+            headless: flags['headless'] === true,
           });
         case 'stdio':
           return mcpStdio({ ...global, ...(flags['only'] === true ? { only: true } : {}) });

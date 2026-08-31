@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { pkceChallengeFor } from '#auth';
-import { allocatePort, startHarness, TEST_TOKEN, type Harness } from './harness.ts';
+import { allocatePort, startHarness, STRANGER, TEST_TOKEN, type Harness } from './harness.ts';
 
 /**
  * The flow a remote connector actually drives.
@@ -71,28 +71,54 @@ async function register(redirectUris: string[] = [REDIRECT]): Promise<string> {
   return ((await response.json()) as { client_id: string }).client_id;
 }
 
-/** Walk authorize -> approve and return whatever came back on the redirect. */
+/**
+ * The whole browser leg: `/authorize`, off to Lanes, back through the callback.
+ *
+ * The middle hop is where a person signs in, and the harness's federation
+ * believes any assertion and spells it back as a subject — so `who` stands in
+ * for a whole sign-in. That is the right seam here: what this file is about is
+ * the endpoint's half, and everything about *verifying* an assertion is tested
+ * against a real key pair in `auth/lanes/assertion.test.ts`.
+ *
+ * Returns whatever the last hop produced, so a refusal at either end is
+ * inspectable rather than swallowed.
+ */
 async function authorise(
   clientId: string,
   overrides: Record<string, string> = {},
-  token = TEST_TOKEN,
+  who = 'THEOWNER',
 ): Promise<Response> {
-  const form = new URLSearchParams({
+  const sent = await start(clientId, overrides);
+  if (sent.status !== 302) return sent;
+
+  return complete(sent, who);
+}
+
+/** The first hop, which now ends at Lanes rather than at a form. */
+function start(clientId: string, overrides: Record<string, string> = {}): Promise<Response> {
+  const params = new URLSearchParams({
+    response_type: 'code',
     client_id: clientId,
     redirect_uri: REDIRECT,
     code_challenge: pkceChallengeFor(VERIFIER),
+    code_challenge_method: 'S256',
     scope: 'mcp',
     state: 'opaque-state',
-    token,
     ...overrides,
   });
 
-  return fetch(`${origin}/authorize`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: form.toString(),
-    redirect: 'manual',
-  });
+  return fetch(`${origin}/authorize?${params}`, { redirect: 'manual' });
+}
+
+/** The browser coming back, as a top-level navigation carrying an assertion. */
+function complete(sent: Response, who: string, nonce?: string): Promise<Response> {
+  const consent = new URL(sent.headers.get('location')!);
+  const back = new URL(consent.searchParams.get('return')!);
+
+  back.searchParams.set('nonce', nonce ?? consent.searchParams.get('nonce')!);
+  back.searchParams.set('assertion', who);
+
+  return fetch(back, { redirect: 'manual' });
 }
 
 /**
@@ -243,7 +269,7 @@ describe('discovery', () => {
 });
 
 describe('the authorization code flow', () => {
-  test('register, approve, exchange, and the token opens the endpoint', async () => {
+  test('register, sign in, exchange, and the token opens the endpoint', async () => {
     const clientId = await register();
 
     const redirect = await authorise(clientId);
@@ -272,56 +298,67 @@ describe('the authorization code flow', () => {
     expect(call.status).not.toBe(401);
   });
 
-  test('the consent screen names the client and where the code would go', async () => {
+  test('there is no consent page here at all — the browser is sent to Lanes', async () => {
+    // The point of ADR-062. This endpoint used to render a form asking for the
+    // one credential that opens everything, on loopback, where any page on the
+    // machine could reach it. Now `/authorize` is a redirect and there is
+    // nothing local to phish.
+    const sent = await start(await register());
+
+    expect(sent.status).toBe(302);
+    const consent = new URL(sent.headers.get('location')!);
+    expect(consent.origin).toBe('https://lanes.example');
+    expect(consent.pathname).toBe('/link/authorize');
+  });
+
+  test('it carries what the person has to see, and where to come back to', async () => {
     // Registration is open, so the name is self-reported and proves nothing.
     // The redirect host is the part an impostor cannot change, and the spec
-    // requires showing it for exactly that reason.
-    const clientId = await register();
-    const page = await fetch(
-      `${origin}/authorize?response_type=code&client_id=${clientId}` +
-        `&redirect_uri=${encodeURIComponent(REDIRECT)}` +
-        `&code_challenge=${pkceChallengeFor(VERIFIER)}&code_challenge_method=S256`,
-    );
+    // requires showing it for exactly that reason — so both are handed to the
+    // page that will show them.
+    const sent = await start(await register());
+    const consent = new URL(sent.headers.get('location')!);
 
-    const html = await page.text();
-    expect(html).toContain('Test Client');
-    expect(html).toContain('claude.ai');
-    // And which target's store the token it asks for lives in. The endpoint
-    // knows; the shell the reader runs the command in does not.
-    expect(html).toContain('lanes link outputs --show --workspace local');
+    expect(consent.searchParams.get('client')).toBe('Test Client');
+    expect(consent.searchParams.get('redirect_host')).toBe('claude.ai');
+    expect(consent.searchParams.get('resource')).toBe(`${origin}/mcp`);
+    expect(consent.searchParams.get('return')).toBe(`${origin}/authorize/callback`);
+    expect(consent.searchParams.get('nonce')).toBeTruthy();
   });
 
-  test('a client name cannot inject markup into the approval page', async () => {
-    const response = await fetch(`${origin}/register`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        redirect_uris: [REDIRECT],
-        client_name: '<script>alert(1)</script>',
-      }),
-    });
-    const clientId = ((await response.json()) as { client_id: string }).client_id;
+  test('a nonce is single use, because it travels through a browser', async () => {
+    // It reaches history, referrers, and anything watching the address bar.
+    // Consuming it on read is what stops one assertion being spent twice.
+    const clientId = await register();
+    const sent = await start(clientId);
 
-    const page = await fetch(
-      `${origin}/authorize?response_type=code&client_id=${clientId}` +
-        `&redirect_uri=${encodeURIComponent(REDIRECT)}` +
-        `&code_challenge=${pkceChallengeFor(VERIFIER)}&code_challenge_method=S256`,
-    );
+    expect((await complete(sent, 'THEOWNER')).status).toBe(302);
 
-    const html = await page.text();
-    expect(html).not.toContain('<script>alert(1)</script>');
-    expect(html).toContain('&lt;script&gt;');
+    const replayed = await complete(sent, 'THEOWNER');
+    expect(replayed.status).toBe(400);
+    expect(await replayed.text()).toContain('expired or was already used');
   });
 
-  test('the wrong endpoint token re-renders the form rather than redirecting', async () => {
-    // The client has no business being told whether the owner typed their token
-    // correctly, and a redirected error would end the flow on the first typo.
-    const clientId = await register();
-    const response = await authorise(clientId, {}, 'llk_not_the_token');
+  test('a nonce this endpoint never minted authorises nothing', async () => {
+    const sent = await start(await register());
+    const forged = await complete(sent, 'THEOWNER', 'lln_invented');
 
-    expect(response.status).toBe(401);
-    expect(response.headers.get('location')).toBeNull();
-    expect(await response.text()).toContain('not accepted');
+    expect(forged.status).toBe(400);
+    expect(forged.headers.get('location')).toBeNull();
+  });
+
+  test('a stranger who signs in successfully is refused, and told what to ask for', async () => {
+    // The interesting refusal, and the reason it renders a page. They are
+    // signed in; nothing is wrong with their identity. No profile here names
+    // them, and "sign in again" would be advice that cannot work.
+    const refused = await authorise(await register(), {}, STRANGER);
+
+    expect(refused.status).toBe(403);
+    expect(refused.headers.get('location')).toBeNull();
+
+    const html = await refused.text();
+    expect(html).toContain('no profile on this endpoint lists you');
+    expect(html).toContain(`lanes link profile members add lanes:${STRANGER}`);
   });
 
   test('a code is single use', async () => {
@@ -422,40 +459,36 @@ describe('the authorization code flow', () => {
     expect(response.headers.get('location')).toStartWith('http://localhost:51763/callback?');
   });
 
-  test('the consent page permits the redirect its own approval performs', async () => {
-    // Chrome and Safari re-check `form-action` when a form submission redirects,
-    // so a policy naming only `'self'` blocks the 302 that ends the flow: the
-    // POST is accepted, the code is minted, and the browser then refuses to
-    // deliver it. Nothing about that is visible in the page or the response —
-    // the spinner simply never stops.
-    //
-    // So this asks the policy the consent page was served with about the
-    // destination that page's own approval produces, rather than asserting a
-    // string. The string was right; what it named was not enough.
+  test('nothing the browser carries back decides anything', async () => {
+    // Everything the client asked for is held here under the nonce, so a
+    // callback that names a different client and a different destination is
+    // ignored on both counts. This is what makes the return leg safe to run as
+    // a bare GET from an off-machine redirect.
     const clientId = await register();
-    const consent = await fetch(
-      `${origin}/authorize?response_type=code&client_id=${clientId}` +
-        `&redirect_uri=${encodeURIComponent(REDIRECT)}` +
-        `&code_challenge=${pkceChallengeFor(VERIFIER)}&code_challenge_method=S256`,
-    );
-    const approved = await authorise(clientId);
+    const other = await register(['https://evil.example/steal']);
 
-    expect(approved.status).toBe(302);
-    expect(formActionOf(consent)).toContain(new URL(approved.headers.get('location')!).origin);
+    const sent = await start(clientId);
+    const consent = new URL(sent.headers.get('location')!);
+    const back = new URL(consent.searchParams.get('return')!);
+    back.searchParams.set('nonce', consent.searchParams.get('nonce')!);
+    back.searchParams.set('assertion', 'THEOWNER');
+    back.searchParams.set('client_id', other);
+    back.searchParams.set('redirect_uri', 'https://evil.example/steal');
+
+    const done = await fetch(back, { redirect: 'manual' });
+
+    expect(done.status).toBe(302);
+    expect(done.headers.get('location')).toStartWith(REDIRECT);
   });
 
-  test('a native client on loopback is permitted the port it actually bound', async () => {
-    // The registered URI has no port and the redirect has one, so a policy
-    // built from what was registered would name an origin the browser never
-    // navigates to. It has to come from the request being approved.
-    const clientId = await register(['http://localhost/callback']);
-    const consent = await fetch(
-      `${origin}/authorize?response_type=code&client_id=${clientId}` +
-        `&redirect_uri=${encodeURIComponent('http://localhost:51763/callback')}` +
-        `&code_challenge=${pkceChallengeFor(VERIFIER)}&code_challenge_method=S256`,
-    );
+  test('the whole CSP widening the consent form needed is gone with it', async () => {
+    // `form-action` had to name the client origin, because Chrome and Safari
+    // re-check it when a form submission redirects — a policy naming only
+    // `'self'` minted the code and then blocked its delivery. No form, no
+    // submission, no widening: the one page left here submits nothing.
+    const refused = await authorise(await register(), {}, STRANGER);
 
-    expect(formActionOf(consent)).toContain('http://localhost:51763');
+    expect(formActionOf(refused)).toEqual(["'self'"]);
   });
 });
 

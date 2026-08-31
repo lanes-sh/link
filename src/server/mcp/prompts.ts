@@ -1,3 +1,4 @@
+import { forProfile } from '#auth';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { isPromptResult } from '#connectivity';
@@ -54,7 +55,7 @@ export function registerPrompt(
       if ('error' in scope) throw new Error(scope.error);
 
       const outcome = await options.profiles.get(scope.profile)!.dispatcher.invoke({
-        principal: options.principal,
+        principal: forProfile(options.principal, scope.profile),
         capabilityId: id,
         connectionKey: scope.connectionKey,
         arguments: rest,

@@ -1,3 +1,4 @@
+import { forProfile } from '#auth';
 import { ResourceTemplate, type McpServer } from '@modelcontextprotocol/server';
 import { isResourceListResult, isResourceResult } from '#connectivity';
 import type { DispatchOutcome } from '#dispatch';
@@ -30,7 +31,7 @@ export function registerResource(
 
       const dispatch = (args: Record<string, unknown>): Promise<DispatchOutcome> =>
         runtime.dispatcher.invoke({
-          principal: options.principal,
+          principal: forProfile(options.principal, profile),
           capabilityId: id,
           connectionKey,
           arguments: args,

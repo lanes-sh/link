@@ -3,16 +3,8 @@ import { serveOverStdio } from './stdio.ts';
 import { Generations, type OpenedWorkspace } from './generations.ts';
 import type { AuthorizationSurface } from './oauth.ts';
 import type { ProfileRuntime } from './mcp/index.ts';
-import {
-  AuthenticatorChain,
-  IssuedTokenAuthenticator,
-  OAuthServer,
-  OAuthStore,
-  OidcAuthenticator,
-  OidcVerifier,
-  tokensMatch,
-  type Authenticator,
-} from '#auth';
+import { AuthenticatorChain } from '#auth';
+import { openAuthorization } from './authorization.ts';
 import type { Logger } from '#connectivity';
 import { silentLogger } from './logging.ts';
 import { listProfiles } from '#profile';
@@ -180,80 +172,6 @@ function closeAll(runtimes: ReadonlyMap<string, Runtime>): Promise<unknown> {
   return Promise.all([...runtimes.values()].map((runtime) => runtime.close()));
 }
 
-/**
- * The remote-client gate, if this profile declares one.
- *
- * Endpoint-scoped rather than per profile, like the bearer token and for the
- * same reason (ADR-009): one URL serves every profile in the workspace, so
- * there is one place a client authorises and one set of tokens.
- *
- * Returns null when `auth.authorization` is absent, and everything downstream
- * treats null as "exactly as before" — no metadata published, no pointer on the
- * `401`, one authenticator instead of a chain.
- */
-async function openAuthorization(
-  primary: Runtime,
-  log: Logger,
-): Promise<{ surface: AuthorizationSurface; authenticator: Authenticator } | null> {
-  const declared = primary.config.auth.authorization;
-  if (!declared) return null;
-
-  const profile = primary.resolution.profile;
-
-  if (declared.mode === 'oidc') {
-    const audience = await primary.credentials.get(declared.client_id_ref);
-    if (!audience) {
-      // Refuse rather than verify without an audience. A verifier that cannot
-      // check who a token was issued for accepts every token the issuer minted
-      // for anything, which is the failure this mode exists to prevent.
-      throw new Error(
-        `auth.authorization.client_id_ref names "${declared.client_id_ref}", which is not in ` +
-          `this target's credential store. Store it with: lanes link secrets set ${declared.client_id_ref}`,
-      );
-    }
-
-    const verifier = new OidcVerifier({
-      issuer: declared.issuer,
-      audience,
-      allowedSubjects: declared.allowed_subjects,
-      ...(declared.introspection_endpoint
-        ? { introspectionEndpoint: declared.introspection_endpoint }
-        : {}),
-    });
-
-    return {
-      // The issuer is somebody else's origin, so it is a constant here rather
-      // than derived from the request.
-      surface: { issuer: () => declared.issuer, mcpPath: MCP_PATH, target: primary.target },
-      authenticator: new OidcAuthenticator(verifier, profile),
-    };
-  }
-
-  const store = new OAuthStore(primary.state.kv);
-  const expected = primary.config.auth.token_ref;
-
-  const server = new OAuthServer({
-    store,
-    accessTokenTtlMs: declared.access_token_ttl_minutes * 60_000,
-    // So a replayed refresh token leaves a line. It is refused rather than
-    // acted on (ADR-035), and a refusal nobody can see is how a connector
-    // losing its authorization came to need log forensics to explain.
-    log,
-    // Approval is proof of holding the endpoint token, compared the same way
-    // the request path compares it. There is one person behind this endpoint
-    // and they already have exactly one credential; a second one invented for
-    // the consent screen would be a password to lose.
-    verifyOwner: async (presented) => {
-      const token = await primary.credentials.get(expected);
-      return token !== null && tokensMatch(presented, token);
-    },
-  });
-
-  return {
-    surface: { server, issuer: (origin) => origin, mcpPath: MCP_PATH, target: primary.target },
-    authenticator: new IssuedTokenAuthenticator(store, profile),
-  };
-}
 
 export async function startEndpoint(options: EndpointOptions): Promise<RunningEndpoint> {
   const reporter = options.reporter ?? SILENT;
@@ -281,7 +199,20 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
       }
     }
 
-    const gate = await openAuthorization(primary, log);
+    // Read through a holder rather than closed over `runtimes`, because a
+    // reload replaces that map and the gate is deliberately built once
+    // (ADR-029). Without the indirection, a member added after start would
+    // stay invisible until the endpoint was restarted — which is precisely the
+    // thing `profile members add` tells the operator has taken effect.
+    let serving: ReadonlyMap<string, Runtime> = runtimes;
+
+    const gate = await openAuthorization(primary, log, async (subject) =>
+      [...serving]
+        .filter(([, runtime]) =>
+          runtime.config.members.some((member) => member.subject === subject),
+        )
+        .map(([name]) => name),
+    );
 
     // The authenticator and the authorization gate are built once, from the
     // runtime this endpoint booted with, and are deliberately not part of what
@@ -292,6 +223,7 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
       { profiles: profileRuntimes(runtimes), close: () => closeAll(runtimes).then(() => {}) },
       async (): Promise<OpenedWorkspace> => {
         const reopened = await openReconciled(options);
+        serving = reopened.runtimes;
         return {
           profiles: profileRuntimes(reopened.runtimes),
           close: () => closeAll(reopened.runtimes).then(() => {}),

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mayReach, memberPrincipal, ownerPrincipal } from './index.ts';
+import { forProfile, mayReach, memberPrincipal, ownerPrincipal } from './index.ts';
 
 /**
  * Who may act within a profile — ADR-060.
@@ -66,5 +66,32 @@ describe('the callers that are not people', () => {
     expect(
       mayReach({ id: 'x', profile: 'personal', kind: 'member', profiles: [] }, 'anything'),
     ).toBe(false);
+  });
+});
+
+describe('acting within a profile that is not the one the endpoint booted with', () => {
+  const member = memberPrincipal(SUBJECT, 'personal', ['personal', 'shared']);
+
+  test('carries the profile the call named, because that is what gets recorded', () => {
+    // A principal is built once, from the endpoint's primary profile, and an
+    // endpoint serves several. Without this the audit event and the `mayReach`
+    // check both read the profile the connection was opened under rather than
+    // the one the caller asked for.
+    expect(forProfile(member, 'shared').profile).toBe('shared');
+    expect(forProfile(member, 'shared').id).toBe(SUBJECT);
+  });
+
+  test('widens nothing — a profile they may not reach is still refused', () => {
+    const elsewhere = forProfile(member, 'work');
+
+    expect(elsewhere.profiles).toEqual(['personal', 'shared']);
+    expect(mayReach(elsewhere, elsewhere.profile)).toBe(false);
+  });
+
+  test('is the same object when the profile has not changed', () => {
+    // Not an optimisation worth having on its own; it is here so that the
+    // overwhelmingly common single-profile case cannot be told apart from the
+    // code that predates this.
+    expect(forProfile(member, 'personal')).toBe(member);
   });
 });

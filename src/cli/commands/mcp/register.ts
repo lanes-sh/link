@@ -32,6 +32,17 @@ export interface McpAddOptions extends GlobalFlags {
   readonly force?: boolean | undefined;
   /** Register only; leave the skill and the agent alone. */
   readonly noSkill?: boolean | undefined;
+  /**
+   * Write the endpoint token into the registration, for a machine with no browser.
+   *
+   * The ordinary path registers a bare URL and the client authorises itself
+   * against lanes.sh (ADR-062), which is both safer and less to get wrong. This
+   * is the CI escape hatch, and it is a flag rather than a fallback because the
+   * difference has to be a decision somebody made: a registration that quietly
+   * embedded a credential when a browser was unavailable is one nobody would
+   * notice had done so.
+   */
+  readonly headless?: boolean | undefined;
 }
 
 export async function mcpAdd(target: string | undefined, options: McpAddOptions): Promise<void> {
@@ -71,6 +82,9 @@ export async function mcpAdd(target: string | undefined, options: McpAddOptions)
   const runtime = await openRuntime(options);
 
   try {
+    // Minted either way. The endpoint needs one to serve at all, and `outputs`
+    // prints it; what `--headless` decides is whether it is written into
+    // somebody's agent config.
     const { token } = await ensureProfileToken(runtime.credentials, runtime.config.auth.token_ref);
 
     // The target's own address, not the local one. This built
@@ -81,7 +95,7 @@ export async function mcpAdd(target: string | undefined, options: McpAddOptions)
     const input: AddInput = {
       name,
       url,
-      token,
+      ...(options.headless === true ? { token } : {}),
       tokenEnv,
       scope,
       profile: runtime.resolution.profile,

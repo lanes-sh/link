@@ -3,14 +3,14 @@
 These decisions were made in `docs/detailed/init.md` and are transcribed here with their reasoning. They are
 not open questions; changing one means revisiting the reasoning, not re-litigating the choice.
 
-The exceptions are marked as such. **ADR-025, ADR-062 and ADR-063 are proposed rather than
-accepted** — each is a question with the case already argued, filed here so the next person to ask
-does not start from nothing. Nothing in the codebase depends on any of them yet.
+The exceptions are marked as such. **ADR-025 and ADR-063 are proposed rather than accepted** —
+each is a question with the case already argued, filed here so the next person to ask does not
+start from nothing. Nothing in the codebase depends on either yet.
 
-The two new ones are the second half of 0.8.0 and are recorded now because the first half was
-shaped around them: `members:`, `Principal.profiles` and `lanes auth` all exist so that ADR-062 has
-somewhere to land. Reading them as shipped would be wrong — the endpoint still asks for a pasted
-token, and there is no read listener.
+ADR-063 is the last piece of 0.8.0 still unbuilt: there is no read listener and no `lanes link
+pair`. ADR-062 was proposed alongside it and is now accepted and shipped — `/authorize` redirects
+to lanes.sh, `/authorize/callback` verifies the assertion it comes back with, and the consent form
+that asked for a pasted token is gone.
 
 | | Decision |
 |---|---|
@@ -74,7 +74,7 @@ token, and there is no read listener.
 | [059](059-the-owner-layer-is-instances.md) | The owner layer is instances, and two profiles may share one |
 | [060](060-a-caller-is-a-person.md) | A caller is a person, and a profile declares who may consume it |
 | [061](061-a-workspace-is-the-only-word.md) | A workspace is the only word, and a default may be sticky where nothing is destroyed |
-| [062](062-the-consent-page-asks-lanes-who-you-are.md) | *(proposed)* The consent page asks Lanes who you are, and the pasted token is for CI |
+| [062](062-the-consent-page-asks-lanes-who-you-are.md) | The consent page asks Lanes who you are, and the pasted token is for CI |
 | [063](063-one-origin-may-read-a-loopback-endpoint.md) | *(proposed)* One origin may read a loopback endpoint, over a certificate it installs |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
@@ -211,7 +211,7 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
   been reversed.
 
 - **ADR-062 and ADR-063 both take something back from a decision that was right when it was made.**
-  ADR-062 replaces the consent form's pasted token, which ADR-018 shipped and ADR-039 named as the
+  ADR-062 replaced the consent form's pasted token, which ADR-018 shipped and ADR-039 named as the
   most valuable thing on a loopback bind — so the endpoint gets safer and gains a dependency in the
   same change. ADR-063 grants one browser origin a read of a loopback endpoint, which ADR-039
   refuses in a paragraph written to be read by whoever tried this. It is closed on a separate

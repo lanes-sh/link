@@ -73,7 +73,7 @@ export const ACCEPTS: Record<string, readonly string[]> = {
   outputs: ['show'],
   start: ['port', 'only'],
   'mcp stdio': ['only'],
-  'mcp add': ['name', 'scope', 'token-env', 'dry-run', 'force', 'no-skill'],
+  'mcp add': ['name', 'scope', 'token-env', 'dry-run', 'force', 'no-skill', 'headless'],
   'mcp skill': ['print', 'force'],
   'mcp list': ['name', 'scope'],
   // `--yes` because it installs the app when nothing answers the scheme, and

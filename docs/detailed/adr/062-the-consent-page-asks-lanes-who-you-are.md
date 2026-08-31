@@ -1,6 +1,6 @@
 # ADR-062: The consent page asks Lanes who you are, and the pasted token is for CI
 
-**Status:** proposed — the endpoint still asks for a pasted token; the federation described here is not built · **Amends** [ADR-018](018-the-gate-is-in-the-application.md),
+**Status:** accepted · **Amends** [ADR-018](018-the-gate-is-in-the-application.md),
 [ADR-036](036-a-client-is-told-this-endpoint-keeps-it-signed-in.md),
 [ADR-054](054-the-surface-in-front-of-the-gate.md) · **Retires**
 [ADR-003](003-auth-model.md)'s "the token is the identity" · **Requires**

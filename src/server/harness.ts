@@ -5,7 +5,7 @@ import {
   IssuedTokenAuthenticator,
   OAuthServer,
   OAuthStore,
-  tokensMatch,
+  type Federation,
 } from '#auth';
 import { oneProfile, type ProfileRuntime } from './mcp/index.ts';
 import {
@@ -52,6 +52,9 @@ function harnessConnections(config: Config): ConnectionConfig[] {
 }
 
 export const TEST_TOKEN = 'llk_test_token_value';
+
+/** A signed-in person no profile lists. See the federation stub below. */
+export const STRANGER = 'NOBODY_LISTS_THIS_PERSON';
 
 /**
  * A profile for the harness, from the `allow`/`deny` a test hands over.
@@ -140,6 +143,15 @@ export interface HarnessOptions {
   refreshSkills?: (registry: ProviderRegistry) => Promise<void>;
   /** Serve the `self` authorization flow alongside the bearer token. */
   authorization?: boolean;
+  /**
+   * The identity half of that flow, stubbed.
+   *
+   * The real one talks to lanes.sh and verifies a signature; a test that
+   * exercised it would be testing `AssertionVerifier`, which has its own file
+   * and its own key pair. What a harness test is about is what the endpoint
+   * does *with* an answer, so the answer is injected.
+   */
+  federation?: Partial<Federation>;
   /**
    * What a reload re-reads, standing in for `openReconciled` over a workspace
    * this harness does not have. Throwing is how the "a failed reload keeps
@@ -275,7 +287,19 @@ export function startHarness(options: HarnessOptions): Harness {
             accessTokenTtlMs: 3_600_000,
             log,
             ...(options.now ? { now: options.now } : {}),
-            verifyOwner: (presented) => Promise.resolve(tokensMatch(presented, token)),
+            federation: {
+              consentUrl: 'https://lanes.example/link/authorize',
+              // Anything non-empty verifies, as the subject it spells. Enough to
+              // drive the flow, and obviously not a verifier.
+              verify: async (assertion) =>
+                assertion ? { subject: `lanes:${assertion}`, email: null } : null,
+              // One reserved spelling answers "no profile names them", because
+              // that refusal is a real branch — a person signs in successfully
+              // and still reaches nothing — and there has to be a way to drive it.
+              profilesFor: async (subject) =>
+                subject === `lanes:${STRANGER}` ? [] : [options.profile],
+              ...options.federation,
+            },
           }),
           issuer: (origin: string) => origin,
           mcpPath: '/mcp',

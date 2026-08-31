@@ -1,3 +1,5 @@
+import { readSession } from '#auth/lanes/session.ts';
+import { ConfigError } from '#profile';
 import { startEndpoint } from '#server/endpoint.ts';
 import { streamLogger } from '#server/logging.ts';
 import { repairOwnerLayer } from '../../config-repair.ts';
@@ -16,6 +18,8 @@ export async function start(
 ): Promise<void> {
   const { resolution } = await resolveProfile(flags);
   announce(resolution);
+
+  await requireSignIn();
 
   // Before the bootstrap, and only here.
   //
@@ -80,4 +84,35 @@ export async function start(
   process.on('SIGTERM', () => void shutdown());
 
   await new Promise(() => {});
+}
+
+/**
+ * Refuse to serve without a Lanes session.
+ *
+ * A local endpoint requires this as much as a deployed one does, which is the
+ * uncomfortable half of ADR-060 and worth stating plainly: **a self-hostable
+ * tool now needs an account to start.** The alternative was worse. A profile
+ * declares who may consume it, and there is no way to check that against
+ * anybody if the endpoint has no idea who is asking — so "local is exempt"
+ * means local profiles cannot express delegation at all, and the model would be
+ * two models.
+ *
+ * What is *not* required is the network per request. A machine offline for a
+ * day keeps serving; the session is needed to sign in and to refresh, and
+ * `lanes auth status` says how long that has left to run.
+ *
+ * The CI token is the exception and stays one (ADR-009): a headless runner has
+ * no browser, presents `llk_…`, and reaches the whole workspace.
+ */
+async function requireSignIn(): Promise<void> {
+  if ((await readSession()) !== null) return;
+
+  throw new ConfigError(
+    'Not signed in, so there is nobody for this endpoint to serve.\n' +
+      '  Run: lanes auth login\n' +
+      '\n' +
+      '  A profile reaches you only where its members list your subject, which is why\n' +
+      '  this is required for a local endpoint too. See:\n' +
+      '    lanes link profile members add --me --profile <name>',
+  );
 }
