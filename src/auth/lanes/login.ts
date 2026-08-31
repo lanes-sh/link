@@ -117,7 +117,12 @@ async function awaitCallback(
     port: 0,
     fetch(request) {
       const url = new URL(request.url);
-      if (url.pathname !== '/callback') return new Response('Not found', { status: 404 });
+      // Anything else, including the favicon a browser asks for unprompted.
+      // It closes its connection too, so a stray request cannot keep the server
+      // alive past the redirect it is waiting for.
+      if (url.pathname !== '/callback') {
+        return closingPage('Not found.', 404);
+      }
 
       const error = url.searchParams.get('error');
       if (error) {
@@ -160,16 +165,40 @@ async function awaitCallback(
     return { code: await promise, redirectUri };
   } finally {
     clearTimeout(timeout);
-    await server.stop(true);
+
+    // Graceful, and this is the whole of the fix for a login that worked and
+    // looked like it had not. `stop(true)` closes active connections
+    // immediately, and the active connection is the one carrying the page the
+    // person is waiting to see: `resolve` runs inside the handler, before Bun
+    // has written the response, so forcing here raced the browser and won every
+    // time. What they got was a connection error on a sign-in that had already
+    // succeeded, which is the worst possible way for this to fail.
+    //
+    // Nothing can hold a graceful stop open, because every response closes its
+    // own connection — see `closingPage`. That is what makes this safe to await
+    // rather than force.
+    await server.stop();
   }
 }
 
-function closingPage(message: string): Response {
+/**
+ * The page the browser lands on, and the last thing this listener does.
+ *
+ * `Connection: close` on every response, including the 404s. The listener is
+ * torn down the moment the code arrives, and a keep-alive connection would
+ * either hold the graceful stop open or be severed mid-response — the second is
+ * what used to happen. Telling the browser not to reuse the socket makes
+ * "respond, then stop" a sequence rather than a race.
+ */
+function closingPage(message: string, status = 200): Response {
   return new Response(
     `<!doctype html><meta charset="utf-8"><title>Lanes</title>` +
       `<body style="font:16px system-ui;display:grid;place-items:center;height:100vh;margin:0">` +
       `<p>${message}</p></body>`,
-    { headers: { 'content-type': 'text/html; charset=utf-8' } },
+    {
+      status,
+      headers: { 'content-type': 'text/html; charset=utf-8', connection: 'close' },
+    },
   );
 }
 

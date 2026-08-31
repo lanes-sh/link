@@ -210,3 +210,67 @@ describe('an API that cannot sign anybody in', () => {
     );
   });
 });
+
+describe('the page the browser is left on', () => {
+  test('actually arrives, on a sign-in that worked', async () => {
+    // The regression this file exists to hold from here on. `awaitCallback` used
+    // to tear the listener down with `stop(true)`, which force-closes active
+    // connections — and the active connection is the one carrying this page.
+    // `resolve` runs inside the handler, before Bun has written the response, so
+    // the teardown raced the browser and won every time.
+    //
+    // What that looked like was a connection error on a sign-in that had already
+    // succeeded: the code was captured, the exchange happened, the session was
+    // written, and the person was looking at "This site can't be reached".
+    //
+    // Every other test here fires the callback with `void fetch(...).catch()`,
+    // which is what let this through. This one waits for the answer.
+    const { fetch: call, recorded } = harness();
+
+    let delivered: Response | null = null;
+    const open = async (raw: string): Promise<void> => {
+      const url = new URL(raw);
+      recorded.authorizeUrl = url;
+
+      const back = new URL(url.searchParams.get('redirect_uri')!);
+      back.searchParams.set('code', 'an-authorization-code');
+      back.searchParams.set('state', url.searchParams.get('state')!);
+
+      // Not awaited: `login` is not listening for the answer yet. Captured so
+      // the assertion below can wait for it.
+      void fetch(back).then((response) => void (delivered = response));
+    };
+
+    await login({ apiUrl: 'https://api.example.com', fetch: call, open, home: await home() });
+
+    // The listener is stopped by now, so this is asking whether the response
+    // escaped before it went.
+    await Bun.sleep(50);
+
+    expect(delivered).not.toBeNull();
+    expect(delivered!.status).toBe(200);
+    expect(await delivered!.text()).toContain('Signed in');
+  });
+
+  test('closes its connection, so the graceful stop cannot hang on keep-alive', async () => {
+    // What makes "respond, then stop" a sequence rather than a race. Without it
+    // the choice is a forced close, which is the bug above, or a stop that waits
+    // on a socket the browser is holding open.
+    const { fetch: call, recorded } = harness();
+
+    let delivered: Response | null = null;
+    const open = async (raw: string): Promise<void> => {
+      const url = new URL(raw);
+      recorded.authorizeUrl = url;
+      const back = new URL(url.searchParams.get('redirect_uri')!);
+      back.searchParams.set('code', 'an-authorization-code');
+      back.searchParams.set('state', url.searchParams.get('state')!);
+      void fetch(back).then((response) => void (delivered = response));
+    };
+
+    await login({ apiUrl: 'https://api.example.com', fetch: call, open, home: await home() });
+    await Bun.sleep(50);
+
+    expect(delivered!.headers.get('connection')).toBe('close');
+  });
+});
