@@ -1,6 +1,6 @@
 # ADR-063: One origin may read a loopback endpoint, over a certificate it installs
 
-**Status:** proposed — there is no read listener and no `lanes link pair`; nothing described here is built · **Narrows** [ADR-039](039-cross-origin-access-is-a-deployment-only-grant.md) ·
+**Status:** accepted · **Narrows** [ADR-039](039-cross-origin-access-is-a-deployment-only-grant.md) ·
 **Reopens for a different audience** [ADR-053](053-the-page-a-person-reads-is-the-app.md) ·
 **Constrained by** the loopback guard in `src/server/rebinding.ts`
 

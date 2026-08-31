@@ -3,14 +3,14 @@
 These decisions were made in `docs/detailed/init.md` and are transcribed here with their reasoning. They are
 not open questions; changing one means revisiting the reasoning, not re-litigating the choice.
 
-The exceptions are marked as such. **ADR-025 and ADR-063 are proposed rather than accepted** —
-each is a question with the case already argued, filed here so the next person to ask does not
-start from nothing. Nothing in the codebase depends on either yet.
+The exceptions are marked as such. **ADR-025 is proposed rather than accepted** — a question with
+the case already argued, filed here so the next person to ask does not start from nothing. Nothing
+in the codebase depends on it.
 
-ADR-063 is the last piece of 0.8.0 still unbuilt: there is no read listener and no `lanes link
-pair`. ADR-062 was proposed alongside it and is now accepted and shipped — `/authorize` redirects
-to lanes.sh, `/authorize/callback` verifies the assertion it comes back with, and the consent form
-that asked for a pasted token is gone.
+ADR-062 and ADR-063 were both filed as proposals while 0.8.0's first half was being shaped around
+them. Both are now accepted and built: `/authorize` redirects to lanes.sh and the consent form that
+asked for a pasted token is gone, and `lanes link pair` provisions a TLS read listener one port
+above the endpoint that exactly one browser origin may read.
 
 | | Decision |
 |---|---|
@@ -75,7 +75,7 @@ that asked for a pasted token is gone.
 | [060](060-a-caller-is-a-person.md) | A caller is a person, and a profile declares who may consume it |
 | [061](061-a-workspace-is-the-only-word.md) | A workspace is the only word, and a default may be sticky where nothing is destroyed |
 | [062](062-the-consent-page-asks-lanes-who-you-are.md) | The consent page asks Lanes who you are, and the pasted token is for CI |
-| [063](063-one-origin-may-read-a-loopback-endpoint.md) | *(proposed)* One origin may read a loopback endpoint, over a certificate it installs |
+| [063](063-one-origin-may-read-a-loopback-endpoint.md) | One origin may read a loopback endpoint, over a certificate it installs |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 

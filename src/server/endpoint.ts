@@ -1,10 +1,16 @@
-import { MCP_PATH, serve } from './index.ts';
+import { MCP_PATH, serve, type RunningServer } from './index.ts';
 import { serveOverStdio } from './stdio.ts';
 import { Generations, type OpenedWorkspace } from './generations.ts';
 import type { AuthorizationSurface } from './oauth.ts';
 import type { ProfileRuntime } from './mcp/index.ts';
 import { AuthenticatorChain } from '#auth';
 import { openAuthorization } from './authorization.ts';
+import { serveRead, type RunningReadListener } from './read/listener.ts';
+import {
+  PAIR_CERT_REF,
+  PAIR_KEY_REF,
+  PAIR_TOKEN_REF,
+} from '#cli/commands/operate/pair.ts';
 import type { Logger } from '#connectivity';
 import { silentLogger } from './logging.ts';
 import { listProfiles } from '#profile';
@@ -74,6 +80,8 @@ export interface EndpointOptions {
 export interface RunningEndpoint {
   readonly url: string;
   readonly profiles: readonly string[];
+  /** The dashboard read surface, when this workspace is paired (ADR-063). */
+  readonly readUrl?: string | undefined;
   stop(): Promise<void>;
 }
 
@@ -257,14 +265,24 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
     // from the constructor claimed an endpoint that a failed bind never served.
     generations.announce();
 
+    // Only when `lanes link pair` has provisioned all three. Absent, this is
+    // simply not served — the read surface is opt-in and its absence is the
+    // default (ADR-063), so an endpoint that was never paired binds one port
+    // exactly as it always did.
+    const read = await openReadListener(primary, server, () => generations.current.profiles, log);
+
     return {
       url: server.url,
       profiles: [...runtimes.keys()],
+      ...(read ? { readUrl: read.url } : {}),
       // `server.stop()` closes the request handler, which closes whichever
       // generation is current — and a generation owns the runtimes it opened.
       // Closing `runtimes` here too would reach past a reload and close a set
       // nothing is serving from any more.
-      stop: () => server.stop(),
+      stop: async () => {
+        await read?.stop();
+        await server.stop();
+      },
     };
   } catch (error) {
     await closeAll(runtimes);
@@ -323,5 +341,54 @@ export async function startStdioEndpoint(
   } catch (error) {
     await closeAll(runtimes);
     throw error;
+  }
+}
+
+/**
+ * The dashboard's read surface, if this workspace has been paired.
+ *
+ * Absent by default and absent for every workspace that has not run
+ * `lanes link pair`, which is the whole shape of ADR-063: a browser origin
+ * reaching loopback is a grant somebody makes deliberately, not a property of
+ * running an endpoint. All three pieces must be present — the token and both
+ * halves of the certificate — because a partial pairing would bind a port
+ * serving something no browser will connect to.
+ *
+ * Bound one above the MCP port, and a failure to bind is reported rather than
+ * fatal: the endpoint is what the operator ran this for, and refusing to serve
+ * it because a second port is occupied would be the wrong trade.
+ */
+async function openReadListener(
+  primary: Runtime,
+  server: RunningServer,
+  profiles: () => ReadonlyMap<string, ProfileRuntime>,
+  log: Logger,
+): Promise<RunningReadListener | null> {
+  const [token, cert, key] = await Promise.all([
+    primary.credentials.get(PAIR_TOKEN_REF),
+    primary.credentials.get(PAIR_CERT_REF),
+    primary.credentials.get(PAIR_KEY_REF),
+  ]);
+
+  if (token === null || cert === null || key === null) return null;
+
+  const bound = new URL(server.url);
+
+  try {
+    return serveRead({
+      host: bound.hostname,
+      port: Number(bound.port) + 1,
+      workspace: primary.target,
+      profiles,
+      audit: primary.audit,
+      token,
+      tls: { cert, key },
+    });
+  } catch (error) {
+    log.warn('could not serve the dashboard read surface', {
+      port: Number(bound.port) + 1,
+      reason: error instanceof Error ? error.message : String(error),
+    });
+    return null;
   }
 }

@@ -65,6 +65,7 @@ export const ACCEPTS: Record<string, readonly string[]> = {
   'target list': ['urls', 'workspace'],
   'workspace show': ['workspace'],
   'target show': ['workspace'],
+  pair: ['print', 'rotate', 'yes'],
   'token show': ['show', 'raw'],
   'token rotate': ['show', 'raw', 'yes'],
   'audit tail': ['limit', 'denied-only', 'format'],

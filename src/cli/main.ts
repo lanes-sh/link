@@ -15,6 +15,7 @@ import {
   desktop,
   doctor,
   outputs,
+  pair,
   plan,
   policyList,
   policyRule,
@@ -288,6 +289,14 @@ export async function run(argv: readonly string[]): Promise<void> {
         default:
           throw new Error(`Unknown: ${PROGRAM} token ${second}`);
       }
+
+    case 'pair':
+      return pair({
+        ...global,
+        print: flags['print'] === true,
+        rotate: flags['rotate'] === true,
+        yes: flags['yes'] === true,
+      });
 
     case 'audit':
       if (second === 'verify') return auditVerify(global);
