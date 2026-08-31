@@ -18,8 +18,26 @@ export interface ReadConnection {
   readonly ref: string;
   readonly provider: string;
   readonly id: string;
+  /**
+   * The operator's own word for it, and what a reader should be shown.
+   *
+   * `gmail.ada_lovelace` is an address, not a name. A dashboard listing refs is
+   * asking somebody to read identifiers when they gave the thing a label
+   * precisely so they would not have to.
+   */
+  readonly label: string | null;
+  /** The identity the provider reported at connect time. */
+  readonly account: string | null;
   /** Which profiles grant this connection at all. */
   readonly profiles: readonly string[];
+}
+
+/** The connection rows as `connections.yaml` holds them. */
+export interface ConnectionRow {
+  readonly provider: string;
+  readonly id: string;
+  readonly account?: string | undefined;
+  readonly label?: string | undefined;
 }
 
 export interface ReadGrant {
@@ -54,7 +72,9 @@ export interface ReadState {
 export function readState(
   workspace: string,
   profiles: ReadonlyMap<string, ProfileRuntime>,
+  rows: readonly ConnectionRow[] = [],
 ): ReadState {
+  const declared = new Map(rows.map((row) => [`${row.provider}.${row.id}`, row]));
   const connections = new Map<string, ReadConnection & { profiles: string[] }>();
   const described: ReadProfile[] = [];
 
@@ -66,8 +86,19 @@ export function readState(
       const [provider = ref, id = ''] = ref.split('.');
 
       const existing = connections.get(ref);
-      if (existing) existing.profiles.push(name);
-      else connections.set(ref, { ref, provider, id, profiles: [name] });
+      if (existing) {
+        existing.profiles.push(name);
+      } else {
+        const row = declared.get(ref);
+        connections.set(ref, {
+          ref,
+          provider,
+          id,
+          label: row?.label ?? null,
+          account: row?.account ?? null,
+          profiles: [name],
+        });
+      }
 
       const reachable = runtime.registry
         .capabilities()

@@ -1,6 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { ProfileRuntime } from '../mcp/visibility.ts';
-import { readState } from './state.ts';
+import { readState, type ConnectionRow } from './state.ts';
 
 /**
  * The one surface a browser on `lanes.sh` may read (ADR-063).
@@ -66,6 +66,15 @@ export interface ReadListenerOptions {
   /** The current generation's profiles, read through a thunk so a reload lands. */
   readonly profiles: () => ReadonlyMap<string, ProfileRuntime>;
   readonly audit: AuditTail;
+  /**
+   * The workspace's connection rows, read per request.
+   *
+   * A thunk rather than a value because a connection added while the endpoint
+   * runs should appear without a restart — the same reason `profiles` is one.
+   * Read from `connections.yaml` rather than derived from the grants, because
+   * a label and an account live on the connection and a grant carries neither.
+   */
+  readonly connections: () => Promise<readonly ConnectionRow[]>;
   /** The pairing token, compared in constant time. */
   readonly token: string;
   readonly tls: { readonly cert: string; readonly key: string };
@@ -140,7 +149,12 @@ async function handle(
   const url = new URL(request.url);
 
   if (url.pathname === '/state') {
-    return json(readState(options.workspace, options.profiles()), 200, cors(origin, allowed));
+    const rows = await options.connections().catch(() => []);
+    return json(
+      readState(options.workspace, options.profiles(), rows),
+      200,
+      cors(origin, allowed),
+    );
   }
 
   if (url.pathname === '/audit') {

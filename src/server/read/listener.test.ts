@@ -80,6 +80,7 @@ beforeAll(() => {
     workspace: 'local',
     profiles: () => PROFILES,
     audit: AUDIT,
+    connections: async () => [],
     token: TOKEN,
     tls: selfSigned(),
   });

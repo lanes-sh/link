@@ -13,7 +13,7 @@ import {
 } from '#cli/commands/operate/pair.ts';
 import type { Logger } from '#connectivity';
 import { silentLogger } from './logging.ts';
-import { listProfiles } from '#profile';
+import { listProfiles, readConnections } from '#profile';
 import {
   applyReconcile,
   formatPlan,
@@ -381,6 +381,8 @@ async function openReadListener(
       workspace: primary.target,
       profiles,
       audit: primary.audit,
+      connections: async () =>
+        (await readConnections(primary.resolution.workspaceRoot)).connections,
       token,
       tls: { cert, key },
     });
