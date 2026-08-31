@@ -126,11 +126,13 @@ export const SELECTION: Record<string, Requires> = {
   'connection list': 'workspace',
   grant: 'profile+workspace',
   revoke: 'profile+workspace',
-  // Both edit the profile config, and `disconnect` also opens the target's
-  // credential store to delete from it. Same requirement as `connect` for the
-  // same reasons.
-  disconnect: 'profile+workspace',
-  relabel: 'profile+workspace',
+  // Both act on a connection, which belongs to the workspace (ADR-057).
+  // `disconnect` already reaches every profile that granted it and `label` is a
+  // field on the connection row, so neither had a profile to be told — naming
+  // one described a slice of a change that was never scoped to it. `--profile`
+  // still narrows what is listed back.
+  disconnect: 'workspace',
+  relabel: 'workspace',
   // Its own row rather than an inheritance from `connect`. Both need the same
   // two things, but the row is what makes `selectionKey` return the two-word
   // key — and that is what keeps thirty declaration flags off
@@ -142,10 +144,15 @@ export const SELECTION: Record<string, Requires> = {
   // One chain per workspace since contract 3, so the workspace is the subject
   // and `--profile` filters the rows rather than choosing which log to read.
   audit: 'workspace',
-  secrets: 'profile+workspace',
+  // One credential store per workspace since contract 3, so every profile
+  // opened the same one.
+  secrets: 'workspace',
   plan: 'profile+workspace',
   doctor: 'profile+workspace',
-  auth: 'profile+workspace',
+  // Whether an account can still sign in is a fact about the account. Scoped to
+  // a profile's grants it could not check one that had just been connected,
+  // which is when you most want to.
+  auth: 'workspace',
   // Target-scoped: see the note above. `--profile` narrows each to one profile.
   status: 'workspace',
   outputs: 'profile+workspace',
@@ -158,7 +165,10 @@ export const SELECTION: Record<string, Requires> = {
   dashboard: 'none',
   desktop: 'none',
   attach: 'profile+workspace',
-  start: 'profile+workspace',
+  // One endpoint serves every profile in the workspace (ADR-009), so naming one
+  // described a slice of what it does. `--profile` picks the primary, whose
+  // token opens it, and `--only` is what narrows what is served.
+  start: 'workspace',
   deploy: 'workspace',
   // Both spellings: `sync` alone is `sync targets`, which is the only thing
   // there is to sync, and naming it leaves room for the next one.
@@ -182,8 +192,8 @@ export const SELECTION: Record<string, Requires> = {
   'token rotate': 'profile+workspace',
   'audit tail': 'workspace',
   'audit verify': 'workspace',
-  'secrets set': 'profile+workspace',
-  'secrets list': 'profile+workspace',
+  'secrets set': 'workspace',
+  'secrets list': 'workspace',
   'mcp add': 'profile+workspace',
   'mcp stdio': 'profile+workspace',
   memory: 'profile+workspace',

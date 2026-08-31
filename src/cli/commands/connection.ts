@@ -9,8 +9,8 @@ import {
   type Resolution,
 } from '#profile';
 import { ConfigDocument } from '../config-edit.ts';
-import { announce, emit, ok, print, style, warn } from '../output.ts';
-import { openRuntime, type GlobalFlags } from '../runtime.ts';
+import { announce, announceWorkspace, emit, ok, print, style, warn } from '../output.ts';
+import { openWorkspaceRuntime, type GlobalFlags } from '../runtime.ts';
 import { nextAfterEdit, publishProfileEdit } from '../publish.ts';
 import { confirm, isInteractive } from '../prompt.ts';
 
@@ -198,7 +198,7 @@ export async function removeConnection(
   key: string,
   flags: DisconnectFlags,
 ): Promise<{ resolution: Resolution; disconnected: Disconnected } | null> {
-  const runtime = await openRuntime(flags);
+  const runtime = await openWorkspaceRuntime(flags);
 
   try {
     const { resolution, target } = runtime;
@@ -324,7 +324,7 @@ export async function disconnect(key: string | undefined, flags: DisconnectFlags
   const { resolution, disconnected: result } = outcome;
 
   return emit(flags.json, result, () => {
-    announce(resolution);
+    announceWorkspace(resolution);
     print(ok(`disconnected ${style.bold(result.key)}${result.account ? ` (${result.account})` : ''}`));
 
     if (result.credential) {

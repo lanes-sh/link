@@ -33,3 +33,28 @@ export async function openWorkspaceRuntime(flags: GlobalFlags): Promise<Runtime>
 
   return openRuntime({ ...flags, profile: names[0]! });
 }
+
+/**
+ * Which profile a workspace-level command should act *as*.
+ *
+ * Distinct from `openWorkspaceRuntime` because the caller needs the name rather
+ * than a runtime — `start` puts it back into flags and hands them on. Same rule:
+ * `--profile` wins, and otherwise the first is taken without being reported as
+ * a choice, because for the things this is used for it is not one.
+ */
+export async function primaryProfile(flags: GlobalFlags): Promise<string> {
+  if (flags.profile !== undefined) return flags.profile;
+
+  const root = resolveWorkspaceRoot();
+  const resolved = await openTarget(root, flags.target!);
+  const names = await listProfiles(resolved.workspaceRoot);
+
+  if (names.length === 0) {
+    throw new ConfigError(
+      `Workspace "${flags.target}" holds no profiles, so there is nothing to serve.\n` +
+        `  Create one with: lanes link profile add <name> --workspace ${flags.target}`,
+    );
+  }
+
+  return names[0]!;
+}

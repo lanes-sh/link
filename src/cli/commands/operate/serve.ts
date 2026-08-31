@@ -5,7 +5,7 @@ import { streamLogger } from '#server/logging.ts';
 import { repairOwnerLayer } from '../../config-repair.ts';
 import { announce, ok, print, style, warn } from '../../output.ts';
 import { staleNudge } from '../../release.ts';
-import { resolveProfile, type GlobalFlags } from '../../runtime.ts';
+import { primaryProfile, resolveProfile, type GlobalFlags } from '../../runtime.ts';
 
 /** `lanes link start` — reconcile, then serve every profile on one endpoint. */
 
@@ -16,7 +16,20 @@ export async function start(
     only?: boolean | undefined;
   },
 ): Promise<void> {
-  const { resolution } = await resolveProfile(flags);
+  // One endpoint serves every profile in the workspace, so the workspace is the
+  // subject and a profile is not required. What `--profile` picks is the
+  // *primary*: whose token opens the endpoint and whose port it binds (ADR-009).
+  // `--only` is the flag that narrows what is served, and it has nothing to
+  // narrow unless a profile was named.
+  if (flags.only === true && flags.profile === undefined) {
+    throw new ConfigError(
+      '--only serves one profile, so it needs to be told which.\n' +
+        '  Add --profile <name>, or drop --only to serve every profile in the workspace.',
+    );
+  }
+
+  const resolved = { ...flags, profile: await primaryProfile(flags) };
+  const { resolution } = await resolveProfile(resolved);
   announce(resolution);
 
   await requireSignIn();
@@ -45,7 +58,7 @@ export async function start(
   // entrypoint. What stays here is what a terminal wants: the plan, printed as
   // it is applied, and the endpoint at the end.
   const endpoint = await startEndpoint({
-    flags,
+    flags: resolved,
     port: flags.port,
     only: flags.only,
     mintToken: true,

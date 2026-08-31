@@ -72,7 +72,7 @@ export async function knowledgeShow(flags: KnowledgeFlags): Promise<void> {
     print('');
     print(
       style.dim(
-        `  The vault, the credential store, runtime state and the audit log stay in target "${runtime.target}".`,
+        `  The vault, the credential store, runtime state and the audit log stay in workspace "${runtime.target}".`,
       ),
     );
     // Complete commands, not shapes. Every one of these is pasted, and with

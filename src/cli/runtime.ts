@@ -33,4 +33,4 @@ export {
 } from './runtime/registry.ts';
 
 export { grantedConnections, openRuntime, type OpenOptions, type Runtime } from './runtime/open.ts';
-export { openWorkspaceRuntime } from './runtime/workspace.ts';
+export { openWorkspaceRuntime, primaryProfile } from './runtime/workspace.ts';

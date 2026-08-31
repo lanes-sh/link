@@ -1,7 +1,7 @@
 import { CONNECTIONS_FILE, readConnections, type Resolution } from '#profile';
 import { ConfigDocument } from '../config-edit.ts';
-import { announce, emit, ok, print, style } from '../output.ts';
-import { openRuntime, type GlobalFlags } from '../runtime.ts';
+import { announce, announceWorkspace, emit, ok, print, style } from '../output.ts';
+import { openWorkspaceRuntime, type GlobalFlags } from '../runtime.ts';
 import { nextAfterEdit, publishProfileEdit } from '../publish.ts';
 import { locate } from './connection.ts';
 
@@ -44,7 +44,7 @@ export async function renameConnection(
   label: string,
   flags: RelabelFlags,
 ): Promise<{ resolution: Resolution; relabelled: Relabelled }> {
-  const runtime = await openRuntime(flags);
+  const runtime = await openWorkspaceRuntime(flags);
 
   try {
     const { resolution, config, target } = runtime;
@@ -90,7 +90,7 @@ export async function relabel(
   const { resolution, relabelled: result } = await renameConnection(key, label, flags);
 
   return emit(flags.json, result, () => {
-    announce(resolution);
+    announceWorkspace(resolution);
     print(ok(`${style.bold(result.key)} is now ${style.bold(result.to)}`));
     if (result.from) print(`      was     ${style.dim(result.from)}`);
     // The label is a display name in two places, and only one of them changed.

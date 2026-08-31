@@ -2,8 +2,14 @@ import type { ConnectionConfig } from '#profile';
 import { credentialResolver, ReauthRequired } from '#connectivity/auth/index.ts';
 import type { ResolvedCredential } from '#connectivity/auth/credential.ts';
 import { credentialRefFor } from '#registry';
-import { announce, emit, fail, ok, print, warn } from '../../output.ts';
-import { grantedConnections, openRuntime, type GlobalFlags, type Runtime } from '../../runtime.ts';
+import { announceWorkspace, emit, fail, ok, print, warn } from '../../output.ts';
+import { readConnections } from '#profile';
+import {
+  grantedConnections,
+  openWorkspaceRuntime,
+  type GlobalFlags,
+  type Runtime,
+} from '../../runtime.ts';
 
 /**
  * Whether each connection could still authenticate, asked rather than guessed.
@@ -246,20 +252,30 @@ export async function probeConnections(
 }
 
 export async function auth(flags: AuthFlags): Promise<void> {
-  const runtime = await openRuntime(flags);
+  const runtime = await openWorkspaceRuntime(flags);
 
   try {
     const { profile, target } = runtime.resolution;
-    const forSelection = (command: string) => `${command} --profile ${profile} --workspace ${target}`;
+    const forSelection = (command: string) => `${command} --workspace ${target}`;
+
+    // Every connection the workspace holds, not the ones one profile grants.
+    // Whether an account can still authenticate is a fact about the account
+    // (ADR-057), and scoping it to a profile's grants meant an account that had
+    // just been connected could not be checked until somebody granted it —
+    // which is exactly the moment you want to check.
+    //
+    // `--profile` narrows to what that profile can reach, because "can the
+    // things this profile uses still sign in" is also a real question.
+    const all = flags.profile === undefined
+      ? (await readConnections(runtime.resolution.workspaceRoot)).connections
+      : grantedConnections(runtime);
 
     const wanted = flags.connection;
-    const connections = wanted
-      ? grantedConnections(runtime).filter((c) => `${c.provider}.${c.id}` === wanted)
-      : grantedConnections(runtime);
+    const connections = wanted ? all.filter((c) => `${c.provider}.${c.id}` === wanted) : all;
 
     if (wanted && connections.length === 0) {
       throw new Error(
-        `No connection "${wanted}" in profile ${profile}. Run: ${forSelection('lanes link status')}`,
+        `No connection "${wanted}" in workspace ${target}. Run: ${forSelection('lanes link connection list')}`,
       );
     }
 
@@ -271,7 +287,7 @@ export async function auth(flags: AuthFlags): Promise<void> {
     // why it cannot read `doctor`. A connection needing a person is the answer
     // this command was asked for, not a failure to produce one.
     return emit(flags.json, { profile, target, ok: needsSomeone.length === 0, connections: results }, () => {
-      announce(runtime.resolution);
+      announceWorkspace(runtime.resolution);
 
       for (const result of results) {
         const line = `${result.key} — ${describe(result.verdict)}`;
