@@ -166,7 +166,7 @@ export async function profileAdd(
     print(ok(`created profile ${style.bold(created.name)}`));
     print(`      config   ${created.path}`);
     print(`      port     ${created.port}`);
-    print(`      targets  ${created.targets.join(', ')}`);
+    print(`      workspace  ${created.targets.join(', ')}`);
 
     for (const [target, from] of Object.entries(created.copiedFrom)) {
       print(`      ${style.dim(`${target} adapters copied from profile "${from}"`)}`);
@@ -175,7 +175,7 @@ export async function profileAdd(
     print();
     print(
       style.dim(
-        `Next: lanes link connect example --profile ${created.name} --target ${created.targets[0]}`,
+        `Next: lanes link connect example --profile ${created.name} --workspace ${created.targets[0]}`,
       ),
     );
   });

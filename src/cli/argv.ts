@@ -68,8 +68,17 @@ export function parseArgv(argv: readonly string[]): Parsed {
  *
  * Both spellings is a mistake rather than a preference, so it is refused: they
  * could name different workspaces, and picking either would be a guess.
+ *
+ * **It says so, on stderr.** A deprecation nobody sees is one nobody acts on,
+ * and the alias has exactly one minor to live. Stderr rather than stdout because
+ * `--json` and `--raw` callers parse the other stream, and a deprecation notice
+ * that broke a script would be a worse way to make the point. `notify` is
+ * injectable so a test can read what was said without capturing a global.
  */
-export function normaliseWorkspace(flags: Flags): Flags {
+export function normaliseWorkspace(
+  flags: Flags,
+  notify: (line: string) => void = (line) => void process.stderr.write(`${line}\n`),
+): Flags {
   const legacy = flags['target'];
   if (legacy === undefined) return flags;
 
@@ -79,6 +88,11 @@ export function normaliseWorkspace(flags: Flags): Flags {
         `"${String(flags['workspace'])}"). --target is the old spelling of --workspace; pass one.`,
     );
   }
+
+  notify(
+    `warn  --target is now --workspace, and this spelling goes in the next minor. ` +
+      `Read it as: --workspace ${String(legacy)}`,
+  );
 
   const { target: _legacy, ...rest } = flags;
   return { ...rest, workspace: legacy };

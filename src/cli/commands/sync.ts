@@ -70,7 +70,7 @@ async function locateRemote(
     throw new ConfigError(
       `Nothing here says where "${target}" lives.\n` +
         '  No pointer to it in lanes-link.yaml, and nothing else records one.\n\n' +
-        '  If you know the bucket:  lanes link sync targets --target ' +
+        '  If you know the bucket:  lanes link sync workspaces --workspace ' +
         `${target} --from gs://<bucket>\n` +
         `  If you do not:           lanes link sync targets --workspace ${target} --discover`,
     );

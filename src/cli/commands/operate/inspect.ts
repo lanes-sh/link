@@ -115,7 +115,7 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
 
   try {
     const forSelection = (command: string) =>
-      `${command} --profile ${runtime.resolution.profile} --target ${runtime.resolution.target}`;
+      `${command} --profile ${runtime.resolution.profile} --workspace ${runtime.resolution.target}`;
 
     checks.push('config is valid');
     checks.push('state store is reachable');

@@ -261,7 +261,7 @@ export async function targetList(flags: TargetFlags): Promise<void> {
     // as input would be circular, and it has to keep working in the state every
     // other command fails in — which is what `selectedDeclared` reports.
     if (listing.selected === null) {
-      print(style.dim('  Every other command names one of these with --target.'));
+      print(style.dim('  Every other command names one of these with --workspace.'));
       return;
     }
 

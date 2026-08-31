@@ -143,7 +143,7 @@ export async function status(flags: StatusFlags): Promise<void> {
           print(
             style.dim(
               '  the address is the platform\'s to assign — run: ' +
-                `lanes link outputs --target ${runtime.target}`,
+                `lanes link outputs --workspace ${runtime.target}`,
             ),
           );
         }

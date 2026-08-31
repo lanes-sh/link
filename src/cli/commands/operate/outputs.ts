@@ -158,7 +158,7 @@ export async function tokenInvocation(
   // only into one where the same default happens to resolve.
   const selection = ` --profile ${profile} --workspace ${target}`;
   const short = `lanes link token show --raw${selection}`;
-  const argv = ['link', 'token', 'show', '--raw', '--profile', profile, '--target', target];
+  const argv = ['link', 'token', 'show', '--raw', '--profile', profile, '--workspace', target];
 
   const resolved = Bun.which('lanes');
   if (resolved) {
