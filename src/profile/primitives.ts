@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * The four string shapes the config contract is built out of.
+ * The string shapes the config contract is built out of.
  *
  * Their own file because more than one schema module needs them, and the
  * alternative was either a circular import or a second copy of a regex that
@@ -66,3 +66,37 @@ export const browserOrigin = z.string().refine(
   },
   'must be "*" or an origin with no trailing slash or path, e.g. "https://chat.example"',
 );
+
+/**
+ * `<provider>.<connection>` — how a grant names what it governs.
+ *
+ * One string rather than two fields, because it is one string everywhere else
+ * it appears: the `connection` argument an agent passes, the audit event, the
+ * `setup_overview` listing, and the refusal a mismatched pairing produces.
+ * Splitting it in the config alone would mean every reader joins it back
+ * together.
+ */
+export const connectionRef = z
+  .string()
+  .regex(
+    /^[a-z][a-z0-9_]*\.[a-z0-9][a-z0-9_]*$/,
+    'must be "<provider>.<connection>", e.g. "gmail.personal"',
+  );
+
+/**
+ * Who a profile is delegated to: `lanes:<subject>` (ADR-060).
+ *
+ * The prefix is load-bearing twice over, and the second reason is the one that
+ * would otherwise be found the hard way. A Lanes subject is a 28-character
+ * mixed-case alphanumeric string — which is exactly what `secret-detection.ts`
+ * refuses as a high-entropy blob, so a bare one could not be written into a
+ * profile at all. The colon takes the value out of `OPAQUE_TOKEN`'s character
+ * class, so saying which identity provider vouched for the subject and being
+ * storable are the same decision rather than an exemption list.
+ *
+ * A pasted credential still cannot be smuggled in here: it does not match this
+ * pattern either, which is what makes the fix a narrowing rather than a hole.
+ */
+export const subjectRef = z
+  .string()
+  .regex(/^lanes:[A-Za-z0-9]{6,64}$/, 'must be "lanes:<subject>", as written by lanes auth login');

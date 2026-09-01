@@ -1,3 +1,5 @@
+import { migrateToContract3, needsContract3, type Contract3Migration } from './contract3.ts';
+import { readSession } from '#auth/lanes/session.ts';
 import { parseDocument } from 'yaml';
 import {
   ConfigError,
@@ -25,7 +27,7 @@ import { hoist, summarise } from './migrate-plan.ts';
  * of each profile — one in `~/.lanes-link`, one in the bucket the endpoint reads
  * — and gave them nothing to keep them honest. It failed the way it was always
  * going to: a local file was rewritten, lost its cloud target and eight
- * connections, and `status --target cloud` reported seven where the endpoint was
+ * connections, and `status --workspace cloud` reported seven where the endpoint was
  * serving fifteen. `sync targets` and ADR-044's deployment index were both
  * written in response to earlier rounds of the same thing.
  *
@@ -122,8 +124,8 @@ export async function migrateWorkspace(
   const changes: string[] = [];
   for (const [name, entry] of Object.entries(registry)) {
     changes.push(
-      entry.workspace !== undefined
-        ? `targets.${name}: pointer to ${entry.workspace}`
+      entry.at !== undefined
+        ? `workspaces.${name}: pointer to ${entry.at}`
         : `targets.${name}: declared in ${WORKSPACE_FILE}`,
     );
   }
@@ -147,17 +149,30 @@ export async function migrateWorkspace(
   // again.
   await writeRegistry(workspaceRoot, registry);
 
-  for (const { document } of legacy) {
+  for (const { document, profile } of legacy) {
     document.removeIn(['targets']);
-    document.setIn(['contract'], SUPPORTED_CONTRACT);
+    // Literally 2, not `SUPPORTED_CONTRACT`. This migration produces a
+    // contract-2 profile and nothing else; `migrateToContract3` takes it the
+    // rest of the way. Writing the current contract here would stamp a file
+    // that still has contract-2 shapes with the newest number, and the loader
+    // would then read it as a contract-3 document that is missing `grants:`.
+    document.setIn(['contract'], 2);
     // `instance.default_target` went with the block it selected from. It has
     // been inert since ADR-037 and there is now nothing for it to name.
     document.removeIn(['instance', 'default_target']);
-    // Shape-only: a profile may carry an unrelated problem the full loader
-    // refuses — a connection row still spelling a renamed provider is the one
-    // that happens — and blocking the structural fix on it would strand the file
-    // at a contract nothing reads. `doctor --fix` names and repairs that one.
-    await document.save({ shapeOnly: true });
+    // Written rather than saved, because `save` validates and what this
+    // produces is deliberately not valid *yet*: a contract-2 profile, which the
+    // runtime does not read. `migrateToContract3` is the step that makes it
+    // loadable, and it runs immediately after — so validating here would refuse
+    // the only shape this function is able to produce.
+    //
+    // Nothing is lost by not validating: the next step reads the file it just
+    // wrote, and `check` refuses anything either step leaves broken.
+    await writeWorkspaceFile(
+      workspaceFiles(workspaceRoot),
+      `profiles/${profile}.yaml`,
+      document.toString(),
+    );
   }
 
   return {
@@ -166,6 +181,82 @@ export async function migrateWorkspace(
     targets: describe(registry),
     changes,
     alreadyCurrent: false,
+  };
+}
+
+export interface ContractMigration {
+  readonly workspaceRoot: string;
+  /** The contract 1 → 2 half, when this workspace needed one. */
+  readonly legacy: WorkspaceMigration | null;
+  /** The contract 2 → 3 half, when this workspace needed one. */
+  readonly contract3: Contract3Migration | null;
+  /** Every profile either half rewrote, deduplicated. */
+  readonly profiles: readonly string[];
+  /** Targets written into the registry by the contract 1 → 2 half. */
+  readonly targets: readonly { name: string; kind: 'declared' | 'pointer'; where?: string }[];
+  /** Both halves' lines, in the order they happened. */
+  readonly changes: readonly string[];
+  /** Nothing to do: this workspace is already at `SUPPORTED_CONTRACT`. */
+  readonly alreadyCurrent: boolean;
+}
+
+/**
+ * Bring one workspace to `SUPPORTED_CONTRACT`, whatever it is on now.
+ *
+ * **This exists because "migrate a workspace" was spelled three times and only
+ * one of them arrived.** `update` ran the 1→2 step and then the 2→3 step;
+ * `deploy` and `doctor --fix` ran the first and stopped, which nothing said out
+ * loud — `migrateTargetWorkspace`'s own docstring claimed it brought a target
+ * "to the current contract" while calling only `migrateWorkspace`.
+ *
+ * What that cost is worth writing down, because it is not a refusal. A deploy
+ * uploaded contract-3 config over a contract-2 bucket and rolled a revision that
+ * read `data/state.kv` and `data/audit.log` — while the bytes sat where contract
+ * 2 put them, under `data/<profile>/`. The endpoint came up healthy and answered
+ * every call with an empty store: no memory, no tasks, no skills, and an audit
+ * log that verified as intact because an empty chain does. Nothing in the
+ * deploy, the health probe, or `doctor` had a way to notice.
+ *
+ * So there is one function now, and the contract number lives in one place. A
+ * fourth contract adds a step here and every caller gets it.
+ *
+ * **A dry run of a contract-1 workspace reports only the first half**, and that
+ * is honest rather than a gap: the 1→2 step wrote nothing, so the profiles are
+ * still contract 1 and the 2→3 step has nothing it recognises to describe. What
+ * it would do is knowable only after the step before it has run.
+ *
+ * **The signed-in subject is defaulted here rather than by each caller.** A
+ * migrated profile that lists nobody is an endpoint that advertises OAuth and
+ * then refuses its own owner, so it matters on every path — but `deployments`
+ * may not import `#auth` (see `MAY_IMPORT` in `src/architecture.test.ts`), and
+ * `deploy` is the caller that most needs it: once a target's profiles live in
+ * its bucket there is no upload behind it to put the members row back. A caller
+ * that knows better passes one; nobody signed in is a legitimate answer and
+ * stays default-deny on the identity axis.
+ */
+export async function migrateToCurrentContract(
+  workspaceRoot: string,
+  options: { apply: boolean; subject?: string } = { apply: true },
+): Promise<ContractMigration> {
+  const legacy = (await needsMigration(workspaceRoot))
+    ? await migrateWorkspace(workspaceRoot, { apply: options.apply })
+    : null;
+
+  const subject = options.subject ?? (await readSession().catch(() => null))?.subject;
+
+  const contract3 = await migrateToContract3(workspaceRoot, {
+    apply: options.apply,
+    ...(subject === undefined ? {} : { subject }),
+  });
+
+  return {
+    workspaceRoot,
+    legacy: legacy !== null && !legacy.alreadyCurrent ? legacy : null,
+    contract3: contract3.alreadyCurrent ? null : contract3,
+    profiles: [...new Set([...(legacy?.profiles ?? []), ...contract3.profiles])],
+    targets: legacy?.targets ?? [],
+    changes: [...(legacy?.changes ?? []), ...contract3.changes],
+    alreadyCurrent: (legacy === null || legacy.alreadyCurrent) && contract3.alreadyCurrent,
   };
 }
 
@@ -186,7 +277,7 @@ async function writeRegistry(
   const text = (await readWorkspaceFile(files, WORKSPACE_FILE)) ?? `contract: ${SUPPORTED_CONTRACT}\n`;
   const document = parseDocument(text);
   const current = (document.toJSON() ?? {}) as {
-    targets?: Record<string, WorkspaceTarget>;
+    workspaces?: Record<string, WorkspaceTarget>;
     deployments?: {
       target?: string;
       workspace?: string;
@@ -198,7 +289,7 @@ async function writeRegistry(
   // Anything already in the file wins over what was hoisted: a workspace part
   // way through this has entries that are already right, and re-deriving them
   // from a profile that still carries a stale block would undo a correction.
-  const merged: Record<string, WorkspaceTarget> = { ...registry, ...(current.targets ?? {}) };
+  const merged: Record<string, WorkspaceTarget> = { ...registry, ...(current.workspaces ?? {}) };
 
   // ADR-044's index, folded into the entries it described. `primary` and
   // `last_deploy` were kept beside the declaration precisely because the
@@ -214,11 +305,16 @@ async function writeRegistry(
     };
   }
 
+  // `workspaces:`, not `targets:` — the registry is read back by the current
+  // schema even while the profiles beside it are still contract 2, because it
+  // is one document that both migrations share (ADR-061). The profiles are the
+  // half that stays at 2 until `migrateToContract3` runs.
   document.setIn(['contract'], SUPPORTED_CONTRACT);
   document.setIn(
-    ['targets'],
+    ['workspaces'],
     Object.fromEntries(Object.entries(merged).sort(([a], [b]) => a.localeCompare(b))),
   );
+  document.deleteIn(['targets']);
   document.deleteIn(['deployments']);
   document.deleteIn(['default_target']);
 
@@ -229,8 +325,8 @@ function describe(
   registry: Record<string, WorkspaceTarget>,
 ): { name: string; kind: 'declared' | 'pointer'; where?: string }[] {
   return Object.entries(registry).map(([name, entry]) =>
-    entry.workspace !== undefined
-      ? { name, kind: 'pointer' as const, where: entry.workspace }
+    entry.at !== undefined
+      ? { name, kind: 'pointer' as const, where: entry.at }
       : { name, kind: 'declared' as const },
   );
 }
@@ -249,6 +345,19 @@ function describe(
  * part of what it already means (ADR-052).
  */
 export async function refuseIfUnmigrated(root: string): Promise<void> {
+  if (await needsContract3(root)) {
+    throw new ConfigError(
+      `${root} is a contract 2 workspace, and this version does not read one.\n\n` +
+        '  Under contract 2 each profile carried its own connections and one flat\n' +
+        '  policy. Connections belong to the workspace now, and a profile selects\n' +
+        '  among them with per-connection scopes (ADR-057, ADR-058).\n\n' +
+        '  Migrate it:  lanes link update\n' +
+        '  Preview it:  lanes link update --check\n\n' +
+        '  Nothing is deleted by the migration: credentials are merged and read back\n' +
+        '  before the old stores are left in place.',
+    );
+  }
+
   if (!(await needsMigration(root))) return;
 
   throw new ConfigError(
@@ -258,6 +367,6 @@ export async function refuseIfUnmigrated(root: string): Promise<void> {
       '  copies of every profile that could drift apart (ADR-052).\n\n' +
       '  Migrate it:  lanes link update\n' +
       '  A deployed target is migrated by the deploy that ships the image reading it:\n' +
-      '               lanes link deploy --target <name>',
+      '               lanes link deploy --workspace <name>',
   );
 }

@@ -1,4 +1,5 @@
 import { formatPlan, planIsNoop, planReconcile } from '#registry';
+import type { ConnectionConfig, SelectedConnection } from '#profile';
 import { DEFAULT_SURFACES } from '../../config-repair.ts';
 import { announce, announceProfile, emit, fail, ok, print, warn } from '../../output.ts';
 import { staleNudge } from '../../release.ts';
@@ -16,6 +17,18 @@ import { migratedContract, migratedRenamedProviders } from './migrate.ts';
  */
 
 /** Static validation only. No external calls, no database, no credentials. */
+/**
+ * The accounts this profile actually reaches, as reconcile wants them.
+ *
+ * A profile grants a subset of the workspace's connections (ADR-057), and
+ * reconcile is about the ones it reaches: an account granted to nobody has no
+ * state to keep in step, and marking it `disabled` here would fight with the
+ * profile next door that does grant it.
+ */
+function grantedConnections(runtime: { connections: readonly SelectedConnection[] }): ConnectionConfig[] {
+  return runtime.connections.map(({ connection }) => connection);
+}
+
 export async function check(flags: GlobalFlags): Promise<void> {
   const { selection, config } = await resolveProfileOnly(flags);
   announceProfile(selection);
@@ -25,8 +38,10 @@ export async function check(flags: GlobalFlags): Promise<void> {
   // validates a file, and the file is the same whichever target reads it.
   print(ok(`${selection.profilePath} is valid`));
   print(
-    `      ${config.connections.length} connection(s), ` +
-      `${config.policy.allow.length} allow rule(s), ${config.policy.deny.length} deny rule(s)`,
+    `      ${config.grants.length} grant(s), ` +
+      `${config.grants.reduce((n, g) => n + g.allow.length, 0)} allow rule(s), ` +
+      `${config.grants.reduce((n, g) => n + g.deny.length, 0)} deny rule(s), ` +
+      `${config.members.length} member(s)`,
   );
 }
 
@@ -35,7 +50,7 @@ export async function plan(flags: GlobalFlags): Promise<void> {
   const runtime = await openRuntime(flags);
   try {
     announce(runtime.resolution);
-    const result = await planReconcile(runtime.config, runtime.state, runtime.credentials, runtime.manifestFor);
+    const result = await planReconcile(grantedConnections(runtime), runtime.state, runtime.credentials, runtime.manifestFor);
     print(formatPlan(result));
   } finally {
     await runtime.close();
@@ -100,7 +115,7 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
 
   try {
     const forSelection = (command: string) =>
-      `${command} --profile ${runtime.resolution.profile} --target ${runtime.resolution.target}`;
+      `${command} --profile ${runtime.resolution.profile} --workspace ${runtime.resolution.target}`;
 
     checks.push('config is valid');
     checks.push('state store is reachable');
@@ -134,7 +149,7 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
     // `probeConnections` answers it by attempting the renewal, which is the only
     // thing that actually knows. Same classifier as `lanes link auth`, so the two
     // cannot drift apart again.
-    const probed = await probeConnections(runtime, runtime.config.connections, forSelection);
+    const probed = await probeConnections(runtime, grantedConnections(runtime), forSelection);
 
     for (const result of probed) {
       switch (result.verdict) {
@@ -209,7 +224,7 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
       }
     }
 
-    for (const name of new Set(runtime.config.connections.map((c) => c.provider))) {
+    for (const name of new Set(grantedConnections(runtime).map((one) => one.provider))) {
       if (!runtime.registry.has(name)) {
         problems.push({
           kind: 'unknown_provider',
@@ -236,22 +251,25 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
     // covering it is not reported. That is the same rule the repair follows, and
     // reading it here from `policy.deny` rather than asking the repair keeps
     // `doctor` a read.
-    const denied = (rule: string): boolean =>
-      runtime.config.policy.deny.some(
-        (entry) => entry.capability === '*' || entry.capability === rule,
-      );
+    // A grant row *is* the connection and the rule together now (ADR-058), so
+    // "has a row but no rule" is a state that stopped existing — which removes
+    // the half-repaired case this check was originally written for. What is left
+    // is one question per surface: does this profile grant one, and is the grant
+    // more than a deny.
+    const grantFor = (provider: string) =>
+      runtime.config.grants.find((grant) => grant.connection.startsWith(`${provider}.`));
 
     const missing = DEFAULT_SURFACES.filter((provider) => {
-      const rule = `${provider}.*`;
-      if (denied(rule)) return false;
+      const grant = grantFor(provider);
+      if (grant === undefined) return true;
 
-      const hasRow = runtime.config.connections.some(
-        (connection) => connection.provider === provider,
-      );
-      const granted = runtime.config.policy.allow.some(
+      const rule = `${provider}.*`;
+      const denied = grant.deny.some(
         (entry) => entry.capability === '*' || entry.capability === rule,
       );
-      return !hasRow || !granted;
+      if (denied) return false;
+
+      return !grant.allow.some((entry) => entry.capability === '*' || entry.capability === rule);
     });
 
     if (missing.length > 0) {
@@ -287,7 +305,7 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
       warnings.push({ kind: 'capability_drift', message }),
     );
 
-    const drift = await planReconcile(runtime.config, runtime.state, runtime.credentials, runtime.manifestFor);
+    const drift = await planReconcile(grantedConnections(runtime), runtime.state, runtime.credentials, runtime.manifestFor);
     if (!planIsNoop(drift)) {
       warnings.push({
         kind: 'reconcile_drift',
@@ -309,7 +327,7 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
     const rotation = await unboundRotatableRefs({
       deploy: runtime.declared.deploy,
       target: runtime.target,
-      connections: runtime.config.connections,
+      connections: grantedConnections(runtime),
       manifestFor: runtime.manifestFor,
     });
     if (rotation.unbound.length > 0) {

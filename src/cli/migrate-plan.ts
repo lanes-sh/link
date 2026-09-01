@@ -1,4 +1,5 @@
-import { ConfigError, layout, isRemoteWorkspace, type LegacyTarget, type WorkspaceTarget } from '#profile';
+import {
+  DATA_DIR, ConfigError, layout, isRemoteWorkspace, type LegacyTarget, type WorkspaceTarget } from '#profile';
 import { deployedWorkspace } from '#deployments/upload.ts';
 
 /**
@@ -88,7 +89,7 @@ export function toEntry(
   // produces `gs://b` pointing at `gs://b`. That is a loop, and `openTarget`
   // refuses it — which made `deploy` unable to run against the bucket it had
   // just migrated, on the one command the refusal names as the fix.
-  if (remote && remote !== workspaceRoot) return { workspace: remote };
+  if (remote && remote !== workspaceRoot) return { at: remote };
 
   // **A filesystem target is dropped from a remote workspace.**
   //
@@ -105,8 +106,13 @@ export function toEntry(
   const storagePath = declared.storage.path;
   const credentialsPath = declared.credentials.path;
 
-  const defaultStorage = `./${layout.blobs(profile)}`;
-  const defaultCredentials = `./${layout.credentials(profile)}`;
+  // The **contract-1** defaults, spelled out rather than taken from `layout`.
+  // This function reads a contract-1 profile, where every path was per profile,
+  // and `layout` describes where things live *now* — workspace-level since
+  // ADR-057. Asking it would compare a contract-1 path against a contract-3
+  // default and refuse every profile that had written the ordinary one.
+  const defaultStorage = `./${DATA_DIR}/${profile}`;
+  const defaultCredentials = `./${DATA_DIR}/${profile}/credentials.enc`;
 
   refuseCustomPath(name, profile, workspaceRoot, 'storage.path', storagePath, defaultStorage);
   refuseCustomPath(
@@ -149,12 +155,12 @@ function refuseCustomPath(
       `  A target is declared once for the whole workspace now (ADR-052), so it cannot hold a\n` +
       `  different path per profile. The default it would get is ${expected}.\n\n` +
       `  Move the data there and delete the line, or keep this profile in a workspace of its\n` +
-      `  own: LANES_LINK_HOME=${workspaceRoot}/<somewhere> lanes link profile add ${profile} --target ${target}`,
+      `  own: LANES_LINK_HOME=${workspaceRoot}/<somewhere> lanes link profile add ${profile} --workspace ${target}`,
   );
 }
 
 export function summarise(entry: WorkspaceTarget): string {
-  if (entry.workspace !== undefined) return `points at ${entry.workspace}`;
+  if (entry.at !== undefined) return `points at ${entry.at}`;
   const parts = [entry.credentials?.adapter, entry.storage?.adapter].filter(Boolean);
   return `${parts.join(' + ')}${entry.deploy ? `, deploys ${entry.deploy.service}` : ''}`;
 }

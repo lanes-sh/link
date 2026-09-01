@@ -7,4 +7,5 @@
  * the grammar that puts them in order.
  */
 
-export { knowledgeShow, knowledgeUse, type KnowledgeFlags } from './knowledge/index.ts';
+export { knowledgeUse, type KnowledgeFlags } from './knowledge/index.ts';
+export { knowledgeShow } from './knowledge/show.ts';

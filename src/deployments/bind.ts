@@ -121,7 +121,7 @@ export async function bindConnectionCredentials(input: {
           `could not bind ${connection.provider}.${connection.id}'s credential to ` +
           `${serviceAccount}, so the deployed endpoint will be able to read it and not ` +
           'rotate it — which fails about an hour after the first use. ' +
-          `Run \`lanes link deploy --target ${input.target}\` to bind it. ` +
+          `Run \`lanes link deploy --workspace ${input.target}\` to bind it. ` +
           `(${driver.tool}: ${result.stderr.trim().split('\n').slice(-1)[0] ?? 'failed'})`,
       };
     }

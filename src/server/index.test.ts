@@ -768,17 +768,26 @@ describe('reload', () => {
   /** A config naming exactly these connections, so one can be seen to appear. */
   function configWith(profile: string, port: number, ids: string[], policy: string): Config {
     return parseConfig(`
-contract: 2
+contract: 3
 instance:
   profile: ${profile}
   port: ${port}
 limits:
   requests_per_minute: 1000
   upstream_calls_per_minute: 1000
-connections:
-${ids.map((id) => `  - { id: ${id}, provider: example, account: Scratch ${id} }`).join('\n')}
-policy:
-${policy}
+grants:
+${ids
+  .map(
+    (id) =>
+      `  - connection: example.${id}\n` +
+      policy
+        .split('\n')
+        .filter((line) => line.trim().length > 0)
+        .map((line) => `  ${line}`)
+        .join('\n'),
+  )
+  .join('\n')}
+members: []
 `).config;
 }
 

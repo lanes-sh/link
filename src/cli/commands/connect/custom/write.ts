@@ -17,7 +17,7 @@ import { parseManifest } from '#providers/custom/index.ts';
 
 /** Where this profile keeps its own declarations. */
 export function manifestPath(workspaceRoot: string, profile: string, id: string): string {
-  return join(workspaceRoot, layout.providers(profile), `${id}.yaml`);
+  return join(workspaceRoot, layout.providers(), `${id}.yaml`);
 }
 
 /**
@@ -142,7 +142,7 @@ export async function checkOpenapiReachable(
 
   const beside = isAbsolute(value)
     ? value
-    : resolve(join(workspaceRoot, layout.providers(profile)), value);
+    : resolve(join(workspaceRoot, layout.providers()), value);
 
   if (await exists(beside)) return;
 

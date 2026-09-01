@@ -1,4 +1,5 @@
 import {
+  soleGrantFor,
   ConfigError,
   KNOWLEDGE_LAYOUT,
   knowledgeTargetSchema,
@@ -23,7 +24,6 @@ import {
   removeLocal,
   summarise,
 } from './migrate.ts';
-
 /**
  * `lanes link knowledge` — where this profile's memory and skills are kept.
  *
@@ -65,78 +65,6 @@ export interface KnowledgeFlags extends GlobalFlags {
   readonly fetch?: FetchLike | undefined;
 }
 
-export async function knowledgeShow(flags: KnowledgeFlags): Promise<void> {
-  const runtime = await openRuntime(flags, { fetch: flags.fetch });
-  try {
-    if (!flags.json) announce(runtime.resolution);
-
-    const profile = runtime.config.instance.profile;
-    const selection = ` --profile ${runtime.resolution.profile} --target ${runtime.target}`;
-    const skills = (await runtime.skills.list()).length;
-    const memory = (await runtime.storage.list(`${KNOWLEDGE_LAYOUT.memory}/`)).length;
-    const entities = (await runtime.storage.list(`${KNOWLEDGE_LAYOUT.entities}/`)).length;
-    const where = runtime.knowledge?.describe;
-
-    if (flags.json) {
-      print(
-        JSON.stringify(
-          { target: runtime.target, where: where ?? 'local', memory, skills, entities },
-          null,
-          2,
-        ),
-      );
-      return;
-    }
-
-    heading('Knowledge');
-    table([
-      // The memory *directory*, not the blob root it sits in. `layout.blobs`
-      // is `data/<profile>`, which is where every provider's namespace lives —
-      // printing it here would name a directory that is mostly not memory.
-      [
-        '  memory',
-        where ? `${where}/${KNOWLEDGE_LAYOUT.memory}` : `${layout.blobs(profile)}/${KNOWLEDGE_LAYOUT.memory}`,
-        style.dim(`${memory} file${memory === 1 ? '' : 's'}`),
-      ],
-      [
-        '  skills',
-        where ? `${where}/${KNOWLEDGE_LAYOUT.skills}` : layout.skills(profile),
-        style.dim(`${skills} file${skills === 1 ? '' : 's'}`),
-      ],
-      // The count includes the derived `_index.json`, deliberately: it is a
-      // file in that directory and it is committed with the rest, so a number
-      // that quietly excluded it would not match what a person sees there.
-      [
-        '  entities',
-        where
-          ? `${where}/${KNOWLEDGE_LAYOUT.entities}`
-          : `${layout.blobs(profile)}/${KNOWLEDGE_LAYOUT.entities}`,
-        style.dim(`${entities} file${entities === 1 ? '' : 's'}`),
-      ],
-    ]);
-
-    print('');
-    print(
-      style.dim(
-        `  The vault, the credential store, runtime state and the audit log stay in target "${runtime.target}".`,
-      ),
-    );
-    // Complete commands, not shapes. Every one of these is pasted, and with
-    // nothing left to fall back on (ADR-037) a line missing either flag is a
-    // line that refuses — `emitted.test.ts` states the rule for the templates
-    // reachable without a runtime, and this is the same rule where there is one.
-    print(
-      style.dim(
-        where
-          ? `  Bring them back with: lanes link knowledge use local --migrate${selection}`
-          : `  Keep them in a repository with: lanes link knowledge use github --repo <owner/name>${selection}`,
-      ),
-    );
-  } finally {
-    await runtime.close();
-  }
-}
-
 export async function knowledgeUse(where: string | undefined, flags: KnowledgeFlags): Promise<void> {
   if (where === 'local') return useLocal(flags);
   if (where === 'github') return useGithub(flags);
@@ -172,7 +100,7 @@ async function useGithub(flags: KnowledgeFlags): Promise<void> {
   const runtime = await openRuntime(flags, { fetch: flags.fetch });
   try {
     announce(runtime.resolution);
-    const selection = ` --profile ${runtime.resolution.profile} --target ${runtime.target}`;
+    const selection = ` --profile ${runtime.resolution.profile} --workspace ${runtime.target}`;
 
     if (runtime.knowledge) {
       print(style.dim(`  This profile already reads ${runtime.knowledge.describe}.`));
@@ -206,7 +134,16 @@ async function useGithub(flags: KnowledgeFlags): Promise<void> {
       ['  token', viewer, style.dim('can write')],
     ]);
 
-    const movable = await localContents(runtime.storage, runtime.skills, knowledge);
+    // Which instances this profile grants, so `memory/` and `entities/` reach
+    // only its own and not every profile's (ADR-059).
+    const instances = grantedInstances(runtime.config);
+
+    const movable = await localContents(
+      runtime.storage,
+      runtime.skills ?? null,
+      knowledge,
+      instances,
+    );
     const moving = await decideMigration(movable.length > 0, flags);
 
     if (moving) {
@@ -225,7 +162,7 @@ async function useGithub(flags: KnowledgeFlags): Promise<void> {
       if (flags.keep) {
         print(style.dim('  --keep: the local copies are still there, and are no longer read.'));
       } else {
-        await removeLocal(runtime.storage, runtime.skills, movable);
+        await removeLocal(runtime.storage, runtime.skills ?? null, movable, instances);
         print(ok('removed the local copies'));
       }
     } else if (movable.length > 0) {
@@ -280,7 +217,13 @@ async function useLocal(flags: KnowledgeFlags): Promise<void> {
       flags.migrate ??
       (await agreedTo(flags, `Copy everything in ${knowledge.repo} back onto this target's storage?`))
     ) {
-      const moved = await moveOut(repository, knowledge, local.storage, local.skills);
+      const moved = await moveOut(
+        repository,
+        knowledge,
+        local.storage,
+        local.skills,
+        grantedInstances(runtime.config),
+      );
       print(
         ok(
           `wrote back ${moved.memory} memory entr${moved.memory === 1 ? 'y' : 'ies'}, ` +
@@ -314,7 +257,7 @@ async function useLocal(flags: KnowledgeFlags): Promise<void> {
  */
 async function openLocalStores(
   runtime: Runtime,
-): Promise<{ storage: BlobStore; skills: BlobStore }> {
+): Promise<{ storage: BlobStore; skills: BlobStore | null }> {
   const { openStorage } = await import('#deployments/target.ts');
   const declared = runtime.declared;
 
@@ -327,7 +270,13 @@ async function openLocalStores(
     },
     runtime.credentials,
   );
-  return { storage: factory(), skills: factory(layout.skills(runtime.config.instance.profile)) };
+  // The *granted* connection, not the profile name. `layout.skills` changed
+  // meaning without changing arity at ADR-059, so the compiler was silent.
+  const skillsConnection = soleGrantFor(runtime.config, 'skills');
+  return {
+    storage: factory(),
+    skills: skillsConnection === undefined ? null : factory(layout.skills(skillsConnection)),
+  };
 }
 
 /**
@@ -385,4 +334,22 @@ async function agreedTo(flags: KnowledgeFlags, question: string): Promise<boolea
   const yes = await confirm(question, true);
   if (!yes) print(style.dim('  cancelled'));
   return yes;
+}
+
+/**
+ * The memory and entities instances one profile grants.
+ *
+ * `main` where a profile grants none, which is what a profile that predates the
+ * owner layer looks like and is also where a fresh one puts them. The point is
+ * that this is never the *surface* — `memory/` alone matches every profile's
+ * notes now that the blob root is the workspace's.
+ */
+function grantedInstances(config: Parameters<typeof soleGrantFor>[0]): {
+  memory: string;
+  entities: string;
+} {
+  return {
+    memory: soleGrantFor(config, 'memory') ?? 'main',
+    entities: soleGrantFor(config, 'entities') ?? 'main',
+  };
 }

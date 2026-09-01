@@ -23,6 +23,7 @@ import type { KeyValueStore } from '#stores/state';
 const CLIENTS = 'oauth/clients';
 const CODES = 'oauth/codes';
 const TOKENS = 'oauth/tokens';
+const PENDING = 'oauth/pending';
 
 /** Far above any real number of connectors, and far below a problem. */
 const MAX_CLIENTS = 200;
@@ -40,6 +41,41 @@ export interface AuthorizationCode {
   /** The S256 challenge. The verifier never leaves the client. */
   readonly codeChallenge: string;
   readonly scope: string;
+  readonly resource?: string | undefined;
+  readonly expiresAt: number;
+  /**
+   * Who authorised this, and what they may reach.
+   *
+   * Absent on a code minted before delegation existed, which reads as the
+   * owner — the one caller every endpoint had. Present, it is a `lanes:`
+   * subject and the profiles whose `members:` named it *at the moment the flow
+   * completed*. Resolved once, here, rather than on every request: membership
+   * is a decision about issuing a credential, and re-reading it per call would
+   * make a profile edit silently revoke a live session (ADR-060).
+   */
+  readonly subject?: string | undefined;
+  readonly profiles?: readonly string[] | undefined;
+}
+
+/**
+ * An authorization request waiting for the person to come back.
+ *
+ * The flow leaves this endpoint entirely — the browser goes to lanes.sh, signs
+ * in, and returns with an assertion — so what the client asked for has to
+ * survive the round trip somewhere. It is held here rather than in the redirect
+ * because everything in a redirect is attacker-supplied on the way back: the
+ * client id, the redirect URI and the PKCE challenge are read from this record
+ * and never from the callback's query string.
+ *
+ * Keyed by a nonce this endpoint minted, single-use, which is also what binds
+ * the returning assertion to *this* request.
+ */
+export interface PendingAuthorization {
+  readonly clientId: string;
+  readonly redirectUri: string;
+  readonly codeChallenge: string;
+  readonly scope: string;
+  readonly state?: string | undefined;
   readonly resource?: string | undefined;
   readonly expiresAt: number;
 }
@@ -64,6 +100,9 @@ export interface IssuedToken {
   readonly kind: TokenKind;
   readonly scope: string;
   readonly expiresAt: number;
+  /** Carried from the code, and from one refresh to the next. See `AuthorizationCode`. */
+  readonly subject?: string | undefined;
+  readonly profiles?: readonly string[] | undefined;
   /**
    * Which refresh chain this belongs to.
    *
@@ -145,6 +184,32 @@ export class OAuthStore {
 
   async client(clientId: string): Promise<RegisteredClient | null> {
     return this.#read<RegisteredClient>(CLIENTS, clientId);
+  }
+
+  /**
+   * Remember an authorization request while its owner is away signing in.
+   *
+   * Ten minutes, which is a person finding a password manager rather than a
+   * redirect completing. Long enough that a real sign-in is not raced, short
+   * enough that an abandoned flow does not leave a usable slot.
+   */
+  async putPending(nonce: string, record: PendingAuthorization): Promise<void> {
+    await this.#state.set(PENDING, hashToken(nonce), JSON.stringify(record));
+  }
+
+  /**
+   * Read a pending request and consume it in the same step.
+   *
+   * Single-use for the same reason a code is: the nonce travels through a
+   * browser redirect, so it reaches history, referrers and anything watching
+   * the address bar. Consuming it here is what stops one assertion being
+   * presented twice.
+   */
+  async takePending(nonce: string): Promise<PendingAuthorization | null> {
+    const key = hashToken(nonce);
+    const record = await this.#read<PendingAuthorization>(PENDING, key);
+    await this.#state.delete(PENDING, key);
+    return record && record.expiresAt > this.#now() ? record : null;
   }
 
   async putCode(code: string, record: AuthorizationCode): Promise<void> {

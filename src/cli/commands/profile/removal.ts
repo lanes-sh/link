@@ -1,4 +1,4 @@
-import { layout, profilePath, workspacePath, type Config, type TargetConfig } from '#profile';
+import { layout, profilePath, vaultRef, workspacePath, type Config, type TargetConfig } from '#profile';
 import type { SecretStore } from '#secrets';
 import type { BlobStore } from '#stores/blobs';
 import { credentialRefFor, ownClientRefsFor, type ProviderRegistry } from '#registry';
@@ -32,37 +32,69 @@ import { print, style, warn } from '../../output.ts';
  */
 export function declaredRefs(
   config: Config,
-  registry: ProviderRegistry,
   declared: TargetConfig,
+  /**
+   * What the profiles that are staying declare.
+   *
+   * Nothing in here is deleted, however plainly the profile being removed also
+   * declares it. The credential store is one file per *workspace* since
+   * contract 3, and every profile takes the template default
+   * `token_ref: profile/token` — so removing one profile deleted the endpoint
+   * token the others are served by, and the deployed revision then refused every
+   * request with "No profile token in this target's credential store". The vault
+   * ref is read off the target and is identical for every profile there, which
+   * made the sibling's sealed items unrecoverable in the same command.
+   */
+  survivors: readonly Config[] = [],
 ): string[] {
   const refs = new Set<string>([config.auth.token_ref]);
 
   // Read off the *target*, not the profile. `vaultTargetSchema` sits inside
-  // `targetSchema`, so two targets may seal the same profile's items in
-  // different places; taking it from the profile would attach one target's
-  // vault to another target's removal.
+  // `targetSchema`, so two targets may seal the same items in different places;
+  // taking it from the profile would attach one target's vault to another
+  // target's removal.
+  //
+  // **Through `vaultRef`, because the name carries the connection.** This said
+  // `vault/document`, the contract-2 constant, while `openVault` seals under
+  // `vault/<connection>` (ADR-059) — so removing a profile queued a ref nothing
+  // had ever written and left the real document behind. Under-deletion rather
+  // than over, since the survivor set was wrong the same way and they cancelled,
+  // but what stayed behind is sealed credential material belonging to a profile
+  // the operator asked to be gone. Per connection also makes the survivor check
+  // mean something: two profiles granting different vaults no longer look like
+  // one document to it.
   if (declared.vault?.adapter === 'secret') {
-    refs.add(declared.vault.ref ?? 'vault/document');
+    refs.add(vaultRef(declared, config));
   }
 
-  for (const connection of config.connections) {
-    const manifest = registry.manifest(connection.provider);
-
-    // `credentialRefFor` rather than `credentialRefForConnection`: it is the
-    // single authority on where a connection's credential lives, and it exists
-    // because two callers once derived the answer differently and disagreed.
-    // Asking the lower-level one here would open that gap again from a third
-    // side — and it would miss a `local` provider, whose only ref is the one
-    // the connection declares itself.
-    const ref = credentialRefFor(connection, manifest);
-    if (ref) refs.add(ref);
-
-    if (manifest) {
-      for (const own of ownClientRefsFor(manifest, config.oauth_apps)) refs.add(own);
-    }
+  // **No connection credentials.** They belong to the workspace now (ADR-057),
+  // and every one of them may be granted by a profile that is staying. Removing
+  // a profile therefore removes no account and no credential — `lanes link
+  // disconnect` is the command that does that, and it is the one that knows how
+  // to check whether anybody else still needs the credential first.
+  //
+  // This is the sharpest edge in the whole decoupling, so `renderPlan` says it
+  // out loud rather than leaving an operator to infer it from a short list:
+  // "remove the work profile" used to mean "revoke what work could reach", and
+  // it does not any more.
+  if (config.auth.authorization?.mode === 'oidc') {
+    refs.add(config.auth.authorization.client_id_ref);
   }
 
-  return [...refs];
+  // Shared with a profile that is staying, so not ours to delete. Computed the
+  // same way for the survivors as for this one, because "what does a profile
+  // declare" has to have one answer.
+  const kept = new Set(
+    survivors.flatMap((other) => [
+      other.auth.token_ref,
+      ...(declared.vault?.adapter === 'secret' ? [vaultRef(declared, other)] : []),
+      ...(other.auth.authorization?.mode === 'oidc'
+        ? [other.auth.authorization.client_id_ref]
+        : []),
+    ]),
+  );
+
+  return [...refs].filter((ref) => !kept.has(ref));
 }
 
 export interface RemovalItem {
@@ -96,6 +128,14 @@ export interface PlanOptions {
   readonly openSecrets: (target: string) => Promise<SecretStore>;
   readonly openBlobs: (target: string, area?: string) => Promise<BlobStore>;
   readonly readDefaultProfile?: (() => Promise<string | undefined>) | undefined;
+  /**
+   * The profiles that are staying.
+   *
+   * So a credential both this one and a survivor declares is left alone — see
+   * `declaredRefs`. Defaulted to empty, which is the single-profile workspace
+   * and the shape every existing caller had.
+   */
+  readonly survivors?: readonly Config[] | undefined;
 }
 
 const reason = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause));
@@ -144,15 +184,16 @@ export async function removalPlan(
       );
     }
 
-    // Secrets first, and this ordering is load-bearing rather than tidy:
-    // `layout.credentials(p)` is `data/<p>/credentials.enc`, *inside* the blob
-    // root `data/<p>`. For the file adapter the credential store is itself a
-    // blob, so blobs-first would delete the store the secret deletions read
-    // through and turn every one of them into a failure.
+    // Secrets, and there is nothing left to order them against. This used to
+    // run before a blob sweep because `layout.credentials(p)` was
+    // `data/<p>/credentials.enc`, *inside* the blob root `data/<p>`, so
+    // blobs-first deleted the store the secret deletions read through. Both the
+    // sweep and the per-profile root are gone (ADR-057, ADR-059) — see the note
+    // below — and the credential store is the workspace's now.
     try {
       const secrets = await options.openSecrets(name);
       const present = await secrets.list();
-      const mine = new Set(declaredRefs(config, registry, declared));
+      const mine = new Set(declaredRefs(config, declared, options.survivors ?? []));
 
       for (const ref of present) if (mine.has(ref)) items.push({ target: name, kind: 'secret', id: ref });
 
@@ -164,54 +205,16 @@ export async function removalPlan(
       );
     }
 
-    try {
-      const blobs = await options.openBlobs(name);
-      for (const blob of await blobs.list()) items.push({ target: name, kind: 'blob', id: blob.key });
-    } catch (cause) {
-      warnings.push(
-        `Target "${name}": its storage could not be opened (${reason(cause)}), so nothing in it will be removed.`,
-      );
-    }
-
-    // The blob store's root is the profile's own directory, and an adapter must
-    // never delete the root it was configured with — so emptying it leaves the
-    // directory. `layout.ts` frames that directory as the unit ("rm -r
-    // data/work is exactly remove the work profile's data"), and one left
-    // behind is silently reused by a later `profile add` of the same name.
-    if (declared.storage.adapter === 'filesystem') {
-      const blobRoot = declared.storage.path ?? layout.blobs(profile);
-      items.push({
-        target: name,
-        kind: 'file',
-        id: blobRoot,
-        note: 'the profile directory, once emptied',
-      });
-
-      // Skills and manifests sit at fixed areas under `data/<profile>/`, the
-      // same way state and the log do — an explicit area, so a profile that
-      // declares its own `storage.path` moves its provider blobs and leaves
-      // these where `layout` says they are. The sweep above walks the blob root
-      // and would then walk straight past them, so they are named. Ordinary
-      // case: both are already inside `blobRoot` and the sweep has them, which
-      // is why this only fires when the two have been pointed apart.
-      //
-      // Resolved before comparing, because they are not compared as paths
-      // otherwise: `newProfileTemplate` writes `./data/<profile>` and
-      // `layout.blobs` returns `data/<profile>`, which is one directory spelled
-      // two ways — the same leading `./` that `profile/layout.ts` has a
-      // paragraph about. Comparing the strings names every default profile's
-      // skills twice in the preview an operator confirms.
-      if (workspacePath(root, blobRoot) !== workspacePath(root, layout.blobs(profile))) {
-        for (const area of [layout.skills(profile), layout.providers(profile)]) {
-          items.push({
-            target: name,
-            kind: 'file',
-            id: area,
-            note: 'outside the declared storage path, so not swept with it',
-          });
-        }
-      }
-    }
+    // **No blob sweep, and no profile directory.** Both existed because a
+    // profile owned `data/<profile>/`, and `rm -r` on it was exactly "what could
+    // this profile reach". It owns nothing now (ADR-057, ADR-059): the blob root
+    // is the workspace's, and the stores under it belong to connections other
+    // profiles may grant. Listing it here would queue every byte in the
+    // workspace for deletion because one profile is going.
+    //
+    // What replaces it is `lanes link disconnect`, which takes one connection,
+    // its grants, and its credential — after checking whether anything else
+    // still needs them. That check is the whole reason this cannot happen here.
 
     // A deployed revision reads its config from the bucket rather than the
     // image (ADR-023), so that copy is the profile too — and it is outside the

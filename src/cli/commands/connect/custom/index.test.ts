@@ -15,12 +15,12 @@ import { connectCustom, type ConnectCustomOptions } from './index.ts';
  * happens before it — the whole design of this command is that anything that can
  * be refused is refused before a file exists, so that a failure never leaves a
  * malformed manifest behind. One bad file in `providers.d/` makes
- * `loadProfileProviders` throw for the entire directory, which breaks `connect`,
+ * `loadWorkspaceProviders` throw for the entire directory, which breaks `connect`,
  * `doctor`, `plan`, `status`, `start` and `deploy` for that profile — and
  * `check`, whose whole job is catching that, does not read the directory at all.
  */
 
-const PROFILE = `contract: 2
+const PROFILE = `contract: 3
 
 instance:
   profile: personal
@@ -80,7 +80,7 @@ const declaring = (extra: Partial<ConnectCustomOptions> = {}): ConnectCustomOpti
 });
 
 const manifestAt = (root: string, id: string) =>
-  readFile(join(root, layout.providers('personal'), `${id}.yaml`), 'utf8');
+  readFile(join(root, layout.providers(), `${id}.yaml`), 'utf8');
 
 describe('declaring and connecting in one command', () => {
   test('writes the manifest and then hands off', async () => {

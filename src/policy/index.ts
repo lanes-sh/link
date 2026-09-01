@@ -14,6 +14,11 @@
  *      withheld. The floor is empty in M1 — the invariant is implemented
  *      anyway, because it is what makes delegated access safe to add later,
  *      and retrofitting it once rules exist in the wild is not possible.
+ *
+ * Since contract 3 a profile's rules are grouped by the connection they govern
+ * (ADR-058). Both invariants are unchanged and one is now sharper: a connection
+ * with no rules at all is not merely unmatched, it is absent, so default deny
+ * bites before a capability is even considered.
  */
 
 export type { AuthorizationResult } from '#audit';
@@ -42,6 +47,26 @@ export interface PolicyDocument {
 }
 
 export const EMPTY_POLICY: PolicyDocument = { rules: [] };
+
+/**
+ * A profile's rules, grouped by the connection each governs (ADR-058).
+ *
+ * A map rather than one list carrying a connection per rule, because the
+ * lookup is the decision: a call names exactly one connection, and the rules
+ * for any other are not evidence about it. Flattening them into one list would
+ * mean every evaluation re-filtered, and a filter that was ever wrong would let
+ * one account's `allow` answer for another.
+ *
+ * A connection absent from the map is not granted. That is default deny on the
+ * connection axis, and it is why `grants:` with an empty `allow` is a different
+ * thing from no row at all — the first says "reachable, nothing permitted", the
+ * second says "not reachable".
+ */
+export interface ProfilePolicy {
+  readonly byConnection: ReadonlyMap<string, PolicyDocument>;
+}
+
+export const EMPTY_PROFILE_POLICY: ProfilePolicy = { byConnection: new Map() };
 
 export interface PolicyRequest {
   /**
@@ -131,14 +156,21 @@ export function evaluateDocument(
  */
 export function evaluate(
   request: PolicyRequest,
-  profile: PolicyDocument,
+  profile: ProfilePolicy,
   floor?: PolicyDocument,
 ): PolicyDecision {
   if (floor) {
     const floorDecision = evaluateDocument(floor, request);
     if (!floorDecision.allowed) return floorDecision;
   }
-  return evaluateDocument(profile, request);
+
+  // The floor is still evaluated against the whole request, because a floor is
+  // an instance-wide narrowing and knows nothing about which connections a
+  // profile happens to hold. Only the profile's half is per connection.
+  const granted = profile.byConnection.get(request.connection);
+  if (granted === undefined) return { allowed: false, reason: 'denied_default' };
+
+  return evaluateDocument(granted, request);
 }
 
 /**
@@ -153,7 +185,7 @@ export function allowedConnections(
   capability: string,
   connections: readonly string[],
   principal: string,
-  profile: PolicyDocument,
+  profile: ProfilePolicy,
   floor?: PolicyDocument,
   at?: Date,
 ): string[] {
@@ -164,16 +196,16 @@ export function allowedConnections(
   const provider = capability.slice(0, capability.indexOf('.'));
   const ofProvider = connections.filter((connection) => connection.startsWith(`${provider}.`));
 
-  // All or nothing beyond that, since rules do not discriminate between
-  // accounts. The list shape is kept because it is what the `connection` enum
-  // wants, and because a future principal-scoped rule would restore the
-  // filtering without touching any caller.
-  const first = ofProvider[0];
-  if (first === undefined) return [];
+  // One evaluation per account, where this used to be all-or-nothing. That
+  // difference is the whole of ADR-058 at the discovery boundary: a profile
+  // holding two mailboxes with different rules now advertises the `connection`
+  // enum each capability actually permits, instead of offering both wherever
+  // either was allowed.
+  return ofProvider.filter((connection) => {
+    const request: PolicyRequest = at
+      ? { principal, capability, connection, at }
+      : { principal, capability, connection };
 
-  const request: PolicyRequest = at
-    ? { principal, capability, connection: first, at }
-    : { principal, capability, connection: first };
-
-  return evaluate(request, profile, floor).allowed ? ofProvider : [];
+    return evaluate(request, profile, floor).allowed;
+  });
 }

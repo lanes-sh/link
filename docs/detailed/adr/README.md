@@ -3,9 +3,17 @@
 These decisions were made in `docs/detailed/init.md` and are transcribed here with their reasoning. They are
 not open questions; changing one means revisiting the reasoning, not re-litigating the choice.
 
-The exception is marked as one. **ADR-025 is proposed rather than accepted** — it is a question
-with the case already argued, filed here so the next person to ask does not start from nothing.
-Nothing in the codebase depends on it.
+The exceptions are marked as such. **ADR-025 is proposed rather than accepted** — a question with
+the case already argued, filed here so the next person to ask does not start from nothing. Nothing
+in the codebase depends on it.
+
+ADR-062 and ADR-063 were both filed as proposals while 0.8.0's first half was being shaped around
+them. Both are now accepted and built: `/authorize` redirects to lanes.sh and the consent form that
+asked for a pasted token is gone, and `lanes link pair` provisions a TLS read listener one port
+above the endpoint that exactly one browser origin may read. **ADR-064 is accepted and built too**,
+and finishes that sentence for the other half of the audience: the same two routes now answer on a
+deployed endpoint's own URL, so `pair` works whether the workspace is on this machine or on Cloud
+Run.
 
 | | Decision |
 |---|---|
@@ -64,6 +72,15 @@ Nothing in the codebase depends on it.
 | [054](054-the-surface-in-front-of-the-gate.md) | The surface in front of the gate is metered, and does not name itself |
 | [055](055-a-connection-may-say-where-its-service-is.md) | A connection may say where its service is, so a self-hosted or multi-tenant host can be a built-in |
 | [056](056-everyone-else-is-declared-too.md) | Everyone else is declared too, and a lookup answers with all of them |
+| [057](057-a-connection-belongs-to-the-workspace.md) | A connection belongs to the workspace, and a profile selects it |
+| [058](058-a-grant-names-a-connection.md) | A grant names a connection, so scopes differ per account |
+| [059](059-the-owner-layer-is-instances.md) | The owner layer is instances, and two profiles may share one |
+| [060](060-a-caller-is-a-person.md) | A caller is a person, and a profile declares who may consume it |
+| [061](061-a-workspace-is-the-only-word.md) | A workspace is the only word, and a default may be sticky where nothing is destroyed |
+| [062](062-the-consent-page-asks-lanes-who-you-are.md) | The consent page asks Lanes who you are, and the pasted token is for CI |
+| [063](063-one-origin-may-read-a-loopback-endpoint.md) | One origin may read a loopback endpoint, over a certificate it installs |
+| [064](064-a-deployed-endpoint-is-read-over-its-own-url.md) | A deployed endpoint is read over its own URL, and pairing stops meaning a certificate |
+| [065](065-the-app-provisions-this-cli.md) | The desktop app installs and updates this CLI on its own lifecycle, and a foreign install is replaced rather than argued with |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 
@@ -162,6 +179,63 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
   had to lengthen with it. Both are recorded there because a redaction key that misses withholds
   every argument and reads exactly like working redaction, which is not a thing to rediscover.
 
+- **ADR-057 and ADR-058 are one change in two halves**, and reading either alone misleads. The
+  first moves a connection out of the profile and into the workspace; the second moves the
+  granularity that move destroys back into the rule. Taken together they retire ADR-003's central
+  trade — "a narrower grant is a narrower profile" — which was sound only while a second profile
+  was the only way to hold a second set of rules over one account.
+
+  What survives is every invariant anyone relies on: default deny, deny-wins, tighten-only, and
+  one implementation shared by discovery and enforcement. What is given up is stated in ADR-057
+  under its own heading, and the load-bearing sentence is that a workspace is now the only
+  isolation boundary — `rm -r data/work` stopped being the whole answer to "what could work
+  reach", and `profile remove` prints what outlives it because of that.
+
+- **ADR-059** is what keeps ADR-030 true after ADR-057 moved everything else out of the profile.
+  Read the two together or the second reads as a retreat. ADR-030 argued that a procedure is as
+  private as the knowledge it operates on, and that argument is untouched — what changes is that
+  privacy is now expressed by which instance a profile is granted rather than by a file path the
+  owner had no say in. The sentence to carry away is that ADR-009's "profiles share nothing"
+  becomes a default rather than a guarantee, and the shipped default shares.
+
+- **ADR-060 fills the slot ADR-003 kept empty on purpose.** That decision passed one principal
+  everywhere and said, in as many words, that carrying it explicitly was what would make delegated
+  access additive rather than a rewrite. This is the addition, and the seam held — it is new rows
+  and one check ahead of policy, not a new signature on the dispatch path.
+
+  It also closes most of what ADR-009 admitted was open. Not all: `kind: 'machine'` still reaches
+  every profile behind one string, because a headless runner has no browser. The gap moved from
+  every registration to one credential, which is a narrowing rather than a fix, and ADR-009 stays
+  the place it is described.
+
+- **ADR-061 finishes ADR-052 and reopens a piece of ADR-037.** The first half is bookkeeping: that
+  decision made a workspace *be* a target and left two words for it. The second half is not, and
+  should be read as the trade it is. ADR-037's objection was to "the dotfile nothing prints", and
+  the answer here is a default that prints itself on every command and is refused outright by every
+  command that publishes or destroys. If the echo is ever dropped for tidiness, the decision has
+  been reversed.
+
+- **ADR-062 and ADR-063 both take something back from a decision that was right when it was made.**
+  ADR-062 replaced the consent form's pasted token, which ADR-018 shipped and ADR-039 named as the
+  most valuable thing on a loopback bind — so the endpoint gets safer and gains a dependency in the
+  same change. ADR-063 grants one browser origin a read of a loopback endpoint, which ADR-039
+  refuses in a paragraph written to be read by whoever tried this. It is closed on a separate
+  listener, with a separate credential, on a surface with no mutation, rather than by relaxing the
+  rule.
+
+- **ADR-064 amends ADR-063, and the amendment is a lesson in reading one's own refusal.** ADR-063
+  declined to pair a deployed endpoint, and every clause of the reason it gave was about the
+  *certificate* — installing one for an address the machine does not answer on. That was correct
+  and is still correct; a deployed endpoint needs no certificate because the platform terminates
+  TLS. What the argument never established is that the *credential* and the *address* should be
+  withheld, and withholding them left half the people running this unable to see their own
+  workspace. The four properties that were not about TLS are kept, one of them tightened: the
+  deployed bind names its origin rather than taking the wildcard `cors.ts` would have allowed it,
+  because the wildcard's justification is the absence of a setup step and there is no setup step
+  here to avoid. Read the 403-versus-404 paragraph if nothing else — the whole of the boot failure
+  ADR-063 recorded turns on which of the two Secret Manager returns, and one IAM binding is what
+  moves it from the first to the second.
+
 - **ADR-056** follows from ADR-042 and amends ADR-041. The first is the interesting relationship:
   it applies identity's argument to everybody who is not the owner, and then diverges from it
   twice on purpose — `entities` is agent-writable and granted by default, where `identity` is
@@ -177,3 +251,16 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
   not selection, the count comes first, and several matches render only what tells them apart —
   and they are load-bearing in a way a refusal was not: with no error, they are the only thing
   between two candidates and a message sent to the wrong person.
+
+- **ADR-065** amends ADR-034 from outside this repository, which is the unusual part: no code here
+  changes, and the decision is implemented in the desktop app. It is recorded here because the
+  sentence it makes untrue is here — ADR-034's *nothing updates itself, and nothing blocks on
+  asking* — and a reader who found only the app's side of it would reasonably conclude the rule had
+  been forgotten rather than revisited. The install shape is untouched: same command, same Bun-only
+  constraint, same refusal to touch a checkout.
+
+  The part worth carrying away is the cwd. `update` migrates and repairs the workspace the walk
+  from the cwd finds, so any caller that is not a person in a terminal has to say where it is
+  standing. The app names home. Anything else driving this CLI should assume the same obligation
+  rather than inherit whatever directory it was launched from.
+

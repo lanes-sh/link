@@ -128,7 +128,7 @@ function render(
     // Both flags, spelled out. They are required (ADR-037), so a command
     // missing either is one the owner pastes and watches refuse — and this is
     // handed to an agent, which relays it verbatim.
-    const where = `--profile ${profile}${target ? ` --target ${target}` : ''}`;
+    const where = `--profile ${profile}${target ? ` --workspace ${target}` : ''}`;
     return (
       `Profile "${profile}" declares no identity.\n\n` +
       'Nothing here says what name or address to use, so do not invent one — ask. ' +

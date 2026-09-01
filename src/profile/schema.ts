@@ -1,5 +1,12 @@
 import { z } from 'zod';
-import { browserOrigin, capabilityPattern, credentialRef, identifier } from './primitives.ts';
+import {
+  browserOrigin,
+  capabilityPattern,
+  connectionRef,
+  credentialRef,
+  identifier,
+  subjectRef,
+} from './primitives.ts';
 import { authorizationSchema } from './authorization.ts';
 import { identitySchema } from './identity.ts';
 import { knowledgeTargetSchema } from './knowledge.ts';
@@ -35,11 +42,19 @@ import { knowledgeTargetSchema } from './knowledge.ts';
  * workspace *is* a target: it declares its own adapters once, holds the profiles
  * that live in it, and a profile is one copy in one place.
  *
- * A hard cut, and contract 1 is not read here. `./legacy.ts` understands it, and
- * only the migration uses that — a runtime that loaded either shape would be the
- * two-sources-of-truth problem again, one level up.
+ * **3 moved `connections:` out of the profile and into the workspace**
+ * (ADR-057), and replaced the profile's flat `policy:` with `grants:`, one row
+ * per connection (ADR-058). A profile stopped being an inventory of accounts
+ * and became a selection over them, which is what makes "read this mailbox,
+ * write that calendar" a thing that can be written down. It also gained
+ * `members:`, because a profile worth sharing needs to say who may consume it
+ * (ADR-060).
+ *
+ * A hard cut each time, and only the newest is read here. `./legacy.ts`
+ * understands the older shapes and only the migration uses it — a runtime that
+ * loaded either would be the two-sources-of-truth problem again, one level up.
  */
-export const SUPPORTED_CONTRACT = 2;
+export const SUPPORTED_CONTRACT = 3;
 
 /**
  * There is no `database:` block any more.
@@ -136,7 +151,7 @@ export const auditTargetSchema = z.object({
  */
 export const vaultTargetSchema = z.object({
   adapter: z.enum(['file', 'blob', 'secret']),
-  /** File path, or blob key. Defaults to `./data/<profile>.vault.enc` / `vault.enc`. */
+  /** File path, or blob key. Defaults to `data/vault.d/<connection>.enc`. */
   path: z.string().optional(),
   /** `secret` only: where the sealed document lives. Defaults to `vault/document`. */
   ref: credentialRef.optional(),
@@ -328,6 +343,69 @@ export const policySchema = z.object({
 });
 
 /**
+ * Providers a profile may grant at most one instance of.
+ *
+ * Not a limitation of the store — `data/skills.d/<id>/` and
+ * `data/vault.d/<id>.enc` hold as many as anyone makes (ADR-059). It is a
+ * limitation of the surface, and it comes from the protocol rather than from
+ * here.
+ *
+ * Every other owner-layer tool takes a `connection` argument, so two memory
+ * instances are two routes through one tool and the caller says which. These
+ * two have nowhere to put that. A skill is surfaced as an MCP **prompt**, and a
+ * prompt is selected by name with no arguments to route on (ADR-012) — two
+ * `triage` skills in one profile would be one name for two procedures. A vault
+ * item becomes its own `vault.get.<id>` capability, and capability ids are flat
+ * for the same reason: two instances holding `stripe_key` would be one
+ * capability naming two secrets, which is the worst of the three collisions
+ * because the wrong answer is a credential.
+ *
+ * So the refusal is at load, where it names both rows, rather than at call time
+ * where one would silently win.
+ */
+export const SINGLE_INSTANCE_PROVIDERS: readonly string[] = ['skills', 'vault'];
+
+/**
+ * One connection, and what may be done with it (ADR-058).
+ *
+ * The rules are the same `allow`/`deny` pair `policySchema` has always carried;
+ * what is new is that a row names the account they govern. ADR-003 kept rules
+ * connection-blind on the reasoning that "a narrower grant is a narrower
+ * profile" — sound while a connection lived in exactly one profile, because the
+ * second profile *was* the granularity. ADR-057 removed that mechanism, so the
+ * granularity moves into the rule.
+ *
+ * **There is no profile-wide `allow` beside these rows, deliberately.** A
+ * second place a connection could be granted is a second answer to "may this
+ * call proceed", and two answers to one question is the failure ADR-052 exists
+ * to prevent. A profile that wants the same rules on eight connections writes
+ * eight rows; the repetition is the cost of there being one place to look.
+ *
+ * Default deny is unchanged and now bites one step earlier: a connection with
+ * no row is not reachable, and is never advertised.
+ */
+export const grantSchema = z.object({
+  connection: connectionRef,
+  allow: z.array(policyRuleSchema).default([]),
+  deny: z.array(policyRuleSchema).default([]),
+});
+
+/**
+ * Who may consume this profile (ADR-060).
+ *
+ * `role` decides who may edit this list and nothing else. Both roles reach
+ * exactly what the grants above allow, because a role that changed what an
+ * agent could call would be a second policy system beside `grants:`, with
+ * precedence rules between them, answering a question the first one already
+ * answers. Two people needing different scopes is two profiles, which is cheap
+ * now that neither of them re-authorises an account.
+ */
+export const memberSchema = z.object({
+  subject: subjectRef,
+  role: z.enum(['owner', 'member']).default('member'),
+});
+
+/**
  * One authorised account.
  *
  * `account` is the identity as the provider knows it — an email address, a
@@ -412,15 +490,36 @@ export const configSchema = z.object({
     })
     .default({ requests_per_minute: 120, upstream_calls_per_minute: 60 }),
 
-  oauth_apps: z.record(identifier, oauthAppSchema).default({}),
+  /**
+   * What this profile is for, in the owner's own words.
+   *
+   * New in contract 3, and it earns its place because a profile is now a thing
+   * you hand to somebody (ADR-060). "personal-assistant" is a name; "reads my
+   * mail, keeps the calendar, never sends" is what a member needs to know
+   * before accepting it. The dashboard and `setup_overview` show it.
+   */
+  description: z.string().min(1).optional(),
 
   /**
-   * There is no `providers` block. A provider is enabled by having a connection
-   * to it — a second place to say so could only ever disagree with the first,
-   * and everything else a provider needs is in its manifest.
+   * The connections this profile selects, and what may be done with each.
+   *
+   * There is no `connections:` block here any more — a connection belongs to
+   * the workspace (ADR-057), and `connections.yaml` beside this file is where
+   * it lives. A grant naming a connection the workspace does not hold is
+   * refused by `assertReferentialIntegrity` rather than loading and reaching
+   * nothing.
    */
-  connections: z.array(connectionSchema).default([]),
-  policy: policySchema.default({ allow: [], deny: [] }),
+  grants: z.array(grantSchema).default([]),
+
+  /**
+   * Who may consume this profile (ADR-060).
+   *
+   * Empty is not "everyone" — it is nobody, which is default deny applied to
+   * the identity axis. `profile add` writes the signed-in subject as `owner`,
+   * so the empty state is one a hand-edit produces rather than one anybody is
+   * handed.
+   */
+  members: z.array(memberSchema).default([]),
 
   /**
    * Memory and skills, somewhere other than the target's own storage (ADR-041).
@@ -446,8 +545,35 @@ export const configSchema = z.object({
   identity: identitySchema.default([]),
 });
 
+/**
+ * `connections.yaml` — every account authorised in this workspace (ADR-057).
+ *
+ * Its own file rather than a block in `lanes-link.yaml`, because that file is
+ * the registry and is read before anything else can be: resolving which
+ * workspace a command means must not require parsing every connection in it.
+ * And its own file rather than staying in the profile, because authorising an
+ * account and deciding what may be done with it are two acts, and only the
+ * second is a property of a profile.
+ *
+ * `oauth_apps` comes with them. A registered client belongs to the account it
+ * authenticates, not to whichever selection happens to name that account.
+ *
+ * There is still no `providers` block. A provider is enabled by having a
+ * connection to it — a second place to say so could only ever disagree with the
+ * first, and everything else a provider needs is in its manifest.
+ */
+export const connectionsFileSchema = z.object({
+  contract: z.number().int().positive(),
+  connections: z.array(connectionSchema).default([]),
+  oauth_apps: z.record(identifier, oauthAppSchema).default({}),
+});
+
+export type ConnectionsFile = z.infer<typeof connectionsFileSchema>;
+
 export type Config = z.infer<typeof configSchema>;
 export type ConnectionConfig = z.infer<typeof connectionSchema>;
+export type GrantConfig = z.infer<typeof grantSchema>;
+export type MemberConfig = z.infer<typeof memberSchema>;
 export type PolicyRuleConfig = z.infer<typeof policyRuleSchema>;
 export type TargetConfig = z.infer<typeof targetSchema>;
 export type DeployConfig = z.infer<typeof deployTargetSchema>;
@@ -482,8 +608,14 @@ export type { IdentityEntry } from './identity.ts';
  */
 export const workspaceTargetSchema = z
   .object({
-    /** A pointer: where the workspace declaring this target lives. */
-    workspace: z.string().min(1).optional(),
+    /**
+     * A pointer: where the workspace declaring this one lives.
+     *
+     * Spelled `at:` rather than `workspace:` since contract 3. The block is
+     * `workspaces:` now (ADR-061), and `workspaces.cloud.workspace` names the
+     * concept twice and reads as a typo.
+     */
+    at: z.string().min(1).optional(),
     credentials: credentialsTargetSchema.optional(),
     audit: auditTargetSchema.optional(),
     storage: storageTargetSchema.optional(),
@@ -497,6 +629,15 @@ export const workspaceTargetSchema = z
      * gets in — the one question about a deployment that must not be guessed at.
      */
     primary: identifier.optional(),
+    /**
+     * The Lanes workspace this one serves, when it serves one (ADR-060).
+     *
+     * A binding, not an identity: it says whose membership list
+     * `profile members add` validates a subject against. Absent means the
+     * workspace delegates only to the signed-in owner, which is what `local`
+     * does.
+     */
+    lanes_workspace: z.string().min(1).optional(),
     last_deploy: z.string().optional(),
     /**
      * The CLI release that rolled the revision serving this target.
@@ -520,21 +661,21 @@ export const workspaceTargetSchema = z
     // rather than preferring one: a pointer beside a declaration is two answers
     // to "where are this target's bytes", and picking either silently is how the
     // fifteen-connection bucket got reported as seven.
-    if (declares && entry.workspace !== undefined) {
+    if (declares && entry.at !== undefined) {
       ctx.addIssue({
         code: 'custom',
         message:
-          'names a "workspace" and also declares adapters — a target is declared by exactly ' +
+          'names an "at" and also declares adapters — a workspace is declared in exactly ' +
           'one workspace. Keep the adapters here, or keep the pointer and declare them there.',
       });
       return;
     }
 
-    if (!declares && entry.workspace === undefined) {
+    if (!declares && entry.at === undefined) {
       ctx.addIssue({
         code: 'custom',
         message:
-          'declares neither "workspace" nor "credentials" and "storage" — a target either ' +
+          'declares neither "at" nor "credentials" and "storage" — a workspace either ' +
           'lives here or points at where it does.',
       });
       return;
@@ -559,7 +700,17 @@ export const workspaceTargetSchema = z
 export const workspaceSchema = z.object({
   contract: z.number().int().positive(),
   default_profile: identifier.optional(),
-  targets: z.record(z.string(), workspaceTargetSchema).default({}),
+  /**
+   * The workspace a command acts in when `--workspace` is absent (ADR-061).
+   *
+   * The first key in this file that is read rather than parsed and ignored
+   * since ADR-037. What makes it not the resolution chain that decision removed
+   * is that there is one source, it is printed on every command that uses it,
+   * and every command that publishes or destroys refuses it outright. If the
+   * echo is ever dropped for tidiness, ADR-061 has been reversed.
+   */
+  default_workspace: z.string().optional(),
+  workspaces: z.record(z.string(), workspaceTargetSchema).default({}),
 });
 
 export type WorkspaceConfig = z.infer<typeof workspaceSchema>;
@@ -568,8 +719,8 @@ export type WorkspaceTarget = z.infer<typeof workspaceTargetSchema>;
 /** Whether a registry entry points elsewhere rather than declaring the target. */
 export function isPointer(
   entry: WorkspaceTarget,
-): entry is WorkspaceTarget & { workspace: string } {
-  return entry.workspace !== undefined;
+): entry is WorkspaceTarget & { at: string } {
+  return entry.at !== undefined;
 }
 
 /**

@@ -1,5 +1,6 @@
 import {
   listProfiles,
+  readWorkspace,
   noProfileNamed,
   noTargetNamed,
   readRegistry,
@@ -7,7 +8,7 @@ import {
   resolveWorkspaceRoot,
 } from '#profile';
 import type { Flags } from './argv.ts';
-import { dispatchWillRefuse, requirementFor } from './selection.ts';
+import { EXPLICIT_WORKSPACE, dispatchWillRefuse, requirementFor, selectionKey } from './selection.ts';
 import { refuseIfUnmigrated } from './workspace-migrate.ts';
 
 /**
@@ -46,26 +47,40 @@ export async function requireSelection(
 
   const root = resolveWorkspaceRoot(env ? { env } : {});
 
-  // **Target before profile, for both levels.** It used to ask for the profile
-  // and read that profile's own target list — the ordering ADR-052 inverted,
-  // since the profile lives inside the target and there is nowhere to look for
-  // one until the target is known. `refuseIfUnmigrated` is on the refusal path
-  // only, so it costs nothing when the flag is present.
-  if (typeof flags['target'] !== 'string') {
-    await refuseIfUnmigrated(root);
-    throw noTargetNamed(await readRegistry(root), root, env);
+  // **Workspace before profile, for both levels.** It used to ask for the
+  // profile and read that profile's own target list — the ordering ADR-052
+  // inverted, since a profile lives inside a workspace and there is nowhere to
+  // look for one until the workspace is known. `refuseIfUnmigrated` is on the
+  // refusal path only, so it costs nothing when the flag is present.
+  if (typeof flags['workspace'] !== 'string') {
+    const fallback = EXPLICIT_WORKSPACE.has(selectionKey(first, second))
+      ? undefined
+      : (await readWorkspace(root))?.default_workspace;
+
+    if (fallback === undefined) {
+      await refuseIfUnmigrated(root);
+      throw noTargetNamed(await readRegistry(root), root, env, {
+        refusedDefault: EXPLICIT_WORKSPACE.has(selectionKey(first, second)),
+      });
+    }
+
+    // Written back onto the flags so every command downstream reads one key and
+    // cannot tell a default from a typed flag — the difference belongs in the
+    // line printed above the output, not in thirty call sites (ADR-061).
+    flags['workspace'] = fallback;
+    defaulted.add(fallback);
   }
 
-  // A named target the registry cannot know, because it does not exist yet.
-  if (!(flags['target'] in (await readRegistry(root)))) await refuseIfUnmigrated(root);
+  // A named workspace the registry cannot know, because it does not exist yet.
+  if (!(flags['workspace'] in (await readRegistry(root)))) await refuseIfUnmigrated(root);
 
-  if (needs === 'target') return;
+  if (needs === 'workspace') return;
 
   if (typeof flags['profile'] !== 'string') {
     // Listed from the target's own workspace, so the names offered are ones that
     // command could act on. An unreachable pointer degrades to the empty list
     // rather than failing — "which profile" is still the question being asked.
-    const where = await resolveTargetWorkspace(root, flags['target']).catch(() => root);
+    const where = await resolveTargetWorkspace(root, flags['workspace'] as string).catch(() => root);
     throw noProfileNamed(where, await listProfiles(where).catch(() => []), env);
   }
 }
@@ -77,3 +92,19 @@ export async function requireSelection(
  * that listing it per command would be noise. `--quiet` is read by `announce`
  * rather than by any one command.
  */
+
+/**
+ * Workspaces resolved from `default_workspace` rather than from a flag.
+ *
+ * A set rather than a boolean because `announce` is called from thirty places
+ * and none of them threads a resolution result through — and because the thing
+ * being remembered is small, true for one run, and read exactly once per line
+ * of output. If the echo is ever dropped for tidiness, ADR-061 has been
+ * reversed: the printed line is the whole of what makes a sticky default
+ * different from the dotfile nothing prints.
+ */
+const defaulted = new Set<string>();
+
+export function wasDefaulted(workspace: string): boolean {
+  return defaulted.has(workspace);
+}

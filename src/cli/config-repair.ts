@@ -1,4 +1,5 @@
-import { listProfiles } from '#profile';
+import { newConnectionsTemplate } from './config-templates.ts';
+import { CONNECTIONS_FILE, listProfiles, workspaceFiles, writeWorkspaceFile } from '#profile';
 import { ConfigDocument } from './config-edit.ts';
 import { ok, print, style, warn } from './output.ts';
 
@@ -100,59 +101,95 @@ export interface SurfaceRepair {
  * (ADR-023) so it could not write this even if the code let it.
  */
 export function ensureReservedConnection(
-  document: ConfigDocument,
+  connections: ConfigDocument,
+  profile: ConfigDocument,
   provider: ReservedSurface,
+  options: { grants?: boolean } = {},
 ): SurfaceRepair {
+  // Whether the profile half is written at all. `connect` without `--profile`
+  // repairs the workspace's connection rows and touches no profile, because it
+  // was not told which one to touch (ADR-057).
+  const grants = options.grants ?? true;
   // Raw YAML, so nothing here has been through a schema: this runs over sibling
   // profiles that were never validated, and every field is whatever was typed.
-  const config = document.toJSON() as {
-    connections?: unknown;
-    policy?: { allow?: unknown; deny?: unknown };
-  } | null;
+  const workspace = connections.toJSON() as { connections?: unknown } | null;
+  const config = profile.toJSON() as { grants?: unknown } | null;
 
   const rule = `${provider}.*`;
   const covers = (pattern: string): boolean => pattern === '*' || pattern === rule;
 
+  const rows = Array.isArray(workspace?.connections) ? workspace.connections : [];
+  const held_grants = Array.isArray(config?.grants) ? config.grants : [];
+
+  // The row this profile would use. Any instance of the provider will do, and
+  // the *first* one is taken rather than `main` specifically: an operator who
+  // renamed theirs should not get a second one bolted on beside it.
+  const existing = rows.find(
+    (row) => (row as { provider?: unknown } | null)?.provider === provider,
+  ) as { id?: unknown } | undefined;
+  const id = typeof existing?.id === 'string' ? existing.id : 'main';
+  const key = `${provider}.${id}`;
+
+  const held = held_grants.find(
+    (row) => (row as { connection?: unknown } | null)?.connection === key,
+  ) as { allow?: unknown; deny?: unknown } | undefined;
+
   // Denied on purpose, and a deny beats an allow — so writing the rule would
   // widen nothing while announcing that an agent can now read the surface,
-  // which would be false. For `setup`, deleting the two lines no longer removes
-  // it either, because the next `connect` or `deploy` puts them back; a deny is
-  // the way it stays off, so it is the one thing this must not undo. The same
-  // holds for `identity`, where the next `identity add` is what would put them
-  // back.
+  // which would be false. Deleting the row no longer removes the surface
+  // either, because the next `connect` or `deploy` puts it back; a deny is the
+  // way it stays off, so it is the one thing this must not undo.
   //
   // Only a rule covering the whole surface counts. `deny: [setup.provider]` is
   // an operator narrowing it, not switching it off, and that narrowing survives
   // the repair untouched — which is the point of denying one capability.
-  if (patternsIn(config?.policy?.deny).some(covers)) return { changes: [], granted: [] };
+  if (patternsIn(held?.deny).some(covers)) return { changes: [], granted: [] };
 
   const changes: string[] = [];
   const granted: string[] = [];
 
-  const connections = Array.isArray(config?.connections) ? config.connections : [];
-  const declared = (row: unknown): boolean =>
-    (row as { provider?: unknown } | null)?.provider === provider;
-
-  if (!connections.some(declared)) {
-    // Inline, and `main` for the id, so a repaired profile is spelled exactly
-    // like `newProfileTemplate` writes a fresh one. Two spellings of one row is
-    // how a template and its repair drift apart.
-    document.addTo(
+  if (existing === undefined) {
+    // Inline, and `main` for the id, so a repaired workspace is spelled exactly
+    // like `newConnectionsTemplate` writes a fresh one. Two spellings of one row
+    // is how a template and its repair drift apart.
+    connections.addTo(
       ['connections'],
       { id: 'main', provider, account: RESERVED_SURFACES[provider] },
       { inline: true },
     );
-    changes.push(`connections += ${provider}.main`);
+    changes.push(`connections.yaml += ${key}`);
   }
 
-  // `*` already covers it. Re-stating the rule under a blanket allow would be
-  // noise in the file and a diff the operator did not ask for.
-  if (!patternsIn(config?.policy?.allow).some(covers)) {
-    document.addTo(['policy', 'allow'], rule, { inline: true });
+  if (!grants) return { changes, granted };
+
+  if (held === undefined) {
+    profile.addTo(['grants'], { connection: key, allow: [rule], deny: [] }, { inline: true });
+    changes.push(`grants += ${key}`);
+    granted.push(rule);
+  } else if (!patternsIn(held.allow).some(covers)) {
+    // A row that exists and grants nothing is a surface that is present and
+    // silent. Widening it back is the repair; the deny check above is what stops
+    // this undoing a deliberate narrowing.
+    const at = held_grants.indexOf(held as never);
+    profile.addTo(['grants', at, 'allow'], rule, { inline: true });
     granted.push(rule);
   }
 
   return { changes, granted };
+}
+
+/** The workspace's connections document, written from the template if missing. */
+async function openOrCreateConnections(workspaceRoot: string): Promise<ConfigDocument> {
+  try {
+    return await ConfigDocument.openKey(workspaceRoot, CONNECTIONS_FILE);
+  } catch {
+    await writeWorkspaceFile(
+      workspaceFiles(workspaceRoot),
+      CONNECTIONS_FILE,
+      newConnectionsTemplate(),
+    );
+    return ConfigDocument.openKey(workspaceRoot, CONNECTIONS_FILE);
+  }
 }
 
 /** Whether a repair did anything, without a caller adding up two lists. */
@@ -169,7 +206,7 @@ export function repaired(repair: SurfaceRepair): boolean {
 
 /** The repair as display lines, in the order the two halves are applied. */
 export function repairLines(repair: SurfaceRepair): string[] {
-  return [...repair.changes, ...repair.granted.map((rule) => `policy.allow += ${rule}`)];
+  return [...repair.changes, ...repair.granted.map((rule) => `grants[].allow += ${rule}`)];
 }
 
 /**
@@ -219,12 +256,16 @@ function patternsIn(rules: unknown, now = Date.now()): string[] {
  * Each surface is still decided independently, so a profile that denied exactly
  * one of them keeps that decision while the rest are repaired.
  */
-export function ensureOwnerLayer(document: ConfigDocument): SurfaceRepair {
+export function ensureOwnerLayer(
+  connections: ConfigDocument,
+  profile: ConfigDocument,
+  options: { grants?: boolean } = {},
+): SurfaceRepair {
   const changes: string[] = [];
   const granted: string[] = [];
 
   for (const provider of DEFAULT_SURFACES) {
-    const repair = ensureReservedConnection(document, provider);
+    const repair = ensureReservedConnection(connections, profile, provider, options);
     changes.push(...repair.changes);
     granted.push(...repair.granted);
   }
@@ -241,8 +282,11 @@ export function ensureOwnerLayer(document: ConfigDocument): SurfaceRepair {
  * paragraph of the instructions budget to say so. `identity add` is the only
  * caller, so the grant arrives exactly when there is something behind it.
  */
-export function ensureIdentityConnection(document: ConfigDocument): SurfaceRepair {
-  return ensureReservedConnection(document, 'identity');
+export function ensureIdentityConnection(
+  connections: ConfigDocument,
+  profile: ConfigDocument,
+): SurfaceRepair {
+  return ensureReservedConnection(connections, profile, 'identity');
 }
 
 /**
@@ -288,14 +332,25 @@ export async function repairOwnerLayer(
   const say = options.report ?? print;
   const wanted = profiles === undefined ? undefined : new Set(profiles);
 
+  // One connections document for the whole sweep. The owner layer is the
+  // workspace's now (ADR-059), so repairing three profiles must not add three
+  // `memory.main` rows — opening it once and saving it once is what makes the
+  // second profile see what the first one created.
+  // Created if absent rather than refused. A contract-3 workspace always has
+  // one, but a hand-made or half-migrated one may not — and this is the repair,
+  // so the file it needs is a thing to write rather than a reason to stop.
+  const connections = await openOrCreateConnections(workspaceRoot);
+  let connectionsChanged = false;
+
   for (const name of await listProfiles(workspaceRoot)) {
     if (wanted !== undefined && !wanted.has(name)) continue;
 
     try {
       const document = await ConfigDocument.open(workspaceRoot, name);
-      const repair = ensureOwnerLayer(document);
+      const repair = ensureOwnerLayer(connections, document);
       if (!repaired(repair)) continue;
 
+      connectionsChanged = true;
       await document.save();
 
       say(ok(`gave ${style.bold(name)} its own owner layer`));
@@ -313,4 +368,6 @@ export async function repairOwnerLayer(
       );
     }
   }
+
+  if (connectionsChanged) await connections.save();
 }

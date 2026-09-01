@@ -15,9 +15,9 @@ import { printSteps, runSteps } from './steps.ts';
 import { driverFor } from './drivers.ts';
 import { prepareSecrets, readableRefs, rotatableRefs } from './prepare.ts';
 import { repairOwnerLayer } from '#cli/config-repair.ts';
-import { migrateWorkspace } from '#cli/workspace-migrate.ts';
+import { migrateToCurrentContract } from '#cli/workspace-migrate.ts';
 import { deployedWorkspace, uploadWorkspace } from './upload.ts';
-import { collidingRefs, collisionRefusal, servingProfiles } from './serving.ts';
+import { servingProfiles } from './serving.ts';
 import { healthLine, reachability, registerLine, reportUnauthorised } from './report.ts';
 
 /**
@@ -75,9 +75,14 @@ export async function deploy(flags: DeployFlags): Promise<void> {
   // declare anything: it reads this machine's pointer and stops. So the bucket is
   // located, migrated, and only then opened.
   //
-  // Idempotent, and silent on a workspace already at contract 2 — a listing and
-  // no writes. `--dry-run` reports what it would do and writes nothing, like
-  // every other step of this command.
+  // Idempotent, and silent on a workspace already current — a listing and no
+  // writes. `--dry-run` reports what it would do and writes nothing, like every
+  // other step of this command.
+  //
+  // It goes all the way to `SUPPORTED_CONTRACT`, which it did not use to: this
+  // ran the contract 1→2 step alone, so a contract-2 bucket passed straight
+  // through and the revision came up reading an empty `data/` while the bytes
+  // stayed under `data/<profile>/`. See `migrateToCurrentContract`.
   if (!(await migrateTargetWorkspace(requireTargetFlag(flags), flags.dryRun !== true))) return;
 
   // The one command allowed to name a target that does not exist yet: creating
@@ -112,14 +117,13 @@ export async function deploy(flags: DeployFlags): Promise<void> {
     print(style.dim(`         serving ${serving.join(', ')} — ${primary} owns the token`));
   }
 
-  // Before anything external, beside `check`, and for the same reason: two
-  // profiles writing one flat credential ref into one store is a failure with
-  // no later symptom worth having.
-  const colliding = await collidingRefs(resolution.workspaceRoot, serving);
-  if (colliding.length > 0) {
-    heading('Cannot share a credential store');
-    throw new ConfigError(collisionRefusal(colliding, target));
-  }
+  // The credential-collision preflight is gone. It existed because two profiles
+  // each held their own `gmail.main` and both derived the flat ref `gmail/main`
+  // into one store — the last deploy winning, with no later symptom worth
+  // having. A connection belongs to the workspace now and `<provider>.<id>` is
+  // unique by construction (ADR-057), so the state it guarded against cannot be
+  // written: `assertConnectionsUnique` refuses it at load, before a deploy runs
+  // at all.
 
   // `check` before anything external, per the gate order: a config that will be
   // rejected on boot should be rejected here, not after a five-minute build.
@@ -150,7 +154,7 @@ export async function deploy(flags: DeployFlags): Promise<void> {
   // below are, and read from config and manifests before anything opens a
   // store — `--dry-run` must reach the printed step list without touching a
   // credential.
-  const rotatable = await rotatableRefs(resolution.workspaceRoot, serving);
+  const rotatable = await rotatableRefs(resolution.workspaceRoot, serving, declared);
   const readable = await readableRefs(resolution.workspaceRoot, serving, declared);
   const provision = await driver.provision({
     deploy: deployConfig,
@@ -240,7 +244,7 @@ export async function deploy(flags: DeployFlags): Promise<void> {
     for (const problem of prepared.blocking) print(fail(problem));
     throw new ConfigError(
       'The deployed instance cannot start without these. Store them with ' +
-        `lanes link secrets set <ref> --profile ${resolution.profile} --target ${target}, or ` +
+        `lanes link secrets set <ref> --profile ${resolution.profile} --workspace ${target}, or ` +
         `copy a local setup with lanes link secrets push --profile ${resolution.profile} ` +
         `--from local --to ${target}.`,
     );
@@ -275,6 +279,17 @@ export async function deploy(flags: DeployFlags): Promise<void> {
     // workspace that this target cannot open, and nothing left to check.
     await repairOwnerLayer(resolution.workspaceRoot, serving);
 
+    // **The bucket's own contract, before anything is written over it.**
+    //
+    // The pass at the top of the command resolves the target through this
+    // machine's pointer, which a *first* deploy does not have: the entry is
+    // still a declaration, `resolveTargetWorkspace` answers with the local root,
+    // and it returns early. So this is the only pass that ever sees an existing
+    // bucket at contract 2 — and running it after the upload is the same as not
+    // running it, because the upload writes contract-3 profiles and
+    // `needsContract3` reads the profiles.
+    await migrateToCurrentContract(workspace, { apply: true });
+
     // Before the rollout, so the revision that comes up finds a config to read.
     // Uploading after would leave a window where the service is serving and the
     // workspace it was told to read is not there yet.
@@ -291,15 +306,9 @@ export async function deploy(flags: DeployFlags): Promise<void> {
       await uploadWorkspace(resolution.workspaceRoot, workspace, serving);
     }
 
-    // **The bucket's own migration, here and nowhere else.**
-    //
-    // A second pass, and it is not redundant. The one at the top of the command
-    // migrated whatever the bucket already held; this catches what the upload
-    // just put there — profiles from a workspace that is itself at contract 2
-    // arrive migrated, but a first deploy of a *newly created* bucket writes
-    // them here for the first time. Idempotent, so the ordinary case is one
-    // listing and no writes.
-    await migrateWorkspace(workspace, { apply: true });
+    // Again for what the upload put there: a newly created bucket gets its
+    // profiles written here for the first time. Idempotent — one listing.
+    await migrateToCurrentContract(workspace, { apply: true });
 
     // Where this deployment lives, in both registries — see `record.ts`. The
     // declaration has to land before the revision boots, so it goes here rather
@@ -325,7 +334,7 @@ export async function deploy(flags: DeployFlags): Promise<void> {
   if (!url) {
     print(
       warn(
-        `deployed, but the platform reported no URL yet — run: lanes link outputs --profile ${resolution.profile} --target ${target}`,
+        `deployed, but the platform reported no URL yet — run: lanes link outputs --profile ${resolution.profile} --workspace ${target}`,
       ),
     );
     return;
@@ -365,7 +374,7 @@ async function migrateTargetWorkspace(target: string, apply: boolean): Promise<b
   const workspace = await resolveTargetWorkspace(root, target).catch(() => null);
   if (workspace === null || workspace === root) return true;
 
-  const migrated = await migrateWorkspace(workspace, { apply });
+  const migrated = await migrateToCurrentContract(workspace, { apply });
   if (migrated.alreadyCurrent) return true;
 
   heading(apply ? 'Migrated' : 'Would migrate');
@@ -383,6 +392,6 @@ async function migrateTargetWorkspace(target: string, apply: boolean): Promise<b
   print(style.dim('  Nothing was written, and nothing else was checked: the rest of this'));
   print(style.dim('  command opens the target, which is not readable until this has run.'));
   print('');
-  print(style.dim(`  Run it for real:  lanes link deploy --target ${target}`));
+  print(style.dim(`  Run it for real:  lanes link deploy --workspace ${target}`));
   return false;
 }

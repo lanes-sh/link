@@ -53,7 +53,7 @@ import type { MergedCapability } from './visibility.ts';
  */
 const OPENING = `This endpoint is one place to reach what its owner has chosen to expose. It
 authenticates, applies permissions, and records what happened, so you do not
-have to.`;
+have to. Read \`lanes://instructions\` for the whole account of how it works.`;
 
 const ROUTING = `**Routing.** Every tool takes \`profile\` and \`connection\`. A profile is how
 someone separates work from personal — when it is ambiguous which one is meant,

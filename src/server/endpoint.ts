@@ -1,21 +1,16 @@
-import { MCP_PATH, serve } from './index.ts';
+import { MCP_PATH, serve, type RunningServer } from './index.ts';
 import { serveOverStdio } from './stdio.ts';
 import { Generations, type OpenedWorkspace } from './generations.ts';
 import type { AuthorizationSurface } from './oauth.ts';
 import type { ProfileRuntime } from './mcp/index.ts';
-import {
-  AuthenticatorChain,
-  IssuedTokenAuthenticator,
-  OAuthServer,
-  OAuthStore,
-  OidcAuthenticator,
-  OidcVerifier,
-  tokensMatch,
-  type Authenticator,
-} from '#auth';
+import { AuthenticatorChain } from '#auth';
+import { openAuthorization } from './authorization.ts';
+import { openReadListener } from './read/open.ts';
+import { deployedReadDeps } from './read/deployed.ts';
+import { version } from '#cli/version.ts';
 import type { Logger } from '#connectivity';
 import { silentLogger } from './logging.ts';
-import { listProfiles } from '#profile';
+import { listProfiles, readConnections } from '#profile';
 import {
   applyReconcile,
   formatPlan,
@@ -82,6 +77,8 @@ export interface EndpointOptions {
 export interface RunningEndpoint {
   readonly url: string;
   readonly profiles: readonly string[];
+  /** The dashboard read surface, when this workspace is paired (ADR-063). */
+  readonly readUrl?: string | undefined;
   stop(): Promise<void>;
 }
 
@@ -133,21 +130,33 @@ async function openReconciled(options: {
       }
     }
 
-    for (const [name, runtime] of runtimes) {
-      const result = await planReconcile(
-        runtime.config,
-        runtime.state,
-        runtime.credentials,
-        runtime.manifestFor,
-      );
-      if (!planIsNoop(result)) {
-        reporter.reconciled({
-          profile: name,
-          plan: formatPlan(result),
-          ofMany: runtimes.size > 1,
-        });
-        await applyReconcile(runtime.config, runtime.state, result);
-      }
+    // Once for the workspace, over every connection the workspace holds.
+    //
+    // Runtime state is one store per workspace since contract 3, and reconcile
+    // disables everything in it that the connection list does not declare — so
+    // running it per profile over that profile's *grants* had each pass disable
+    // the connections only the other profiles granted. Two profiles was enough:
+    // the second pass disabled the first's accounts, every later call was
+    // refused `denied_connection_unauthorized`, and restarting flipped which
+    // profile survived.
+    //
+    // The primary's runtime is used for the stores because they are the same
+    // stores for every profile here. `workspaceConnections` is the whole list,
+    // which is what "undeclared" has to be measured against.
+    const declared = primary.workspaceConnections;
+    const result = await planReconcile(
+      declared,
+      primary.state,
+      primary.credentials,
+      primary.manifestFor,
+    );
+    if (!planIsNoop(result)) {
+      reporter.reconciled({
+        profile: primary.resolution.profile,
+        plan: formatPlan(result),
+        ofMany: false,
+      });
+      await applyReconcile(declared, primary.state, result);
     }
 
     return { primary, runtimes };
@@ -183,80 +192,6 @@ function closeAll(runtimes: ReadonlyMap<string, Runtime>): Promise<unknown> {
   return Promise.all([...runtimes.values()].map((runtime) => runtime.close()));
 }
 
-/**
- * The remote-client gate, if this profile declares one.
- *
- * Endpoint-scoped rather than per profile, like the bearer token and for the
- * same reason (ADR-009): one URL serves every profile in the workspace, so
- * there is one place a client authorises and one set of tokens.
- *
- * Returns null when `auth.authorization` is absent, and everything downstream
- * treats null as "exactly as before" — no metadata published, no pointer on the
- * `401`, one authenticator instead of a chain.
- */
-async function openAuthorization(
-  primary: Runtime,
-  log: Logger,
-): Promise<{ surface: AuthorizationSurface; authenticator: Authenticator } | null> {
-  const declared = primary.config.auth.authorization;
-  if (!declared) return null;
-
-  const profile = primary.resolution.profile;
-
-  if (declared.mode === 'oidc') {
-    const audience = await primary.credentials.get(declared.client_id_ref);
-    if (!audience) {
-      // Refuse rather than verify without an audience. A verifier that cannot
-      // check who a token was issued for accepts every token the issuer minted
-      // for anything, which is the failure this mode exists to prevent.
-      throw new Error(
-        `auth.authorization.client_id_ref names "${declared.client_id_ref}", which is not in ` +
-          `this target's credential store. Store it with: lanes link secrets set ${declared.client_id_ref}`,
-      );
-    }
-
-    const verifier = new OidcVerifier({
-      issuer: declared.issuer,
-      audience,
-      allowedSubjects: declared.allowed_subjects,
-      ...(declared.introspection_endpoint
-        ? { introspectionEndpoint: declared.introspection_endpoint }
-        : {}),
-    });
-
-    return {
-      // The issuer is somebody else's origin, so it is a constant here rather
-      // than derived from the request.
-      surface: { issuer: () => declared.issuer, mcpPath: MCP_PATH, target: primary.target },
-      authenticator: new OidcAuthenticator(verifier, profile),
-    };
-  }
-
-  const store = new OAuthStore(primary.state.kv);
-  const expected = primary.config.auth.token_ref;
-
-  const server = new OAuthServer({
-    store,
-    accessTokenTtlMs: declared.access_token_ttl_minutes * 60_000,
-    // So a replayed refresh token leaves a line. It is refused rather than
-    // acted on (ADR-035), and a refusal nobody can see is how a connector
-    // losing its authorization came to need log forensics to explain.
-    log,
-    // Approval is proof of holding the endpoint token, compared the same way
-    // the request path compares it. There is one person behind this endpoint
-    // and they already have exactly one credential; a second one invented for
-    // the consent screen would be a password to lose.
-    verifyOwner: async (presented) => {
-      const token = await primary.credentials.get(expected);
-      return token !== null && tokensMatch(presented, token);
-    },
-  });
-
-  return {
-    surface: { server, issuer: (origin) => origin, mcpPath: MCP_PATH, target: primary.target },
-    authenticator: new IssuedTokenAuthenticator(store, profile),
-  };
-}
 
 export async function startEndpoint(options: EndpointOptions): Promise<RunningEndpoint> {
   const reporter = options.reporter ?? SILENT;
@@ -278,13 +213,26 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
       if (!token) {
         throw new Error(
           `No profile token at "${primary.config.auth.token_ref}" in this target's credential store. ` +
-            'A deployed instance never mints its own — run `lanes link token rotate --target <target>` ' +
+            'A deployed instance never mints its own — run `lanes link token rotate --workspace <name>` ' +
             'from your machine, or `lanes link secrets push --from local --to cloud`, then redeploy.',
         );
       }
     }
 
-    const gate = await openAuthorization(primary, log);
+    // Read through a holder rather than closed over `runtimes`, because a
+    // reload replaces that map and the gate is deliberately built once
+    // (ADR-029). Without the indirection, a member added after start would
+    // stay invisible until the endpoint was restarted — which is precisely the
+    // thing `profile members add` tells the operator has taken effect.
+    let serving: ReadonlyMap<string, Runtime> = runtimes;
+
+    const gate = await openAuthorization(primary, log, async (subject) =>
+      [...serving]
+        .filter(([, runtime]) =>
+          runtime.config.members.some((member) => member.subject === subject),
+        )
+        .map(([name]) => name),
+    );
 
     // The authenticator and the authorization gate are built once, from the
     // runtime this endpoint booted with, and are deliberately not part of what
@@ -295,6 +243,7 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
       { profiles: profileRuntimes(runtimes), close: () => closeAll(runtimes).then(() => {}) },
       async (): Promise<OpenedWorkspace> => {
         const reopened = await openReconciled(options);
+        serving = reopened.runtimes;
         return {
           profiles: profileRuntimes(reopened.runtimes),
           close: () => closeAll(reopened.runtimes).then(() => {}),
@@ -312,6 +261,12 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
       { primary: primary.resolution.profile, log, ...(gate ? { remoteClients: true } : {}) },
     );
 
+    // Read once. `version()` walks up to the install root and parses
+    // `package.json`; doing it per request would put a synchronous file read on
+    // the read surface's hot path to answer a value that cannot change while
+    // this process lives.
+    const runningVersion = version();
+
     const server = serve({
       generations,
       primary: primary.resolution.profile,
@@ -322,20 +277,46 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
       ...(gate ? { authorization: gate.surface } : {}),
       ...(options.port !== undefined ? { port: options.port } : {}),
       ...(options.host !== undefined ? { host: options.host } : {}),
+      // Offered unconditionally and discarded by `serve()` on a loopback bind,
+      // which is where every other property of the bind address is decided. It
+      // opens nothing and reads no credential, so building it for a bind that
+      // will not use it costs a closure (ADR-064).
+      read: deployedReadDeps({
+        primary,
+        profiles: () => generations.current.profiles,
+        log,
+        version: runningVersion,
+      }),
     });
 
     // After `serve()`, so the record means the socket is bound. Recording it
     // from the constructor claimed an endpoint that a failed bind never served.
     generations.announce();
 
+    // Only when `lanes link pair` has provisioned all three. Absent, this is
+    // simply not served — the read surface is opt-in and its absence is the
+    // default (ADR-063), so an endpoint that was never paired binds one port
+    // exactly as it always did.
+    const read = await openReadListener(
+      primary,
+      server,
+      () => generations.current.profiles,
+      log,
+      runningVersion,
+    );
+
     return {
       url: server.url,
       profiles: [...runtimes.keys()],
+      ...(read ? { readUrl: read.url } : {}),
       // `server.stop()` closes the request handler, which closes whichever
       // generation is current — and a generation owns the runtimes it opened.
       // Closing `runtimes` here too would reach past a reload and close a set
       // nothing is serving from any more.
-      stop: () => server.stop(),
+      stop: async () => {
+        await read?.stop();
+        await server.stop();
+      },
     };
   } catch (error) {
     await closeAll(runtimes);

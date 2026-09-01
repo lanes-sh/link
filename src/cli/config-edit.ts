@@ -1,7 +1,14 @@
 import { rename, writeFile } from 'node:fs/promises';
 import { Document, parseDocument, type Node } from 'yaml';
 import {
+  CONNECTIONS_FILE,
   ConfigError,
+  WORKSPACE_FILE,
+  workspaceSchema,
+  assertConnectionsUnique,
+  connectionsFileSchema,
+  findSecrets,
+  formatSecretFindings,
   isRemoteWorkspace,
   readWorkspaceFile,
   validateConfig,
@@ -23,6 +30,53 @@ import {
  * A config file left invalid by a failed command is worse than a command that
  * refuses to run.
  */
+
+/**
+ * Validate a document against the schema for the file it is.
+ *
+ * The key is the discriminator because it is the only thing that is always
+ * right: a caller could be asked to say which shape it holds, and a caller that
+ * said the wrong one would get the wrong check silently.
+ */
+function validateDocument(
+  raw: unknown,
+  path: string,
+  key: string | undefined,
+  options: { shapeOnly?: boolean },
+): void {
+  if (key === WORKSPACE_FILE) {
+    const parsed = workspaceSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw new ConfigError(
+        `${path}:\n${parsed.error.issues.map((issue) => `  ${issue.path.join('.')}: ${issue.message}`).join('\n')}`,
+      );
+    }
+    return;
+  }
+
+  if (key === CONNECTIONS_FILE) {
+    const secrets = findSecrets(raw);
+    if (secrets.length > 0) {
+      throw new ConfigError(
+        `${path}: ${formatSecretFindings(secrets)}`,
+        secrets.map((finding) => finding.path),
+      );
+    }
+
+    const parsed = connectionsFileSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw new ConfigError(
+        `${path}:\n${parsed.error.issues.map((issue) => `  ${issue.path.join('.')}: ${issue.message}`).join('\n')}`,
+      );
+    }
+
+    assertConnectionsUnique(parsed.data.connections);
+    return;
+  }
+
+  if (options.shapeOnly === true) validateConfigShape(raw, path);
+  else validateConfig(raw, path);
+}
 
 export class ConfigDocument {
   readonly #document: Document;
@@ -47,7 +101,20 @@ export class ConfigDocument {
    * `gs://` URL produces something that addresses nothing.
    */
   static async open(workspaceRoot: string, profile: string): Promise<ConfigDocument> {
-    const key = `profiles/${profile}.yaml`;
+    return ConfigDocument.openKey(workspaceRoot, `profiles/${profile}.yaml`);
+  }
+
+  /**
+   * Open any document the workspace holds, by key.
+   *
+   * `open` above is this with the profile path spelled out, and stays because
+   * it is what almost every caller wants. This exists for `connections.yaml`,
+   * which is a workspace document rather than a profile's (ADR-057) and needs
+   * the same comment-preserving edit path — a connection row carries the
+   * account label an operator wrote, and rewriting the file through the schema
+   * would drop every comment beside it.
+   */
+  static async openKey(workspaceRoot: string, key: string): Promise<ConfigDocument> {
     const shown = isRemoteWorkspace(workspaceRoot)
       ? `${workspaceRoot}/${key}`
       : `${workspaceRoot}/${key}`;
@@ -200,8 +267,13 @@ export class ConfigDocument {
 
     // Throws on any validation failure, including a credential value that has
     // crept in — so a CLI edit can never introduce one.
-    if (options.shapeOnly === true) validateConfigShape(this.#document.toJSON(), this.#path);
-    else validateConfig(this.#document.toJSON(), this.#path);
+    //
+    // Which schema, decided by the key rather than by the caller. This class
+    // edits two shapes now: a profile, and the workspace's `connections.yaml`
+    // (ADR-057). Validating one against the other's schema is not a stricter
+    // check, it is the wrong one — a connections file has no `instance:` block,
+    // so it would be refused for a field it is not supposed to have.
+    validateDocument(this.#document.toJSON(), this.#path, this.#location?.key, options);
 
     if (!this.#location) {
       throw new ConfigError(`${this.#path}: opened from text, so there is nowhere to save it`);
@@ -234,140 +306,3 @@ export class ConfigDocument {
  * Written with comments, because this is the file an operator will read first
  * and most of what it needs to say is *why*, not *what*.
  */
-export function newProfileTemplate(profile: string, port: number): string {
-  return `# Lanes Link profile: ${profile}
-#
-# This file is the source of truth for what exists. It never contains a
-# credential value — only "_ref" pointers into the credential store, which
-# lives beside it and is encrypted at rest.
-#
-# Edit it by hand or through the CLI; both are supported, and CLI edits
-# preserve your comments and ordering.
-contract: 2
-
-instance:
-  profile: ${profile}
-  port: ${port}
-  host: 127.0.0.1
-
-# This file says nothing about where it runs, and that is the point.
-#
-# A profile lives in exactly one target, and the target is the workspace holding
-# this file — which declares its own adapters, once, in lanes-link.yaml beside
-# the profiles/ directory (ADR-052). Moving this profile somewhere else is
-# copying the file there; there is no block in it to edit.
-#
-# Every command still names both, because neither is inferred (ADR-037):
-#
-#     lanes link status --profile ${profile} --target <name>
-#
-# The bearer token for the endpoint this profile serves.
-#
-# "lanes link start" serves every profile in the workspace from one URL, and this
-# token is what opens it — so it admits every profile that "lanes link outputs"
-# lists, not only this one. Each call names the profile it means. Run a separate
-# workspace if you need a token that cannot reach them all.
-auth:
-  mode: bearer
-  token_ref: profile/token
-
-limits:
-  requests_per_minute: 120      # per profile
-  upstream_calls_per_minute: 60 # per connection, protects vendor quota
-
-# App registrations, shared by every connection of that vendor.
-oauth_apps: {}
-
-# One entry per authorised account. "account" is the identity the provider
-# reports — an address, a workspace — so this list says whose data is reachable
-# without having to look anything up.
-#
-# The seven below hold no account, and that is why they are here already: they
-# reach your own material rather than anybody's API, so there was never anything
-# for a connect step to authorise (ADR-050). What each one is:
-#
-#   memory   what you want remembered between sessions
-#   tasks    what you have to do, each with a status
-#   assets   files you want kept, by name
-#   skills   procedures you have written, handed to an agent as instructions
-#   vault    passwords and API keys, released one at a time
-#   setup    what is connected here, and what connecting more would take
-#   entities the people, companies and projects you deal with, and how to
-#            reach each of them — so an agent looks an address up rather
-#            than recalling one
-#
-# Nothing is stored in any of them until you or an agent puts something there,
-# and none of them can read an account. To switch one off, deny it below —
-# deleting the entry no longer works, because the next connect or deploy puts it
-# back.
-connections:
-  - { id: main, provider: memory, account: Memory }
-  - { id: main, provider: tasks, account: Tasks }
-  - { id: main, provider: assets, account: Assets }
-  - { id: main, provider: skills, account: Skills }
-  - { id: main, provider: vault, account: Vault }
-  - { id: main, provider: setup, account: Setup }
-  - { id: main, provider: entities, account: Entities }
-
-# Only what is listed here is reachable, and an empty policy grants nothing.
-#
-# Rules name capabilities, never accounts: "gmail.*" covers every Gmail
-# connection in this profile. To grant two accounts differently, run a second
-# profile — profiles share no database and no credential store. They do now
-# share an endpoint and its token, so that separation is enforced per call
-# rather than per URL.
-#
-#   allow: ['*']                  everything, which is what connect writes
-#   allow: [notion.*, gmail.*]    two providers
-#   deny:  [gmail.send_message]   a deny always beats an allow
-#
-# The rules below grant each of the seven its whole namespace, writes included —
-# the same thing "connect memory" wrote when it was a command you had to run.
-# Narrowing is one line, and these are the three worth knowing:
-#
-#   deny: [memory.write, memory.forget]   memory becomes read-only
-#   deny: [skills.manage.*]               skills can be invoked but not authored
-#   deny: [vault.put, vault.remove]       nothing new can be stored
-#   deny: [entities.write, entities.link, entities.forget]
-#                                         entities becomes read-only
-#
-# Those lists are exhaustive on purpose: a namespace is read-only only when
-# every capability that changes something is named, so "deny: [memory.write]"
-# alone leaves "memory.forget" granted.
-#
-# A vault read is not granted by "vault.*" alone: each stored item is its own
-# "vault.get.<id>" capability and only appears after a restart, so a write can
-# never hand itself a read (ADR-012).
-policy:
-  allow: [memory.*, tasks.*, assets.*, skills.*, vault.*, setup.*, entities.*]
-  deny: []
-`;
-}
-
-export function newWorkspaceTemplate(): string {
-  return `# Lanes Link workspace
-#
-# A workspace holds one or more profiles, and one endpoint serves all of them:
-# every call names the profile it means, with --profile. Profiles never share a
-# database or a credential store, so what one holds is invisible to another.
-#
-# This workspace IS a target. "targets:" below says where its bytes go, once,
-# for every profile in it — a profile says nothing about where it runs, so
-# there is one copy of it and nothing to keep in step (ADR-052).
-#
-# A target somewhere else is a pointer, and "deploy" writes one:
-#
-#   targets:
-#     cloud:
-#       workspace: gs://your-bucket
-#
-# The workspace at that address declares its own adapters, and is the only
-# thing that does. Reading it is a network call, which is why "--target cloud"
-# needs that bucket reachable.
-contract: 2
-targets:
-  local:
-    credentials: { adapter: file }
-    storage: { adapter: filesystem }
-`;
-}

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { globalFlags, ownerFlags, parseArgv, text } from './argv.ts';
+import { globalFlags, normaliseWorkspace, ownerFlags, parseArgv, text } from './argv.ts';
 import { PROGRAM, USAGE } from './usage.ts';
 
 /**
@@ -82,5 +82,49 @@ describe('the program name', () => {
     const runTogether = ['lanes', 'link'].join('');
     expect(USAGE.toLowerCase()).not.toContain(runTogether);
     expect(USAGE).not.toContain('lanes-link');
+  });
+});
+
+describe('the old spelling of --workspace', () => {
+  test('is read as the new one', () => {
+    const said: string[] = [];
+    expect(normaliseWorkspace({ target: 'cloud' }, (line) => said.push(line))).toEqual({
+      workspace: 'cloud',
+    });
+  });
+
+  test('says so, because a deprecation nobody sees is one nobody acts on', () => {
+    // It has one minor to live, and the desktop app still passes it. The
+    // warning is what tells an operator their tooling needs updating before it
+    // stops working.
+    const said: string[] = [];
+    normaliseWorkspace({ target: 'cloud' }, (line) => said.push(line));
+
+    expect(said.join('\n')).toContain('--target is now --workspace');
+    expect(said.join('\n')).toContain('--workspace cloud');
+  });
+
+  test('says nothing when only the new spelling is used', () => {
+    const said: string[] = [];
+    normaliseWorkspace({ workspace: 'cloud' }, (line) => said.push(line));
+
+    expect(said).toEqual([]);
+  });
+
+  test('both spellings agreeing is not an error', () => {
+    // Redundant rather than wrong, and refusing it would break a script that
+    // passes both while migrating.
+    const said: string[] = [];
+    expect(
+      normaliseWorkspace({ target: 'cloud', workspace: 'cloud' }, (line) => said.push(line)),
+    ).toEqual({ workspace: 'cloud' });
+  });
+
+  test('both spellings disagreeing is refused rather than resolved', () => {
+    // Picking either would be a guess, and the two name different sets of
+    // accounts.
+    expect(() => normaliseWorkspace({ target: 'cloud', workspace: 'staging' }, () => {})).toThrow(
+      /name different things/,
+    );
   });
 });

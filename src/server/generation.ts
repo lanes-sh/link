@@ -189,7 +189,16 @@ export class Generation {
    * a handler outliving its generation is the stale-config bug.
    */
   handlerFor(principal: Principal, clientLabel: string | undefined): McpHttpHandler {
-    const key = `${principal.id}\u0000${clientLabel ?? ''}`;
+    // The delegation list is part of the key, not just the identity.
+    //
+    // `Principal` gained `profiles` this release, and `mergeCapabilities` and
+    // `forProfile` both read it off the *captured* principal — so two tokens for
+    // one subject with different scopes hashed to one entry and whichever
+    // authorized first decided what the other could reach. Removing somebody
+    // from a profile and re-authorizing then served them the profile they had
+    // just lost, or refused one they still had, depending on order.
+    const reach = principal.profiles === undefined ? '*' : [...principal.profiles].sort().join(',');
+    const key = `${principal.id}\u0000${reach}\u0000${clientLabel ?? ''}`;
     const existing = this.#handlers.get(key);
     if (existing) return existing;
 

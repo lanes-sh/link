@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { defineProvider } from '#connectivity';
-import type { Config } from '#profile';
+import type { ConnectionConfig, Config } from '#profile';
 import type { AnyConnector, ProviderManifest } from '#connectivity';
 import type { SecretRef, SecretStore } from '#secrets';
 import { PromptCancelled, type Prompter } from '../../prompt.ts';
@@ -88,9 +88,15 @@ const silent: Prompter = {
   confirm: async () => false,
 };
 
-function runtime(connections: Config['connections'] = [], identity: string | null = 'ada@example.com') {
+function runtime(
+  connections: readonly ConnectionConfig[] = [],
+  identity: string | null = 'ada@example.com',
+) {
   return {
-    config: { connections } as Config,
+    config: { grants: [] } as unknown as Config,
+    // The accounts are the workspace's now (ADR-057), and sibling matching reads
+    // them from there rather than from the profile being connected into.
+    workspaceConnections: connections,
     credentials: memoryStore(),
     registry: { manifest: () => undefined },
     connectorFor: () =>
@@ -136,7 +142,7 @@ describe('the label a connection is given at connect time', () => {
   test('offers the label already on the row when this connect is a reconnect', async () => {
     const declared = [
       { id: 'ada', provider: 'acme_mail', account: 'ada@example.com', label: 'Work mail' },
-    ] as Config['connections'];
+    ] as ConnectionConfig[];
     const asking = prompter('');
 
     const settled = await settle({ prompter: asking, runtime: runtime(declared) });

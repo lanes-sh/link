@@ -27,7 +27,7 @@ import {
  * A machine reaches a target it does not hold through a **pointer** — a registry
  * entry carrying `workspace:` and nothing else. Following one is a read of that
  * workspace's own file, which is why every function here is async and why
- * `--target cloud` needs the bucket reachable. That is the trade ADR-052 takes
+ * `--workspace cloud` needs the bucket reachable. That is the trade ADR-052 takes
  * deliberately: a cloud target that cannot be read says so, where the shape it
  * replaces answered instantly from a copy that had been wrong for eight hours.
  */
@@ -51,7 +51,7 @@ export interface ResolvedTarget {
 /** Every target the workspace at `root` knows about. Empty when it has no file. */
 export async function readRegistry(root: string): Promise<Record<string, WorkspaceTarget>> {
   const workspace = await readWorkspace(root);
-  return workspace?.targets ?? {};
+  return workspace?.workspaces ?? {};
 }
 
 /**
@@ -66,7 +66,7 @@ export async function resolveTargetWorkspace(root: string, target: string): Prom
   const registry = await readRegistry(root);
   const entry = registry[target];
   if (!entry) throw notInRegistry(target, registry, root);
-  return isPointer(entry) ? entry.workspace.replace(/\/$/, '') : root;
+  return isPointer(entry) ? entry.at.replace(/\/$/, '') : root;
 }
 
 /**
@@ -90,7 +90,7 @@ export async function openTarget(root: string, target: string): Promise<Resolved
     return { target, workspaceRoot: root, declared, entry, remote: false };
   }
 
-  const workspaceRoot = entry.workspace.replace(/\/$/, '');
+  const workspaceRoot = entry.at.replace(/\/$/, '');
   const remoteRegistry = await readRegistry(workspaceRoot);
   const remoteEntry = remoteRegistry[target];
 
@@ -146,7 +146,7 @@ function pointerMissesTarget(
   return new ConfigError(
     `${root} says target "${target}" lives at ${workspaceRoot}, but that workspace does not ` +
       `declare it (it declares: ${there}).\n` +
-      `  Adopt what is really there:  lanes link sync targets --target ${target} --from ${workspaceRoot}`,
+      `  Adopt what is really there:  lanes link sync targets --workspace ${target} --from ${workspaceRoot}`,
   );
 }
 
@@ -176,7 +176,7 @@ function remoteAtContractOne(target: string, workspaceRoot: string): ConfigError
   return new ConfigError(
     `${workspaceRoot} is a contract 1 workspace, so it does not declare "${target}" yet.\n` +
       '  Its profiles still carry their own targets: block, which this version does not read.\n\n' +
-      `  lanes link deploy --target ${target}\n` +
+      `  lanes link deploy --workspace ${target}\n` +
       '  migrates it and rolls the image that can read it, in that order — which is what\n' +
       '  keeps the endpoint in front of it serving throughout (ADR-052).',
   );

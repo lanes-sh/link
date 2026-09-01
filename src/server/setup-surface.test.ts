@@ -40,24 +40,56 @@ const CATALOGUE = [
   }),
 ];
 
+/**
+ * The flat `allow`/`deny` a test writes, split into one row per connection.
+ *
+ * A rule lives inside the row that names one connection now (ADR-058), and may
+ * only name that row's own provider — so the block is filtered as well as
+ * repeated. That filtering is exactly what the flat block meant when it said
+ * rules cover every account of a provider, which keeps these tests asserting
+ * what they were written to assert.
+ */
+function grantsFrom(policy: string, connections: readonly string[]): string {
+  const lines = policy.split('\n').filter((line) => line.trim().length > 0);
+
+  return connections
+    .map((connection) => {
+      const provider = connection.split('.')[0];
+      const held: Record<string, string[]> = { allow: [], deny: [] };
+      let field = 'allow';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed === 'allow:' || trimmed === 'deny:') {
+          field = trimmed.slice(0, -1);
+          continue;
+        }
+        const capability = trimmed.replace(/^-\s*/, '').replace(/"/g, '');
+        if (capability !== '*' && capability.split('.')[0] !== provider) continue;
+        held[field]?.push(capability);
+      }
+
+      return (
+        `  - connection: ${connection}\n` +
+        `    allow: [${held['allow']?.join(', ') ?? ''}]\n` +
+        `    deny: [${held['deny']?.join(', ') ?? ''}]`
+      );
+    })
+    .join('\n');
+}
+
 function config(profile: string, port: number, policy: string) {
   return parseConfig(`
-contract: 2
+contract: 3
 instance:
   profile: ${profile}
   port: ${port}
 limits:
   requests_per_minute: 1000
   upstream_calls_per_minute: 1000
-connections:
-  - id: main
-    provider: setup
-    account: Setup
-  - id: a
-    provider: example
-    account: someone@example.test
-policy:
-${policy}
+grants:
+${grantsFrom(policy, ['setup.main', 'example.a'])}
+members: []
 `).config;
 }
 
@@ -116,20 +148,16 @@ const never = startHarness({
   token: 'llk_never_token_value',
   providers: providersFor('never', []),
   config: parseConfig(`
-contract: 2
+contract: 3
 instance:
   profile: never
   port: ${neverPort}
 limits:
   requests_per_minute: 1000
   upstream_calls_per_minute: 1000
-connections:
-  - id: main
-    provider: setup
-    account: Setup
-policy:
-  allow:
-    - "setup.*"
+grants:
+  - { connection: setup.main, allow: ['setup.*'], deny: [] }
+members: []
 `).config,
 });
 

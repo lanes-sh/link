@@ -18,7 +18,7 @@ const roots: string[] = [];
 const previousHome = process.env['LANES_LINK_HOME'];
 const previousTarget = process.env['LANES_LINK_TARGET'];
 
-const PROFILE = `contract: 2
+const PROFILE = `contract: 3
 
 instance:
   profile: personal
@@ -34,10 +34,10 @@ instance:
  * once per profile (ADR-052). `cloud` deploys and `staging` does not, which is
  * the distinction the listing below is about.
  */
-const TARGETS = `contract: 2
+const TARGETS = `contract: 3
 default_profile: personal
 
-targets:
+workspaces:
   local:
     credentials: { adapter: file }
     storage: { adapter: filesystem }
@@ -161,7 +161,7 @@ describe('what a profile declares', () => {
     for (const target of listing.targets) expect('url' in target).toBe(false);
   });
 
-  test('nothing is selected until --target names one', async () => {
+  test('nothing is selected until --workspace names one', async () => {
     // This is the command you run to find out what to pass, so it is the one
     // command that does not require the answer as input. Requiring it would be
     // circular.
@@ -171,7 +171,7 @@ describe('what a profile declares', () => {
     expect(listing.targets.every((target) => !target.isSelected)).toBe(true);
   });
 
-  test('--target marks the one it names', async () => {
+  test('--workspace marks the one it names', async () => {
     const { env } = await workspace();
 
     const listing = await readTargets({ profile: 'personal', target: 'cloud' }, { env });
@@ -205,11 +205,11 @@ describe('a pointer, which is what a deployed target looks like from here', () =
     const { root, env } = await workspace();
     await writeFile(
       join(root, 'lanes-link.yaml'),
-      `contract: 2
+      `contract: 3
 
-targets:
+workspaces:
   cloud:
-    workspace: gs://your-bucket
+    at: gs://your-bucket
     primary: personal
     last_deploy: "2026-08-28T09:00:00.000Z"
     last_deploy_version: "0.6.6"
@@ -229,8 +229,8 @@ targets:
  *
  * `openTarget` merges the local pointer over the remote declaration — so a
  * redeploy from a second machine does not lose the first one's record of who
- * opens the endpoint — and the merged entry therefore carries `workspace:`
- * beside the adapters. `isPointer` answers yes to anything with a `workspace:`.
+ * opens the endpoint — and the merged entry therefore carries `at:`
+ * beside the adapters. `isPointer` answers yes to anything with an `at:`.
  * The result was that `target show cloud` reported no adapters, no deployment,
  * and "this target runs wherever the CLI does" about a target with a live Cloud
  * Run service in front of it, and the deploy record it is now asked to print
@@ -255,7 +255,7 @@ describe('showing a target this workspace only points at', () => {
     workspaceRoot: 'gs://your-bucket',
     declared,
     entry: {
-      workspace: 'gs://your-bucket',
+      at: 'gs://your-bucket',
       ...declared,
       primary: 'personal',
       last_deploy: '2026-08-28T09:00:00.000Z',
@@ -267,7 +267,7 @@ describe('showing a target this workspace only points at', () => {
   test('the adapters and the deployment come through, rather than reading as a pointer', () => {
     const entry = resolvedEntry(resolved);
 
-    expect(entry.workspace).toBeUndefined();
+    expect(entry.at).toBeUndefined();
     expect(entry.storage?.bucket).toBe('your-bucket');
     expect(entry.deploy?.service).toBe('my-service');
   });
@@ -278,7 +278,7 @@ describe('showing a target this workspace only points at', () => {
   });
 });
 
-describe('when --target names a target that does not exist', () => {
+describe('when --workspace names a target that does not exist', () => {
   test('the listing survives and says so', async () => {
     // The state in which every other command is refusing, and this is the
     // command someone runs to find out why — so it must not fail the same way.
@@ -331,6 +331,6 @@ describe('target use, after it was removed', () => {
     // months, so it says what happened instead.
     expect(() => targetUse('cloud')).toThrow('was removed');
     expect(() => targetUse('cloud')).toThrow('instance.default_target');
-    expect(() => targetUse('cloud')).toThrow('--target cloud');
+    expect(() => targetUse('cloud')).toThrow('--workspace cloud');
   });
 });

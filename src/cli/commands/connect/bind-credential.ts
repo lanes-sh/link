@@ -1,3 +1,4 @@
+import { grantedConnections } from '../../runtime.ts';
 import { bindConnectionCredentials, type BindOutcome } from '#deployments/bind.ts';
 import type { Runtime } from '../../runtime.ts';
 
@@ -35,7 +36,7 @@ export function bindNewCredential(
   connectionId: string,
   account: string,
 ): Promise<BindOutcome> {
-  const declared = runtime.config.connections.find(
+  const declared = grantedConnections(runtime).find(
     (candidate) => candidate.provider === providerId && candidate.id === connectionId,
   );
 

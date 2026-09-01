@@ -17,12 +17,31 @@ import { join } from 'node:path';
  * command, write the file where it does not. A skill is content in a documented
  * location, not a config format we would be guessing at, and the directory
  * written is named after this project.
+ *
+ * **No registration carries a token any more** (ADR-062). Every endpoint runs
+ * the authorization flow, discovery is served ahead of the auth gate on
+ * loopback as well as deployed, and a client pointed at a bare URL finds
+ * `/.well-known/oauth-protected-resource`, signs its owner in at lanes.sh, and
+ * comes back with a token of its own. What that removes is worth stating: the
+ * registration no longer contains a credential, so a config file synced to a
+ * dotfiles repository is no longer a leak, and a rotation does not invalidate
+ * every harness at once.
+ *
+ * The exception is `tokenEnv`, which survives for the one caller that has no
+ * browser — see `token show`, which is now documented as a CI command.
  */
 
 export interface AddInput {
   readonly name: string;
   readonly url: string;
-  readonly token: string;
+  /**
+   * The endpoint's static token, for a harness that cannot run a browser.
+   *
+   * Nothing passes this in the ordinary path. It is here because
+   * `--headless` exists for CI, where there is no browser to complete an
+   * authorization in and a pasted credential is the only thing that works.
+   */
+  readonly token?: string | undefined;
   readonly tokenEnv: string;
   readonly scope: string;
   /**
@@ -44,11 +63,12 @@ export interface Harness {
   /** Whether `--scope` means anything here. Codex config is global. */
   readonly scoped: boolean;
   /**
-   * Whether the token is handed to the harness at all.
+   * Whether a credential reaches the harness's config at all.
    *
-   * Codex stores the *name* of an environment variable and reads it when it
-   * launches, so the secret never reaches its config file and a rotation is
-   * picked up without re-registering. Claude Code stores the header value.
+   * Both are `false` in the ordinary path now — the client authorises itself.
+   * This still distinguishes what a `--headless` registration would write:
+   * Claude Code would hold the header value, and Codex stores only the *name*
+   * of an environment variable it reads at launch.
    */
   readonly storesToken: boolean;
   /**
@@ -99,8 +119,10 @@ export const HARNESSES: readonly Harness[] = [
       'http',
       name,
       url,
-      '--header',
-      `Authorization: Bearer ${token}`,
+      // Only when there is no browser to sign in with. Registering the bare URL
+      // is the ordinary path: Claude Code discovers the protected-resource
+      // document and runs the authorization itself.
+      ...(token ? ['--header', `Authorization: Bearer ${token}`] : []),
       '--scope',
       scope,
     ],
@@ -142,7 +164,7 @@ export const HARNESSES: readonly Harness[] = [
       // anywhere else: an unresolvable substitution yields the empty string, the
       // header becomes "Bearer ", and the only symptom is a 401 that reads as a
       // bad token rather than a command that refused.
-      `    export ${tokenEnv}="$(lanes link token show --raw --profile ${profile} --target ${target})"`,
+      `    export ${tokenEnv}="$(lanes link token show --raw --profile ${profile} --workspace ${target})"`,
       '',
       'Add that to your shell profile. This is the better half of the bargain: the token never',
       'reaches ~/.codex/config.toml, and a "lanes link token rotate" is picked up on next launch',

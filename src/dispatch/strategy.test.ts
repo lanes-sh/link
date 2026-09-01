@@ -65,19 +65,15 @@ afterAll(async () => {
 });
 
 const CONFIG = parseConfig(`
-contract: 2
+contract: 3
 instance:
   profile: personal
 limits:
   requests_per_minute: 100
   upstream_calls_per_minute: 100
-connections:
-  - id: main
-    provider: acme
-    account: A
-policy:
-  allow:
-    - "acme.*"
+grants:
+  - { connection: acme.main, allow: ['acme.*'], deny: [] }
+members: []
 `).config;
 
 const manifest = defineProvider({
@@ -136,6 +132,10 @@ function harness() {
 
   const dispatcher = new Dispatcher({
     config: CONFIG,
+    // The accounts are the workspace's now (ADR-057), so the dispatcher is
+    // handed them rather than reading them off the profile it is serving.
+    connections: [{ id: 'main', provider: 'acme', account: 'A' }],
+    oauthApps: [],
     registry,
     connectorFor: (): AnyConnector | undefined => connector as unknown as AnyConnector,
     // A strategy provider must never reach this. It throws so the test would

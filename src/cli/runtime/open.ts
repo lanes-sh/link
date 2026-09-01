@@ -6,11 +6,17 @@ import type { BlobStore } from '#stores/blobs';
 import type { AnyConnector, ProviderManifest } from '#connectivity';
 import { RateLimiter, allowedConnections } from '#policy';
 import {
+  assertGrantsResolve,
   layout,
   listProfiles,
+  readConnections,
+  selectConnections,
+  soleGrantFor,
   workspacePath,
   type Config,
+  type ConnectionConfig,
   type Resolution,
+  type SelectedConnection,
   type TargetConfig,
 } from '#profile';
 import { ProviderRegistry, toPolicyDocument } from '#registry';
@@ -33,6 +39,10 @@ import { resolveProfile, type GlobalFlags } from './select.ts';
 import { buildRegistryWithWorkspace, readSkillsForStart, reloadSkills } from './registry.ts';
 import { discoveryProbe } from './discovery.ts';
 import { openVault } from './vault.ts';
+import { EMPTY_SKILL_STORE, skillStore } from './stores.ts';
+import type { Runtime } from './types.ts';
+
+export type { Runtime } from './types.ts';
 
 /**
  * Assembling a profile's runtime from its declared target.
@@ -43,86 +53,20 @@ import { openVault } from './vault.ts';
  * nothing at the application layer.
  */
 
-export interface Runtime {
-  readonly resolution: Resolution;
-  readonly config: Config;
-  readonly target: string;
-  /**
-   * The target's adapter set, from the workspace that declares it.
-   *
-   * Here because the config no longer carries it. Every caller that used to
-   * reach `config.targets[target]` — for a `deploy` block, a storage adapter, a
-   * knowledge repository — reads this instead, and reads it without following
-   * the pointer a second time (ADR-052).
-   */
-  readonly declared: TargetConfig;
-  readonly state: RuntimeState;
-  /** The durable log, for reading. Copies, if any, are write-only and not here. */
-  readonly audit: AuditReader;
-  readonly credentials: SecretStore;
-  readonly storage: BlobStore;
-  /** Where skills are kept — `data/<profile>/skills.d/` locally. */
-  readonly skills: BlobStore;
-  /**
-   * Present only when this target keeps memory and skills in a repository.
-   *
-   * Nothing on the dispatch path reads it: `storage` and `skills` above are
-   * already pointed at the right bytes, which is the whole design. It is here
-   * so `target show` and `doctor` can say where those bytes are without
-   * re-reading the config, and so the migration can reach the repository it is
-   * committing to.
-   */
-  readonly knowledge?: KnowledgeStores | undefined;
-  /** The vault's own store, so `lanes link vault` reaches the same bytes MCP does. */
-  readonly vault: VaultStore;
-  readonly registry: ProviderRegistry;
-  /**
-   * Re-read the skills into the registry when they have changed on the store.
-   *
-   * Cheap and idempotent — one `list()`, and a rebuild only when the listing
-   * differs from the last one. The caller decides how often to ask.
-   */
-  refreshSkills(): Promise<void>;
-  readonly dispatcher: Dispatcher;
-  readonly authenticator: BearerAuthenticator;
-  /** Same factory the dispatcher uses, exposed for commands that probe upstream. */
-  connectorFor(providerId: string, connectionId: string): AnyConnector | undefined;
-  /**
-   * Same authorizer the dispatcher uses, for the same reason `connectorFor` is here.
-   *
-   * A command that probes upstream needs the credential on the request, and it
-   * must not learn how to put it there — that is one switch on the resolved
-   * shape (`connectivity/auth/authorize.ts`) and a second copy would be a
-   * second answer. `settleIdentity` is the caller: it asks a provider whose
-   * account was just authorised, over whatever method that provider declares.
-   */
-  authorizeRequest(providerId: string, connectionId: string, request: Request): Promise<Request>;
-  /** A provider's manifest, so an omitted `credential_ref` can be derived from it. */
-  manifestFor(providerId: string): ProviderManifest | undefined;
-  close(): Promise<void>;
-}
-
 /**
- * Where this profile's skills live, in either target.
+ * The accounts a profile reaches, as most callers want them.
  *
- * Locally `data/<profile>/skills.d/`; deployed, the same key under the bucket
- * prefix. Going through the store rather than a filesystem path is what gives a
- * deployment skills at all — a path is baked into a container image at build
- * time and an object key is not, so before ADR-014 a deployed instance could
- * only ever serve the skills that existed when its image was built.
- *
- * **Per profile**, which reverses ADR-012 §1. Policy gating `skills.<name>`
- * was the whole isolation story while the bytes were shared, and it is a weak
- * one: it decides who may *run* a procedure, not who may read that it exists or
- * what it says. A skill written for work names work's accounts and work's
- * people. ADR-030.
- *
- * An explicit area, matching `openState` and `openAudit` — a profile that
- * declares its own `storage.path` moves its provider blobs, not the reserved
- * roots beside them.
+ * `runtime.connections` pairs each with the grant governing it, which is what
+ * policy and the setup surface need. Everything else — probing credentials,
+ * listing accounts, reconciling state — wants the rows alone, and unwrapping
+ * them at twenty call sites is twenty chances to reach for
+ * `workspaceConnections` by mistake and answer for accounts this profile was
+ * never granted.
  */
-function skillStore(storage: StorageFactory, profile: string): BlobStore {
-  return storage(layout.skills(profile));
+export function grantedConnections(
+  runtime: Pick<Runtime, 'connections'>,
+): ConnectionConfig[] {
+  return runtime.connections.map(({ connection }) => connection);
 }
 
 /**
@@ -152,6 +96,15 @@ export async function openRuntime(
   const root = resolved.workspaceRoot;
   const adapters: TargetInput = { declared, config, root, target };
 
+  // The workspace's accounts, and the check that this profile's grants name
+  // real ones (ADR-057). Read here rather than inside `resolveProfile` because
+  // it is a property of the workspace rather than of the selection, and because
+  // a command that only wants to know which profiles exist should not have to
+  // parse every connection to find out.
+  const connectionsFile = await readConnections(root);
+  assertGrantsResolve(config, connectionsFile.connections);
+  const selected = selectConnections(config, connectionsFile.connections);
+
   // Credentials first: an S3 key pair is itself a credential reference, so the
   // credential store has to exist before the blob store that names it. State
   // and the log then ride that blob store rather than opening backends of
@@ -174,7 +127,7 @@ export async function openRuntime(
   // own roots on the target's own storage and are untouched.
   const knowledge = await openKnowledge(adapters, credentials, options.fetch);
   const storage = knowledge ? routeBlobStore(storageFor(), knowledgeRoutes(knowledge)) : storageFor();
-  const state = openState(storageFor, config.instance.profile);
+  const state = openState(storageFor);
 
   // The durable log, plus any copies the target declares. `sink` is what
   // dispatch writes to; `audit` is what `tail` and `verify` read, and those are
@@ -187,7 +140,18 @@ export async function openRuntime(
     (message) => logger.warn(message),
   );
 
-  const skills = knowledge?.skills ?? skillStore(storageFor, config.instance.profile);
+  // Rooted at the skills connection this profile grants, not at the profile
+  // (ADR-059). At most one can be granted, which is what makes this a lookup
+  // rather than a choice — `load.ts` refuses a second one, for the reason a
+  // prompt has no argument to route on.
+  //
+  // `EMPTY_SKILLS` when none is granted: a profile that denies `skills.*` has
+  // no store to open, and handing it the workspace root instead would serve
+  // every other profile's procedures.
+  const skillsConnection = soleGrantFor(config, 'skills');
+  const skills =
+    knowledge?.skills ??
+    (skillsConnection === undefined ? undefined : skillStore(storageFor, skillsConnection));
 
   // The vault's own store, beside the credential store and never it: a separate
   // document, a separate key, and a separate environment variable
@@ -208,6 +172,7 @@ export async function openRuntime(
   let registry: ProviderRegistry;
   let fingerprint = '';
   const refreshSkills = async (): Promise<void> => {
+    if (skills === undefined) return;
     fingerprint = await reloadSkills(registry, skills, fingerprint, refreshSkills);
   };
 
@@ -226,23 +191,18 @@ export async function openRuntime(
   // registered into. Per call rather than a snapshot, so a policy the runtime
   // was opened with is re-evaluated rather than remembered.
   const reachable = (): ReadonlyArray<{ key: string; provider: string; account: string }> =>
-    config.connections
-      .filter((connection) =>
+    selected
+      .filter(({ ref, connection }) =>
         registry
           .capabilities()
           .some(
             ({ id }) =>
               id.startsWith(`${connection.provider}.`) &&
-              allowedConnections(
-                id,
-                [`${connection.provider}.${connection.id}`],
-                principal,
-                policy,
-              ).length > 0,
+              allowedConnections(id, [ref], principal, policy).length > 0,
           ),
       )
-      .map((connection) => ({
-        key: `${connection.provider}.${connection.id}`,
+      .map(({ ref, connection }) => ({
+        key: ref,
         provider: connection.provider,
         account: connection.account,
         ...(connection.label ? { label: connection.label } : {}),
@@ -253,14 +213,14 @@ export async function openRuntime(
   // tolerated when the store is a repository: a local directory that will not
   // read is a real fault worth failing on, exactly as it always was.
   const loaded = await readSkillsForStart(
-    skills,
+    skills ?? EMPTY_SKILL_STORE,
     knowledge !== undefined,
     (message) => logger.warn(message),
-    ` --profile ${config.instance.profile} --target ${target}`,
+    ` --profile ${config.instance.profile} --workspace ${target}`,
   );
 
-  registry = await buildRegistryWithWorkspace(root, config.instance.profile, {
-    skillStore: skills,
+  registry = await buildRegistryWithWorkspace(root, {
+    ...(skills ? { skillStore: skills } : {}),
     skills: loaded.skills,
     onSkillsChanged: refreshSkills,
     vault: { store: vaultStore, items: await vaultStore.ids() },
@@ -269,7 +229,7 @@ export async function openRuntime(
       target,
       profiles: await listProfiles(root),
       catalogue: PROVIDER_MANIFESTS,
-      ownClients: Object.keys(config.oauth_apps),
+      ownClients: Object.keys(connectionsFile.oauth_apps),
       reachable,
     },
     // Straight off the config: unlike `reachable`, nothing has to be filtered
@@ -329,14 +289,16 @@ export async function openRuntime(
     credentials,
     // From the connection row, which is where a per-connection setting has
     // always lived. One lookup behind both, so they cannot disagree.
-    connectionConfig: (provider, id) => row(config, provider, id)?.config,
-    isDeclared: (provider, id) => row(config, provider, id) !== undefined,
+    connectionConfig: (provider, id) => row(connectionsFile.connections, provider, id)?.config,
+    isDeclared: (provider, id) => row(connectionsFile.connections, provider, id) !== undefined,
   });
   const authorizeRequest = requestAuthorizer(registry, credentials);
   let closed = false;
 
   const dispatcher = new Dispatcher({
     config,
+    connections: connectionsFile.connections,
+    oauthApps: Object.keys(connectionsFile.oauth_apps),
     registry,
     connectorFor,
     authorizeRequest,
@@ -354,6 +316,9 @@ export async function openRuntime(
     config,
     target,
     declared,
+    connections: selected,
+    workspaceConnections: connectionsFile.connections,
+    ownClients: Object.keys(connectionsFile.oauth_apps),
     state,
     audit,
     credentials,
@@ -390,5 +355,5 @@ export async function openRuntime(
   };
 }
 
-const row = (config: Config, provider: string, id: string) =>
-  config.connections.find((connection) => connection.provider === provider && connection.id === id);
+const row = (connections: readonly ConnectionConfig[], provider: string, id: string) =>
+  connections.find((connection) => connection.provider === provider && connection.id === id);

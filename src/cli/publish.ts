@@ -53,7 +53,8 @@ export async function publishAndNotify(input: {
   readonly config: Config;
   readonly workspaceRoot: string;
   readonly target: string;
-  readonly profile: string;
+  /** Every profile the edit touched. See `publishWorkspace`. */
+  readonly profile: string | readonly string[];
   readonly credentials: SecretStore;
 }): Promise<PublishOutcome> {
   let published: string | null = null;
@@ -98,6 +99,8 @@ export async function publishProfileEdit(input: {
   readonly resolution: { readonly workspaceRoot: string; readonly profile: string };
   readonly config: Config;
   readonly target: string;
+  /** Every profile the edit touched, where it reached more than the one named. */
+  readonly touched?: readonly string[] | undefined;
 }): Promise<PublishOutcome> {
   const credentials = await openSecretStoreFor(
     input.config,
@@ -109,7 +112,7 @@ export async function publishProfileEdit(input: {
     config: input.config,
     workspaceRoot: input.resolution.workspaceRoot,
     target: input.target,
-    profile: input.resolution.profile,
+    profile: input.touched ?? input.resolution.profile,
     credentials,
   });
 }

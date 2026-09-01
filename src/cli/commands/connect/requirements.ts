@@ -102,7 +102,7 @@ export async function preflight(input: {
 }): Promise<Blocked | null> {
   const { manifest, connectionId, profile, target, spec } = input;
   const method = input.method ?? 'oauth';
-  const rerun = `lanes link connect ${spec} --profile ${profile} --target ${target}`;
+  const rerun = `lanes link connect ${spec} --profile ${profile} --workspace ${target}`;
   const assertion = manifest.auth.kind === 'oauth' ? manifest.auth.assertion : undefined;
 
   if (method === 'assertion' && assertion) {

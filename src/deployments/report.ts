@@ -37,7 +37,7 @@ import { heading, ok, print, style, warn } from '#cli/output.ts';
 export function registerLine(profile: string, target: string): string {
   return style.dim(
     `  Connect your accounts first, then register with:\n` +
-      `    lanes link outputs --profile ${profile} --target ${target}\n` +
+      `    lanes link outputs --profile ${profile} --workspace ${target}\n` +
       '  A client keeps the tool list it fetched when it connected, so one registered\n' +
       '  before the accounts holds a surface without them until it is re-added.',
   );
@@ -66,7 +66,7 @@ export function reportUnauthorised(warnings: readonly string[], profile: string,
   print(
     style.dim(
       '  A browser consent per account is the one step this cannot take for you:\n' +
-        `    lanes link connect <provider> --profile ${profile} --target ${target}\n` +
+        `    lanes link connect <provider> --profile ${profile} --workspace ${target}\n` +
         '  Each is served as soon as it is authorised. There is no second deploy —\n' +
         '  deploying is how code gets here, and authorising an account changes none.',
     ),

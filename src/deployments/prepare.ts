@@ -1,5 +1,7 @@
 import { credentialRefFor, ownClientRefsFor, rotatableCredentialRefsFor } from '#registry';
-import { listProfiles, loadProfileConfig, type Config, type TargetConfig } from '#profile';
+import {
+  PAIR_TOKEN_REF,
+  readConnections, listProfiles, loadProfileConfig, vaultRef, type Config, type TargetConfig } from '#profile';
 import { VAULT_DOCUMENT_REF, VAULT_KEY_REF, generateVaultKey, type SecretStore } from '#secrets';
 import { ok, print, style, warn } from '#cli/output.ts';
 import { buildRegistryWithWorkspace, ensureProfileToken } from '#cli/runtime.ts';
@@ -66,6 +68,7 @@ export interface PrepareResult {
 export async function rotatableRefs(
   root: string,
   profiles: readonly string[] | undefined,
+  declared: TargetConfig | undefined,
 ): Promise<string[]> {
   const refs = new Set<string>();
   const wanted = profiles === undefined ? undefined : new Set(profiles);
@@ -80,16 +83,27 @@ export async function rotatableRefs(
       continue;
     }
 
-    // Inside the loop because manifests are the profile's own (ADR-030): a
-    // connection in `work` naming a provider only `work` declares resolves to
-    // nothing against `personal`'s registry, and a missed ref here is a 403 an
-    // hour after the revision reports healthy.
-    const registry = await buildRegistryWithWorkspace(root, name);
+    // `vault.put` is a capability an agent may hold under policy (ADR-022), so
+    // the revision rewrites this one — and it is per vault connection, which is
+    // what makes this a per-profile pass rather than a target-level constant.
+    // The loop had been reduced to `void config` when the derivation moved out;
+    // this is it moving back, next to the config it needs.
+    if (declared?.vault?.adapter === 'secret') refs.add(vaultRef(declared, config));
+  }
 
-    for (const connection of config.connections) {
-      const manifest = registry.manifest(connection.provider);
-      for (const ref of rotatableCredentialRefsFor(connection, manifest)) refs.add(ref);
-    }
+  // Once, outside the profile loop. Connections and the manifests that describe
+  // them belong to the workspace (ADR-057), so the per-profile registry ADR-030
+  // required is gone — and with it the failure it guarded against, where a
+  // connection in `work` resolved to nothing against `personal`'s registry and
+  // the missed ref became a 403 an hour after the revision reported healthy.
+  //
+  // Every connection, not just granted ones: a credential a revision cannot read
+  // is a broken account, and whether some profile currently grants it is a
+  // question that changes without redeploying.
+  const registry = await buildRegistryWithWorkspace(root);
+  for (const connection of (await readConnections(root)).connections) {
+    const manifest = registry.manifest(connection.provider);
+    for (const ref of rotatableCredentialRefsFor(connection, manifest)) refs.add(ref);
   }
 
   // Sorted, and a set: two Gmail connections share one dynamically registered
@@ -132,9 +146,41 @@ export async function readableRefs(
 ): Promise<string[]> {
   const refs = new Set<string>();
 
+  // Unconditionally, for every deploy, whether or not this workspace has ever
+  // been paired — and that is the point rather than a rounding up.
+  //
+  // Secret Manager answers a *missing binding* with 403, not 404, so that an
+  // identity cannot enumerate secrets by their error codes. The adapter returns
+  // null for the 404 and throws for the 403, so an unbound ref is a thrown
+  // error on the read path — and that is the failure `server/read/open.ts`
+  // records: a deployed revision asked for refs no binding covered and never
+  // went healthy.
+  //
+  // Bound, the deployed-but-never-paired case becomes the 404 instead — a
+  // secret that exists with no version — which reads back as null and renders
+  // as `401 {error:'unpaired'}`. The grant is what turns a crash into a
+  // refusal.
+  //
+  // Deciding it by asking *whether the workspace is paired* is the thing that
+  // cannot happen: that means opening a credential store inside `readableRefs`,
+  // which `--dry-run` reaches and must not do.
+  //
+  // Deliberately not in `rotatableRefs`. The revision never writes this one —
+  // minting is `lanes link pair`, from the operator's machine — and
+  // `secretVersionAdder` here would let a compromised revision issue itself a
+  // credential that reads the whole workspace.
+  //
+  // The cert and key refs are absent for a different reason: Cloud Run
+  // terminates TLS with a certificate a browser already trusts, so a deployed
+  // revision never calls `serveRead` and never reads either.
+  refs.add(PAIR_TOKEN_REF);
+
+  // Only the key is the target's. The *document* is named per vault connection
+  // (ADR-059), so it is added inside the profile loop below — naming it here
+  // meant `vault/document`, which is not what `openVault` opens, and the
+  // revision 403'd on a ref nothing had created. See `vaultRef`.
   if (declared?.vault?.adapter === 'secret') {
     refs.add(VAULT_KEY_REF);
-    refs.add(declared.vault.ref ?? VAULT_DOCUMENT_REF);
   } else if (declared?.vault?.adapter === 'blob') {
     // Ciphertext lives in the bucket, but the key that opens it is still here.
     refs.add(VAULT_KEY_REF);
@@ -153,22 +199,24 @@ export async function readableRefs(
     }
 
     refs.add(config.auth.token_ref);
+    if (declared?.vault?.adapter === 'secret') refs.add(vaultRef(declared, config));
     // The OIDC audience check reads this on every verify (`server/endpoint.ts`).
     if (config.auth.authorization?.mode === 'oidc') {
       refs.add(config.auth.authorization.client_id_ref);
     }
 
-    // Per profile, for the reason `rotatableRefs` gives: a manifest is this
-    // profile's, so the registry that resolves its connections must be too.
-    const registry = await buildRegistryWithWorkspace(root, name);
+  }
 
-    for (const connection of config.connections) {
-      const manifest = registry.manifest(connection.provider);
-      const ref = credentialRefFor(connection, manifest);
-      if (ref) refs.add(ref);
-      for (const rotatable of rotatableCredentialRefsFor(connection, manifest)) refs.add(rotatable);
-      for (const client of ownClientRefsFor(manifest, config.oauth_apps)) refs.add(client);
-    }
+  // Once, for the reason `rotatableRefs` gives.
+  const connectionsFile = await readConnections(root);
+  const registry = await buildRegistryWithWorkspace(root);
+
+  for (const connection of connectionsFile.connections) {
+    const manifest = registry.manifest(connection.provider);
+    const ref = credentialRefFor(connection, manifest);
+    if (ref) refs.add(ref);
+    for (const rotatable of rotatableCredentialRefsFor(connection, manifest)) refs.add(rotatable);
+    for (const client of ownClientRefsFor(manifest, connectionsFile.oauth_apps)) refs.add(client);
   }
 
   return [...refs].sort();
@@ -190,13 +238,13 @@ export async function prepareSecrets(input: PrepareInput): Promise<PrepareResult
   // The command is spelled out rather than described. This is the one manual
   // step a deploy genuinely cannot take for you, so it should cost a paste
   // rather than a trip to the docs to work out how the id is spelled.
-  const registry = await buildRegistryWithWorkspace(root, config.instance.profile);
-  for (const connection of config.connections) {
+  const registry = await buildRegistryWithWorkspace(root);
+  for (const connection of (await readConnections(root)).connections) {
     const ref = credentialRefFor(connection, registry.manifest(connection.provider));
     if (!ref || (await credentials.has(ref))) continue;
     warnings.push(
       `${connection.provider}.${connection.id} is not authorised yet — no credential at "${ref}"\n` +
-        `    lanes link connect ${connection.provider} --profile ${input.config.instance.profile} --target ${target} --id ${connection.id}`,
+        `    lanes link connect ${connection.provider} --profile ${input.config.instance.profile} --workspace ${target} --id ${connection.id}`,
     );
   }
 

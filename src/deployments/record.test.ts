@@ -33,7 +33,7 @@ afterAll(async () => {
 async function workspace(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'lanes-link-record-'));
   roots.push(root);
-  await writeFile(join(root, 'lanes-link.yaml'), 'contract: 2\n');
+  await writeFile(join(root, 'lanes-link.yaml'), 'contract: 3\n');
   return root;
 }
 
@@ -67,8 +67,8 @@ describe('recording a deployment', () => {
     const here = (await readRegistry(machine))['cloud']!;
 
     expect(there.storage?.bucket).toBe('lanes-link-demo-data');
-    expect(there.workspace).toBeUndefined();
-    expect(here.workspace).toBe(target);
+    expect(there.at).toBeUndefined();
+    expect(here.at).toBe(target);
     expect(here.storage).toBeUndefined();
   });
 
@@ -111,8 +111,8 @@ describe('recording a deployment', () => {
     // A pointer beside adapters is what the schema refuses, and this is the one
     // write that touches both entries twice.
     expect(there.storage?.bucket).toBe('lanes-link-demo-data');
-    expect(there.workspace).toBeUndefined();
-    expect(here.workspace).toBe(target);
+    expect(there.at).toBeUndefined();
+    expect(here.at).toBe(target);
     expect(here.last_deploy_version).toBe('0.6.6');
   });
 });

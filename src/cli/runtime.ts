@@ -32,4 +32,5 @@ export {
   type OwnerLayerOptions,
 } from './runtime/registry.ts';
 
-export { openRuntime, type OpenOptions, type Runtime } from './runtime/open.ts';
+export { grantedConnections, openRuntime, type OpenOptions, type Runtime } from './runtime/open.ts';
+export { openWorkspaceRuntime, primaryProfile } from './runtime/workspace.ts';

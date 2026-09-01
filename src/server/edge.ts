@@ -33,11 +33,20 @@ export const FAILED_AUTH_PER_MINUTE = 30;
  *   - `/authorize` compares against the endpoint token, which is another read of
  *     the credential store.
  *   - `/token` reads and writes bucket objects.
+ *   - `/state` and `/audit` verify the pairing token, which on a deployed
+ *     workspace is a Secret Manager call and has no cache behind it at all.
  *
  * `/health` presented with *no* credential is deliberately free: it reads
  * nothing, and it is what a platform probe and `lanes link outputs` send.
  * Metering it would put a ceiling on the one request that costs nothing to
  * answer.
+ *
+ * The read surface is **not** given that exemption, and the asymmetry is the
+ * point: nothing legitimate calls `/state` without a credential — no probe, no
+ * CLI command — so there is no free request to protect. Metering it
+ * unconditionally also means the ceiling does not depend on `readRoutes`
+ * continuing to parse the header before it asks the store anything. That
+ * short-circuit is an optimisation; this is the guarantee.
  */
 export const UNAUTHENTICATED_PER_MINUTE = 30;
 
@@ -141,6 +150,9 @@ export function unauthenticatedRefusal(input: {
   readonly healthPath: string;
   readonly isAuthorizationPath: (pathname: string) => boolean;
   readonly authorizationEnabled: boolean;
+  /** Passed rather than imported, for the reason `isAuthorizationPath` is. */
+  readonly isReadPath: (pathname: string) => boolean;
+  readonly readEnabled: boolean;
 }): Response | undefined {
   // A `/health` carrying no credential reads nothing and is deliberately free —
   // it is what a platform probe and `lanes link outputs` send, and a ceiling on
@@ -149,7 +161,8 @@ export function unauthenticatedRefusal(input: {
   const costly =
     input.pathname === input.healthPath
       ? input.request.headers.get('authorization') !== null
-      : input.authorizationEnabled && input.isAuthorizationPath(input.pathname);
+      : (input.readEnabled && input.isReadPath(input.pathname)) ||
+        (input.authorizationEnabled && input.isAuthorizationPath(input.pathname));
 
   if (!costly) return undefined;
 

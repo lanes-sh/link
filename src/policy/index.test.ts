@@ -6,11 +6,25 @@ import {
   evaluate,
   evaluateDocument,
   type PolicyDocument,
+  type ProfilePolicy,
 } from './index.ts';
 
 const OWNER = 'personal:owner';
 
 const doc = (...rules: PolicyDocument['rules']): PolicyDocument => ({ rules });
+
+/**
+ * A profile's policy: the same rules, against every connection a test names.
+ *
+ * Most of these tests predate ADR-058 and are about the capability axis, where
+ * the connection is incidental — so the default is "these rules, everywhere",
+ * which is exactly what the flat block used to mean. The tests that are *about*
+ * the connection axis build the map themselves.
+ */
+const profileOf = (
+  rules: PolicyDocument,
+  connections: readonly string[] = ['gmail.main', 'example.a', 'example.b', 'example.c'],
+): ProfilePolicy => ({ byConnection: new Map(connections.map((one) => [one, rules])) });
 
 describe('capability matching', () => {
   test('matches exactly', () => {
@@ -65,33 +79,70 @@ describe('default deny', () => {
   });
 });
 
-describe('rules govern every account of a provider alike', () => {
-  // The simplification that replaced per-connection rules: a profile's grant
-  // covers all of its accounts for that provider, and separating two accounts
-  // means running two profiles, which share no database and no credential
-  // store. They do share an endpoint, so that separation is enforced per call.
-  const policy = doc({ capability: 'gmail.*', effect: 'allow' });
+describe('a rule governs one account, not every account of its provider', () => {
+  // The reversal ADR-058 makes, and the reason the whole decoupling was worth
+  // doing. Under contract 2 a profile's rules covered every account of a
+  // provider it held, and separating two mailboxes meant running two profiles.
+  // A grant names the connection now, so one profile can read one mailbox and
+  // write another.
+  const readOnly = doc({ capability: 'gmail.search', effect: 'allow' });
+  const readWrite = doc({ capability: 'gmail.*', effect: 'allow' });
 
-  test('every declared account is covered', () => {
-    for (const connection of ['gmail.work', 'gmail.personal']) {
-      expect(
-        evaluateDocument(policy, { principal: OWNER, capability: 'gmail.search', connection })
-          .allowed,
-      ).toBe(true);
-    }
+  const profile: ProfilePolicy = {
+    byConnection: new Map([
+      ['gmail.personal', readOnly],
+      ['gmail.work', readWrite],
+    ]),
+  };
+
+  test('two accounts of one provider can differ', () => {
+    const send = (connection: string) =>
+      evaluate({ principal: OWNER, capability: 'gmail.send', connection }, profile).allowed;
+
+    expect(send('gmail.work')).toBe(true);
+    expect(send('gmail.personal')).toBe(false);
   });
 
-  test('a deny covers every account too', () => {
-    const withDeny = doc(
-      { capability: 'gmail.*', effect: 'allow' },
-      { capability: 'gmail.send', effect: 'deny' },
-    );
-    for (const connection of ['gmail.work', 'gmail.personal']) {
-      expect(
-        evaluateDocument(withDeny, { principal: OWNER, capability: 'gmail.send', connection })
-          .allowed,
-      ).toBe(false);
-    }
+  test('discovery offers only the accounts the capability is granted on', () => {
+    const connections = ['gmail.personal', 'gmail.work'];
+
+    expect(allowedConnections('gmail.search', connections, OWNER, profile)).toEqual(connections);
+    expect(allowedConnections('gmail.send', connections, OWNER, profile)).toEqual(['gmail.work']);
+  });
+
+  test('a connection with no row at all is denied and never offered', () => {
+    // Default deny on the connection axis. Absent is not the same as granted
+    // nothing: the first is unreachable, the second is reachable and permits no
+    // capability, and only the second appears anywhere.
+    expect(
+      evaluate(
+        { principal: OWNER, capability: 'gmail.search', connection: 'gmail.other' },
+        profile,
+      ).reason,
+    ).toBe('denied_default');
+
+    expect(allowedConnections('gmail.search', ['gmail.other'], OWNER, profile)).toEqual([]);
+  });
+
+  test('a deny on one row leaves the other alone', () => {
+    const narrowed: ProfilePolicy = {
+      byConnection: new Map([
+        ['gmail.personal', doc({ capability: 'gmail.*', effect: 'allow' })],
+        [
+          'gmail.work',
+          doc(
+            { capability: 'gmail.*', effect: 'allow' },
+            { capability: 'gmail.send', effect: 'deny' },
+          ),
+        ],
+      ]),
+    };
+
+    const send = (connection: string) =>
+      evaluate({ principal: OWNER, capability: 'gmail.send', connection }, narrowed).allowed;
+
+    expect(send('gmail.personal')).toBe(true);
+    expect(send('gmail.work')).toBe(false);
   });
 });
 
@@ -188,8 +239,8 @@ describe('tighten-only composition', () => {
     const floor = EMPTY_POLICY; // grants nothing
     const profile = doc({ capability: 'gmail.*', effect: 'allow' });
 
-    expect(evaluate(request, profile).allowed).toBe(true); // no floor: allowed
-    expect(evaluate(request, profile, floor).allowed).toBe(false); // floor withholds
+    expect(evaluate(request, profileOf(profile)).allowed).toBe(true); // no floor: allowed
+    expect(evaluate(request, profileOf(profile), floor).allowed).toBe(false); // floor withholds
   });
 
   test('the profile cannot allow what the floor explicitly denied', () => {
@@ -199,7 +250,7 @@ describe('tighten-only composition', () => {
     );
     const profile = doc({ capability: 'gmail.search', effect: 'allow' });
 
-    expect(evaluate(request, profile, floor).allowed).toBe(false);
+    expect(evaluate(request, profileOf(profile), floor).allowed).toBe(false);
   });
 
   test('a profile-level * cannot widen past the floor', () => {
@@ -208,9 +259,9 @@ describe('tighten-only composition', () => {
     const floor = doc({ capability: 'gmail.search', effect: 'allow' });
     const profile = doc({ capability: '*', effect: 'allow' });
 
-    expect(evaluate(request, profile, floor).allowed).toBe(true);
+    expect(evaluate(request, profileOf(profile), floor).allowed).toBe(true);
     expect(
-      evaluate({ ...request, capability: 'gmail.send' }, profile, floor).allowed,
+      evaluate({ ...request, capability: 'gmail.send' }, profileOf(profile), floor).allowed,
     ).toBe(false);
   });
 
@@ -221,9 +272,9 @@ describe('tighten-only composition', () => {
       { capability: 'gmail.search', effect: 'deny' },
     );
 
-    expect(evaluate(request, profile, floor).allowed).toBe(false);
+    expect(evaluate(request, profileOf(profile), floor).allowed).toBe(false);
     expect(
-      evaluate({ ...request, capability: 'gmail.get_message' }, profile, floor).allowed,
+      evaluate({ ...request, capability: 'gmail.get_message' }, profileOf(profile), floor).allowed,
     ).toBe(true);
   });
 });
@@ -234,14 +285,14 @@ describe('discovery filtering', () => {
   test('a granted capability exposes every account; an ungranted one exposes none', () => {
     const policy = doc({ capability: 'example.get_note', effect: 'allow' });
 
-    expect(allowedConnections('example.get_note', connections, OWNER, policy)).toEqual(connections);
-    expect(allowedConnections('example.set_note', connections, OWNER, policy)).toEqual([]);
-    expect(allowedConnections('example.echo', connections, OWNER, EMPTY_POLICY)).toEqual([]);
+    expect(allowedConnections('example.get_note', connections, OWNER, profileOf(policy, connections))).toEqual(connections);
+    expect(allowedConnections('example.set_note', connections, OWNER, profileOf(policy, connections))).toEqual([]);
+    expect(allowedConnections('example.echo', connections, OWNER, { byConnection: new Map() })).toEqual([]);
   });
 
   test('no connections means nothing to expose, rather than an error', () => {
     const policy = doc({ capability: '*', effect: 'allow' });
-    expect(allowedConnections('example.echo', [], OWNER, policy)).toEqual([]);
+    expect(allowedConnections('example.echo', [], OWNER, profileOf(policy))).toEqual([]);
   });
 
   test('a capability only ever offers its own provider’s accounts', () => {
@@ -249,30 +300,33 @@ describe('discovery filtering', () => {
     // Notion account, however broad the grant. Under a catch-all this is the
     // only thing keeping the enum honest.
     const mixed = ['gmail.work', 'gmail.home', 'notion.main', 'example.a'];
-    const policy = doc({ capability: '*', effect: 'allow' });
+    const granted = profileOf(doc({ capability: '*', effect: 'allow' }), mixed);
 
-    expect(allowedConnections('gmail.search', mixed, OWNER, policy)).toEqual([
+    expect(allowedConnections('gmail.search', mixed, OWNER, granted)).toEqual([
       'gmail.work',
       'gmail.home',
     ]);
-    expect(allowedConnections('notion.search', mixed, OWNER, policy)).toEqual(['notion.main']);
-    expect(allowedConnections('drive.search', mixed, OWNER, policy)).toEqual([]);
+    expect(allowedConnections('notion.search', mixed, OWNER, granted)).toEqual(['notion.main']);
+    expect(allowedConnections('drive.search', mixed, OWNER, granted)).toEqual([]);
   });
 
   test('a provider whose name prefixes another is not confused for it', () => {
     // `gmail.` rather than `gmail`, or `gmailx.main` would come along too.
     const policy = doc({ capability: '*', effect: 'allow' });
-    expect(allowedConnections('gmail.search', ['gmailx.main'], OWNER, policy)).toEqual([]);
+    expect(
+      allowedConnections('gmail.search', ['gmailx.main'], OWNER, profileOf(policy, ['gmailx.main'])),
+    ).toEqual([]);
   });
 
   test('discovery uses the same evaluation as invocation', () => {
     // If these could disagree, a leak in discovery would still be a leak.
     const policy = doc({ capability: 'example.echo', effect: 'allow' });
     for (const capability of ['example.echo', 'example.set_note']) {
-      const visible = allowedConnections(capability, connections, OWNER, policy).length > 0;
+      const granted = profileOf(policy, connections);
+      const visible = allowedConnections(capability, connections, OWNER, granted).length > 0;
       const invocable = evaluate(
         { principal: OWNER, capability, connection: 'example.a' },
-        policy,
+        granted,
       ).allowed;
       expect(visible).toBe(invocable);
     }

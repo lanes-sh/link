@@ -30,7 +30,7 @@ describe('what setup tells someone to run', () => {
       const plan = planFor(manifest, { ...WHERE, connections: [] });
 
       expect(plan.command).toContain('--profile work');
-      expect(plan.command).toContain('--target cloud');
+      expect(plan.command).toContain('--workspace cloud');
     }
   });
 
@@ -42,13 +42,13 @@ describe('what setup tells someone to run', () => {
     if (brokered) {
       const plan = planFor(brokered, { ...WHERE, connections: [] });
       expect(plan.ownClientCommand).toContain('--profile work');
-      expect(plan.ownClientCommand).toContain('--target cloud');
+      expect(plan.ownClientCommand).toContain('--workspace cloud');
     }
   });
 
   test('and the secrets set line for a value it needs first', () => {
     // The one that would be worst to get wrong: it writes a credential, so a
-    // missing --target puts it in a store the endpoint asking for it does not
+    // missing --workspace puts it in a store the endpoint asking for it does not
     // read, and reports success.
     const withPrompts = PROVIDER_MANIFESTS.filter(
       (manifest) => (manifest.setup?.prompts ?? []).length > 0,
@@ -59,7 +59,7 @@ describe('what setup tells someone to run', () => {
     for (const manifest of withPrompts) {
       for (const requirement of setupRequirements(manifest, 'main', WHERE).requirements) {
         expect(requirement.command).toContain('--profile work');
-        expect(requirement.command).toContain('--target cloud');
+        expect(requirement.command).toContain('--workspace cloud');
       }
     }
   });
@@ -70,6 +70,6 @@ describe('what outputs tells someone to run', () => {
     const invocation = await tokenInvocation('a-token-no-endpoint-will-match', 'work', 'cloud');
 
     expect(invocation.command).toContain('--profile work');
-    expect(invocation.command).toContain('--target cloud');
+    expect(invocation.command).toContain('--workspace cloud');
   });
 });

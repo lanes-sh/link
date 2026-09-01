@@ -12,5 +12,5 @@
  * connectivity type; `load.ts` reads and validates them.
  */
 
-export { loadProfileProviders, parseManifest, type LoadedManifest } from './load.ts';
+export { loadWorkspaceProviders, parseManifest, type LoadedManifest } from './load.ts';
 export { manifestTemplate } from './template.ts';

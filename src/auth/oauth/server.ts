@@ -1,5 +1,7 @@
+import { exchangeCode, pkceChallengeFor, refresh, type GrantContext } from './grant.ts';
 import { grantableScope, MCP_SCOPE } from './metadata.ts';
 import { isSafeRedirect, matchesRegistered } from './redirects.ts';
+import { invalid, type OAuthResult } from './result.ts';
 import {
   hashToken,
   randomToken,
@@ -19,63 +21,70 @@ import {
  * Deliberately small. This implements one grant and one refresh, for public
  * clients, with PKCE required. It is not a general authorization server and
  * should not grow into one: no client credentials grant, no implicit flow, no
- * consent scoping, no user directory. There is exactly one user here, and the
- * proof of being them is the endpoint token they already have.
+ * consent scoping, no user directory.
+ *
+ * **It does not authenticate anybody, and that is the change in 0.8.0.** It used
+ * to: `/authorize` rendered a form and the proof of being the owner was pasting
+ * the endpoint's own bearer token into it. Two things were wrong with that. A
+ * page on loopback asking for the one credential that opens everything is the
+ * most valuable thing a hostile local page could reach (ADR-039), and a
+ * credential is not a person — so a profile could not say *who* may consume it.
+ *
+ * Now the browser is sent to lanes.sh, which knows who is signed in, and comes
+ * back with a signed assertion this endpoint verifies against a published key
+ * (ADR-062). The endpoint learns a subject rather than a secret, and there is no
+ * form on loopback to phish.
  */
 
 /** Codes live about as long as a redirect takes. */
 const CODE_TTL_MS = 60_000;
-const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** A person finding a password manager, not a redirect completing. */
+const PENDING_TTL_MS = 10 * 60_000;
 
 /**
- * How long a spent refresh token still answers.
+ * Where this endpoint sends people to be identified, and how it checks the answer.
  *
- * A client whose refresh succeeded but whose *response* was lost holds a token
- * the server has already spent, and retrying with it is the only move it has.
- * Without a window that retry is `invalid_grant`, and the reference MCP client
- * rethrows every `OAuthError` but `server_error` rather than recovering — so
- * the connector dies and its owner is sent to a browser, over a network blip.
- *
- * Thirty seconds is the band Auth0's reuse interval (0–60 s) and Okta's grace
- * period occupy. What it costs: a captured refresh token keeps working for up
- * to this long after the real client next rotates it.
+ * Every field is injected rather than built here, which is what keeps this file
+ * about the grant. It also means the whole federation can be replaced by a
+ * self-hoster's own — `mode: oidc` is the supported way to do that, and this is
+ * the same shape one layer down.
  */
-const REFRESH_REUSE_MS = 30_000;
+export interface Federation {
+  /** The page that knows who is signed in. `https://lanes.sh/link/authorize`. */
+  readonly consentUrl: string;
+  /**
+   * Believe an assertion, or do not.
+   *
+   * Returns the person, or null. Deliberately no reason: whoever is at the
+   * browser cannot act on "the audience was wrong", and an attacker can.
+   */
+  readonly verify: (
+    assertion: string,
+    expected: { audience: string; nonce: string },
+  ) => Promise<{ subject: string; email: string | null } | null>;
+  /**
+   * The profiles that subject may consume here.
+   *
+   * Empty is a real answer and the common one for a stranger: they signed in
+   * successfully, and no profile names them. It is refused with that reason,
+   * because "sign in again" would be advice that cannot work.
+   */
+  readonly profilesFor: (subject: string) => Promise<readonly string[]>;
+}
 
-export type OAuthResult =
-  | { readonly kind: 'json'; readonly status: number; readonly body: unknown }
-  | { readonly kind: 'redirect'; readonly location: string }
-  /** Render the approval page. The parameters are carried through it. */
-  | {
-      readonly kind: 'consent';
-      readonly request: AuthorizeRequest;
-      readonly retry: boolean;
-      /**
-       * What the client calls itself, if it said.
-       *
-       * Self-reported and therefore not evidence — registration is open, so
-       * anything may claim any name. It is shown because a name is what makes
-       * the screen legible, and shown *beside the redirect host*, which is the
-       * part that cannot be faked: an impostor calling itself Claude still has
-       * to send the code somewhere, and that somewhere is on the screen.
-       */
-      readonly clientName?: string | undefined;
-    }
-  | { readonly kind: 'error'; readonly status: number; readonly message: string };
-
-export interface AuthorizeRequest {
-  readonly clientId: string;
-  readonly redirectUri: string;
-  readonly codeChallenge: string;
-  readonly state: string | undefined;
-  readonly scope: string;
-  readonly resource: string | undefined;
+/** Who this endpoint is, from the point of view of the request being served. */
+export interface EndpointIdentity {
+  /** What an assertion must name as its audience — the MCP URL clients call. */
+  readonly resource: string;
+  /** Where lanes.sh sends the browser back to. */
+  readonly callbackUrl: string;
 }
 
 export interface OAuthServerOptions {
   readonly store: OAuthStore;
-  /** Proof of being the owner. The same token the endpoint already accepts. */
-  readonly verifyOwner: (presented: string) => Promise<boolean>;
+  /** Where the person is identified. See `Federation`. */
+  readonly federation: Federation;
   readonly accessTokenTtlMs: number;
   /** Where a replayed refresh token is recorded. Structural, because this layer
    * may not import `#connectivity`; the endpoint's own logger satisfies it. */
@@ -145,7 +154,7 @@ export class OAuthServer {
    * that failed validation is how an open redirector is built, so a bad
    * `client_id` or `redirect_uri` ends at this endpoint and goes no further.
    */
-  async authorize(params: URLSearchParams): Promise<OAuthResult> {
+  async authorize(params: URLSearchParams, endpoint: EndpointIdentity): Promise<OAuthResult> {
     if (params.get('response_type') !== 'code') {
       return { kind: 'error', status: 400, message: 'Only response_type=code is supported.' };
     }
@@ -173,193 +182,157 @@ export class OAuthServer {
       return { kind: 'error', status: 400, message: 'code_challenge is required.' };
     }
 
-    return {
-      kind: 'consent',
-      retry: false,
-      ...(client.clientName ? { clientName: client.clientName } : {}),
-      request: {
-        clientId,
-        redirectUri,
-        codeChallenge: challenge,
-        state: params.get('state') ?? undefined,
-        // The grantable part of what was asked for, not the request verbatim.
-        // Echoing it back through `#issue` was granting by echo, which was inert
-        // while `mcp` was the only scope and stops being inert now that there is
-        // a second one that means something.
-        scope: grantableScope(params.get('scope')) || MCP_SCOPE,
-        resource: params.get('resource') ?? undefined,
-      },
-    };
+    // Minted here and stored here. Everything the client asked for is kept
+    // server-side under this nonce, so nothing coming back through the browser
+    // is trusted — see `PendingAuthorization`.
+    const nonce = randomToken('lln');
+
+    await this.#options.store.putPending(nonce, {
+      clientId,
+      redirectUri,
+      codeChallenge: challenge,
+      ...(params.get('state') !== null ? { state: params.get('state')! } : {}),
+      // The grantable part of what was asked for, not the request verbatim.
+      // Echoing it back through `#issue` was granting by echo, which was inert
+      // while `mcp` was the only scope and stops being inert now that there is
+      // a second one that means something.
+      scope: grantableScope(params.get('scope')) || MCP_SCOPE,
+      ...(params.get('resource') !== null ? { resource: params.get('resource')! } : {}),
+      expiresAt: this.#now() + PENDING_TTL_MS,
+    });
+
+    const consent = new URL(this.#options.federation.consentUrl);
+    consent.searchParams.set('resource', endpoint.resource);
+    consent.searchParams.set('nonce', nonce);
+    consent.searchParams.set('return', endpoint.callbackUrl);
+    // Both shown to the person, and the second is the one that cannot be
+    // faked: a client may call itself anything, but the code still goes where
+    // its registration says, and that host is on the screen beside the name.
+    if (client.clientName) consent.searchParams.set('client', client.clientName);
+    consent.searchParams.set('redirect_host', hostOf(redirectUri));
+
+    return { kind: 'redirect', location: consent.toString() };
   }
 
   /**
-   * The owner approving, by presenting the endpoint token.
+   * The browser coming back from lanes.sh, carrying an assertion.
    *
-   * A wrong token re-renders the form rather than redirecting an error back to
-   * the client: the client has no business being told whether the owner typed
-   * their token correctly, and a redirect would end the flow on the first typo.
+   * This is where a person becomes a principal. Nothing in the query decides
+   * anything except *which* pending request this is: the client, the redirect
+   * URI and the PKCE challenge all come from the stored record, so a callback
+   * fabricated wholesale can at most spend a nonce it does not have.
+   *
+   * Errors are rendered rather than redirected, for the reason `authorize`
+   * gives: the redirect target is only trustworthy once the record it came
+   * from has been read, and by then the interesting failures have happened.
    */
-  async approve(request: AuthorizeRequest, presented: string): Promise<OAuthResult> {
-    const registered = await this.#options.store.client(request.clientId);
+  async callback(params: URLSearchParams, endpoint: EndpointIdentity): Promise<OAuthResult> {
+    const nonce = params.get('nonce') ?? '';
+    const assertion = params.get('assertion') ?? '';
 
-    if (!presented || !(await this.#options.verifyOwner(presented))) {
+    if (!nonce || !assertion) {
+      const refused = params.get('error');
       return {
-        kind: 'consent',
-        request,
-        retry: true,
-        ...(registered?.clientName ? { clientName: registered.clientName } : {}),
+        kind: 'error',
+        status: 400,
+        message: refused
+          ? `Sign-in was not completed: ${refused}. Nothing was authorised.`
+          : 'That sign-in came back without an assertion. Start again from your client.',
       };
     }
 
-    const client = registered;
-    if (!client || !matchesRegistered(request.redirectUri, client.redirectUris)) {
+    const pending = await this.#options.store.takePending(nonce);
+    if (!pending) {
+      return {
+        kind: 'error',
+        status: 400,
+        message: 'That sign-in has expired or was already used. Start again from your client.',
+      };
+    }
+
+    const person = await this.#options.federation.verify(assertion, {
+      audience: endpoint.resource,
+      nonce,
+    });
+    if (!person) {
+      return {
+        kind: 'error',
+        status: 403,
+        message: 'That sign-in could not be verified, so nothing was authorised.',
+      };
+    }
+
+    // Read once, at the moment the credential is minted. A profile that stops
+    // naming this person later does not reach back and revoke a live session —
+    // `lanes link token rotate` is what does that, and `profile members remove`
+    // says so (ADR-060).
+    const profiles = await this.#options.federation.profilesFor(person.subject);
+    if (profiles.length === 0) {
+      return {
+        kind: 'error',
+        status: 403,
+        message:
+          `You are signed in as ${person.email ?? person.subject}, and no profile on this ` +
+          'endpoint lists you as a member.\n\n' +
+          'Its owner can add you with:\n' +
+          `  lanes link profile members add ${person.subject} --profile <name>`,
+      };
+    }
+
+    // Re-checked against the registration, not taken on trust from the record.
+    // The record was written by this endpoint, so this is belt and braces — but
+    // a client deregistered mid-flow is a real sequence, and minting a code for
+    // a redirect nobody claims any more is not something to do quietly.
+    const client = await this.#options.store.client(pending.clientId);
+    if (!client || !matchesRegistered(pending.redirectUri, client.redirectUris)) {
       return { kind: 'error', status: 400, message: 'This approval no longer matches a client.' };
     }
 
     const code = randomToken('llx');
-    const record: AuthorizationCode = {
-      clientId: request.clientId,
-      redirectUri: request.redirectUri,
-      codeChallenge: request.codeChallenge,
-      // Narrowed here as well as in `authorize`, and this is the one that
-      // matters: the request arrives back through hidden form fields, so a
-      // caller can post any scope it likes straight to this endpoint. Nothing
-      // round-tripped through the form is trusted — the client and the redirect
-      // URI are re-checked above for the same reason.
-      scope: grantableScope(request.scope) || MCP_SCOPE,
-      ...(request.resource ? { resource: request.resource } : {}),
+    await this.#options.store.putCode(code, {
+      clientId: pending.clientId,
+      redirectUri: pending.redirectUri,
+      codeChallenge: pending.codeChallenge,
+      scope: grantableScope(pending.scope) || MCP_SCOPE,
+      ...(pending.resource ? { resource: pending.resource } : {}),
+      subject: person.subject,
+      profiles,
       expiresAt: this.#now() + CODE_TTL_MS,
-    };
-    await this.#options.store.putCode(code, record);
+    });
 
-    const location = new URL(request.redirectUri);
+    const location = new URL(pending.redirectUri);
     location.searchParams.set('code', code);
-    if (request.state !== undefined) location.searchParams.set('state', request.state);
+    if (pending.state !== undefined) location.searchParams.set('state', pending.state);
     return { kind: 'redirect', location: location.toString() };
   }
 
   /** Both grants. Form-encoded in, JSON out, RFC 6749 error codes throughout. */
   async token(form: URLSearchParams): Promise<OAuthResult> {
+    const context: GrantContext = {
+      store: this.#options.store,
+      accessTokenTtlMs: this.#options.accessTokenTtlMs,
+      ...(this.#options.log ? { log: this.#options.log } : {}),
+      now: this.#now,
+    };
+
     switch (form.get('grant_type')) {
       case 'authorization_code':
-        return this.#exchangeCode(form);
+        return exchangeCode(form, context);
       case 'refresh_token':
-        return this.#refresh(form);
+        return refresh(form, context);
       default:
         return invalid('unsupported_grant_type', 'Use authorization_code or refresh_token.');
     }
   }
+}
 
-  async #exchangeCode(form: URLSearchParams): Promise<OAuthResult> {
-    const record = await this.#options.store.takeCode(form.get('code') ?? '');
-    if (!record) return invalid('invalid_grant', 'That code is unknown, used, or expired.');
-
-    if (record.clientId !== form.get('client_id')) {
-      return invalid('invalid_grant', 'That code was issued to a different client.');
-    }
-    // Checked even though the code is already bound to it: a client that sends a
-    // different redirect_uri here than it started with is not the client that
-    // started, and the spec requires the comparison.
-    if (record.redirectUri !== form.get('redirect_uri')) {
-      return invalid('invalid_grant', 'redirect_uri does not match the authorization request.');
-    }
-
-    const verifier = form.get('code_verifier') ?? '';
-    if (!verifier || pkceChallengeFor(verifier) !== record.codeChallenge) {
-      return invalid('invalid_grant', 'code_verifier does not match the code_challenge.');
-    }
-
-    return this.#issue(record.clientId, record.scope, randomToken('llr'));
-  }
-
-  async #refresh(form: URLSearchParams): Promise<OAuthResult> {
-    const presented = form.get('refresh_token') ?? '';
-    const record = await this.#options.store.token(presented);
-
-    if (!record || record.kind === 'access') {
-      return invalid('invalid_grant', 'That refresh token is unknown or expired.');
-    }
-
-    // A spent token presented again used to take its whole family with it, on
-    // the reading that a replay is a theft. Against a real connector that was
-    // wrong twice over, and ADR-035 has the evidence. Two answers replace it,
-    // and the tombstone's age is what tells them apart.
-    if (record.kind === 'consumed') {
-      // Inside the window it is a retry of a request already answered, and the
-      // client is owed the answer rather than a dead connector. Not re-consumed:
-      // a client retrying twice is still retrying.
-      const spentAt = record.consumedAt;
-      if (spentAt !== undefined && this.#now() - spentAt <= REFRESH_REUSE_MS) {
-        return this.#issue(record.clientId, record.scope, randomToken('llr'), record.family);
-      }
-
-      // Outside it, refused on its own — and the family survives, which is the
-      // half that was taking live sessions down with it.
-      this.#options.log?.warn('refresh token replayed', {
-        clientId: record.clientId,
-        family: record.family,
-      });
-      return invalid('invalid_grant', 'That refresh token has already been used.');
-    }
-
-    if (record.clientId !== form.get('client_id')) {
-      return invalid('invalid_grant', 'That refresh token was issued to a different client.');
-    }
-
-    await this.#options.store.consumeToken(presented);
-    return this.#issue(record.clientId, record.scope, randomToken('llr'), record.family);
-  }
-
-  async #issue(
-    clientId: string,
-    scope: string,
-    refreshToken: string,
-    family = randomToken('llf'),
-  ): Promise<OAuthResult> {
-    const accessToken = randomToken('lla');
-    const expiresIn = Math.floor(this.#options.accessTokenTtlMs / 1000);
-
-    await this.#options.store.putToken(accessToken, {
-      clientId,
-      kind: 'access',
-      scope,
-      family,
-      expiresAt: this.#now() + this.#options.accessTokenTtlMs,
-    });
-    await this.#options.store.putToken(refreshToken, {
-      clientId,
-      kind: 'refresh',
-      scope,
-      family,
-      expiresAt: this.#now() + REFRESH_TTL_MS,
-    });
-
-    return {
-      kind: 'json',
-      status: 200,
-      body: {
-        access_token: accessToken,
-        token_type: 'Bearer',
-        expires_in: expiresIn,
-        refresh_token: refreshToken,
-        scope,
-      },
-    };
+function hostOf(uri: string): string {
+  try {
+    return new URL(uri).host;
+  } catch {
+    return uri;
   }
 }
 
-/** `base64url(sha256(verifier))`, which is what S256 means. */
-export function pkceChallengeFor(verifier: string): string {
-  return Buffer.from(
-    new Bun.CryptoHasher('sha256').update(verifier, 'utf8').digest(),
-  ).toString('base64url');
-}
-
-function invalid(error: string, description: string): OAuthResult {
-  // RFC 6749 codes exactly. A client refreshing on a 401 branches on
-  // `invalid_grant` specifically; anything else and it retries forever or gives
-  // up without re-authorising.
-  return { kind: 'json', status: 400, body: { error, error_description: description } };
-}
-
-export { hashToken };
+export { hashToken, pkceChallengeFor };
+export type { OAuthResult };

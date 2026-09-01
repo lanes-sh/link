@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { ownerPrincipal } from '#auth';
 import { announce, print, style } from '../../output.ts';
-import { openRuntime, type GlobalFlags } from '../../runtime.ts';
+import { grantedConnections, openRuntime, type GlobalFlags } from '../../runtime.ts';
 
 /**
  * `lanes link attach <file> --connection <provider>.<account>`
@@ -44,11 +44,11 @@ export async function attachFile(
 
     // Checked against config rather than trusted, so a typo names the mistake
     // instead of staging into a namespace nothing will ever read.
-    const known = runtime.config.connections.some(
+    const known = grantedConnections(runtime).some(
       (connection) => connection.provider === providerId && connection.id === connectionId,
     );
     if (!known) {
-      const have = runtime.config.connections.map((c) => `${c.provider}.${c.id}`);
+      const have = grantedConnections(runtime).map((c) => `${c.provider}.${c.id}`);
       throw new Error(
         `No connection "${flags.connection}" in this profile. Configured: ${have.join(', ') || 'none'}.`,
       );

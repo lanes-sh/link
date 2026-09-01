@@ -3,32 +3,53 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { layout } from '#profile';
+import { CONNECTIONS_FILE, layout } from '#profile';
 import { openRuntime, type Runtime } from '../runtime.ts';
 
 /**
- * That a profile's owner layer is the profile's — ADR-030.
+ * That skills follow the instance a profile grants — ADR-059.
  *
- * Skills and provider manifests used to live at the workspace root, shared by
- * every profile, with policy gating `skills.<name>` as the whole isolation
- * story. Policy decides who may *run* a procedure; it never hid that the
- * procedure existed, or what it said, or which host a manifest names.
+ * Skills lived at the workspace root once, shared by every profile, with policy
+ * gating `skills.<name>` as the whole isolation story; ADR-030 moved them into
+ * the profile because policy decides who may *run* a procedure and never hid
+ * that the procedure existed. ADR-059 keeps that isolation and changes what
+ * expresses it: a skills connection, granted by name, so two profiles share
+ * nothing by granting different instances and share everything by granting one.
+ *
+ * The privacy argument is unchanged. What changed is that the owner chooses,
+ * where the file path used to choose for them.
  *
  * These tests open two real runtimes over one real workspace, because that is
  * the only arrangement where the bug was reachable: one profile is never wrong
  * about whose skills it is holding.
+ *
+ * Manifests are the exception and moved the other way (ADR-057): a manifest
+ * defines a connection, and connections are the workspace's, so one profile's
+ * manifest *is* the other's now.
  */
 
 const roots: string[] = [];
 const previousHome = process.env['LANES_LINK_HOME'];
 
-const profileConfig = (name: string): string => `contract: 2
+const profileConfig = (name: string, skills = name): string => `contract: 3
 
 instance:
   profile: ${name}
 
-policy:
-  allow: ['*']
+grants:
+  - { connection: skills.${skills}, allow: ['skills.*'], deny: [] }
+  - { connection: setup.main, allow: ['setup.*'], deny: [] }
+members: []
+`;
+
+/** The workspace's rows: one skills instance per profile, plus the owner layer. */
+const CONNECTIONS = `contract: 3
+connections:
+  - { id: personal, provider: skills, account: Skills }
+  - { id: work, provider: skills, account: Skills }
+  - { id: shared, provider: skills, account: Skills }
+  - { id: main, provider: setup, account: Setup }
+oauth_apps: {}
 `;
 
 const skill = (description: string, body: string): string =>
@@ -37,14 +58,18 @@ const skill = (description: string, body: string): string =>
 const manifest = (id: string, host: string): string =>
   `id: ${id}\nname: ${id}\nconnector: { kind: http, base_url: https://${host}, openapi: https://${host}/openapi.json }\nauth: { kind: header, header: X-API-Key, credential_ref: ${id}/api_key }\n`;
 
-async function workspace(files: Record<string, string>): Promise<string> {
+async function workspace(
+  files: Record<string, string>,
+  granting?: Record<string, string>,
+): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'lanes-link-scoping-'));
   roots.push(root);
 
   await mkdir(join(root, 'profiles'), { recursive: true });
   await writeFile(join(root, 'lanes-link.yaml'), workspaceYaml(['local'], {defaultProfile: 'personal'}));
+  await writeFile(join(root, CONNECTIONS_FILE), CONNECTIONS);
   for (const name of ['personal', 'work']) {
-    await writeFile(join(root, 'profiles', `${name}.yaml`), profileConfig(name));
+    await writeFile(join(root, 'profiles', `${name}.yaml`), profileConfig(name, granting?.[name]));
   }
 
   for (const [key, contents] of Object.entries(files)) {
@@ -80,8 +105,8 @@ afterAll(async () => {
   await Promise.all(roots.map((root) => rm(root, { recursive: true, force: true })));
 });
 
-describe('skills belong to one profile', () => {
-  test("a profile's skills are invisible to its sibling", async () => {
+describe('skills follow the instance a profile grants', () => {
+  test("a profile's skills are invisible to a sibling granting a different instance", async () => {
     await workspace({
       [`${layout.skills('personal')}/holiday-plan/SKILL.md`]: skill('Plan a holiday', 'Plan it.'),
       [`${layout.skills('work')}/incident-review/SKILL.md`]: skill('Review an incident', 'Review it.'),
@@ -110,7 +135,7 @@ describe('skills belong to one profile', () => {
 
     try {
       const body = async (runtime: typeof personal): Promise<string> =>
-        new TextDecoder().decode((await runtime.skills.get('triage.md'))!);
+        new TextDecoder().decode((await runtime.skills!.get('triage.md'))!);
 
       expect(await body(personal)).toContain('Sort the personal inbox.');
       expect(await body(work)).toContain('Page the on-call engineer.');
@@ -135,10 +160,18 @@ describe('skills belong to one profile', () => {
   });
 });
 
-describe('provider manifests belong to one profile', () => {
-  test('a manifest one profile declares is not registered in the other', async () => {
+describe('provider manifests belong to the workspace', () => {
+  test('a manifest is registered in every profile, because it defines a connection', async () => {
+    // The reversal ADR-057 makes, and the one place this file moves the other
+    // way. ADR-030 put manifests in the profile on the reasoning that a manifest
+    // "names a host, an OpenAPI document, and the credential refs that reach
+    // them" — a description of somebody's infrastructure. That is still true,
+    // and it is now a description of a *connection*, which the workspace owns.
+    //
+    // What keeps the boundary is the grant: a profile that does not grant
+    // `ledger.<id>` reaches nothing through it, however registered it is.
     await workspace({
-      [`${layout.providers('work')}/ledger.yaml`]: manifest('ledger', 'ledger.example.com'),
+      [`${layout.providers()}/ledger.yaml`]: manifest('ledger', 'ledger.example.com'),
     });
 
     // `has`, not `capabilities()`: an http provider's capability list comes
@@ -146,7 +179,7 @@ describe('provider manifests belong to one profile', () => {
     // manifest was registered at all is the question this change decides.
     await bothProfiles(async ({ personal, work }) => {
       expect(work.registry.has('ledger')).toBe(true);
-      expect(personal.registry.has('ledger')).toBe(false);
+      expect(personal.registry.has('ledger')).toBe(true);
     });
   });
 

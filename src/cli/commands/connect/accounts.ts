@@ -32,12 +32,12 @@ export function credentialApp(manifest: ProviderManifest): string | undefined {
  */
 export function accountSiblings(
   manifest: ProviderManifest,
-  config: Config,
+  connections: readonly ConnectionConfig[],
   registry: { manifest(id: string): ProviderManifest | undefined },
 ): ConnectionConfig[] {
   const app = credentialApp(manifest);
 
-  return config.connections.filter((connection) => {
+  return connections.filter((connection) => {
     if (connection.provider === manifest.id) return true;
     if (!app) return false;
     const sibling = registry.manifest(connection.provider);
@@ -55,7 +55,7 @@ export function accountSiblings(
  */
 export function siblingAccountId(
   manifest: ProviderManifest,
-  config: Config,
+  connections: readonly ConnectionConfig[],
   registry: { manifest(id: string): ProviderManifest | undefined },
 ): string | undefined {
   if (!credentialApp(manifest)) return undefined;
@@ -63,7 +63,7 @@ export function siblingAccountId(
   // Asked of the registry, not inferred from the id: `app` is a manifest field,
   // and a provider is free to declare `app: icloud` under any name it likes.
   const ids = new Set(
-    accountSiblings(manifest, config, registry)
+    accountSiblings(manifest, connections, registry)
       .filter((connection) => connection.provider !== manifest.id)
       .map((connection) => connection.id),
   );

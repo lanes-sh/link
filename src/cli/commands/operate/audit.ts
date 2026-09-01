@@ -1,5 +1,5 @@
-import { announce, print, style, table } from '../../output.ts';
-import { openRuntime, type GlobalFlags } from '../../runtime.ts';
+import { announceWorkspace, print, style, table } from '../../output.ts';
+import { openWorkspaceRuntime, type GlobalFlags } from '../../runtime.ts';
 
 /** `lanes link audit tail` — the log the dispatcher writes, rendered for a terminal. */
 
@@ -15,11 +15,11 @@ export async function auditTail(
   }
   const markdown = flags.format === 'md';
 
-  const runtime = await openRuntime(flags);
+  const runtime = await openWorkspaceRuntime(flags);
   try {
     // The banner is chrome around a table; in Markdown it is a stray line in
     // the middle of a document someone is pasting somewhere.
-    if (!markdown) announce(runtime.resolution);
+    if (!markdown) announceWorkspace(runtime.resolution);
 
     const events = await runtime.audit.tail({
       limit: flags.limit ?? 25,
@@ -35,7 +35,11 @@ export async function auditTail(
       // The log lives in the database; this is a rendering of it, not a second
       // copy of it. See ADR-013 — storage format and display format are not the
       // same decision.
-      print(`# Audit — ${runtime.resolution.profile}\n`);
+      // The workspace, not the profile. Contract 3 gave the workspace one
+      // chain covering every profile in it, and a heading naming whichever
+      // profile happened to open the store described a log that does not
+      // exist. Each row carries its own profile.
+      print(`# Audit — ${runtime.resolution.target}\n`);
       print('| Time | Result | Capability | Connection | Duration | Arguments |');
       print('|---|---|---|---|---|---|');
       for (const event of events) {
@@ -81,9 +85,9 @@ export async function auditTail(
  * can see how much was looked at.
  */
 export async function auditVerify(flags: GlobalFlags): Promise<void> {
-  const runtime = await openRuntime(flags);
+  const runtime = await openWorkspaceRuntime(flags);
   try {
-    announce(runtime.resolution);
+    announceWorkspace(runtime.resolution);
     const report = await runtime.audit.verify();
 
     const scope = `${report.events} event${report.events === 1 ? '' : 's'} across ${report.runs} run${report.runs === 1 ? '' : 's'}`;

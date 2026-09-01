@@ -98,7 +98,7 @@ describe('naming a profile', () => {
   test('an empty workspace suggests creating a profile, with a target', async () => {
     const root = await workspace([]);
     await expect(resolveSelection({ env: { LANES_LINK_HOME: root } })).rejects.toThrow(
-      /lanes link profile add <name> --target local/,
+      /lanes link profile add <name> --workspace local/,
     );
   });
 });
@@ -143,7 +143,7 @@ describe('reading every profile at once', () => {
    * look vanished from inside one profile.
    */
   const declaring = (profile: string): string =>
-    `contract: 2\ninstance: { profile: ${profile} }\n`;
+    `contract: 3\ninstance: { profile: ${profile} }\n`;
 
   test('loads each profile with its config', async () => {
     const root = await withTargets({
@@ -163,7 +163,7 @@ describe('reading every profile at once', () => {
     // dies on the first bad file stops working exactly when it is needed.
     const root = await withTargets({
       alpha: declaring('alpha'),
-      broken: 'contract: 2\ninstance: {}\n',
+      broken: 'contract: 3\ninstance: {}\n',
     });
 
     const workspace = await loadWorkspaceProfiles(root);

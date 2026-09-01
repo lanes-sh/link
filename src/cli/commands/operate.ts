@@ -11,6 +11,7 @@
  *   outputs.ts   what an agent harness needs, and proving the short form works
  *   desktop.ts   opening the Lanes app, on the page that drives this CLI
  *   serve.ts     start
+ *   pair.ts      pair — the dashboard's read surface (ADR-063)
  *   audit.ts     audit tail and verify, and the Markdown rendering of tail
  *   token.ts     token show, token rotate
  *   policy.ts    policy list/allow/deny, config show
@@ -25,6 +26,7 @@ export { status } from './operate/status.ts';
 export { outputs, type OutputsFlags } from './operate/outputs.ts';
 export { tools, type ToolsFlags } from './operate/tools.ts';
 export { start } from './operate/serve.ts';
+export { pair, PAIR_CERT_REF, PAIR_KEY_REF, PAIR_TOKEN_REF, type PairFlags } from './operate/pair.ts';
 export { desktop, settingsUrl, type DesktopFlags } from './operate/desktop.ts';
 export { auditTail, auditVerify, markdownCell } from './operate/audit.ts';
 export { attachFile } from './operate/attach.ts';

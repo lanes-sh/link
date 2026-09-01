@@ -144,7 +144,7 @@ export function planIsNoop(plan: ReconcilePlan): boolean {
  * half-configured Gmail account must not stop the other providers from serving.
  */
 export async function planReconcile(
-  config: Config,
+  connections: readonly ConnectionConfig[],
   state: RuntimeState,
   credentials: SecretStore,
   /**
@@ -164,7 +164,7 @@ export async function planReconcile(
   const unauthorized: string[] = [];
   const declared = new Set<string>();
 
-  for (const connection of config.connections) {
+  for (const connection of connections) {
     const key = `${connection.provider}.${connection.id}`;
     declared.add(key);
 
@@ -229,11 +229,11 @@ export async function planReconcile(
 }
 
 export async function applyReconcile(
-  config: Config,
+  connections: readonly ConnectionConfig[],
   state: RuntimeState,
   plan: ReconcilePlan,
 ): Promise<void> {
-  const byKey = new Map(config.connections.map((c) => [`${c.provider}.${c.id}`, c]));
+  const byKey = new Map(connections.map((one) => [`${one.provider}.${one.id}`, one]));
 
   for (const action of plan.actions) {
     if (action.kind === 'unchanged') continue;

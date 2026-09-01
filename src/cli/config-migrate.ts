@@ -91,10 +91,12 @@ export function pendingRenames(document: ConfigDocument): PendingRename[] {
  * connection that lost its authorisation for no reason anyone can see.
  */
 export async function migrateRenamedProviders(
-  document: ConfigDocument,
+  connections: ConfigDocument,
+  profiles: readonly ConfigDocument[],
   credentials: SecretStore,
   options: { apply: boolean },
 ): Promise<RenameMigration> {
+  const document = connections;
   const rows = pendingRenames(document);
   if (rows.length === 0) return { rows, changes: [], blocked: [] };
 
@@ -116,15 +118,14 @@ export async function migrateRenamedProviders(
     }
   }
 
-  // The policy rules second, because whether one can move depends on what is
-  // left declaring the old id once the rows above have.
-  for (const [from, to] of new Map(accepted.map((row) => [row.from, row.to]))) {
-    const policy = renamePolicyRules(document, { from, to }, {
-      stillDeclared: keepsDeclaring(document, from, accepted),
-      apply: options.apply,
-    });
-    changes.push(...policy.changes);
-    blocked.push(...policy.blocked);
+  // The grant rules second, because whether one can move depends on what is
+  // left declaring the old id once the rows above have — and because they live
+  // in the profiles now rather than beside the connection (ADR-057), so this is
+  // one pass per profile over a rename computed once.
+  for (const row of accepted) {
+    for (const profile of profiles) {
+      changes.push(...renameGrantRules(profile, row, { apply: options.apply }).changes);
+    }
   }
 
   if (!options.apply || accepted.length === 0) return { rows, changes, blocked };
@@ -137,8 +138,11 @@ export async function migrateRenamedProviders(
   }
 
   // Throws unless the result is a config that loads, which is the assertion
-  // worth having here — the whole premise was that it did not.
+  // worth having here — the whole premise was that it did not. Both files, in
+  // the order that survives a crash between them: a grant naming a connection
+  // that has not been renamed yet is refused at load, so the profiles go last.
   await document.save();
+  if (options.apply) for (const profile of profiles) await profile.save();
 
   for (const row of accepted) await credentials.delete(`${row.from}/${row.id}`);
 
@@ -146,7 +150,7 @@ export async function migrateRenamedProviders(
 }
 
 /**
- * Rewrite the policy rules that named the old id, where that is unambiguous.
+ * Rewrite the grant rules that named the old id, where that is unambiguous.
  *
  * A rule names a provider and never an account, so `tasks.*` written for Google
  * Tasks has to follow the rename or the migrated connection is granted nothing
@@ -154,66 +158,80 @@ export async function migrateRenamedProviders(
  * consulted, so the repair would land a row that serves exactly as little as
  * the broken one did.
  *
- * But a profile declaring *both* — a Google Tasks row and the built-in — has one
- * rule serving two providers, and moving it would silently revoke the one that
- * kept its name. That profile keeps its rule and is told to add the second,
- * which is a sentence rather than a guess at which was meant.
+ * The ambiguity this used to guard against is gone, and it is worth saying why.
+ * A rule lived in one flat block and named a provider, so a profile holding a
+ * Google Tasks row *and* the built-in had one `tasks.*` serving both — moving it
+ * would silently revoke whichever kept its name, so the migration reported
+ * rather than guessed. A rule lives inside the row that names one connection
+ * now (ADR-058), so `tasks.*` on a `google_tasks` row is not ambiguous: it is
+ * invalid, and `assertReferentialIntegrity` refuses it. There is nothing left to
+ * decide.
  *
- * Both lists. A `deny` written to switch Google Tasks off means it as firmly as
- * an allow means it on, and leaving it behind would re-enable something the
- * operator turned off.
+ * Both lists, on every row. A `deny` written to switch Google Tasks off means it
+ * as firmly as an allow means it on, and leaving it behind would re-enable
+ * something the operator turned off.
+ *
+ * The row's `connection` moves too, and that is new: a grant names the account
+ * rather than the provider now (ADR-058), so `tasks.main` becomes
+ * `google_tasks.main` or the grant resolves to nothing.
  */
-function renamePolicyRules(
+function renameGrantRules(
   document: ConfigDocument,
-  provider: { from: string; to: string },
-  options: { stillDeclared: boolean; apply: boolean },
-): { changes: string[]; blocked: string[] } {
+  moved: { from: string; to: string; id: string; key: string },
+  options: { apply: boolean },
+): { changes: string[] } {
   const changes: string[] = [];
-  const blocked: string[] = [];
 
-  for (const field of ['allow', 'deny'] as const) {
-    const rules = document.getIn(['policy', field]) as { items?: unknown[] } | null;
+  const provider = { from: moved.from, to: moved.to };
+  const grants = document.getIn(['grants']) as { items?: unknown[] } | null;
 
-    (rules?.items ?? []).forEach((_item, index) => {
-      // Either spelling: a bare pattern, or `{ capability, expires_at }`. The
-      // path to it differs; the decision does not.
-      const bare = document.getIn(['policy', field, index]);
-      const path =
-        typeof bare === 'string'
-          ? (['policy', field, index] as const)
-          : (['policy', field, index, 'capability'] as const);
+  (grants?.items ?? []).forEach((_row, at) => {
+    const connection = document.getIn(['grants', at, 'connection']);
+    if (typeof connection !== 'string') return;
 
-      const capability = typeof bare === 'string' ? bare : document.getIn(path);
-      if (typeof capability !== 'string') return;
+    // The *exact* connection that moved, not every grant naming the old
+    // provider. A workspace holding a Google Tasks row beside the built-in has
+    // two `tasks.` grants and only one of them is being renamed — moving both
+    // would point the built-in's grant at a connection that does not exist.
+    if (connection !== moved.key) return;
 
-      const [named, ...rest] = capability.split('.');
-      if (named !== provider.from) return;
+    // The `connection` field always follows, and this is the one place the
+    // ambiguity does not reach. It names the exact row being renamed, so there
+    // is nothing to guess — and leaving it behind would point the grant at a
+    // connection that no longer exists, which `assertGrantsResolve` refuses at
+    // load. The rename would have made the workspace unopenable.
+    const renamedConnection = `${provider.to}.${moved.id}`;
+    if (options.apply) document.setIn(['grants', at, 'connection'], renamedConnection);
+    changes.push(`grants[${at}].connection: ${connection} → ${renamedConnection}`);
 
-      const moved = [provider.to, ...rest].join('.');
+    for (const field of ['allow', 'deny'] as const) {
+      const rules = document.getIn(['grants', at, field]) as { items?: unknown[] } | null;
 
-      if (options.stillDeclared) {
-        blocked.push(
-          `policy.${field} keeps "${capability}" — this profile still declares a ` +
-            `"${provider.from}" connection, so add "${moved}" rather than moving it`,
-        );
-        return;
-      }
+      (rules?.items ?? []).forEach((_item, index) => {
+        // Either spelling: a bare pattern, or `{ capability, expires_at }`. The
+        // path to it differs; the decision does not.
+        const bare = document.getIn(['grants', at, field, index]);
+        const path =
+          typeof bare === 'string'
+            ? (['grants', at, field, index] as const)
+            : (['grants', at, field, index, 'capability'] as const);
 
-      if (options.apply) document.setIn(path, moved);
-      changes.push(`policy.${field}: ${capability} → ${moved}`);
-    });
-  }
+        const capability = typeof bare === 'string' ? bare : document.getIn(path);
+        if (typeof capability !== 'string') return;
 
-  return { changes, blocked };
+        const [head, ...rest] = capability.split('.');
+        if (head !== provider.from) return;
+
+        const renamed = [provider.to, ...rest].join('.');
+        if (options.apply) document.setIn(path, renamed);
+        changes.push(`grants[${at}].${field}: ${capability} → ${renamed}`);
+      });
+    }
+  });
+
+  return { changes };
 }
 
-/**
- * Whether a row naming the old provider survives the migration.
- *
- * Computed against the accepted set rather than by re-reading the document,
- * because the same answer has to hold on a report-only run, where nothing has
- * been rewritten yet.
- */
 function keepsDeclaring(
   document: ConfigDocument,
   provider: string,

@@ -54,7 +54,7 @@ describe('the token command outputs prints', () => {
     const invocation = await tokenInvocation('a-token-no-endpoint-will-match', 'work', 'cloud');
 
     expect(invocation.command).toContain('--profile work');
-    expect(invocation.command).toContain('--target cloud');
+    expect(invocation.command).toContain('--workspace cloud');
     expect(invocation.command).toContain('token show --raw');
   });
 });

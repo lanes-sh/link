@@ -1,10 +1,11 @@
+import { newProfileTemplate } from '../../config-templates.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defineProvider } from '#connectivity';
 import type { SecretRef, SecretStore } from '#secrets';
-import { ConfigDocument, newProfileTemplate } from '../../config-edit.ts';
+import { ConfigDocument } from '../../config-edit.ts';
 import { nonInteractivePrompter } from '../../prompt.ts';
 import { brokeredScopes, hostedClientRefusal, resolveOAuthClient } from './client.ts';
 

@@ -143,7 +143,7 @@ describe('preflight', () => {
     // five minutes. An agent's shell times out first, taking the listener with
     // it, and the operator gets no token and no explanation.
     expect(blocked?.reason).toBe('needs_browser');
-    expect(blocked?.then).toBe('lanes link connect cloudy --profile personal --target local');
+    expect(blocked?.then).toBe('lanes link connect cloudy --profile personal --workspace local');
     expect(blocked?.needs).toEqual([]);
   });
 
