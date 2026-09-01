@@ -101,20 +101,27 @@ export async function mergeCredentials(root: string, profiles: readonly string[]
 /**
  * Where every object under `data/<profile>/` is going.
  *
- * Computed from the hoisted rows rather than from what is on disk, so a blob
- * belonging to a connection that was renamed follows the rename. Anything that
- * matches no rule is left exactly where it is: this moves what it understands
- * and never deletes what it does not.
+ * Driven by `perProfile`, the per-profile map the hoist already built from old
+ * key to new — because the rename that matters is *this profile's*. The first
+ * version of this keyed a lookup by the hoisted (new) key and queried it with
+ * the old one, which made the resolution an unconditional no-op: provider and
+ * connection ids contain no dot, so anything the map returned already had the id
+ * being looked up. Two profiles holding `gmail.main` for different mailboxes
+ * both sent their blobs to `data/gmail/main/`, and the second one's landed in
+ * the first one's namespace.
+ *
+ * Anything that matches no rule is left exactly where it is: this moves what it
+ * understands and never deletes what it does not.
  */
 export async function planMoves(
   files: BlobStore,
   profiles: readonly string[],
-  rows: readonly { id: string; provider: string }[],
+  perProfile: ReadonlyMap<string, ReadonlyMap<string, string>>,
 ): Promise<Move[]> {
   const moves: Move[] = [];
-  const byOldKey = new Map(rows.map((row) => [keyOf(row), row]));
 
   for (const profile of profiles) {
+    const mapping = perProfile.get(profile) ?? new Map<string, string>();
     const prefix = `${DATA_DIR}/${profile}/`;
 
     for (const blob of await files.list(prefix)) {
@@ -128,16 +135,25 @@ export async function planMoves(
       // every record, so they are concatenated by moving the objects across.
       if (head === 'credentials.enc' || head === 'credentials.enc.key') continue;
 
+      // The instance this profile's single-instance surfaces became. Both are
+      // one store per profile in contract 2 and one per *connection* in
+      // contract 3, so two profiles' vaults are two documents — sending both to
+      // `vault('main')` orphaned the second and silently gave it the first's,
+      // which is the worst of the collisions because the wrong answer is a
+      // credential (ADR-059).
       if (head === 'vault.enc') {
-        moves.push({ from: blob.key, to: layout.vault('main') });
+        moves.push({ from: blob.key, to: layout.vault(instanceOf(mapping, 'vault')) });
         continue;
       }
       if (head === 'vault.enc.key') {
-        moves.push({ from: blob.key, to: `${layout.vault('main')}.key` });
+        moves.push({ from: blob.key, to: `${layout.vault(instanceOf(mapping, 'vault'))}.key` });
         continue;
       }
       if (head === 'skills.d') {
-        moves.push({ from: blob.key, to: `${layout.skills('main')}/${tail.join('/')}` });
+        moves.push({
+          from: blob.key,
+          to: `${layout.skills(instanceOf(mapping, 'skills'))}/${tail.join('/')}`,
+        });
         continue;
       }
       if (head === 'providers.d') {
@@ -154,8 +170,9 @@ export async function planMoves(
       const connection = tail[0];
       if (connection === undefined) continue;
 
-      const renamed = byOldKey.get(`${head}.${connection}`);
-      const id = renamed ? renamed.id : connection;
+      // This profile's old key, through this profile's mapping.
+      const settled = mapping.get(`${head}.${connection}`);
+      const id = settled === undefined ? connection : (settled.split('.')[1] ?? connection);
       moves.push({ from: blob.key, to: `${DATA_DIR}/${head}/${id}/${tail.slice(1).join('/')}` });
     }
   }
@@ -167,18 +184,37 @@ export async function planMoves(
  * Copy, verify, then delete. In that order, per object.
  *
  * A move that deleted first would lose an object on any failure, and these are
- * the owner's notes, tasks and entities. Copying into a key that already holds
- * something is skipped rather than overwritten: two profiles that both had
- * `memory.main` are two sets of notes, and the second one keeps its own home
- * under a suffixed connection rather than being interleaved with the first.
+ * the owner's notes, tasks and entities.
+ *
+ * A destination that already holds something is a bug rather than a case to
+ * handle, now that the hoist gives every profile's owner layer its own instance:
+ * two sets of notes can no longer be aimed at one key. It used to be skipped
+ * silently, which is how work's vault came to be orphaned while `moved` reported
+ * it as moved. It refuses instead, before deleting anything.
  */
+/** Which instance of a single-instance surface this profile's store became. */
+function instanceOf(mapping: ReadonlyMap<string, string>, provider: string): string {
+  for (const [from, to] of mapping) {
+    if (from.startsWith(`${provider}.`)) return to.split('.')[1] ?? 'main';
+  }
+  return 'main';
+}
+
 export async function applyMoves(files: BlobStore, moves: readonly Move[]): Promise<void> {
   for (const move of moves) {
     if (move.from === move.to) continue;
 
     const data = await files.get(move.from);
     if (data === null) continue;
-    if (await files.has(move.to)) continue;
+
+    if (await files.has(move.to)) {
+      throw new ConfigError(
+        `Two objects want to be at ${move.to}, and this migration cannot merge them.\n` +
+          `  ${move.from} is the second. Nothing has been deleted.\n` +
+          '  This should be unreachable: the hoist gives every profile its own instance of ' +
+          'each owner-layer surface. Please report it with the layout of your data directory.',
+      );
+    }
 
     await files.put(move.to, data);
     if ((await files.get(move.to)) === null) {

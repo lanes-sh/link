@@ -12,7 +12,9 @@ import {
   workspaceFiles,
   writeWorkspaceFile,
 } from '#profile';
+import { RESERVED_PROVIDER_IDS } from '#connectivity';
 import { ConfigDocument } from './config-edit.ts';
+import { grantsFor, hoistConnections } from './contract3-shape.ts';
 
 /**
  * Contract 2 to contract 3: connections move out of the profile.
@@ -57,7 +59,7 @@ export interface Contract3Migration {
   readonly alreadyCurrent: boolean;
 }
 
-interface LegacyConnection {
+export interface LegacyConnection {
   readonly id: string;
   readonly provider: string;
   readonly account: string;
@@ -66,7 +68,7 @@ interface LegacyConnection {
   readonly config?: Record<string, unknown>;
 }
 
-interface LegacyProfile {
+export interface LegacyProfile {
   readonly contract?: number;
   readonly connections?: LegacyConnection[];
   readonly policy?: { allow?: unknown[]; deny?: unknown[] };
@@ -95,121 +97,8 @@ async function readProfile(root: string, profile: string): Promise<LegacyProfile
 }
 
 /** `gmail.main` — how a connection is addressed in every file after this. */
-function keyOf(connection: { provider: string; id: string }): string {
+export function keyOf(connection: { provider: string; id: string }): string {
   return `${connection.provider}.${connection.id}`;
-}
-
-/**
- * Hoist every profile's connections into one list.
- *
- * **Keyed on provider and account, not on the id.** The common case is two
- * profiles that both connected the same mailbox: same provider, same account,
- * usually the same id, and they merge into one row because they *are* one
- * account. The interesting case is two profiles each holding a row spelled
- * `gmail.main` naming different mailboxes, which is legal under contract 2
- * because a connection lived inside one profile and nothing ever compared them.
- *
- * That collision is resolved by renaming, never by picking. Both accounts are
- * real, both have a credential, and choosing either would take somebody's
- * mailbox away silently. The second becomes `gmail.main_2`, and the rename is
- * reported so the operator sees it before anything else reads the file.
- */
-function hoistConnections(profiles: ReadonlyMap<string, LegacyProfile>): {
-  rows: LegacyConnection[];
-  renames: ContractRename[];
-  perProfile: Map<string, Map<string, string>>;
-} {
-  const rows: LegacyConnection[] = [];
-  const renames: ContractRename[] = [];
-  const byAccount = new Map<string, LegacyConnection>();
-  const taken = new Set<string>();
-  const perProfile = new Map<string, Map<string, string>>();
-
-  for (const [profile, config] of profiles) {
-    const mapping = new Map<string, string>();
-    perProfile.set(profile, mapping);
-
-    for (const connection of config.connections ?? []) {
-      const identity = `${connection.provider} ${connection.account}`;
-      const existing = byAccount.get(identity);
-
-      if (existing) {
-        // The same account, already hoisted. This profile's old key maps to
-        // whatever the first one settled on, which may itself be a rename.
-        mapping.set(keyOf(connection), keyOf(existing));
-        continue;
-      }
-
-      let id = connection.id;
-      if (taken.has(`${connection.provider}.${id}`)) {
-        let suffix = 2;
-        while (taken.has(`${connection.provider}.${id}_${suffix}`)) suffix += 1;
-        const renamed = `${id}_${suffix}`;
-        renames.push({
-          from: `${connection.provider}.${id}`,
-          to: `${connection.provider}.${renamed}`,
-          reason: `"${profile}" named a different account (${connection.account}) with that id`,
-        });
-        id = renamed;
-      }
-
-      const row: LegacyConnection = { ...connection, id };
-      rows.push(row);
-      byAccount.set(identity, row);
-      taken.add(keyOf(row));
-      mapping.set(keyOf(connection), keyOf(row));
-    }
-  }
-
-  return { rows, renames, perProfile };
-}
-
-/** A capability pattern, whichever of the two shapes the rule was written in. */
-function patternsOf(rules: unknown): string[] {
-  if (!Array.isArray(rules)) return [];
-  return rules.flatMap((rule) => {
-    if (typeof rule === 'string') return [rule];
-    const capability = (rule as { capability?: unknown } | null)?.capability;
-    return typeof capability === 'string' ? [capability] : [];
-  });
-}
-
-/**
- * The grant rows one contract-2 profile becomes.
- *
- * Every connection gets the rules that named its provider, which is precisely
- * what the flat block meant: rules covered every account of a provider in the
- * profile. So this loses nothing, and gains the ability to diverge afterwards.
- *
- * A rule naming a provider the profile has no connection for is dropped rather
- * than carried. Under contract 2 an `allow` like that was refused at load, and a
- * `deny` was permitted as a note to self; there is nowhere to put either now,
- * because a row without a connection is not expressible.
- */
-function grantsFor(
-  config: LegacyProfile,
-  mapping: ReadonlyMap<string, string>,
-): { connection: string; allow: string[]; deny: string[] }[] {
-  const allow = patternsOf(config.policy?.allow);
-  const deny = patternsOf(config.policy?.deny);
-
-  const covers = (pattern: string, provider: string): boolean =>
-    pattern === '*' || pattern.startsWith(`${provider}.`);
-
-  return (config.connections ?? []).map((connection) => {
-    const provider = connection.provider;
-    // A bare `*` becomes the provider wildcard rather than being copied
-    // through. It would still mean the same thing inside a row, which is
-    // already scoped to one connection, but writing it out is what makes the
-    // file say so.
-    const widen = (pattern: string): string => (pattern === '*' ? `${provider}.*` : pattern);
-
-    return {
-      connection: mapping.get(keyOf(connection)) ?? keyOf(connection),
-      allow: allow.filter((pattern) => covers(pattern, provider)).map(widen),
-      deny: deny.filter((pattern) => covers(pattern, provider)).map(widen),
-    };
-  });
 }
 
 export async function migrateToContract3(
@@ -241,7 +130,7 @@ export async function migrateToContract3(
   // Everything that can be computed is computed before the first write, so a
   // refusal leaves the workspace exactly as it was.
   const credentials = await planCredentials(workspaceRoot, [...legacy.keys()]);
-  const moves = await planMoves(files, [...legacy.keys()], rows);
+  const moves = await planMoves(files, [...legacy.keys()], perProfile);
 
   const changes: string[] = [
     `${CONNECTIONS_FILE}: ${rows.length} connection(s) hoisted`,
@@ -266,11 +155,24 @@ export async function migrateToContract3(
 
   if (!options.apply) return result;
 
+  // The registry first, and this ordering is the whole of the re-entrancy.
+  //
+  // Every later step is idempotent — writing `connections.yaml` again produces
+  // the same file, merging a credential that is already there is a no-op,
+  // rewriting a contract-3 profile is skipped, and a move whose source is gone
+  // is skipped. `rewriteRegistry` is the one step that is not, because it reads
+  // `targets:` and would find none the second time.
+  //
+  // Running it last meant an interruption anywhere before it left profiles at
+  // contract 3 and `lanes-link.yaml` still at contract 2 — a state where
+  // re-entry found nothing to migrate, and `workspaceSchema` parsed a file whose
+  // `workspaces:` defaulted to empty, so every command refused with "declares no
+  // workspace" and there was no way back.
+  await rewriteRegistry(workspaceRoot);
   await writeConnections(workspaceRoot, rows, legacy);
   await mergeCredentials(workspaceRoot, [...legacy.keys()]);
   await rewriteProfiles(workspaceRoot, legacy, perProfile, options.subject);
   await applyMoves(files, moves);
-  await rewriteRegistry(workspaceRoot);
 
   return result;
 }
@@ -333,17 +235,25 @@ async function rewriteRegistry(root: string): Promise<void> {
   } | null;
 
   const targets = registry?.targets;
-  if (targets === undefined) return;
 
-  const workspaces: Record<string, unknown> = {};
-  for (const [name, entry] of Object.entries(targets)) {
-    const { workspace, ...rest } = entry;
-    workspaces[name] = workspace === undefined ? rest : { at: workspace, ...rest };
+  // Already renamed, which is what a contract-1 workspace looks like here: the
+  // 1-to-2 migration wrote `workspaces:` on its way through. Returning early
+  // skipped the contract stamp and the default below, so that path finished a
+  // migration and left neither.
+  if (targets !== undefined) {
+    const workspaces: Record<string, unknown> = {};
+    for (const [name, entry] of Object.entries(targets)) {
+      const { workspace, ...rest } = entry;
+      workspaces[name] = workspace === undefined ? rest : { at: workspace, ...rest };
+    }
+
+    document.setIn(['workspaces'], workspaces);
+    document.removeIn(['targets']);
   }
 
   document.setIn(['contract'], 3);
-  document.setIn(['workspaces'], workspaces);
-  document.removeIn(['targets']);
+  const workspaces = (document.toJSON() as { workspaces?: Record<string, unknown> } | null)
+    ?.workspaces ?? {};
 
   // The first workspace in the registry, which for every workspace this
   // migration will ever see is `local`. Written rather than left absent so the
