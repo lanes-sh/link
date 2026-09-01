@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { installRoot, layout } from '#profile';
+import { CONNECTIONS_FILE, WORKSPACE_FILE, installRoot, layout } from '#profile';
 import type { DeployStep } from '../driver.ts';
 import {
   removalStep,
@@ -96,11 +96,21 @@ export function bucketGrants(bucket: string, profiles: readonly string[]): Condi
     {
       // `expression=true` was here, which is every object in the bucket — the
       // step title and ADR-023 both claim a narrowing this did not do. The
-      // config the revision reads is the workspace file, the profiles beside it,
-      // and each profile's own manifests, so name exactly those.
+      // config the revision reads is the workspace file, `connections.yaml`
+      // beside it, the profiles, and the manifests, so name exactly those.
+      //
+      // **Named by the constants, because the list went stale once already.**
+      // ADR-057 moved connections out of the profile into `connections.yaml` at
+      // the workspace root, and `upload.ts` puts it in the bucket because "the
+      // endpoint cannot resolve a single grant without it" — but this expression
+      // still enumerated the contract-2 set. Every fresh deploy built its image,
+      // rolled a revision, and died on `GCS refused to read "connections.yaml"
+      // (403)` before it could listen on its port. Nothing caught it: the
+      // condition is a string assembled here and asserted nowhere, so the suite
+      // saw a passing build and Cloud Run saw a container that never started.
       role: 'roles/storage.objectViewer',
       title: 'reads-its-config',
-      expression: `${theBucket} || ${objectsUnder('profiles/')} || ${objectIs('lanes-link.yaml')}${manifests ? ` || ${manifests}` : ''}`,
+      expression: `${theBucket} || ${objectsUnder('profiles/')} || ${objectIs(WORKSPACE_FILE)} || ${objectIs(CONNECTIONS_FILE)}${manifests ? ` || ${manifests}` : ''}`,
     },
   ];
 }

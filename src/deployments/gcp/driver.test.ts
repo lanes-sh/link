@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { DEPLOY_DEFAULTS, type DeployConfig, type TargetConfig } from '#profile';
+import {
+  CONNECTIONS_FILE,
+  DEPLOY_DEFAULTS,
+  WORKSPACE_FILE,
+  type DeployConfig,
+  type TargetConfig,
+} from '#profile';
 import { cloudRunDriver, deployPlan, imageReference } from './driver.ts';
 import { provisionSteps } from './provision.ts';
 
@@ -327,7 +333,16 @@ describe('first-run provisioning', () => {
 
     expect(condition).not.toContain('expression=true');
     expect(condition).toContain('/objects/profiles/');
-    expect(condition).toContain('/objects/lanes-link.yaml');
+    expect(condition).toContain(`/objects/${WORKSPACE_FILE}`);
+    // **Every file the uploader writes to the workspace root belongs here**, and
+    // `connections.yaml` did not. ADR-057 moved connections out of the profile
+    // and `readConnections` runs at load, so a revision that cannot read it
+    // resolves no grant at all: it exited 1 with `GCS refused to read
+    // "connections.yaml" (403)` and never listened on its port. The build was
+    // green — the condition is a string assembled in `bucket.ts` and this is the
+    // only place that reads it back. Named by the constants for that reason: a
+    // rename must not be able to pass here and fail in Cloud Run.
+    expect(condition).toContain(`/objects/${CONNECTIONS_FILE}`);
     // It does reach into `data/` now, for the manifests ADR-030 moved in there
     // — but by the anchored pattern only. A blanket `startsWith(".../data/")`
     // here would hand the revision read on every credential-adjacent object in
