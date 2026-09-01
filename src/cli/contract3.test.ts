@@ -4,6 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parse } from 'yaml';
 import { migrateToContract3 } from './contract3.ts';
+import { migrateToCurrentContract } from './workspace-migrate.ts';
+import { applyMoves, planCredentials, planMoves } from './contract3-data.ts';
+import { createMemoryBlobStore } from '#stores/blobs/testing.ts';
 
 /**
  * Contract 2 to contract 3, against a real workspace on disk.
@@ -267,5 +270,136 @@ describe('running it again', () => {
 
     expect(second.alreadyCurrent).toBe(true);
     expect(await refs(root)).toEqual(before);
+  });
+});
+
+describe('reaching the current contract, the way deploy does', () => {
+  /**
+   * The gap this covers was not a refusal, which is why it survived.
+   *
+   * `deploy` and `doctor --fix` ran the contract 1→2 step and stopped, so a
+   * contract-2 bucket went through untouched: the config was replaced with
+   * contract-3 YAML and the bytes stayed under `data/<profile>/`. The revision
+   * came up healthy reading an empty `data/`, and an empty audit chain verifies
+   * as intact. Nothing anywhere said a word.
+   */
+  test('a contract-2 workspace arrives at contract 3', async () => {
+    const root = await workspace({ personal: legacy({ profile: 'personal' }) });
+
+    const migration = await migrateToCurrentContract(root, {
+      apply: true,
+      subject: 'lanes:somebody',
+    });
+
+    expect(migration.alreadyCurrent).toBe(false);
+    expect(migration.contract3).not.toBeNull();
+    expect(migration.profiles).toEqual(['personal']);
+
+    expect((await readYaml(root, 'profiles/personal.yaml'))['contract']).toBe(3);
+
+    const registry = await readYaml(root, 'lanes-link.yaml');
+    expect(registry['contract']).toBe(3);
+    expect(registry['workspaces']).toBeDefined();
+    expect(registry['targets']).toBeUndefined();
+  });
+
+  test('a second run finds nothing to do', async () => {
+    const root = await workspace({ personal: legacy({ profile: 'personal' }) });
+    const options = { apply: true, subject: 'lanes:somebody' };
+
+    await migrateToCurrentContract(root, options);
+    const again = await migrateToCurrentContract(root, options);
+
+    expect(again.alreadyCurrent).toBe(true);
+    expect(again.changes).toEqual([]);
+  });
+});
+
+describe('moving the bytes', () => {
+  const bytes = (text: string) => new TextEncoder().encode(text);
+
+  test('an interrupted move is finished rather than refused', async () => {
+    // Copy-then-delete has a window between the two, and this now runs against
+    // buckets where that window is a network round trip. Refusing here would
+    // mean a workspace that cannot be migrated by running the migration again,
+    // which is the one recovery this migration promises.
+    const files = createMemoryBlobStore();
+    await files.put('data/personal/memory/main/a.md', bytes('note'));
+    await files.put('data/memory/main/a.md', bytes('note'));
+
+    await applyMoves(files, [
+      { from: 'data/personal/memory/main/a.md', to: 'data/memory/main/a.md' },
+    ]);
+
+    expect(await files.has('data/personal/memory/main/a.md')).toBe(false);
+    expect(await files.get('data/memory/main/a.md')).toEqual(bytes('note'));
+  });
+
+  test('different bytes at the destination refuse, and delete nothing', async () => {
+    const files = createMemoryBlobStore();
+    await files.put('data/personal/memory/main/a.md', bytes('mine'));
+    await files.put('data/memory/main/a.md', bytes('somebody else\u2019s'));
+
+    await expect(
+      applyMoves(files, [{ from: 'data/personal/memory/main/a.md', to: 'data/memory/main/a.md' }]),
+    ).rejects.toThrow(/cannot merge them/);
+
+    expect(await files.has('data/personal/memory/main/a.md')).toBe(true);
+  });
+
+  test('two objects aimed at one key refuse while this is still a plan', async () => {
+    // The per-object check cannot see this one once the moves run concurrently:
+    // both would look at an absent destination and both would write.
+    const files = createMemoryBlobStore();
+    await files.put('data/personal/memory/main/a.md', bytes('one'));
+    await files.put('data/work/memory/main/a.md', bytes('two'));
+
+    const collide = new Map([
+      ['personal', new Map([['memory.main', 'memory.main']])],
+      ['work', new Map([['memory.main', 'memory.main']])],
+    ]);
+
+    await expect(planMoves(files, ['personal', 'work'], collide)).rejects.toThrow(
+      /cannot merge them/,
+    );
+    expect(await files.has('data/personal/memory/main/a.md')).toBe(true);
+    expect(await files.has('data/work/memory/main/a.md')).toBe(true);
+  });
+});
+
+describe('a workspace in a bucket', () => {
+  test('has no per-profile credential stores to merge', async () => {
+    // `workspacePath` refuses a filesystem credential adapter against a remote
+    // root, so the only store such a workspace can declare is Secret Manager —
+    // whose refs were never scoped by profile. Without the guard this built
+    // `gs://.../data/personal/credentials.enc`, handed it to `Bun.file`, and let
+    // the catch report an empty list, which is the same answer for the wrong
+    // reason and would have hidden a real store that would not open.
+    expect(await planCredentials('gs://your-bucket', ['personal'])).toEqual([]);
+  });
+});
+
+describe('the contract stamp is the record that this finished', () => {
+  test('a move that fails leaves the profile at contract 2, so a re-run retries', async () => {
+    // `needsContract3` reads nothing but the stamp, so writing it before the
+    // bytes had moved turned any interruption into silent data loss: the re-run
+    // saw contract 3 and did nothing, and every object stayed under
+    // `data/<profile>/` where the contract-3 reader does not look.
+    //
+    // The failure is induced with an occupied destination, which is the one
+    // thing `applyMoves` refuses part-way through.
+    const root = await workspace({ personal: legacy({ profile: 'personal' }) });
+
+    await mkdir(join(root, 'data', 'personal', 'memory', 'main'), { recursive: true });
+    await writeFile(join(root, 'data', 'personal', 'memory', 'main', 'a.md'), 'mine');
+    await mkdir(join(root, 'data', 'memory', 'main'), { recursive: true });
+    await writeFile(join(root, 'data', 'memory', 'main', 'a.md'), 'not a copy of it');
+
+    await expect(migrateToContract3(root)).rejects.toThrow(/cannot merge them/);
+
+    expect((await readYaml(root, 'profiles/personal.yaml'))['contract']).toBe(2);
+    expect(await readFile(join(root, 'data', 'personal', 'memory', 'main', 'a.md'), 'utf8')).toBe(
+      'mine',
+    );
   });
 });

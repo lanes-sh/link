@@ -1,4 +1,5 @@
-import { needsContract3 } from './contract3.ts';
+import { migrateToContract3, needsContract3, type Contract3Migration } from './contract3.ts';
+import { readSession } from '#auth/lanes/session.ts';
 import { parseDocument } from 'yaml';
 import {
   ConfigError,
@@ -180,6 +181,82 @@ export async function migrateWorkspace(
     targets: describe(registry),
     changes,
     alreadyCurrent: false,
+  };
+}
+
+export interface ContractMigration {
+  readonly workspaceRoot: string;
+  /** The contract 1 → 2 half, when this workspace needed one. */
+  readonly legacy: WorkspaceMigration | null;
+  /** The contract 2 → 3 half, when this workspace needed one. */
+  readonly contract3: Contract3Migration | null;
+  /** Every profile either half rewrote, deduplicated. */
+  readonly profiles: readonly string[];
+  /** Targets written into the registry by the contract 1 → 2 half. */
+  readonly targets: readonly { name: string; kind: 'declared' | 'pointer'; where?: string }[];
+  /** Both halves' lines, in the order they happened. */
+  readonly changes: readonly string[];
+  /** Nothing to do: this workspace is already at `SUPPORTED_CONTRACT`. */
+  readonly alreadyCurrent: boolean;
+}
+
+/**
+ * Bring one workspace to `SUPPORTED_CONTRACT`, whatever it is on now.
+ *
+ * **This exists because "migrate a workspace" was spelled three times and only
+ * one of them arrived.** `update` ran the 1→2 step and then the 2→3 step;
+ * `deploy` and `doctor --fix` ran the first and stopped, which nothing said out
+ * loud — `migrateTargetWorkspace`'s own docstring claimed it brought a target
+ * "to the current contract" while calling only `migrateWorkspace`.
+ *
+ * What that cost is worth writing down, because it is not a refusal. A deploy
+ * uploaded contract-3 config over a contract-2 bucket and rolled a revision that
+ * read `data/state.kv` and `data/audit.log` — while the bytes sat where contract
+ * 2 put them, under `data/<profile>/`. The endpoint came up healthy and answered
+ * every call with an empty store: no memory, no tasks, no skills, and an audit
+ * log that verified as intact because an empty chain does. Nothing in the
+ * deploy, the health probe, or `doctor` had a way to notice.
+ *
+ * So there is one function now, and the contract number lives in one place. A
+ * fourth contract adds a step here and every caller gets it.
+ *
+ * **A dry run of a contract-1 workspace reports only the first half**, and that
+ * is honest rather than a gap: the 1→2 step wrote nothing, so the profiles are
+ * still contract 1 and the 2→3 step has nothing it recognises to describe. What
+ * it would do is knowable only after the step before it has run.
+ *
+ * **The signed-in subject is defaulted here rather than by each caller.** A
+ * migrated profile that lists nobody is an endpoint that advertises OAuth and
+ * then refuses its own owner, so it matters on every path — but `deployments`
+ * may not import `#auth` (see `MAY_IMPORT` in `src/architecture.test.ts`), and
+ * `deploy` is the caller that most needs it: once a target's profiles live in
+ * its bucket there is no upload behind it to put the members row back. A caller
+ * that knows better passes one; nobody signed in is a legitimate answer and
+ * stays default-deny on the identity axis.
+ */
+export async function migrateToCurrentContract(
+  workspaceRoot: string,
+  options: { apply: boolean; subject?: string } = { apply: true },
+): Promise<ContractMigration> {
+  const legacy = (await needsMigration(workspaceRoot))
+    ? await migrateWorkspace(workspaceRoot, { apply: options.apply })
+    : null;
+
+  const subject = options.subject ?? (await readSession().catch(() => null))?.subject;
+
+  const contract3 = await migrateToContract3(workspaceRoot, {
+    apply: options.apply,
+    ...(subject === undefined ? {} : { subject }),
+  });
+
+  return {
+    workspaceRoot,
+    legacy: legacy !== null && !legacy.alreadyCurrent ? legacy : null,
+    contract3: contract3.alreadyCurrent ? null : contract3,
+    profiles: [...new Set([...(legacy?.profiles ?? []), ...contract3.profiles])],
+    targets: legacy?.targets ?? [],
+    changes: [...(legacy?.changes ?? []), ...contract3.changes],
+    alreadyCurrent: (legacy === null || legacy.alreadyCurrent) && contract3.alreadyCurrent,
   };
 }
 

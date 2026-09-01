@@ -171,8 +171,23 @@ export async function migrateToContract3(
   await rewriteRegistry(workspaceRoot);
   await writeConnections(workspaceRoot, rows, legacy);
   await mergeCredentials(workspaceRoot, [...legacy.keys()]);
-  await rewriteProfiles(workspaceRoot, legacy, perProfile, options.subject);
+
+  // **The bytes move before the profile says they have.**
+  //
+  // `rewriteProfiles` is what stamps `contract: 3`, and that stamp is the only
+  // thing `needsContract3` reads — so it is not a step among steps, it is the
+  // record that the migration finished. Running it before `applyMoves` meant an
+  // interruption between the two left profiles claiming contract 3 with every
+  // byte still under `data/<profile>/`, and a re-run that looked at the stamp
+  // and found nothing to do. The workspace opened, which is what this file
+  // ordered its steps to guarantee, and the owner's memory, tasks, skills and
+  // audit log were not in it.
+  //
+  // A network round trip per object made that window real rather than
+  // theoretical: this migrates buckets now, and the first one it was pointed at
+  // held 1,906 objects.
   await applyMoves(files, moves);
+  await rewriteProfiles(workspaceRoot, legacy, perProfile, options.subject);
 
   return result;
 }

@@ -1,9 +1,10 @@
 import {
   CONNECTIONS_FILE,
-  listProfiles, ConfigError, resolveSelection, resolveTargetWorkspace, resolveWorkspaceRoot } from '#profile';
+  listProfiles, ConfigError, resolveSelection, resolveTargetWorkspace, resolveWorkspaceRoot,
+  SUPPORTED_CONTRACT } from '#profile';
 import { ConfigDocument } from '../../config-edit.ts';
 import { migrateRenamedProviders, pendingRenames, shapeOf } from '../../config-migrate.ts';
-import { migrateWorkspace, needsMigration } from '../../workspace-migrate.ts';
+import { migrateToCurrentContract } from '../../workspace-migrate.ts';
 import { emit, fail, ok, print, style, warn } from '../../output.ts';
 import { openSecretStoreFor, type GlobalFlags } from '../../runtime.ts';
 
@@ -152,9 +153,14 @@ export async function migratedContract(flags: RenameFlags, refusal: unknown): Pr
   const where = await resolveTargetWorkspace(root, target).catch(() => null);
   if (where === null) return false;
 
-  if (!(await needsMigration(where))) return false;
+  // Running the migration is how "is there anything to do" is answered, rather
+  // than a predicate beside it. The predicate was `needsMigration`, which asks
+  // only about contract 1 — so a contract-2 bucket, the exact thing this
+  // function exists to rescue, returned false here and fell through to the
+  // refusal it was supposed to fix. With `--fix` absent this writes nothing.
+  const migration = await migrateToCurrentContract(where, { apply: flags.fix === true });
+  if (migration.alreadyCurrent) return false;
 
-  const migration = await migrateWorkspace(where, { apply: flags.fix === true });
   const applied = flags.fix === true;
   const remote = where !== root;
 
@@ -177,8 +183,8 @@ export async function migratedContract(flags: RenameFlags, refusal: unknown): Pr
       print();
       print(
         applied
-          ? ok('migrated to contract 2 — a target is declared by the workspace, not by each profile')
-          : warn('this workspace is contract 1, and nothing here reads that any more'),
+          ? ok(`migrated to contract ${SUPPORTED_CONTRACT} — a workspace declares its own adapters, and holds the connections a profile grants`)
+          : warn(`this workspace is behind contract ${SUPPORTED_CONTRACT}, and nothing here reads that any more`),
       );
       for (const change of migration.changes) print(`  ${change}`);
 

@@ -2,8 +2,8 @@ import { homedir } from 'node:os';
 import { join, sep } from 'node:path';
 import { installRoot, resolveWorkspaceRoot } from '#profile';
 import { repairOwnerLayer } from '../config-repair.ts';
-import { migrateWorkspace, needsMigration } from '../workspace-migrate.ts';
-import { migrateToContract3, needsContract3 } from '../contract3.ts';
+import { migrateToCurrentContract, type ContractMigration } from '../workspace-migrate.ts';
+import type { Contract3Migration } from '../contract3.ts';
 import { emit, fail, ok, print, printErr, progress, style, warn } from '../output.ts';
 import { PACKAGE, release, type ReleaseState } from '../release.ts';
 import { version } from '../version.ts';
@@ -315,20 +315,7 @@ async function runInstall(argv: readonly string[], json: boolean): Promise<boole
  * fifteen accounts were merged into one store should see that happen rather than
  * discover it from a directory listing.
  */
-async function migrateContract3(root: string, say: (line: string) => void): Promise<void> {
-  if (!(await needsContract3(root))) return;
-
-  // The same subject `profile add` writes, for the same reason: a migrated
-  // profile that lists nobody is an endpoint that advertises OAuth and refuses
-  // its own owner. Absent when nobody has signed in yet, which the migration
-  // reports rather than guessing at.
-  const session = await readSession();
-  const migration = await migrateToContract3(root, {
-    apply: true,
-    ...(session ? { subject: session.subject } : {}),
-  });
-  if (migration.alreadyCurrent) return;
-
+function sayContract3(migration: Contract3Migration, say: (line: string) => void): void {
   say(
     `migrated ${migration.profiles.length} profile(s) to contract 3 — connections belong to the ` +
       'workspace now, and a profile grants them one by one',
@@ -345,24 +332,31 @@ async function migrateContract3(root: string, say: (line: string) => void): Prom
 
 async function migrateLocal(root: string, say: (line: string) => void): Promise<void> {
   try {
-    // Contract 1 first, then contract 2, in that order. A workspace that
-    // predates both walks through them rather than jumping, so each step's
-    // reasoning applies to the shape it was written for — and a contract-1
-    // workspace reaches contract 3 in one run rather than needing two.
-    await migrateLegacyTargets(root, say);
-    await migrateContract3(root, say);
+    // One call, both steps, in order — a workspace that predates both walks
+    // through them rather than jumping, so each step's reasoning applies to the
+    // shape it was written for. `update` used to spell that walk itself, which
+    // is how `deploy` and `doctor --fix` came to spell only half of it.
+    //
+    // The subject is passed rather than left to be defaulted because this is
+    // the one caller that already had it in hand.
+    const session = await readSession();
+    const migration = await migrateToCurrentContract(root, {
+      apply: true,
+      ...(session ? { subject: session.subject } : {}),
+    });
+
+    if (migration.legacy) sayLegacyTargets(migration.legacy, say);
+    if (migration.contract3) sayContract3(migration.contract3, say);
   } catch (error) {
     say(`could not migrate this workspace: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
 /** Contract 1 to contract 2: targets move from the profile to the workspace. */
-async function migrateLegacyTargets(root: string, say: (line: string) => void): Promise<void> {
-  if (!(await needsMigration(root))) return;
-
-  const migration = await migrateWorkspace(root);
-  if (migration.alreadyCurrent) return;
-
+function sayLegacyTargets(
+  migration: NonNullable<ContractMigration['legacy']>,
+  say: (line: string) => void,
+): void {
   say(
     `migrated ${migration.profiles.length} profile(s) to contract 2 — a target is declared by ` +
       'the workspace now, not by each profile',
