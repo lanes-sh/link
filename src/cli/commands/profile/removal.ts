@@ -1,4 +1,4 @@
-import { layout, profilePath, workspacePath, type Config, type TargetConfig } from '#profile';
+import { layout, profilePath, vaultRef, workspacePath, type Config, type TargetConfig } from '#profile';
 import type { SecretStore } from '#secrets';
 import type { BlobStore } from '#stores/blobs';
 import { credentialRefFor, ownClientRefsFor, type ProviderRegistry } from '#registry';
@@ -53,8 +53,18 @@ export function declaredRefs(
   // `targetSchema`, so two targets may seal the same items in different places;
   // taking it from the profile would attach one target's vault to another
   // target's removal.
+  //
+  // **Through `vaultRef`, because the name carries the connection.** This said
+  // `vault/document`, the contract-2 constant, while `openVault` seals under
+  // `vault/<connection>` (ADR-059) — so removing a profile queued a ref nothing
+  // had ever written and left the real document behind. Under-deletion rather
+  // than over, since the survivor set was wrong the same way and they cancelled,
+  // but what stayed behind is sealed credential material belonging to a profile
+  // the operator asked to be gone. Per connection also makes the survivor check
+  // mean something: two profiles granting different vaults no longer look like
+  // one document to it.
   if (declared.vault?.adapter === 'secret') {
-    refs.add(declared.vault.ref ?? 'vault/document');
+    refs.add(vaultRef(declared, config));
   }
 
   // **No connection credentials.** They belong to the workspace now (ADR-057),
@@ -77,7 +87,7 @@ export function declaredRefs(
   const kept = new Set(
     survivors.flatMap((other) => [
       other.auth.token_ref,
-      ...(declared.vault?.adapter === 'secret' ? [declared.vault.ref ?? 'vault/document'] : []),
+      ...(declared.vault?.adapter === 'secret' ? [vaultRef(declared, other)] : []),
       ...(other.auth.authorization?.mode === 'oidc'
         ? [other.auth.authorization.client_id_ref]
         : []),
@@ -174,11 +184,12 @@ export async function removalPlan(
       );
     }
 
-    // Secrets first, and this ordering is load-bearing rather than tidy:
-    // `layout.credentials(p)` is `data/<p>/credentials.enc`, *inside* the blob
-    // root `data/<p>`. For the file adapter the credential store is itself a
-    // blob, so blobs-first would delete the store the secret deletions read
-    // through and turn every one of them into a failure.
+    // Secrets, and there is nothing left to order them against. This used to
+    // run before a blob sweep because `layout.credentials(p)` was
+    // `data/<p>/credentials.enc`, *inside* the blob root `data/<p>`, so
+    // blobs-first deleted the store the secret deletions read through. Both the
+    // sweep and the per-profile root are gone (ADR-057, ADR-059) — see the note
+    // below — and the credential store is the workspace's now.
     try {
       const secrets = await options.openSecrets(name);
       const present = await secrets.list();

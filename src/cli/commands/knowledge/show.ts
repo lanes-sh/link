@@ -41,7 +41,7 @@ export async function knowledgeShow(flags: KnowledgeFlags): Promise<void> {
     heading('Knowledge');
     table([
       // The memory *directory*, not the blob root it sits in. `layout.blobs`
-      // is `data/<profile>`, which is where every provider's namespace lives —
+      // is `data/`, which is where every provider's namespace lives —
       // printing it here would name a directory that is mostly not memory.
       [
         '  memory',

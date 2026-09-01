@@ -1,6 +1,11 @@
 import { readSession } from '#auth/lanes/session.ts';
 import { recordConfigChange } from '../audit-change.ts';
-import { ConfigError, readRegistry, resolveWorkspaceRoot } from '#profile';
+import {
+  ConfigError,
+  readRegistry,
+  resolveTargetWorkspace,
+  resolveWorkspaceRoot,
+} from '#profile';
 import { ConfigDocument } from '../config-edit.ts';
 import { describeMember, workspaceMembers } from '#auth/lanes/members.ts';
 import { announce, emit, heading, ok, print, style, table, warn } from '../output.ts';
@@ -97,7 +102,17 @@ export async function membersList(flags: GlobalFlags & { json?: boolean }): Prom
 
 /** The Lanes workspace this one is bound to, if any. */
 async function boundWorkspace(target: string): Promise<string | undefined> {
-  const registry = await readRegistry(resolveWorkspaceRoot());
+  // **The workspace that declares the target, which is not this machine once it
+  // is deployed.** `lanes_workspace` is a declaration field, and
+  // `recordDeployment` writes the declaration into the bucket while leaving
+  // this machine a pointer carrying only `at`, `primary` and the deploy stamps.
+  // So reading it here found nothing the moment a target was deployed: binding
+  // a workspace stopped taking effect, `members add` refused everyone but the
+  // person at the keyboard, and the remedy it printed — add `lanes_workspace:`
+  // under `workspaces.<target>` — named the pointer entry, which the next
+  // deploy overwrites. A declaration resolves back to this root unchanged.
+  const local = resolveWorkspaceRoot();
+  const registry = await readRegistry(await resolveTargetWorkspace(local, target).catch(() => local));
   return registry[target]?.lanes_workspace;
 }
 

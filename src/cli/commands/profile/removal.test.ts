@@ -84,10 +84,17 @@ describe('declaredRefs', () => {
     expect(declaredRefs(config(), target())).not.toContain('vault/document');
   });
 
-  test('a secret adapter with no ref falls back to the documented default', () => {
+  test('a secret adapter with no ref names the vault connection, not a constant', () => {
+    // This asserted `vault/document`, the contract-2 constant, and so pinned the
+    // defect rather than the behaviour: `openVault` seals under
+    // `vault/<connection>` (ADR-059), so removal queued a ref nothing had
+    // written and left the real sealed document behind. Under-deletion, because
+    // the survivor set was wrong the same way — but what survived is credential
+    // material belonging to a profile the operator asked to be gone.
     const sealed = target({ vault: { adapter: 'secret' } } as never);
 
-    expect(declaredRefs(config(), sealed)).toContain('vault/document');
+    expect(declaredRefs(config(), sealed)).toContain('vault/main');
+    expect(declaredRefs(config(), sealed)).not.toContain('vault/document');
   });
 
   test('a connection whose provider no longer resolves contributes nothing', () => {

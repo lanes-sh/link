@@ -18,7 +18,9 @@ import { connectionVariableSchema, placeholdersInConnector } from './variables.t
  *
  *   - built-ins, written as typed TS modules under `#providers/` and validated
  *     at import
- *   - the profile's own manifests in `data/<profile>/providers.d/*.yaml`, validated on load
+ *   - the workspace's own manifests in `data/providers.d/*.yaml`, validated on load
+ *     — the workspace's, not a profile's, because a manifest defines a
+ *     connection and connections stopped belonging to profiles (ADR-057)
  *
  * That second one is the scalability claim. A service nobody has integrated is
  * a YAML file the operator writes, not a pull request they wait on.

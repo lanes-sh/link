@@ -70,25 +70,6 @@ export function grantedConnections(
 }
 
 /**
- * Where this profile's skills live, in either target.
- *
- * Locally `data/<profile>/skills.d/`; deployed, the same key under the bucket
- * prefix. Going through the store rather than a filesystem path is what gives a
- * deployment skills at all — a path is baked into a container image at build
- * time and an object key is not, so before ADR-014 a deployed instance could
- * only ever serve the skills that existed when its image was built.
- *
- * **Per profile**, which reverses ADR-012 §1. Policy gating `skills.<name>`
- * was the whole isolation story while the bytes were shared, and it is a weak
- * one: it decides who may *run* a procedure, not who may read that it exists or
- * what it says. A skill written for work names work's accounts and work's
- * people. ADR-030.
- *
- * An explicit area, matching `openState` and `openAudit` — a profile that
- * declares its own `storage.path` moves its provider blobs, not the reserved
- * roots beside them.
- */
-/**
  * What a caller may hand the runtime that is not a flag somebody typed.
  *
  * One field, and it exists for the same reason `connect`'s does: the only thing
