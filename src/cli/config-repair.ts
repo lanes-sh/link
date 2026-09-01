@@ -121,18 +121,41 @@ export function ensureReservedConnection(
   const rows = Array.isArray(workspace?.connections) ? workspace.connections : [];
   const held_grants = Array.isArray(config?.grants) ? config.grants : [];
 
-  // The row this profile would use. Any instance of the provider will do, and
-  // the *first* one is taken rather than `main` specifically: an operator who
-  // renamed theirs should not get a second one bolted on beside it.
-  const existing = rows.find(
+  // **This profile's own grant comes first.** Any instance of the provider will
+  // do, and the *first* one is taken rather than `main` specifically: an
+  // operator who renamed theirs should not get a second one bolted on beside
+  // it. That reasoning was right and the lookup implementing it was not — it
+  // read the workspace's first row, which under contract 2 was this profile's
+  // because a profile carried its own connections, and under contract 3 is
+  // whichever profile sorts first.
+  //
+  // So the repair asked whether `personal` granted `memory.main` — demo's — saw
+  // that it did not, and set about adding it. For `vault` and `skills` the
+  // schema refuses a second grant and the save failed loudly, which is how this
+  // was found. For `memory`, `tasks`, `assets`, `setup` and `entities` nothing
+  // refuses it, and the profile would quietly have been granted another
+  // profile's notes and another profile's task list — the outcome ADR-059
+  // exists to prevent, arriving from the repair rather than the migration.
+  const owned = held_grants.find((row) => {
+    const connection = (row as { connection?: unknown } | null)?.connection;
+    return typeof connection === 'string' && connection.slice(0, connection.indexOf('.')) === provider;
+  }) as { connection?: string; allow?: unknown; deny?: unknown } | undefined;
+
+  // Only when this profile grants no instance of the provider at all is the
+  // workspace consulted, which is the case this was written for: a surface that
+  // did not exist when the profile was written.
+  const declared = rows.find(
     (row) => (row as { provider?: unknown } | null)?.provider === provider,
   ) as { id?: unknown } | undefined;
-  const id = typeof existing?.id === 'string' ? existing.id : 'main';
-  const key = `${provider}.${id}`;
 
-  const held = held_grants.find(
-    (row) => (row as { connection?: unknown } | null)?.connection === key,
-  ) as { allow?: unknown; deny?: unknown } | undefined;
+  const key =
+    owned?.connection ?? `${provider}.${typeof declared?.id === 'string' ? declared.id : 'main'}`;
+
+  // Whether the *workspace* needs a row, which is a separate question from
+  // which one this profile grants: a profile cannot grant a connection that is
+  // not declared, so `owned` implies `declared`.
+  const existing = declared;
+  const held = owned;
 
   // Denied on purpose, and a deny beats an allow — so writing the rule would
   // widen nothing while announcing that an agent can now read the surface,

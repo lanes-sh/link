@@ -550,3 +550,73 @@ describe('appending to a key that is not there yet', () => {
     }
   });
 });
+
+describe('the repair reads this profile\'s grants, not the workspace\'s first row', () => {
+  const workspaceRows = [
+    'contract: 3',
+    'connections:',
+    '  - { id: main, provider: memory, account: Memory }',
+    '  - { id: demo, provider: memory, account: Memory }',
+    '  - { id: main, provider: vault, account: Vault }',
+    '  - { id: demo, provider: vault, account: Vault }',
+    '',
+  ].join('\n');
+
+  test('a profile that already has its own instance is left alone', () => {
+    // Contract 3 puts every profile's owner layer in one file, so "the first
+    // row for this provider" is whichever profile sorts first. The repair asked
+    // whether this profile granted *that* row, saw that it did not, and set
+    // about adding it — which for vault and skills the schema refuses, and for
+    // memory, tasks, assets, setup and entities it does not: the profile would
+    // have been handed another profile's notes and task list, which is the one
+    // outcome ADR-059 exists to prevent.
+    const connections = ConfigDocument.fromText(workspaceRows, CONNECTIONS_FILE);
+    const profile = ConfigDocument.fromText(
+      [
+        'contract: 3',
+        'grants:',
+        '  - { connection: memory.demo, allow: [memory.*], deny: [] }',
+        '  - { connection: vault.demo, allow: [vault.*], deny: [] }',
+        '',
+      ].join('\n'),
+    );
+
+    const repair = ensureReservedConnection(connections, profile, 'memory');
+
+    expect(repair.changes).toEqual([]);
+    expect(repair.granted).toEqual([]);
+  });
+
+  test('a surface the profile grants nothing for is still repaired', () => {
+    // The case this was written for: a surface that did not exist when the
+    // profile was written. Nothing about the fix above may turn that into a
+    // no-op, or a release adding a surface would never reach an existing
+    // profile.
+    const connections = ConfigDocument.fromText(workspaceRows, CONNECTIONS_FILE);
+    const profile = ConfigDocument.fromText('contract: 3\ngrants: []\n');
+
+    const repair = ensureReservedConnection(connections, profile, 'memory');
+
+    expect(repair.granted).toEqual(['memory.*']);
+  });
+
+  test('a deny on the profile\'s own instance still blocks the repair', () => {
+    // A deny beats an allow, so writing the rule would widen nothing while
+    // announcing that an agent can now read the surface. Read off the wrong row
+    // this was invisible, and the repair undid a deliberate switch-off.
+    const connections = ConfigDocument.fromText(workspaceRows, CONNECTIONS_FILE);
+    const profile = ConfigDocument.fromText(
+      [
+        'contract: 3',
+        'grants:',
+        '  - { connection: memory.demo, allow: [], deny: [memory.*] }',
+        '',
+      ].join('\n'),
+    );
+
+    expect(ensureReservedConnection(connections, profile, 'memory')).toEqual({
+      changes: [],
+      granted: [],
+    });
+  });
+});
