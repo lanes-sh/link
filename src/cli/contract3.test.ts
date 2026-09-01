@@ -669,3 +669,53 @@ describe('the sticky default workspace', () => {
     expect((await readYaml(root, 'lanes-link.yaml'))['default_workspace']).toBe('cloud');
   });
 });
+
+describe('a registry carrying both blocks', () => {
+  test('the newer workspaces: entry survives, rather than being rebuilt from stale targets:', async () => {
+    // What `editRegistry` used to leave behind: a deploy recorded into a
+    // contract-2 file wrote `workspaces:` without touching `targets:`, so the
+    // two disagreed. Rebuilding `workspaces:` from `targets:` then reverted a
+    // recorded deployment to whatever the last contract-2 command had written,
+    // silently — which is how a deploy that had genuinely happened came to read
+    // as a version older than the one serving it.
+    //
+    // Same rule the 1-to-2 migration states: anything already in the file wins
+    // over what is re-derived, because a workspace part way through this has
+    // entries that are already right.
+    const root = await mkdtemp(join(tmpdir(), 'lanes-c3-'));
+    homes.push(root);
+
+    await writeFile(
+      join(root, 'lanes-link.yaml'),
+      [
+        'contract: 2',
+        'targets:',
+        '  cloud:',
+        '    workspace: gs://your-bucket',
+        '    last_deploy_version: 0.7.2',
+        '  local:',
+        '    credentials: { adapter: file }',
+        '    storage: { adapter: filesystem }',
+        'workspaces:',
+        '  cloud:',
+        '    at: gs://your-bucket',
+        '    last_deploy_version: 0.8.0',
+        '',
+      ].join('\n'),
+    );
+    await mkdir(join(root, 'profiles'), { recursive: true });
+    await writeFile(join(root, 'profiles', 'personal.yaml'), legacy({ profile: 'personal' }));
+
+    await migrateToContract3(root, { apply: true });
+
+    const registry = (await readYaml(root, 'lanes-link.yaml')) as {
+      targets?: unknown;
+      workspaces?: Record<string, { last_deploy_version?: string; at?: string }>;
+    };
+
+    expect(registry.targets).toBeUndefined();
+    expect(registry.workspaces?.['cloud']?.last_deploy_version).toBe('0.8.0');
+    // And the entry only `targets:` knew about is still carried across.
+    expect(registry.workspaces?.['local']).toBeDefined();
+  });
+});

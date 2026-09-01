@@ -276,6 +276,7 @@ async function rewriteRegistry(root: string): Promise<void> {
   const registry = document.toJSON() as {
     contract?: number;
     targets?: Record<string, { workspace?: string }>;
+    workspaces?: Record<string, unknown>;
   } | null;
 
   const targets = registry?.targets;
@@ -291,7 +292,19 @@ async function rewriteRegistry(root: string): Promise<void> {
       workspaces[name] = workspace === undefined ? rest : { at: workspace, ...rest };
     }
 
-    document.setIn(['workspaces'], workspaces);
+    // **Anything already under `workspaces:` wins over what `targets:` says**,
+    // which is the same rule the 1-to-2 migration states for the same reason: a
+    // workspace part way through this has entries that are already right, and
+    // re-deriving them from a stale block would undo a correction.
+    //
+    // It is not hypothetical here. `editRegistry` used to write `workspaces:`
+    // into a contract-2 file without touching its `targets:`, so a deploy from
+    // an unmigrated laptop left two registries disagreeing — and this
+    // overwrote the newer one with the older, silently reverting a recorded
+    // deployment to whatever the last contract-2 command had written. That
+    // write is fixed at source, and this is what repairs a file already
+    // carrying both.
+    document.setIn(['workspaces'], { ...workspaces, ...(registry?.workspaces ?? {}) });
     document.removeIn(['targets']);
   }
 
