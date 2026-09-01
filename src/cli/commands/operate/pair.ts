@@ -146,10 +146,17 @@ export async function pair(flags: PairFlags, deps: PairDeps = {}): Promise<void>
 
   const readPort = chosen.config.instance.port + 1;
 
+  // `127.0.0.1` rather than `instance.host`, even though `localhost` and `::1`
+  // are equally loopback and equally covered by the certificate. It is one
+  // address for one machine, and the browser has to agree with `open.ts` about
+  // which spelling it is: two pairings of the same endpoint under two names
+  // would be two entries in the switcher, both working, neither wrong.
+  const address = `https://127.0.0.1:${readPort}`;
+
   if (flags.print === true) {
     const existing = await credentials.get(PAIR_TOKEN_REF);
     if (existing === null) throw new ConfigError('Not paired yet. Run: lanes link pair');
-    print(link(existing));
+    print(pairingLink(existing, address));
     return;
   }
 
@@ -177,9 +184,9 @@ export async function pair(flags: PairFlags, deps: PairDeps = {}): Promise<void>
     print(style.dim('      The previous pairing link no longer works. Re-open the new one.'));
   }
   print('');
-  print(ok(`the dashboard may now read ${style.bold(`https://127.0.0.1:${readPort}`)}`));
+  print(ok(`the dashboard may now read ${style.bold(address)}`));
   print('');
-  print(link(token));
+  print(pairingLink(token, address));
   print('');
   print(
     style.dim(
@@ -238,7 +245,7 @@ async function pairDeployed(input: {
     if (existing === null || existing === '') {
       throw new ConfigError(`Not paired yet. Run: lanes link pair --workspace ${target}`);
     }
-    print(link(existing, endpoint));
+    print(pairingLink(existing, endpoint));
     return;
   }
 
@@ -268,7 +275,7 @@ async function pairDeployed(input: {
   print('');
   print(ok(`the dashboard may now read ${style.bold(endpoint)}`));
   print('');
-  print(link(token, endpoint));
+  print(pairingLink(token, endpoint));
   print('');
   print(
     style.dim(
@@ -294,14 +301,22 @@ async function pairDeployed(input: {
  * thing telling the page which of several paired endpoints this link is for,
  * and a query parameter would put a workspace's public address in that log.
  *
- * A link with no `at=` is a local one. Every link minted before deployed
- * pairing existed is that shape, and the page reads it as loopback.
+ * **A loopback link carries its address too**, and the parameter is required so
+ * that it cannot quietly stop. It used to be omitted here on the reasoning that
+ * loopback is derivable — and it is not: the read listener sits one port above
+ * whatever `instance.port` says, so an endpoint on any port but the default
+ * printed a link the dashboard then read at `7338`, reported unreachable, and
+ * gave no way to correct. The page still treats a link with no `at=` as
+ * loopback on the default port, because every link minted before this is that
+ * shape.
+ *
+ * Exported for `pair.test.ts` and for nothing else. The whole of the defect
+ * above was a shape nothing asserted on, in a command whose output no test
+ * reads, so the fix is not worth much without something that fails when the
+ * address goes missing again.
  */
-function link(token: string, endpoint?: string): string {
-  const fragment = endpoint
-    ? `pair=${token}&at=${encodeURIComponent(endpoint)}`
-    : `pair=${token}`;
-  return `${DASHBOARD_URL}/dashboard/link#${fragment}`;
+export function pairingLink(token: string, endpoint: string): string {
+  return `${DASHBOARD_URL}/dashboard/link#pair=${token}&at=${encodeURIComponent(endpoint)}`;
 }
 
 function isLoopback(host: string): boolean {
