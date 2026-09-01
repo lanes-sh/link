@@ -80,6 +80,16 @@ export async function refresh(
   // wrong twice over, and ADR-035 has the evidence. Two answers replace it,
   // and the tombstone's age is what tells them apart.
   if (record.kind === 'consumed') {
+    // The client first, before the window is even considered. A spent token
+    // presented by a *different* client is not a retry however recent it is,
+    // and accepting one meant a captured refresh token needed only a single
+    // request inside the window to be turned into a fresh 30-day chain member
+    // carrying the original holder's subject and profiles. The retry this
+    // window exists for always comes from the client that spent it.
+    if (record.clientId !== form.get('client_id')) {
+      return invalid('invalid_grant', 'That refresh token was issued to a different client.');
+    }
+
     // Inside the window it is a retry of a request already answered, and the
     // client is owed the answer rather than a dead connector. Not re-consumed:
     // a client retrying twice is still retrying.

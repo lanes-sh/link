@@ -75,8 +75,18 @@ export interface ReadListenerOptions {
    * a label and an account live on the connection and a grant carries neither.
    */
   readonly connections: () => Promise<readonly ConnectionRow[]>;
-  /** The pairing token, compared in constant time. */
-  readonly token: string;
+  /**
+   * The pairing token, read per request and compared in constant time.
+   *
+   * A thunk rather than a value, because `lanes link pair --rotate` writes a new
+   * one into the credential store and says "the previous pairing link no longer
+   * works". Captured at boot it did neither: the live listener went on accepting
+   * the old token and refusing the new one until the endpoint was restarted, so
+   * a stolen credential kept reading every connection, profile and audit entry
+   * in the workspace — while the command that was supposed to take it back
+   * reported success.
+   */
+  readonly token: () => Promise<string | null>;
   readonly tls: { readonly cert: string; readonly key: string };
   readonly allowedOrigins?: readonly string[] | undefined;
 }
@@ -131,7 +141,11 @@ async function handle(
     return json({ error: 'origin_not_allowed' }, 403, cors(origin, false));
   }
 
-  if (!authorised(request, options.token)) {
+  // Re-read per request. The store caches its own decrypted copy, so this is a
+  // map lookup in the ordinary case and a re-read only after a rotation.
+  const expected = await options.token();
+
+  if (expected === null || !authorised(request, expected)) {
     return json(
       {
         error: 'unpaired',

@@ -171,7 +171,16 @@ export async function publishWorkspace(input: {
   readonly config: Config;
   readonly workspaceRoot: string;
   readonly target: string;
-  readonly profile: string;
+  /**
+   * The profiles this edit touched, not just the one it was run under.
+   *
+   * `disconnect` removes a connection from the workspace and drops the grant
+   * from *every* profile that named it, so publishing one profile left the
+   * bucket holding a `connections.yaml` without the connection and a sibling
+   * profile still granting it — which `assertGrantsResolve` refuses at load, so
+   * `openReconciled` skipped that profile and it silently stopped being served.
+   */
+  readonly profile: string | readonly string[];
 }): Promise<string | null> {
   // Resolution failures are swallowed rather than thrown. The config edit that
   // called this has already succeeded and is on disk; a target that cannot be
@@ -187,6 +196,7 @@ export async function publishWorkspace(input: {
   const destination = deployedWorkspace(declared);
   if (!destination) return null;
 
-  await uploadWorkspace(input.workspaceRoot, destination, [input.profile]);
+  const touched = typeof input.profile === 'string' ? [input.profile] : input.profile;
+  await uploadWorkspace(input.workspaceRoot, destination, touched);
   return destination;
 }

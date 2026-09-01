@@ -63,7 +63,13 @@ export async function openReadListener(
       audit: primary.audit,
       connections: async () =>
         (await readConnections(primary.resolution.workspaceRoot)).connections,
-      token,
+      // Re-read rather than captured, so `pair --rotate` takes effect on a
+      // running endpoint. `refresh()` drops the store's decrypted copy first,
+      // because the rotation was written by a different process.
+      token: async () => {
+        primary.credentials.refresh?.();
+        return primary.credentials.get(PAIR_TOKEN_REF);
+      },
       tls: { cert, key },
     });
   } catch (error) {

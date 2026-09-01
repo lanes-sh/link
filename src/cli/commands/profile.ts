@@ -17,6 +17,7 @@ import {
 } from '#profile';
 
 import { emit, ok, print, style, table } from '../output.ts';
+import { readSession } from '#auth/lanes/session.ts';
 
 /**
  * Profile management.
@@ -109,10 +110,23 @@ export async function createProfile(
   // sibling's, or asked. It declares no target now (ADR-052): it is written into
   // the workspace of the target it was named with, and that workspace already
   // says where its bytes go.
+  // The signed-in subject, so the profile reaches somebody the moment it
+  // exists. Without it every new profile shipped `members: []` while the
+  // template writes `authorization: mode: self` — an endpoint that advertises
+  // OAuth and lists nobody, where the owner signs in at lanes.sh and is told no
+  // profile lists them. A local stdio or CI caller still worked, which is why a
+  // smoke test passed: those carry `profiles: undefined` and `mayReach` admits
+  // everything.
+  //
+  // Null when nobody is signed in, which is a real state — `lanes auth login`
+  // has not been run yet — and the template then says how to fix it rather than
+  // inventing a subject.
+  const session = await readSession();
+
   await writeWorkspaceFile(
     workspaceFiles(root),
     `profiles/${name}.yaml`,
-    newProfileTemplate(name, port),
+    newProfileTemplate(name, port, session?.subject),
   );
 
   return { name, path, port, targets: options.targets, copiedFrom: {} };

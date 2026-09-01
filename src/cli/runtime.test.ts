@@ -166,7 +166,14 @@ describe('the owner layer follows the target — ADR-014', () => {
     try {
       await runtime.vault.put('owner', { id: 'token', value: 'secret' });
 
-      expect(await Bun.file(join(root, 'data', 'files', 'vault.enc')).exists()).toBe(true);
+      // `vault.d/<connection>.enc`, not a single `vault.enc`: one sealed
+      // document per vault connection (ADR-059), and the blob adapter honours
+      // that as the file adapter does. It used to write one document for every
+      // vault connection in the workspace, which is the collision whose wrong
+      // answer is a credential.
+      expect(
+        await Bun.file(join(root, 'data', 'files', 'vault.d', 'main.enc')).exists(),
+      ).toBe(true);
       expect(await Bun.file(join(root, 'data', 'personal.vault.enc')).exists()).toBe(false);
     } finally {
       delete process.env['LANES_LINK_VAULT_KEY'];

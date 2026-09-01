@@ -204,7 +204,14 @@ export async function runConnect(
       manifest,
       provisionalId,
       credentials: runtime.credentials,
-      document,
+      // The connections file, not the profile. `oauth_apps` moved there in
+      // contract 3 — `configSchema` does not declare it any more and only
+      // `connectionsFileSchema` does — so `--own-client` was writing the switch
+      // into a key nothing reads. With no `--profile` the profile document is
+      // not even saved, so it was reported and discarded; with one, it landed in
+      // a block the schema drops, and dispatch fell back to the broker client
+      // while `deploy` bound none of the operator's own refs.
+      document: connectionsDocument,
       changes,
       providerId,
       connections: grantedConnections(runtime),

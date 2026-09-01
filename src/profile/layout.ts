@@ -75,6 +75,15 @@ export const layout = {
   /** One sealed document per vault connection, each under its own key. */
   vault: (connection: string): string => `${DATA_DIR}/vault.d/${connection}.enc`,
   /**
+   * The same document, keyed relative to the blob store.
+   *
+   * `blobs()` is already rooted at `data/`, so a blob adapter handed the path
+   * above would write `data/data/vault.d/...`. Two spellings of one location is
+   * exactly what this file exists to prevent, so the second one lives here
+   * beside the first rather than being assembled at the call site.
+   */
+  vaultKey: (connection: string): string => `vault.d/${connection}.enc`,
+  /**
    * Every skills connection's procedures live under here.
    *
    * The root is exported beside the per-connection path because `deploy` needs

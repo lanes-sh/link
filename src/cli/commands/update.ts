@@ -7,6 +7,7 @@ import { migrateToContract3, needsContract3 } from '../contract3.ts';
 import { emit, fail, ok, print, printErr, progress, style, warn } from '../output.ts';
 import { PACKAGE, release, type ReleaseState } from '../release.ts';
 import { version } from '../version.ts';
+import { readSession } from '#auth/lanes/session.ts';
 
 /**
  * `lanes link update` — install the newer release, or say why it will not.
@@ -317,7 +318,15 @@ async function runInstall(argv: readonly string[], json: boolean): Promise<boole
 async function migrateContract3(root: string, say: (line: string) => void): Promise<void> {
   if (!(await needsContract3(root))) return;
 
-  const migration = await migrateToContract3(root);
+  // The same subject `profile add` writes, for the same reason: a migrated
+  // profile that lists nobody is an endpoint that advertises OAuth and refuses
+  // its own owner. Absent when nobody has signed in yet, which the migration
+  // reports rather than guessing at.
+  const session = await readSession();
+  const migration = await migrateToContract3(root, {
+    apply: true,
+    ...(session ? { subject: session.subject } : {}),
+  });
   if (migration.alreadyCurrent) return;
 
   say(

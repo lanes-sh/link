@@ -19,6 +19,9 @@ const ORIGIN = 'https://lanes.sh';
 const TOKEN = 'llp_a-pairing-token';
 
 let listener: RunningReadListener;
+
+/** The token the listener will accept, so a rotation can be driven mid-test. */
+let current: string = TOKEN;
 let base: string;
 
 /**
@@ -81,7 +84,7 @@ beforeAll(() => {
     profiles: () => PROFILES,
     audit: AUDIT,
     connections: async () => [],
-    token: TOKEN,
+    token: async () => current,
     tls: selfSigned(),
   });
   base = listener.url;
@@ -216,5 +219,39 @@ describe('what can be reached', () => {
     const response = await read('/state', { method: 'POST' });
 
     expect(response.status).toBe(404);
+  });
+});
+
+describe('rotating the pairing token', () => {
+  test('the new one is accepted and the old one stops, without a restart', async () => {
+    // `lanes link pair --rotate` writes a new token and tells the operator the
+    // previous link no longer works. Captured at boot it did neither: the live
+    // listener kept accepting the old token and refused the new one until the
+    // endpoint was restarted, so a stolen credential went on reading the whole
+    // workspace while the command that was meant to take it back reported
+    // success.
+    expect((await read('/state')).status).toBe(200);
+
+    current = 'llp_rotated';
+
+    const old = await read('/state');
+    expect(old.status).toBe(401);
+
+    const rotated = await read('/state', {
+      headers: { authorization: 'Bearer llp_rotated' },
+    });
+    expect(rotated.status).toBe(200);
+
+    current = TOKEN;
+  });
+
+  test('an unpaired workspace refuses rather than admitting anything', async () => {
+    // `--rotate` between the read and the write, or a credential store that
+    // cannot be opened. Null is not a token to compare against.
+    current = null as unknown as string;
+
+    expect((await read('/state')).status).toBe(401);
+
+    current = TOKEN;
   });
 });

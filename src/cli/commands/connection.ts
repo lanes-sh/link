@@ -255,7 +255,17 @@ export async function removeConnection(
         remaining: connectionsFile.connections.length - 1,
         ungranted: affected,
         published: nextAfterEdit(
-          await publishProfileEdit({ resolution, config: runtime.config, target }),
+          await publishProfileEdit({
+            resolution,
+            config: runtime.config,
+            target,
+            // Every profile that lost a grant, not just the one this ran under.
+            // Publishing one left the bucket with a `connections.yaml` missing
+            // the connection and a sibling still granting it — which
+            // `assertGrantsResolve` refuses at load, so `openReconciled` skipped
+            // that profile and it silently stopped being served.
+            touched: [...new Set([resolution.profile, ...affected])],
+          }),
         ),
       },
     };

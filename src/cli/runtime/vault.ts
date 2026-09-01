@@ -53,15 +53,24 @@ export function openVault(
       // so the credential store holds ciphertext it cannot read. Separate
       // document, separate key, separate environment variable — the backend
       // was never what kept the two stores apart. ADR-022.
+      //
+      // Named per connection, like the file adapter. A `ref` written by hand
+      // still wins, because a deployment that already seals under one name has
+      // to keep opening it — but the default carries the instance, so two
+      // profiles granting different vaults share nothing. Without this only
+      // `file` honoured ADR-059 and every deployed workspace, which uses this
+      // adapter or `blob`, had one document behind every vault connection:
+      // ADR-059 calls that the worst of the three collisions, because the wrong
+      // answer is a credential.
       return createSecretVaultStore({
         store: credentials,
-        ...(vault.ref !== undefined ? { ref: vault.ref } : {}),
+        ref: vault.ref ?? `vault/${connection}`,
       });
 
     case 'blob':
       return createBlobVaultStore({
         store: storage(),
-        ...(vault.path !== undefined ? { key: vault.path } : {}),
+        key: vault.path ?? layout.vaultKey(connection),
       });
   }
 }
