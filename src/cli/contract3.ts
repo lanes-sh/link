@@ -299,12 +299,26 @@ async function rewriteRegistry(root: string): Promise<void> {
   const workspaces = (document.toJSON() as { workspaces?: Record<string, unknown> } | null)
     ?.workspaces ?? {};
 
-  // The first workspace in the registry, which for every workspace this
-  // migration will ever see is `local`. Written rather than left absent so the
-  // sticky default is on from the first command after upgrading (ADR-061).
+  // The workspace on this machine, and only the *first* one when there is no
+  // such thing. Written rather than left absent so the sticky default is on
+  // from the first command after upgrading (ADR-061).
+  //
+  // This used to take the first key outright, on the stated grounds that "for
+  // every workspace this migration will ever see" that is `local`. It is not:
+  // the registry is written sorted, so a workspace that had ever deployed came
+  // out of the 1-to-2 migration with `cloud` ahead of `local`. Upgrading then
+  // pointed every subsequent command at a bucket — which is the one kind of
+  // workspace that can be unreachable, and was: the next `status` answered with
+  // a 403 from GCS rather than with the profiles sitting on the disk.
+  //
+  // A pointer carries `at:`; a workspace declaring its own adapters does not.
   if (document.getIn(['default_workspace']) === undefined) {
-    const first = Object.keys(workspaces)[0];
-    if (first !== undefined) document.setIn(['default_workspace'], first);
+    const names = Object.keys(workspaces);
+    const here = names.find(
+      (name) => (workspaces[name] as { at?: unknown } | undefined)?.at === undefined,
+    );
+    const chosen = here ?? names[0];
+    if (chosen !== undefined) document.setIn(['default_workspace'], chosen);
   }
 
   await document.save();

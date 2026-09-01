@@ -621,3 +621,51 @@ describe('merging credentials', () => {
     expect(await merged.get('memory/main')).toBe('value');
   });
 });
+
+describe('the sticky default workspace', () => {
+  test('is the one on this machine, not whichever key sorts first', async () => {
+    // The registry is written sorted, so a workspace that had ever deployed
+    // came out of the 1-to-2 migration with `cloud` ahead of `local`. Taking
+    // the first key then pointed every command at a bucket, and a bucket is the
+    // one kind of workspace that can be unreachable — the next `status`
+    // answered with a 403 instead of the profiles sitting on the disk.
+    const root = await mkdtemp(join(tmpdir(), 'lanes-c3-'));
+    homes.push(root);
+
+    await writeFile(
+      join(root, 'lanes-link.yaml'),
+      [
+        'contract: 2',
+        'targets:',
+        '  cloud:',
+        '    workspace: gs://your-bucket',
+        '  local:',
+        '    credentials: { adapter: file }',
+        '    storage: { adapter: filesystem }',
+        '',
+      ].join('\n'),
+    );
+    await mkdir(join(root, 'profiles'), { recursive: true });
+    await writeFile(join(root, 'profiles', 'personal.yaml'), legacy({ profile: 'personal' }));
+
+    await migrateToContract3(root, { apply: true });
+
+    expect((await readYaml(root, 'lanes-link.yaml'))['default_workspace']).toBe('local');
+  });
+
+  test('falls back to the first when every workspace is a pointer', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'lanes-c3-'));
+    homes.push(root);
+
+    await writeFile(
+      join(root, 'lanes-link.yaml'),
+      'contract: 2\ntargets:\n  cloud:\n    workspace: gs://your-bucket\n',
+    );
+    await mkdir(join(root, 'profiles'), { recursive: true });
+    await writeFile(join(root, 'profiles', 'personal.yaml'), legacy({ profile: 'personal' }));
+
+    await migrateToContract3(root, { apply: true });
+
+    expect((await readYaml(root, 'lanes-link.yaml'))['default_workspace']).toBe('cloud');
+  });
+});
