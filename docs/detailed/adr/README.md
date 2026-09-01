@@ -10,7 +10,10 @@ in the codebase depends on it.
 ADR-062 and ADR-063 were both filed as proposals while 0.8.0's first half was being shaped around
 them. Both are now accepted and built: `/authorize` redirects to lanes.sh and the consent form that
 asked for a pasted token is gone, and `lanes link pair` provisions a TLS read listener one port
-above the endpoint that exactly one browser origin may read.
+above the endpoint that exactly one browser origin may read. **ADR-064 is accepted and built too**,
+and finishes that sentence for the other half of the audience: the same two routes now answer on a
+deployed endpoint's own URL, so `pair` works whether the workspace is on this machine or on Cloud
+Run.
 
 | | Decision |
 |---|---|
@@ -76,6 +79,7 @@ above the endpoint that exactly one browser origin may read.
 | [061](061-a-workspace-is-the-only-word.md) | A workspace is the only word, and a default may be sticky where nothing is destroyed |
 | [062](062-the-consent-page-asks-lanes-who-you-are.md) | The consent page asks Lanes who you are, and the pasted token is for CI |
 | [063](063-one-origin-may-read-a-loopback-endpoint.md) | One origin may read a loopback endpoint, over a certificate it installs |
+| [064](064-a-deployed-endpoint-is-read-over-its-own-url.md) | A deployed endpoint is read over its own URL, and pairing stops meaning a certificate |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 
@@ -217,6 +221,19 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
   refuses in a paragraph written to be read by whoever tried this. It is closed on a separate
   listener, with a separate credential, on a surface with no mutation, rather than by relaxing the
   rule.
+
+- **ADR-064 amends ADR-063, and the amendment is a lesson in reading one's own refusal.** ADR-063
+  declined to pair a deployed endpoint, and every clause of the reason it gave was about the
+  *certificate* — installing one for an address the machine does not answer on. That was correct
+  and is still correct; a deployed endpoint needs no certificate because the platform terminates
+  TLS. What the argument never established is that the *credential* and the *address* should be
+  withheld, and withholding them left half the people running this unable to see their own
+  workspace. The four properties that were not about TLS are kept, one of them tightened: the
+  deployed bind names its origin rather than taking the wildcard `cors.ts` would have allowed it,
+  because the wildcard's justification is the absence of a setup step and there is no setup step
+  here to avoid. Read the 403-versus-404 paragraph if nothing else — the whole of the boot failure
+  ADR-063 recorded turns on which of the two Secret Manager returns, and one IAM binding is what
+  moves it from the first to the second.
 
 - **ADR-056** follows from ADR-042 and amends ADR-041. The first is the interesting relationship:
   it applies identity's argument to everybody who is not the owner, and then diverges from it

@@ -52,6 +52,8 @@ export {
   type SelectedConnection,
 } from './connections.ts';
 
+export { PAIR_CERT_REF, PAIR_KEY_REF, PAIR_TOKEN_REF } from './pairing.ts';
+
 export {
   KNOWLEDGE_LAYOUT,
   knowledgeRoot,

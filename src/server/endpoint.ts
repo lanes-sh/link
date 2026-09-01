@@ -6,6 +6,8 @@ import type { ProfileRuntime } from './mcp/index.ts';
 import { AuthenticatorChain } from '#auth';
 import { openAuthorization } from './authorization.ts';
 import { openReadListener } from './read/open.ts';
+import { deployedReadDeps } from './read/deployed.ts';
+import { version } from '#cli/version.ts';
 import type { Logger } from '#connectivity';
 import { silentLogger } from './logging.ts';
 import { listProfiles, readConnections } from '#profile';
@@ -259,6 +261,12 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
       { primary: primary.resolution.profile, log, ...(gate ? { remoteClients: true } : {}) },
     );
 
+    // Read once. `version()` walks up to the install root and parses
+    // `package.json`; doing it per request would put a synchronous file read on
+    // the read surface's hot path to answer a value that cannot change while
+    // this process lives.
+    const runningVersion = version();
+
     const server = serve({
       generations,
       primary: primary.resolution.profile,
@@ -269,6 +277,16 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
       ...(gate ? { authorization: gate.surface } : {}),
       ...(options.port !== undefined ? { port: options.port } : {}),
       ...(options.host !== undefined ? { host: options.host } : {}),
+      // Offered unconditionally and discarded by `serve()` on a loopback bind,
+      // which is where every other property of the bind address is decided. It
+      // opens nothing and reads no credential, so building it for a bind that
+      // will not use it costs a closure (ADR-064).
+      read: deployedReadDeps({
+        primary,
+        profiles: () => generations.current.profiles,
+        log,
+        version: runningVersion,
+      }),
     });
 
     // After `serve()`, so the record means the socket is bound. Recording it
@@ -279,7 +297,13 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
     // simply not served — the read surface is opt-in and its absence is the
     // default (ADR-063), so an endpoint that was never paired binds one port
     // exactly as it always did.
-    const read = await openReadListener(primary, server, () => generations.current.profiles, log);
+    const read = await openReadListener(
+      primary,
+      server,
+      () => generations.current.profiles,
+      log,
+      runningVersion,
+    );
 
     return {
       url: server.url,

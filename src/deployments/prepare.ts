@@ -1,5 +1,6 @@
 import { credentialRefFor, ownClientRefsFor, rotatableCredentialRefsFor } from '#registry';
 import {
+  PAIR_TOKEN_REF,
   readConnections, listProfiles, loadProfileConfig, vaultRef, type Config, type TargetConfig } from '#profile';
 import { VAULT_DOCUMENT_REF, VAULT_KEY_REF, generateVaultKey, type SecretStore } from '#secrets';
 import { ok, print, style, warn } from '#cli/output.ts';
@@ -144,6 +145,35 @@ export async function readableRefs(
   declared: TargetConfig | undefined,
 ): Promise<string[]> {
   const refs = new Set<string>();
+
+  // Unconditionally, for every deploy, whether or not this workspace has ever
+  // been paired — and that is the point rather than a rounding up.
+  //
+  // Secret Manager answers a *missing binding* with 403, not 404, so that an
+  // identity cannot enumerate secrets by their error codes. The adapter returns
+  // null for the 404 and throws for the 403, so an unbound ref is a thrown
+  // error on the read path — and that is the failure `server/read/open.ts`
+  // records: a deployed revision asked for refs no binding covered and never
+  // went healthy.
+  //
+  // Bound, the deployed-but-never-paired case becomes the 404 instead — a
+  // secret that exists with no version — which reads back as null and renders
+  // as `401 {error:'unpaired'}`. The grant is what turns a crash into a
+  // refusal.
+  //
+  // Deciding it by asking *whether the workspace is paired* is the thing that
+  // cannot happen: that means opening a credential store inside `readableRefs`,
+  // which `--dry-run` reaches and must not do.
+  //
+  // Deliberately not in `rotatableRefs`. The revision never writes this one —
+  // minting is `lanes link pair`, from the operator's machine — and
+  // `secretVersionAdder` here would let a compromised revision issue itself a
+  // credential that reads the whole workspace.
+  //
+  // The cert and key refs are absent for a different reason: Cloud Run
+  // terminates TLS with a certificate a browser already trusts, so a deployed
+  // revision never calls `serveRead` and never reads either.
+  refs.add(PAIR_TOKEN_REF);
 
   // Only the key is the target's. The *document* is named per vault connection
   // (ADR-059), so it is added inside the profile loop below — naming it here

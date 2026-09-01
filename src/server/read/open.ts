@@ -1,17 +1,14 @@
-import { readConnections } from '#profile';
+import { X509Certificate } from 'node:crypto';
+import { PAIR_CERT_REF, PAIR_KEY_REF, PAIR_TOKEN_REF, readConnections } from '#profile';
 import type { Runtime } from '#cli/runtime.ts';
-import {
-  PAIR_CERT_REF,
-  PAIR_KEY_REF,
-  PAIR_TOKEN_REF,
-} from '#cli/commands/operate/pair.ts';
 import type { Logger } from '#connectivity';
 import type { RunningServer } from '../index.ts';
 import type { ProfileRuntime } from '../mcp/visibility.ts';
+import { directPairingCredential } from './credential.ts';
 import { serveRead, type RunningReadListener } from './listener.ts';
 
 /**
- * The dashboard's read surface, if this workspace has been paired.
+ * The dashboard's read surface on loopback, if this workspace has been paired.
  *
  * Absent by default and absent for every workspace that has not run
  * `lanes link pair`, which is the whole shape of ADR-063: a browser origin
@@ -29,20 +26,22 @@ export async function openReadListener(
   server: RunningServer,
   profiles: () => ReadonlyMap<string, ProfileRuntime>,
   log: Logger,
+  version: string,
 ): Promise<RunningReadListener | null> {
   // Loopback only, and checked before a single credential is read.
   //
-  // Pairing exists so a browser can read an endpoint on *this machine*
-  // (ADR-063); a deployed endpoint is already reachable by URL and `lanes link
-  // pair` refuses to provision one. Reading the three refs regardless meant a
-  // deployed revision asked Secret Manager for secrets no IAM binding covered —
-  // and Secret Manager answers a missing binding with 403 rather than 404, so
-  // the rejection escaped this function's try block, which wraps only
-  // `serveRead`, and the revision never went healthy.
+  // A second TLS listener one port above the endpoint is a loopback-only
+  // object: Cloud Run routes exactly one port, so there is nowhere for it to
+  // bind. Reading the three refs regardless meant a deployed revision asked
+  // Secret Manager for secrets no IAM binding covered — and Secret Manager
+  // answers a missing binding with 403 rather than 404, so the rejection
+  // escaped this function's try block, which wraps only `serveRead`, and the
+  // revision never went healthy.
   //
-  // Deriving the set for the IAM binding instead would have meant opening a
-  // credential store inside `readableRefs`, which `--dry-run` reaches and must
-  // not do.
+  // A deployed workspace now serves the same routes through the endpoint's own
+  // router (`./deployed.ts`), which reads no credential at boot at all — so
+  // that failure cannot recur there by construction, and `readableRefs` binds
+  // the token so the read itself stops being a rejection.
   const bound = new URL(server.url);
   if (!['127.0.0.1', 'localhost', '::1', '[::1]'].includes(bound.hostname)) return null;
 
@@ -63,13 +62,17 @@ export async function openReadListener(
       audit: primary.audit,
       connections: async () =>
         (await readConnections(primary.resolution.workspaceRoot)).connections,
-      // Re-read rather than captured, so `pair --rotate` takes effect on a
-      // running endpoint. `refresh()` drops the store's decrypted copy first,
-      // because the rotation was written by a different process.
-      token: async () => {
-        primary.credentials.refresh?.();
-        return primary.credentials.get(PAIR_TOKEN_REF);
-      },
+      // Read on every presentation, so `pair --rotate` takes effect on a
+      // running endpoint. Affordable here because the store is a local file;
+      // the deployed bind caches for exactly this reason. `refresh()` drops the
+      // store's decrypted copy first, because the rotation was written by a
+      // different process.
+      credential: directPairingCredential({
+        read: () => primary.credentials.get(PAIR_TOKEN_REF),
+        refresh: () => primary.credentials.refresh?.(),
+        onError: (reason) => log.warn('could not read the pairing credential', { reason }),
+      }),
+      endpoint: { kind: 'local', version, certificateExpiresAt: expiryOf(cert) },
       tls: { cert, key },
     });
   } catch (error) {
@@ -77,6 +80,22 @@ export async function openReadListener(
       port: Number(bound.port) + 1,
       reason: error instanceof Error ? error.message : String(error),
     });
+    return null;
+  }
+}
+
+/**
+ * When the pairing certificate stops working, as an ISO instant.
+ *
+ * `null` rather than a throw for a certificate that cannot be parsed: the
+ * surface it protects is already serving by the time anyone reads this, and
+ * refusing to answer `/state` because an expiry could not be formatted would
+ * take down the working thing to report on the broken one.
+ */
+function expiryOf(certificate: string): string | null {
+  try {
+    return new X509Certificate(certificate).validToDate.toISOString();
+  } catch {
     return null;
   }
 }

@@ -54,8 +54,31 @@ export interface ReadProfile {
   readonly members: readonly { subject: string; role: string }[];
 }
 
+/**
+ * What the endpoint says about itself.
+ *
+ * Added because the dashboard now reads more than one kind of endpoint and had
+ * no way to tell which it was looking at — the page derived "local" from the
+ * fact that the only address it could reach was a loopback one, which stopped
+ * being true the moment a deployed workspace became readable.
+ *
+ * `certificateExpiresAt` is loopback's alone. ADR-063 promised that an expiry
+ * would be reported and nothing reported it; an expired certificate fails in
+ * the browser with an error the page cannot read, so the one place it can
+ * usefully appear is inside a response sent while the certificate still works.
+ * A deployed endpoint has none of its own — the platform terminates TLS — and
+ * says `null` rather than inventing one.
+ */
+export interface ReadEndpoint {
+  readonly kind: 'local' | 'deployed';
+  /** The version serving this request, so a page can say what it is reading. */
+  readonly version: string;
+  readonly certificateExpiresAt: string | null;
+}
+
 export interface ReadState {
   readonly workspace: string;
+  readonly endpoint: ReadEndpoint;
   readonly connections: readonly ReadConnection[];
   readonly profiles: readonly ReadProfile[];
 }
@@ -72,7 +95,8 @@ export interface ReadState {
 export function readState(
   workspace: string,
   profiles: ReadonlyMap<string, ProfileRuntime>,
-  rows: readonly ConnectionRow[] = [],
+  rows: readonly ConnectionRow[],
+  endpoint: ReadEndpoint,
 ): ReadState {
   // The workspace's own list is the source of truth for *which connections
   // exist*. Deriving it from the grants instead made an account that no profile
@@ -143,5 +167,5 @@ export function readState(
     });
   }
 
-  return { workspace, connections, profiles: described };
+  return { workspace, endpoint, connections, profiles: described };
 }

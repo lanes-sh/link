@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { serveRead, type AuditTail, type RunningReadListener } from './listener.ts';
+import { directPairingCredential } from './credential.ts';
 import type { ProfileRuntime } from '../mcp/visibility.ts';
 
 /**
@@ -91,7 +92,11 @@ beforeAll(() => {
     profiles: () => PROFILES,
     audit: AUDIT,
     connections: async () => [],
-    token: async () => current,
+    // The real loopback composition, not a stub: `open.ts` builds exactly this,
+    // so a change to how a rotation lands is caught here rather than only in
+    // production. `current` is the mutable half a rotation test moves.
+    credential: directPairingCredential({ read: async () => current }),
+    endpoint: { kind: 'local', version: '0.0.0-test', certificateExpiresAt: null },
     tls: selfSigned(),
   });
   base = listener.url;

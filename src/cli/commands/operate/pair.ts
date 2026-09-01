@@ -1,17 +1,19 @@
 import { randomBytes } from 'node:crypto';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import {
   ConfigError,
+  PAIR_CERT_REF,
+  PAIR_KEY_REF,
+  PAIR_TOKEN_REF,
   loadWorkspaceProfiles,
   openTarget,
   type LoadedProfile,
   resolveWorkspaceRoot,
 } from '#profile';
+import type { ResolvedTarget } from '#profile';
+import { deployedUrl } from '../../endpoint-url.ts';
+import { ensureCertificate } from './pair-certificate.ts';
 import { recordConfigChange } from '../../audit-change.ts';
-import { ok, print, style, warn } from '../../output.ts';
-import { confirm, isInteractive } from '../../prompt.ts';
+import { ok, print, style } from '../../output.ts';
 import type { SecretStore } from '#secrets';
 import { openSecretStoreFor, type GlobalFlags } from '../../runtime.ts';
 
@@ -32,6 +34,12 @@ import { openSecretStoreFor, type GlobalFlags } from '../../runtime.ts';
  * credential for a surface whose entire point is that Lanes cannot see it does
  * not end up in a Lanes access log, a proxy, or a referrer header.
  *
+ * **A deployed workspace pairs too, and skips all of that** (ADR-064). The
+ * certificate was the whole of the old refusal — installing one for an address
+ * this machine does not answer on is meaningless — and it is the one piece a
+ * deployed endpoint does not need, because the platform terminates TLS with a
+ * certificate a browser already trusts. What remains is a token and an address.
+ *
  * **It names a workspace, not a profile**, because that is what it pairs. The
  * surface it opens lists every connection and every profile the workspace holds,
  * and the credential it mints reads all of them — so asking which profile was
@@ -43,21 +51,17 @@ import { openSecretStoreFor, type GlobalFlags } from '../../runtime.ts';
 /**
  * Where the three pieces live in the credential store.
  *
- * Underscores, not dots. A secret reference is `[a-z0-9_-]` separated by `/`
- * (see `isValidSecretRef`), and that is not arbitrary: these names become
- * Secret Manager entries on a deployed workspace, and Google allows no dots
- * there either. `workspace/pair.cert` was refused at the moment somebody first
- * ran the command.
+ * Declared in `#profile` rather than here, because three components read these
+ * names now and only one of them is the CLI — the server opens the read surface
+ * with them and a deploy binds the token so the revision may read it. Importing
+ * a *command* module for a string constant pulled the CLI's output and prompt
+ * handling into the container's runtime graph. Re-exported because a year of
+ * callers spell them from here.
  */
-export const PAIR_TOKEN_REF = 'workspace/pair_token';
-export const PAIR_CERT_REF = 'workspace/pair_cert';
-export const PAIR_KEY_REF = 'workspace/pair_key';
+export { PAIR_CERT_REF, PAIR_KEY_REF, PAIR_TOKEN_REF };
 
 /** Where the dashboard lives, overridable so `lanes dev` can pair against it. */
 const DASHBOARD_URL = process.env['LANES_WEB_URL'] ?? 'https://lanes.sh';
-
-/** The names the certificate has to cover. All three are this machine. */
-const HOSTS = ['127.0.0.1', 'localhost', '::1'];
 
 export interface PairFlags extends GlobalFlags {
   /** Print the link for an existing pairing and change nothing. */
@@ -117,19 +121,30 @@ export async function pair(flags: PairFlags, deps: PairDeps = {}): Promise<void>
 
   const chosen = named ?? profiles[0]!;
   const host = chosen.config.instance.host;
+  const credentials = await openSecretStoreFor(chosen.config, root, target);
+
+  // A workspace that declares a deployment is paired over the address the
+  // platform gave it, not over loopback — which is what `declared.deploy`
+  // answers and what `instance.host` does not: a deployed revision takes its
+  // host from the container's environment, so a profile bound to `127.0.0.1`
+  // in config is still serving `0.0.0.0` on Cloud Run.
+  if (resolved.declared.deploy) {
+    await pairDeployed({ flags, target, chosen, root, credentials, deploy: resolved.declared.deploy });
+    return;
+  }
 
   if (!isLoopback(host)) {
-    // A deployed endpoint is already reachable by URL and needs none of this.
-    // Pairing one would mean installing a certificate for an address this
-    // machine does not answer on.
+    // Not deployed, and not on this machine either. There is no certificate
+    // this command could install for an address this machine does not answer
+    // on, and no platform URL to hand the browser instead.
     throw new ConfigError(
-      `"${target}" is bound to ${host}, not loopback, so there is nothing here to pair.\n` +
-        '  Pairing exists so a browser can read an endpoint on *this* machine.',
+      `"${target}" is bound to ${host}, which is neither loopback nor a deployment.\n` +
+        '  Pairing reaches an endpoint on *this* machine, or one `lanes link deploy` put\n' +
+        '  somewhere with an address of its own.',
     );
   }
 
   const readPort = chosen.config.instance.port + 1;
-  const credentials = await openSecretStoreFor(chosen.config, root, target);
 
   if (flags.print === true) {
     const existing = await credentials.get(PAIR_TOKEN_REF);
@@ -178,126 +193,117 @@ export async function pair(flags: PairFlags, deps: PairDeps = {}): Promise<void>
   );
 }
 
-function link(token: string): string {
-  return `${DASHBOARD_URL}/dashboard/link#pair=${token}`;
+/**
+ * Pairing a workspace that lives somewhere with an address of its own (ADR-064).
+ *
+ * The half of `pair` that is *not* shared with loopback is the certificate, and
+ * that was always the whole of the old refusal: installing one for an address
+ * this machine does not answer on is meaningless, and it is still meaningless.
+ * What was never the thing being refused is the credential and the address —
+ * the endpoint terminates TLS with a certificate a browser already trusts, so
+ * the two pieces that remain are a token and a URL.
+ *
+ * So there is no `mkcert` here, nothing is installed, and nothing is asked. The
+ * command writes one secret and prints a link.
+ */
+async function pairDeployed(input: {
+  flags: PairFlags;
+  target: string;
+  chosen: LoadedProfile;
+  root: string;
+  credentials: SecretStore;
+  deploy: NonNullable<ResolvedTarget['declared']['deploy']>;
+}): Promise<void> {
+  const { flags, target, chosen, root, credentials } = input;
+
+  // `deployedUrl` asks the platform where the service ended up and degrades to
+  // null for every reason that is not this command's business — no driver, not
+  // deployed yet, no credentials for the project. A link with no address in it
+  // reads nothing, so this refuses rather than printing half of one.
+  const mcpUrl = await deployedUrl(input.deploy);
+  if (mcpUrl === null) {
+    throw new ConfigError(
+      `Could not find the address of "${target}".\n` +
+        '  The service may not be deployed yet, or the platform CLI may not be signed in.\n' +
+        `  Check it with: lanes link outputs --workspace ${target}`,
+    );
+  }
+
+  // The read surface answers on the endpoint's own origin, beside `/mcp` rather
+  // than on a port of its own — Cloud Run routes exactly one.
+  const endpoint = mcpUrl.replace(/\/mcp$/, '');
+
+  if (flags.print === true) {
+    const existing = await credentials.get(PAIR_TOKEN_REF);
+    if (existing === null || existing === '') {
+      throw new ConfigError(`Not paired yet. Run: lanes link pair --workspace ${target}`);
+    }
+    print(link(existing, endpoint));
+    return;
+  }
+
+  const rotating = flags.rotate === true;
+  const held = rotating ? null : await credentials.get(PAIR_TOKEN_REF);
+
+  // An empty string, not just a missing ref: `lanes link deploy` creates this
+  // secret with no version so the revision's IAM binding has something to
+  // attach to, and a secret that exists with no version reads back as null
+  // here and as `unpaired` there. Either shape means nobody has paired yet.
+  const existing = held === '' ? null : held;
+  const token = existing ?? `llp_${randomBytes(32).toString('base64url')}`;
+  if (existing === null) await credentials.set(PAIR_TOKEN_REF, token);
+
+  if (existing === null) {
+    await recordConfigChange(chosen.config, root, target, {
+      capability: rotating ? 'config.pair.rotate' : 'config.pair.mint',
+      scope: target,
+      arguments: { endpoint },
+    });
+  }
+
+  print(ok('no certificate needed — this endpoint already has one a browser trusts'));
+  if (rotating) {
+    print(style.dim('      The previous pairing link no longer works. Re-open the new one.'));
+  }
+  print('');
+  print(ok(`the dashboard may now read ${style.bold(endpoint)}`));
+  print('');
+  print(link(token, endpoint));
+  print('');
+  print(
+    style.dim(
+      '      Open that in any browser, on any machine. The token is in the URL fragment,\n' +
+        '      so it never reaches a Lanes server.\n' +
+        '      It reads every connection, profile and audit entry in this workspace, and\n' +
+        '      can change nothing. Take it back with:\n' +
+        `        lanes link pair --workspace ${target} --rotate\n` +
+        '\n' +
+        '      A rotation takes up to five seconds to be refused, because the endpoint\n' +
+        '      caches what it read rather than calling Secret Manager per request.',
+    ),
+  );
+}
+
+/**
+ * The link the browser opens.
+ *
+ * The token rides in the fragment, which is never sent to a server — so a
+ * credential for a surface whose entire point is that Lanes cannot see this
+ * data does not land in a Lanes access log, a proxy, or a referrer header. The
+ * address rides beside it for the same reason and one more: it is the only
+ * thing telling the page which of several paired endpoints this link is for,
+ * and a query parameter would put a workspace's public address in that log.
+ *
+ * A link with no `at=` is a local one. Every link minted before deployed
+ * pairing existed is that shape, and the page reads it as loopback.
+ */
+function link(token: string, endpoint?: string): string {
+  const fragment = endpoint
+    ? `pair=${token}&at=${encodeURIComponent(endpoint)}`
+    : `pair=${token}`;
+  return `${DASHBOARD_URL}/dashboard/link#${fragment}`;
 }
 
 function isLoopback(host: string): boolean {
   return host === '127.0.0.1' || host === 'localhost' || host === '::1';
-}
-
-/**
- * A certificate a browser on this machine will accept.
- *
- * mkcert and nothing else, deliberately. It is the one tool that installs into
- * the system trust store *and* Firefox's separate NSS store, across macOS,
- * Linux and Windows — and a self-signed certificate this command generated
- * itself would fail in the browser with an error the page cannot read, which is
- * the worst of both: the work is done and the feature does not work.
- */
-async function ensureCertificate(
-  credentials: SecretStore,
-  flags: PairFlags,
-  deps: PairDeps,
-): Promise<'reused' | 'installed'> {
-  const held =
-    (await credentials.get(PAIR_CERT_REF)) !== null &&
-    (await credentials.get(PAIR_KEY_REF)) !== null;
-
-  if (held && flags.rotate !== true) return 'reused';
-
-  const which = deps.which ?? ((binary: string) => Bun.which(binary));
-  const run = deps.run ?? runCommand;
-
-  let mkcert = which('mkcert');
-  if (!mkcert) mkcert = await installMkcert(flags, deps, which, run);
-
-  // Installs the local CA if it is not already there, and says nothing if it
-  // is. This is the step that touches the trust store, and it has already been
-  // consented to by the time it runs.
-  const installed = await run([mkcert, '-install']);
-  if (installed !== null) {
-    throw new ConfigError(`mkcert -install failed.\n${installed || '  It said nothing.'}`);
-  }
-
-  const scratch = await mkdtemp(join(tmpdir(), 'lanes-pair-'));
-  try {
-    const certPath = join(scratch, 'cert.pem');
-    const keyPath = join(scratch, 'key.pem');
-
-    const failed = await run([mkcert, '-cert-file', certPath, '-key-file', keyPath, ...HOSTS]);
-    if (failed !== null) {
-      throw new ConfigError(`mkcert failed to issue a certificate.\n${failed || '  It said nothing.'}`);
-    }
-
-    // Into the credential store rather than left on disk. The private key is a
-    // secret by any reading, and the store is the one place in a workspace that
-    // is encrypted at rest.
-    await credentials.set(PAIR_CERT_REF, await readFile(certPath, 'utf8'));
-    await credentials.set(PAIR_KEY_REF, await readFile(keyPath, 'utf8'));
-  } finally {
-    await rm(scratch, { recursive: true, force: true });
-  }
-
-  return 'installed';
-}
-
-async function installMkcert(
-  flags: PairFlags,
-  deps: PairDeps,
-  which: (binary: string) => string | null,
-  run: (command: readonly string[]) => Promise<string | null>,
-): Promise<string> {
-  const line = 'brew install mkcert';
-  const brew = which('brew');
-
-  if (!brew) {
-    // The one path where this command cannot finish the job, so it hands over
-    // the whole of it rather than half.
-    throw new ConfigError(
-      'Pairing needs mkcert, which issues a certificate this machine\'s browsers trust.\n' +
-        `  With Homebrew: ${line}\n` +
-        '  Otherwise: https://github.com/FiloSottile/mkcert#installation\n' +
-        '  Then run "lanes link pair" again.',
-    );
-  }
-
-  print(warn('pairing needs mkcert, and it is not installed'));
-  print(
-    style.dim(
-      '  It issues a certificate for 127.0.0.1 that this machine trusts, which is what\n' +
-        '  lets a page on lanes.sh read your endpoint at all. Safari will not fetch\n' +
-        '  http://127.0.0.1 from an https page, and offers no way to allow it.\n' +
-        '\n' +
-        '  This installs a local certificate authority into your system trust store.\n' +
-        `  ${line}`,
-    ),
-  );
-
-  if (flags.yes !== true) {
-    if (!(deps.interactive ?? isInteractive())) {
-      throw new ConfigError(
-        'Nothing here can answer a prompt, and installing a certificate authority because\n' +
-          '  nobody was there to say no is the wrong way to resolve that.\n' +
-          `  Run "${line}" yourself, or pass --yes.`,
-      );
-    }
-    if (!(await (deps.confirm ?? ((question: string) => confirm(question)))('Install it now?'))) {
-      throw new ConfigError(`Not paired. When you want it: ${line}`);
-    }
-  }
-
-  const failed = await run([brew, 'install', 'mkcert']);
-  if (failed !== null) throw new ConfigError(`${line} failed.\n${failed || '  It said nothing.'}`);
-
-  const found = which('mkcert');
-  if (!found) throw new ConfigError(`${line} reported success but mkcert is still not on PATH.`);
-  return found;
-}
-
-/** Runs it. Null on success; whatever it said on failure. */
-async function runCommand(command: readonly string[]): Promise<string | null> {
-  const spawned = Bun.spawn([...command], { stdout: 'pipe', stderr: 'pipe' });
-  const [code, stderr] = await Promise.all([spawned.exited, new Response(spawned.stderr).text()]);
-  return code === 0 ? null : stderr.trim();
 }
