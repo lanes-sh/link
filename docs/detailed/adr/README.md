@@ -80,6 +80,7 @@ Run.
 | [062](062-the-consent-page-asks-lanes-who-you-are.md) | The consent page asks Lanes who you are, and the pasted token is for CI |
 | [063](063-one-origin-may-read-a-loopback-endpoint.md) | One origin may read a loopback endpoint, over a certificate it installs |
 | [064](064-a-deployed-endpoint-is-read-over-its-own-url.md) | A deployed endpoint is read over its own URL, and pairing stops meaning a certificate |
+| [065](065-the-app-provisions-this-cli.md) | The desktop app installs and updates this CLI on its own lifecycle, and a foreign install is replaced rather than argued with |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 
@@ -250,3 +251,16 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
   not selection, the count comes first, and several matches render only what tells them apart —
   and they are load-bearing in a way a refusal was not: with no error, they are the only thing
   between two candidates and a message sent to the wrong person.
+
+- **ADR-065** amends ADR-034 from outside this repository, which is the unusual part: no code here
+  changes, and the decision is implemented in the desktop app. It is recorded here because the
+  sentence it makes untrue is here — ADR-034's *nothing updates itself, and nothing blocks on
+  asking* — and a reader who found only the app's side of it would reasonably conclude the rule had
+  been forgotten rather than revisited. The install shape is untouched: same command, same Bun-only
+  constraint, same refusal to touch a checkout.
+
+  The part worth carrying away is the cwd. `update` migrates and repairs the workspace the walk
+  from the cwd finds, so any caller that is not a person in a terminal has to say where it is
+  standing. The app names home. Anything else driving this CLI should assume the same obligation
+  rather than inherit whatever directory it was launched from.
+
