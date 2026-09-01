@@ -1,9 +1,9 @@
 import type { AuditDraft, AuditLogger, AuditSink, AuthorizationResult } from '#audit';
 import { keepKeys, redactAllValues } from '#audit';
-import type { Principal } from '#auth';
+import { mayReach, type Principal } from '#auth';
 import type { SecretStore } from '#secrets';
 import type { RuntimeState } from '#stores/state';
-import type { PolicyDocument } from '#policy';
+import type { PolicyDocument, ProfilePolicy } from '#policy';
 import { RateLimiter, evaluate } from '#policy';
 import type { BlobStore } from '#stores/blobs';
 import type {
@@ -14,69 +14,14 @@ import type {
   Logger,
 } from '#connectivity';
 import { isToolResult, strategyContextFrom, strategyFor } from '#connectivity';
-import type { Config } from '#profile';
+import type { Config, ConnectionConfig } from '#profile';
 import { buildProviderContext, createProviderLogger } from './context.ts';
 import { fetchStaged, stageAttachment } from './staging.ts';
 import type { FetchStagedRequest, StagedAttachment, StageRequest } from './staging.ts';
 import type { ProviderRegistry } from '#registry';
 
-/**
- * The dispatch path.
- *
- * Every invocation goes through here in one fixed order — authenticate,
- * resolve, authorize, rate-limit, dispatch, audit — with no way around it.
- * The ordering is not stylistic: policy is evaluated before a provider is
- * reached, so a provider never sees a request it was not authorised to serve,
- * and authorization is never something provider code could get wrong.
- *
- * Exactly one audit event is written per invocation, on every path including
- * denials. That is enforced structurally by `finally` rather than by
- * remembering to call it at each return.
- */
-
-export interface DispatchDeps {
-  readonly config: Config;
-  readonly registry: ProviderRegistry;
-  /**
-   * Resolve the connector for a provider. Supplied by the caller so core does
-   * not import connector implementations, keeping the dependency direction
-   * intact: infrastructure -> sdk -> core -> connectors.
-   */
-  readonly connectorFor: (providerId: string, connectionId: string) => AnyConnector | undefined;
-  /** Attach whatever the manifest's auth kind requires to an outbound request. */
-  readonly authorizeRequest?: (
-    providerId: string,
-    connectionId: string,
-    request: Request,
-  ) => Promise<Request>;
-  readonly policy: PolicyDocument;
-  /** Optional instance floor. Empty in M1; composition is tighten-only. */
-  readonly floor?: PolicyDocument;
-  readonly state: RuntimeState;
-  /**
-   * Where events go. Separate from `state` because the log is no longer in
-   * it — and because dispatch only ever writes, so taking the sink rather than
-   * the whole store means this path structurally cannot read the log back.
-   */
-  readonly audit: AuditSink;
-  readonly credentials: SecretStore;
-  readonly storage: BlobStore;
-  readonly limiter: RateLimiter;
-  readonly log: Logger;
-  readonly now?: () => number;
-}
-
-export interface DispatchRequest {
-  readonly principal: Principal;
-  /** Fully qualified, e.g. `example.echo`. */
-  readonly capabilityId: string;
-  /** Fully qualified, e.g. `example.a`. */
-  readonly connectionKey: string;
-  readonly arguments: Readonly<Record<string, unknown>>;
-  /** Self-reported by the client. Observability only — never authorization. */
-  readonly clientLabel?: string | undefined;
-  readonly signal?: AbortSignal;
-}
+export type { DispatchDeps, DispatchRequest } from './deps.ts';
+import type { DispatchDeps, DispatchRequest } from './deps.ts';
 
 /**
  * `result` is a union because a capability is not necessarily a tool — a
@@ -198,7 +143,21 @@ export class Dispatcher {
 
       auditArguments = (redact ?? redactAllValues)(request.arguments);
 
-      const declared = config.connections.find(
+      // **Who, before what.** A caller reaches a profile only if that profile's
+      // `members:` names them (ADR-060), and this is checked before the
+      // connection is even resolved: a refusal that first said "no such
+      // connection" would answer a question the caller was not entitled to ask.
+      // The profile is the principal's: the MCP layer routes on the `profile`
+      // argument and builds the principal for it, so this is the same value the
+      // caller named and the one the audit event records.
+      if (!mayReach(request.principal, request.principal.profile)) {
+        return (outcome = deny(
+          'denied_default',
+          `Profile ${request.principal.profile} is not available`,
+        ));
+      }
+
+      const declared = this.#deps.connections.find(
         (connection) => `${connection.provider}.${connection.id}` === request.connectionKey,
       );
       if (!declared || declared.provider !== providerId) {
@@ -311,7 +270,7 @@ export class Dispatcher {
         // Which vendors this profile registered a client of its own for. A
         // provider that could be brokered but is not reads its client from the
         // store, so it has to be able to.
-        ownClients: Object.keys(this.#deps.config.oauth_apps),
+        ownClients: this.#deps.oauthApps,
         ...(entry.manifest.connector.kind === 'local' ? {} : { authorize }),
       });
 

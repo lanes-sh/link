@@ -1,9 +1,11 @@
+import { readSession } from '#auth/lanes/session.ts';
+import { ConfigError } from '#profile';
 import { startEndpoint } from '#server/endpoint.ts';
 import { streamLogger } from '#server/logging.ts';
 import { repairOwnerLayer } from '../../config-repair.ts';
 import { announce, ok, print, style, warn } from '../../output.ts';
 import { staleNudge } from '../../release.ts';
-import { resolveProfile, type GlobalFlags } from '../../runtime.ts';
+import { primaryProfile, resolveProfile, type GlobalFlags } from '../../runtime.ts';
 
 /** `lanes link start` — reconcile, then serve every profile on one endpoint. */
 
@@ -14,8 +16,23 @@ export async function start(
     only?: boolean | undefined;
   },
 ): Promise<void> {
-  const { resolution } = await resolveProfile(flags);
+  // One endpoint serves every profile in the workspace, so the workspace is the
+  // subject and a profile is not required. What `--profile` picks is the
+  // *primary*: whose token opens the endpoint and whose port it binds (ADR-009).
+  // `--only` is the flag that narrows what is served, and it has nothing to
+  // narrow unless a profile was named.
+  if (flags.only === true && flags.profile === undefined) {
+    throw new ConfigError(
+      '--only serves one profile, so it needs to be told which.\n' +
+        '  Add --profile <name>, or drop --only to serve every profile in the workspace.',
+    );
+  }
+
+  const resolved = { ...flags, profile: await primaryProfile(flags) };
+  const { resolution } = await resolveProfile(resolved);
   announce(resolution);
+
+  await requireSignIn();
 
   // Before the bootstrap, and only here.
   //
@@ -41,7 +58,7 @@ export async function start(
   // entrypoint. What stays here is what a terminal wants: the plan, printed as
   // it is applied, and the endpoint at the end.
   const endpoint = await startEndpoint({
-    flags,
+    flags: resolved,
     port: flags.port,
     only: flags.only,
     mintToken: true,
@@ -56,7 +73,7 @@ export async function start(
         print(ok(`reconciled ${ofMany ? profile : ''}`.trim()));
       },
       tokenMinted({ target }) {
-        print(warn(`minted a token — run: lanes link outputs --show --target ${target}`));
+        print(warn(`minted a token — run: lanes link outputs --show --workspace ${target}`));
       },
     },
   });
@@ -80,4 +97,35 @@ export async function start(
   process.on('SIGTERM', () => void shutdown());
 
   await new Promise(() => {});
+}
+
+/**
+ * Refuse to serve without a Lanes session.
+ *
+ * A local endpoint requires this as much as a deployed one does, which is the
+ * uncomfortable half of ADR-060 and worth stating plainly: **a self-hostable
+ * tool now needs an account to start.** The alternative was worse. A profile
+ * declares who may consume it, and there is no way to check that against
+ * anybody if the endpoint has no idea who is asking — so "local is exempt"
+ * means local profiles cannot express delegation at all, and the model would be
+ * two models.
+ *
+ * What is *not* required is the network per request. A machine offline for a
+ * day keeps serving; the session is needed to sign in and to refresh, and
+ * `lanes auth status` says how long that has left to run.
+ *
+ * The CI token is the exception and stays one (ADR-009): a headless runner has
+ * no browser, presents `llk_…`, and reaches the whole workspace.
+ */
+async function requireSignIn(): Promise<void> {
+  if ((await readSession()) !== null) return;
+
+  throw new ConfigError(
+    'Not signed in, so there is nobody for this endpoint to serve.\n' +
+      '  Run: lanes auth login\n' +
+      '\n' +
+      '  A profile reaches you only where its members list your subject, which is why\n' +
+      '  this is required for a local endpoint too. See:\n' +
+      '    lanes link profile members add --me --profile <name>',
+  );
 }

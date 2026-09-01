@@ -40,27 +40,61 @@ async function seededVault(): Promise<VaultStore> {
 
 const vaultStore = await seededVault();
 
+/**
+ * The three owner-layer rows a test grants, each carrying the same rules.
+ *
+ * A grant lives inside the row that names one connection now (ADR-058), so the
+ * flat block each test writes is indented once more and repeated per row —
+ * which is exactly what the flat block used to mean, and keeps every assertion
+ * in this file asserting what it was written to assert.
+ */
 function ownerConfig(profile: string, port: number, policy: string) {
+  // Split per row, and filtered to the row's own provider. A rule governs the
+  // connection it sits under and nothing else, so `skills.*` on the memory row
+  // is not a broader grant — it is one the loader refuses.
+  const lines = policy.split('\n').filter((line) => line.trim().length > 0);
+
+  const grants = ['memory', 'skills', 'vault']
+    .map((provider) => {
+      let field = 'allow';
+      const kept: string[] = [];
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed === 'allow:' || trimmed === 'deny:') {
+          field = trimmed.slice(0, -1);
+          continue;
+        }
+        const capability = trimmed.replace(/^-\s*/, '').replace(/"/g, '');
+        if (capability.split('.')[0] !== provider) continue;
+        kept.push(`    ${field}: [${capability}]`);
+      }
+
+      const merged = new Map<string, string[]>();
+      for (const entry of kept) {
+        const [, name = '', value = ''] = /^\s*(\w+): \[(.*)\]$/.exec(entry) ?? [];
+        merged.set(name, [...(merged.get(name) ?? []), value]);
+      }
+
+      const body = ['allow', 'deny']
+        .map((name) => `    ${name}: [${(merged.get(name) ?? []).join(', ')}]`)
+        .join('\n');
+
+      return `  - connection: ${provider}.owner\n${body}`;
+    })
+    .join('\n');
+
   return parseConfig(`
-contract: 2
+contract: 3
 instance:
   profile: ${profile}
   port: ${port}
 limits:
   requests_per_minute: 1000
   upstream_calls_per_minute: 1000
-connections:
-  - id: owner
-    provider: memory
-    account: Owner
-  - id: owner
-    provider: skills
-    account: Owner
-  - id: owner
-    provider: vault
-    account: Owner
-policy:
-${policy}
+grants:
+${grants}
+members: []
 `).config;
 }
 

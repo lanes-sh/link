@@ -13,7 +13,7 @@ import { declareConnection } from './declare.ts';
  * once, after which `connect` no longer recognised the account it had renamed.
  */
 
-const EMPTY = `contract: 2
+const EMPTY = `contract: 3
 instance:
   profile: personal
   host: 127.0.0.1

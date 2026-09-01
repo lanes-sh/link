@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { legacyTargetSchema, readRegistry } from '#profile';
 import { migrateWorkspace, needsMigration } from './workspace-migrate.ts';
 import { toEntry } from './migrate-plan.ts';
@@ -54,7 +54,7 @@ describe('hoisting a profile’s targets into the workspace', () => {
     const registry = await readRegistry(root);
 
     expect(registry['local']?.storage?.adapter).toBe('filesystem');
-    expect(registry['cloud']?.workspace).toBe('gs://personal-lanes');
+    expect(registry['cloud']?.at).toBe('gs://personal-lanes');
     expect(registry['cloud']?.storage).toBeUndefined();
   });
 
@@ -66,6 +66,8 @@ describe('hoisting a profile’s targets into the workspace', () => {
     await migrateWorkspace(root);
     const written = await readFile(join(root, 'profiles', 'personal.yaml'), 'utf8');
 
+    // This migration produces contract 2, and `migrateToContract3` takes it the
+    // rest of the way — so the number here is literally 2, not the newest.
     expect(written).toContain('contract: 2');
     expect(written).not.toContain('targets:');
     expect(written).not.toContain('default_target');
@@ -115,10 +117,10 @@ describe('migrating the workspace a target already lives in', () => {
     // `openTarget` refuses as a loop — leaving `deploy` unable to run against the
     // bucket it had just migrated, on the one command the refusal names as the fix.
     const fromLaptop = toEntry('cloud', parse('gcs'), 'personal', '/Users/x/.lanes-link');
-    expect(fromLaptop?.workspace).toBe('gs://personal-lanes');
+    expect(fromLaptop?.at).toBe('gs://personal-lanes');
 
     const fromBucket = toEntry('cloud', parse('gcs'), 'personal', 'gs://personal-lanes');
-    expect(fromBucket?.workspace).toBeUndefined();
+    expect(fromBucket?.at).toBeUndefined();
     expect(fromBucket?.storage?.bucket).toBe('personal-lanes');
   });
 
@@ -159,5 +161,51 @@ describe('reporting without writing', () => {
     expect(again.alreadyCurrent).toBe(true);
     expect(again.changes).toEqual([]);
     expect(await needsMigration(root)).toBe(false);
+  });
+});
+
+describe('one spelling of "bring this workspace up to date"', () => {
+  /**
+   * The guard for the defect that made this whole seam worth naming.
+   *
+   * `migrateWorkspace` is the contract 1 → 2 step and nothing more. Three
+   * callers reached for it meaning "migrate this workspace": `update` followed
+   * it with the 2 → 3 step, and `deploy` and `doctor --fix` did not. Neither of
+   * those two refused anything — a contract-2 bucket passed straight through,
+   * its config was replaced with contract-3 YAML, and the revision came up
+   * reading an empty `data/` while every byte stayed under `data/<profile>/`.
+   * Somebody's memory, tasks, skills and audit log were simply not there, and
+   * the endpoint reported itself healthy.
+   *
+   * So the half-step is not for general use, and this is what says so. A fourth
+   * contract adds a step to `migrateToCurrentContract` and every caller gets it;
+   * a caller that reaches past it fails here instead of in a bucket.
+   */
+  test('nothing outside this module calls the half-step', async () => {
+    const src = join(import.meta.dir, '..');
+    const found: string[] = [];
+
+    const walk = async (directory: string): Promise<void> => {
+      for (const entry of await readdir(directory, { withFileTypes: true })) {
+        const full = join(directory, entry.name);
+        if (entry.isDirectory()) await walk(full);
+        else if (entry.name.endsWith('.ts')) found.push(full);
+      }
+    };
+    await walk(src);
+
+    const offenders: string[] = [];
+    for (const path of found) {
+      // A test wires whatever it needs to exercise the thing it covers, and the
+      // module that defines the step is where it is meant to be called from.
+      if (path.endsWith('.test.ts')) continue;
+      if (path.endsWith(join('cli', 'workspace-migrate.ts'))) continue;
+
+      if (/\bmigrateWorkspace\s*\(/.test(await readFile(path, 'utf8'))) {
+        offenders.push(relative(src, path));
+      }
+    }
+
+    expect(offenders).toEqual([]);
   });
 });

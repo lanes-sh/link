@@ -9,7 +9,7 @@ import { readRegistry } from './registry.ts';
 /**
  * Writing the target registry.
  *
- * This used to be an *index* beside the profile's own `targets:` block, and
+ * This used to be an *index* beside the profile's own `workspaces:` block, and
  * every test here was about one property: that losing `targets.cloud` from a
  * profile did not lose the deployment. ADR-052 removed the block, so the
  * property is no longer something to preserve — it is the only shape there is.
@@ -34,15 +34,15 @@ afterAll(async () => {
 
 describe('recording where a target lives', () => {
   test('a workspace with no registry reports none, rather than failing', async () => {
-    const root = await workspace('contract: 2\n');
+    const root = await workspace('contract: 3\n');
     expect(await readRegistry(root)).toEqual({});
   });
 
   test('a recorded pointer is found again by target', async () => {
     const root = await workspace();
-    await recordTarget(root, 'cloud', { workspace: 'gs://your-bucket' });
+    await recordTarget(root, 'cloud', { at: 'gs://your-bucket' });
 
-    expect((await readRegistry(root))['cloud']).toMatchObject({ workspace: 'gs://your-bucket' });
+    expect((await readRegistry(root))['cloud']).toMatchObject({ at: 'gs://your-bucket' });
   });
 
   test('a pointer replaces a declaration rather than merging with it', async () => {
@@ -50,10 +50,10 @@ describe('recording where a target lives', () => {
     // An entry carrying both a `workspace:` and adapters is what the schema
     // refuses, so merging here would write a file that cannot be read back.
     const root = await workspace();
-    await recordTarget(root, 'cloud', { workspace: 'gs://your-bucket' });
+    await recordTarget(root, 'cloud', { at: 'gs://your-bucket' });
 
     const entry = (await readRegistry(root))['cloud']!;
-    expect(entry.workspace).toBe('gs://your-bucket');
+    expect(entry.at).toBe('gs://your-bucket');
     expect(entry.credentials).toBeUndefined();
     expect(entry.storage).toBeUndefined();
   });
@@ -61,27 +61,27 @@ describe('recording where a target lives', () => {
   test('redeploying the same target replaces its entry, and does not append', async () => {
     // A second entry would be a history, and a history is a thing to read wrong.
     const root = await workspace();
-    await recordTarget(root, 'cloud', { workspace: 'gs://first-bucket' });
-    await recordTarget(root, 'cloud', { workspace: 'gs://second-bucket' });
+    await recordTarget(root, 'cloud', { at: 'gs://first-bucket' });
+    await recordTarget(root, 'cloud', { at: 'gs://second-bucket' });
 
     const registry = await readRegistry(root);
     expect(Object.keys(registry).filter((name) => name === 'cloud')).toHaveLength(1);
-    expect(registry['cloud']?.workspace).toBe('gs://second-bucket');
+    expect(registry['cloud']?.at).toBe('gs://second-bucket');
   });
 
   test('a declaration replaces a pointer, so a bucket never points at itself', async () => {
     // `deploy` writes the bucket's own registry after the upload. Merging there
-    // left this machine's `workspace:` on the entry — and a bucket pointing at
+    // left this machine's `at:` on the entry — and a bucket pointing at
     // itself is a loop `openTarget` refuses, on the target just deployed.
-    const root = await workspace('contract: 2\n');
-    await recordTarget(root, 'cloud', { workspace: 'gs://your-bucket', primary: 'personal' });
+    const root = await workspace('contract: 3\n');
+    await recordTarget(root, 'cloud', { at: 'gs://your-bucket', primary: 'personal' });
     await recordTarget(root, 'cloud', {
       credentials: { adapter: 'gcp-secret-manager', project: 'p' },
       storage: { adapter: 'gcs', bucket: 'your-bucket' },
     });
 
     const entry = (await readRegistry(root))['cloud']!;
-    expect(entry.workspace).toBeUndefined();
+    expect(entry.at).toBeUndefined();
     expect(entry.storage?.bucket).toBe('your-bucket');
     // The deploy record is the one thing that crosses either way.
     expect(entry.primary).toBe('personal');
@@ -93,11 +93,11 @@ describe('recording where a target lives', () => {
     // rest of the entry is being replaced wholesale.
     const root = await workspace();
     await recordTarget(root, 'cloud', {
-      workspace: 'gs://your-bucket',
+      at: 'gs://your-bucket',
       primary: 'personal',
       last_deploy_version: '0.6.5',
     });
-    await recordTarget(root, 'cloud', { workspace: 'gs://your-bucket' });
+    await recordTarget(root, 'cloud', { at: 'gs://your-bucket' });
 
     const entry = (await readRegistry(root))['cloud']!;
     expect(entry.primary).toBe('personal');
@@ -109,9 +109,9 @@ describe('recording where a target lives', () => {
   });
 
   test('two targets are two entries', async () => {
-    const root = await workspace('contract: 2\n');
-    await recordTarget(root, 'cloud', { workspace: 'gs://one-bucket' });
-    await recordTarget(root, 'staging', { workspace: 'gs://two-bucket' });
+    const root = await workspace('contract: 3\n');
+    await recordTarget(root, 'cloud', { at: 'gs://one-bucket' });
+    await recordTarget(root, 'staging', { at: 'gs://two-bucket' });
 
     expect(Object.keys(await readRegistry(root))).toEqual(['cloud', 'staging']);
   });
@@ -124,8 +124,8 @@ describe('recording where a target lives', () => {
   });
 
   test('the operator’s comments survive being written to', async () => {
-    const root = await workspace('# why this workspace exists\ncontract: 2\n');
-    await recordTarget(root, 'cloud', { workspace: 'gs://your-bucket' });
+    const root = await workspace('# why this workspace exists\ncontract: 3\n');
+    await recordTarget(root, 'cloud', { at: 'gs://your-bucket' });
 
     expect(await readFile(join(root, 'lanes-link.yaml'), 'utf8')).toContain(
       '# why this workspace exists',

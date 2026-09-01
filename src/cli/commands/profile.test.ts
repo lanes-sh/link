@@ -119,7 +119,7 @@ describe('createProfile', () => {
     const text = await readFile(created.path, 'utf8');
 
     expect(created.targets).toEqual(['local']);
-    expect(text).toContain('contract: 2');
+    expect(text).toContain('contract: 3');
     expect(text).not.toContain('targets:');
     expect(text).not.toContain('credentials:');
   });
@@ -144,7 +144,7 @@ describe('createProfile', () => {
   });
 
   test('creates the workspace file first, so an empty directory can be seeded', async () => {
-    // `profile add <name> --target local` on nothing at all is how a workspace
+    // `profile add <name> --workspace local` on nothing at all is how a workspace
     // comes into existence, and the target it names is declared *by* the file it
     // is about to write. Resolving before writing would be resolving a target
     // nothing has declared yet.

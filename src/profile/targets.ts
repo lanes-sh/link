@@ -16,7 +16,7 @@ import { isPointer, type WorkspaceTarget } from './schema.ts';
  * The chain this replaces resolved `--target`, then the variable, then the key,
  * and printed which of the three it landed on. What that bought was one flag
  * saved per command. What it cost was that an *ignored* flag still produced a
- * working command — `profile add --target cloud` dropped the flag on the floor
+ * working command — `profile add --workspace cloud` dropped the flag on the floor
  * and the next command carried on from a different source, so the mistake
  * surfaced one command later with nothing connecting it to its cause. A
  * resolver with nowhere to fall back to cannot fail that way.
@@ -69,27 +69,39 @@ export function noTargetNamed(
   registry: Registry,
   root?: string,
   env: Record<string, string | undefined> = process.env as Record<string, string | undefined>,
+  options: { refusedDefault?: boolean } = {},
 ): ConfigError {
   const names = Object.keys(registry).sort();
   const where = root ?? 'this workspace';
 
   if (names.length === 0) {
     return new ConfigError(
-      `--target is required, and ${where} declares none.\n` +
-        '  Create one with: lanes link profile add <name> --target local',
+      `--workspace is required, and ${where} declares none.\n` +
+        '  Create one with: lanes link profile add <name> --workspace local',
     );
   }
 
   const stale = env[LEGACY_TARGET_ENV];
 
+  // The refusal a *destructive* command gives is a different sentence, because
+  // the operator has a default set and is entitled to know why it was not used
+  // (ADR-061). Saying only "--workspace is required" to somebody who configured
+  // one reads as a bug in the tool.
+  const because =
+    options.refusedDefault === true
+      ? "--workspace is required. This command publishes or destroys, so the\ndefault is not used for it.\n\n"
+      : "--workspace is required. This command opens a workspace's stores, and\nnothing else selects one.\n\n";
+
   return new ConfigError(
-    '--target is required. This command opens a target\'s stores, and nothing\n' +
-      'else selects one.\n\n' +
-      `  Targets in ${where}\n${rows(registry, names)}\n` +
-      `\n  e.g. lanes link status --target ${names[0]}` +
+    because +
+      `  Workspaces in ${where}\n${rows(registry, names)}\n` +
+      `\n  e.g. lanes link status --workspace ${names[0]}` +
+      (options.refusedDefault === true
+        ? '\n\n  A default is set and is used by every command that only reads.'
+        : '') +
       (stale
         ? `\n\n  ${LEGACY_TARGET_ENV}=${stale} is set in this shell and is no longer read.\n` +
-          '  Unset it, or pass --target.'
+          '  Unset it, or pass --workspace.'
         : ''),
   );
 }
@@ -126,7 +138,7 @@ function rows(registry: Registry, names: readonly string[]): string {
   return names
     .map((name) => {
       const entry = registry[name]!;
-      if (isPointer(entry)) return `    ${name}    ${entry.workspace}`;
+      if (isPointer(entry)) return `    ${name}    ${entry.at}`;
       const adapters = [entry.credentials?.adapter, entry.storage?.adapter]
         .filter(Boolean)
         .join('  ');

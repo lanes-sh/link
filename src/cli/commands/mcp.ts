@@ -20,3 +20,4 @@ export { harnessCommands } from './mcp/harnesses.ts';
 export { mcpList } from './mcp/list.ts';
 export { mcpAdd, type McpAddOptions } from './mcp/register.ts';
 export { mcpStdio } from './mcp/stdio.ts';
+export { installInstructions, type InstallInstructionsFlags } from './mcp/onboarding.ts';

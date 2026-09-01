@@ -115,7 +115,7 @@ describe('a run with nobody to ask', () => {
   });
 
   test('and hands back a command that carries the selection', async () => {
-    // Asserted because a suggested command missing --profile or --target is
+    // Asserted because a suggested command missing --profile or --workspace is
     // refused the moment it is pasted, which reads as the tool being broken.
     const result = await gather({ connector: 'mcp', auth: 'none' }, silent);
 

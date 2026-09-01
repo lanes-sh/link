@@ -1,3 +1,5 @@
+import { forProfile } from '#auth';
+import { clientLabelFrom } from './client-info.ts';
 import { ResourceTemplate, type McpServer } from '@modelcontextprotocol/server';
 import { isResourceListResult, isResourceResult } from '#connectivity';
 import type { DispatchOutcome } from '#dispatch';
@@ -28,14 +30,20 @@ export function registerResource(
       const scope = { profile, connectionId };
       const scoped = scopeResourceUri(capability.uriTemplate, scope);
 
-      const dispatch = (args: Record<string, unknown>): Promise<DispatchOutcome> =>
-        runtime.dispatcher.invoke({
-          principal: options.principal,
+      const dispatch = (
+        args: Record<string, unknown>,
+        extra?: unknown,
+      ): Promise<DispatchOutcome> => {
+        const label = clientLabelFrom(extra) ?? options.clientLabel;
+
+        return runtime.dispatcher.invoke({
+          principal: forProfile(options.principal, profile),
           capabilityId: id,
           connectionKey,
           arguments: args,
-          clientLabel: options.clientLabel,
+          ...(label ? { clientLabel: label } : {}),
         });
+      };
 
       const metadata = {
         description: `${capability.description} (${profile}: ${connectionKey})`,
@@ -44,8 +52,8 @@ export function registerResource(
 
       // `uri` is the whole argument — the provider recovers its own template
       // variables from it and never sees the routing segments core prepended.
-      const read = async (uri: URL) => {
-        const outcome = await dispatch({ uri: uri.href });
+      const read = async (uri: URL, _variables?: unknown, extra?: unknown) => {
+        const outcome = await dispatch({ uri: uri.href }, extra);
         if (!outcome.ok) throw new Error(outcome.message);
         if (!isResourceResult(outcome.result)) {
           throw new Error(`${id} did not return resource contents`);
@@ -83,8 +91,8 @@ export function registerResource(
           // rather than an oversight. A provider omits `list` when its resource
           // space is unbounded.
           list: capability.list
-            ? async () => {
-                const outcome = await dispatch({});
+            ? async (extra?: unknown) => {
+                const outcome = await dispatch({}, extra);
                 if (!outcome.ok) throw new Error(outcome.message);
                 if (!isResourceListResult(outcome.result)) return { resources: [] };
 

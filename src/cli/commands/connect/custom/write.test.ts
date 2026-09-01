@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, stat, writeFile, mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { layout } from '#profile';
-import { loadProfileProviders, parseManifest } from '#providers/custom/index.ts';
+import { loadWorkspaceProviders, parseManifest } from '#providers/custom/index.ts';
 import { deriveDeclaration, deriveManifest } from './derive.ts';
 import type { CustomAnswers } from './spec.ts';
 import {
@@ -18,7 +18,7 @@ import {
 /**
  * That the file this command writes is one the loader reads.
  *
- * Asserted against `loadProfileProviders` rather than against this file's own
+ * Asserted against `loadWorkspaceProviders` rather than against this file's own
  * idea of the path, because "wrote a manifest" and "declared a provider" are
  * only the same claim if the two agree about where manifests live — and the one
  * message that used to tell an operator that named the wrong directory.
@@ -56,7 +56,7 @@ describe('the manifest lands where the loader looks', () => {
 
     await writeManifest(path, renderManifest(deriveDeclaration(answers())));
 
-    const loaded = await loadProfileProviders(root, PROFILE);
+    const loaded = await loadWorkspaceProviders(root);
     expect(loaded.map((entry) => entry.manifest.id)).toEqual(['thing']);
     expect(loaded[0]?.manifest.auth).toMatchObject({ kind: 'bearer' });
   });
@@ -69,7 +69,7 @@ describe('the manifest lands where the loader looks', () => {
 
     await writeManifest(path, 'id: thing\n');
 
-    expect((await stat(join(root, layout.providers(PROFILE)))).isDirectory()).toBe(true);
+    expect((await stat(join(root, layout.providers()))).isDirectory()).toBe(true);
   });
 
   test('readable only by its owner, like every other file here', async () => {
@@ -87,10 +87,10 @@ describe('the manifest lands where the loader looks', () => {
     // loader tries to parse, which would break every command for this profile.
     const root = await workspace();
     const path = manifestPath(root, PROFILE, 'thing');
-    await mkdir(join(root, layout.providers(PROFILE)), { recursive: true });
+    await mkdir(join(root, layout.providers()), { recursive: true });
     await writeFile(`${path}.tmp`, 'id: broken');
 
-    await expect(loadProfileProviders(root, PROFILE)).resolves.toEqual([]);
+    await expect(loadWorkspaceProviders(root)).resolves.toEqual([]);
   });
 });
 
@@ -179,7 +179,7 @@ describe('an OpenAPI document named as a path', () => {
 
   test('one beside the manifest is found', async () => {
     const root = await workspace();
-    const directory = join(root, layout.providers(PROFILE));
+    const directory = join(root, layout.providers());
     await mkdir(directory, { recursive: true });
     await writeFile(join(directory, 'thing.json'), '{}');
 

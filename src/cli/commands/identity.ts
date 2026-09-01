@@ -1,4 +1,4 @@
-import type { IdentityEntry, ProfileSelection, Resolution } from '#profile';
+import { CONNECTIONS_FILE, type IdentityEntry, type ProfileSelection, type Resolution } from '#profile';
 import { ConfigDocument } from '../config-edit.ts';
 import { ensureIdentityConnection, repairLines, repaired } from '../config-repair.ts';
 import { announce, announceProfile, emit, ok, print, style, table, warn } from '../output.ts';
@@ -51,14 +51,20 @@ function covers(rules: ReadonlyArray<{ capability: string }>): boolean {
  * misleading thing this command could print.
  */
 function readable(config: {
-  connections: ReadonlyArray<{ provider: string }>;
-  policy: { allow: ReadonlyArray<{ capability: string }>; deny: ReadonlyArray<{ capability: string }> };
+  grants: ReadonlyArray<{
+    connection: string;
+    allow: ReadonlyArray<{ capability: string }>;
+    deny: ReadonlyArray<{ capability: string }>;
+  }>;
 }): boolean {
-  return (
-    config.connections.some((connection) => connection.provider === 'identity') &&
-    covers(config.policy.allow) &&
-    !covers(config.policy.deny)
-  );
+  // One row now rather than a connection and a rule that had to agree
+  // (ADR-058). The old shape could say "declared but not granted" and
+  // "granted but not declared", and both served nothing while reading like
+  // configuration that worked; neither is expressible here.
+  const grant = config.grants.find((row) => row.connection.startsWith('identity.'));
+  if (grant === undefined) return false;
+
+  return covers(grant.allow) && !covers(grant.deny);
 }
 
 /**
@@ -96,7 +102,13 @@ export async function addIdentity(
   const entry: IdentityEntry = { kind, value, ...(options.note ? { note: options.note } : {}) };
   document.addTo(['identity'], entry, { inline: true });
 
-  const repair = ensureIdentityConnection(document);
+  // The identity *connection* is the workspace's, like every other (ADR-057),
+  // so provisioning the surface on first use touches two files. Both saves, or
+  // neither: a grant naming a connection that does not exist is refused at load,
+  // so writing the profile alone would leave one that no longer opens.
+  const connections = await ConfigDocument.openKey(resolution.workspaceRoot, CONNECTIONS_FILE);
+  const repair = ensureIdentityConnection(connections, document);
+  await connections.save();
   await document.save();
 
   return {

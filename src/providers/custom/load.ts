@@ -38,14 +38,13 @@ export interface LoadedManifest {
   readonly path: string;
 }
 
-export async function loadProfileProviders(
+export async function loadWorkspaceProviders(
   workspaceRoot: string,
-  profile: string,
   /** Injected for tests. A bucket is the case this exists to cover. */
   store?: BlobStore,
 ): Promise<LoadedManifest[]> {
   const files = store ?? workspaceFiles(workspaceRoot);
-  const directory = layout.providers(profile);
+  const directory = layout.providers();
 
   let keys: string[];
   try {

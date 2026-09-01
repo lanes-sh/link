@@ -159,7 +159,7 @@ describe('binding a connection made since the last deploy', () => {
     });
 
     expect(outcome.bound).toEqual([]);
-    expect(outcome.failed).toContain('lanes link deploy --target cloud');
+    expect(outcome.failed).toContain('lanes link deploy --workspace cloud');
     expect(outcome.failed).toContain('rotate');
   });
 

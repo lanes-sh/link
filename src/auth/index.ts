@@ -28,11 +28,59 @@ import type { SecretRef, SecretStore } from '#secrets';
 export interface Principal {
   readonly id: string;
   readonly profile: string;
-  readonly kind: 'owner';
+  readonly kind: 'owner' | 'member' | 'machine';
+  /**
+   * Every profile this caller may reach, or `undefined` for "all of them".
+   *
+   * `undefined` is the machine token and the stdio pipe: neither is a person,
+   * both reach the whole workspace, and saying so explicitly is better than
+   * enumerating a list that would then need keeping in step. A `member` always
+   * carries a list, because the list *is* the delegation (ADR-060).
+   */
+  readonly profiles?: readonly string[] | undefined;
 }
 
 export function ownerPrincipal(profile: string): Principal {
   return { id: `${profile}:owner`, profile, kind: 'owner' };
+}
+
+/**
+ * A person, and the profiles whose `members:` name them.
+ *
+ * `profile` carries the one this call is acting within, which is what the audit
+ * log records and what policy is evaluated against. `profiles` is the whole set
+ * they may choose from, and `mayReach` is the check — kept here rather than in
+ * the dispatcher so discovery and enforcement cannot answer it differently,
+ * which is the same rule `allowedConnections` follows on the capability axis.
+ */
+export function memberPrincipal(
+  subject: string,
+  profile: string,
+  profiles: readonly string[],
+): Principal {
+  return { id: subject, profile, kind: 'member', profiles };
+}
+
+/**
+ * The same caller, acting within a different profile.
+ *
+ * An endpoint serves several profiles and a principal is built once, from the
+ * primary — so the profile on it is where the *connection* was opened, not
+ * where this call is going. Every dispatch has to say which, because
+ * `principal.profile` is what the audit event records and what `mayReach` is
+ * checked against; without this the log attributes a member's call to a profile
+ * they may never have been able to reach.
+ *
+ * It does not widen anything. `profiles` carries over untouched, so a name this
+ * caller may not reach is still refused — one step later, by the check below.
+ */
+export function forProfile(principal: Principal, profile: string): Principal {
+  return principal.profile === profile ? principal : { ...principal, profile };
+}
+
+/** Whether this caller may act within the named profile. */
+export function mayReach(principal: Principal, profile: string): boolean {
+  return principal.profiles === undefined || principal.profiles.includes(profile);
 }
 
 export type AuthOutcome =
@@ -215,7 +263,15 @@ export {
   type ChallengeError,
   type ResourceIdentity,
 } from './oauth/metadata.ts';
-export { OAuthServer, pkceChallengeFor, type AuthorizeRequest, type OAuthResult } from './oauth/server.ts';
+export {
+  OAuthServer,
+  pkceChallengeFor,
+  type EndpointIdentity,
+  type Federation,
+  type OAuthResult,
+} from './oauth/server.ts';
+export { AssertionVerifier, type Assertion } from './lanes/assertion.ts';
+export { lanesFederation, DEFAULT_WEB_URL, type FederationOptions } from './lanes/federation.ts';
 export { matchesRegistered } from './oauth/redirects.ts';
 export { OAuthStore, hashToken, randomToken } from './oauth/store.ts';
 export { OidcVerifier, type OidcVerifierOptions, type VerifiedSubject } from './oidc.ts';

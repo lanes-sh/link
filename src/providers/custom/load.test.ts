@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { layout } from '#profile';
 import { createMemoryBlobStore } from '#stores/blobs/testing.ts';
 import type { BlobStore } from '#stores/blobs';
-import { loadProfileProviders, parseManifest } from './load.ts';
+import { loadWorkspaceProviders, parseManifest } from './load.ts';
 import { manifestTemplate } from './template.ts';
 
 /**
@@ -21,7 +21,7 @@ const PROFILE = 'personal';
 async function workspaceWith(files: Record<string, string>): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'lanes-link-manifests-'));
   roots.push(root);
-  const directory = join(root, layout.providers(PROFILE));
+  const directory = join(root, layout.providers());
   await mkdir(directory, { recursive: true });
   for (const [name, contents] of Object.entries(files)) {
     await writeFile(join(directory, name), contents);
@@ -47,7 +47,7 @@ auth:
 
   test('loads from the profile', async () => {
     const root = await workspaceWith({ 'acme.yaml': manifest });
-    const [loaded] = await loadProfileProviders(root, PROFILE);
+    const [loaded] = await loadWorkspaceProviders(root);
 
     expect(loaded?.manifest.id).toBe('acme');
     expect(loaded?.manifest.connector).toMatchObject({
@@ -171,7 +171,7 @@ describe('workspace loading', () => {
   test('an absent providers directory is the normal case, not an error', async () => {
     const root = await mkdtemp(join(tmpdir(), 'lanes-link-empty-'));
     roots.push(root);
-    expect(await loadProfileProviders(root, PROFILE)).toEqual([]);
+    expect(await loadWorkspaceProviders(root)).toEqual([]);
   });
 
   test('ignores non-YAML and example files', async () => {
@@ -181,13 +181,13 @@ describe('workspace loading', () => {
       'template.example.yaml': 'id: bad',
     });
 
-    const loaded = await loadProfileProviders(root, PROFILE);
+    const loaded = await loadWorkspaceProviders(root);
     expect(loaded.map((entry) => entry.manifest.id)).toEqual(['acme']);
   });
 
   test('names the file when one manifest is broken', async () => {
     const root = await workspaceWith({ 'broken.yaml': 'id: acme\nname: Acme' });
-    await expect(loadProfileProviders(root, PROFILE)).rejects.toThrow(/broken\.yaml/);
+    await expect(loadWorkspaceProviders(root)).rejects.toThrow(/broken\.yaml/);
   });
 });
 
@@ -202,10 +202,10 @@ describe('a relative openapi path', () => {
         'connector: { kind: http, base_url: https://api.mything.test, openapi: ./mything.json }',
     });
 
-    const [loaded] = await loadProfileProviders(root, PROFILE);
+    const [loaded] = await loadWorkspaceProviders(root);
     const connector = loaded!.manifest.connector as { openapi: string };
 
-    expect(connector.openapi).toBe(join(root, layout.providers(PROFILE), 'mything.json'));
+    expect(connector.openapi).toBe(join(root, layout.providers(), 'mything.json'));
   });
 
   test('a URL is left alone', async () => {
@@ -215,7 +215,7 @@ describe('a relative openapi path', () => {
         'connector: { kind: http, base_url: https://api.remote.test, openapi: https://api.remote.test/openapi.json }',
     });
 
-    const [loaded] = await loadProfileProviders(root, PROFILE);
+    const [loaded] = await loadWorkspaceProviders(root);
 
     expect((loaded!.manifest.connector as { openapi: string }).openapi).toBe(
       'https://api.remote.test/openapi.json',
@@ -239,7 +239,7 @@ describe('the starting templates are themselves valid', () => {
 async function bucketWith(files: Record<string, string>): Promise<BlobStore> {
   const store = createMemoryBlobStore();
   for (const [name, contents] of Object.entries(files)) {
-    await store.put(`${layout.providers(PROFILE)}/${name}`, new TextEncoder().encode(contents));
+    await store.put(`${layout.providers()}/${name}`, new TextEncoder().encode(contents));
   }
   return store;
 }
@@ -251,24 +251,24 @@ describe('a workspace in a bucket', () => {
   /**
    * The bug this describe block exists for.
    *
-   * `loadProfileProviders` used `join(workspaceRoot, …)` against `node:fs`, and
-   * `join('gs://b', 'data/p/providers.d')` is `gs:/b/data/p/providers.d` — so
+   * `loadWorkspaceProviders` used `join(workspaceRoot, …)` against `node:fs`, and
+   * `join('gs://b', 'data/providers.d')` is `gs:/b/data/providers.d` — so
    * `readdir` threw ENOENT and the catch reported an empty list, which is
    * indistinguishable from a workspace that has no manifests. The manifest was
    * uploaded, the read grant covered it, and it silently did not exist.
    */
   test('loads the manifests a deployed revision was given', async () => {
     const store = await bucketWith({ 'acme.yaml': manifest });
-    const loaded = await loadProfileProviders('gs://your-bucket', PROFILE, store);
+    const loaded = await loadWorkspaceProviders('gs://your-bucket', store);
 
     expect(loaded.map((entry) => entry.manifest.id)).toEqual(['acme']);
   });
 
   test('names the manifest by its bucket URL, so a refusal can be acted on', async () => {
     const store = await bucketWith({ 'acme.yaml': manifest });
-    const [loaded] = await loadProfileProviders('gs://your-bucket', PROFILE, store);
+    const [loaded] = await loadWorkspaceProviders('gs://your-bucket', store);
 
-    expect(loaded?.path).toBe(`gs://your-bucket/${layout.providers(PROFILE)}/acme.yaml`);
+    expect(loaded?.path).toBe(`gs://your-bucket/${layout.providers()}/acme.yaml`);
   });
 
   test('applies the same filters as a directory does', async () => {
@@ -278,7 +278,7 @@ describe('a workspace in a bucket', () => {
       'template.example.yaml': 'id: bad',
     });
 
-    const loaded = await loadProfileProviders('gs://your-bucket', PROFILE, store);
+    const loaded = await loadWorkspaceProviders('gs://your-bucket', store);
     expect(loaded.map((entry) => entry.manifest.id)).toEqual(['acme']);
   });
 
@@ -291,11 +291,11 @@ describe('a workspace in a bucket', () => {
         'connector: { kind: http, base_url: https://api.example.com, openapi: https://api.example.com/openapi.json }\n',
     });
     await store.put(
-      `${layout.providers(PROFILE)}/specs/acme.json`,
+      `${layout.providers()}/specs/acme.json`,
       new TextEncoder().encode('{}'),
     );
 
-    const loaded = await loadProfileProviders('gs://your-bucket', PROFILE, store);
+    const loaded = await loadWorkspaceProviders('gs://your-bucket', store);
     expect(loaded.map((entry) => entry.manifest.id)).toEqual(['acme']);
   });
 
@@ -309,7 +309,7 @@ describe('a workspace in a bucket', () => {
         'connector: { kind: http, base_url: https://api.example.com, openapi: ./acme.json }\n',
     });
 
-    await expect(loadProfileProviders('gs://your-bucket', PROFILE, store)).rejects.toThrow(
+    await expect(loadWorkspaceProviders('gs://your-bucket', store)).rejects.toThrow(
       /relative path.*publish the spec at a URL/s,
     );
   });

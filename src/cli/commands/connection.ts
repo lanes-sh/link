@@ -1,9 +1,17 @@
 import { RESERVED_PROVIDER_IDS } from '#connectivity';
 import { credentialRefFor } from '#registry';
-import type { ConnectionConfig, Config, Resolution } from '#profile';
+import {
+  CONNECTIONS_FILE,
+  listProfiles,
+  loadProfileConfig,
+  readConnections,
+  type ConnectionConfig,
+  type Resolution,
+} from '#profile';
 import { ConfigDocument } from '../config-edit.ts';
-import { announce, emit, ok, print, style, warn } from '../output.ts';
-import { openRuntime, type GlobalFlags } from '../runtime.ts';
+import { announce, announceWorkspace, emit, ok, print, style, warn } from '../output.ts';
+import { recordConfigChange } from './../audit-change.ts';
+import { openWorkspaceRuntime, type GlobalFlags } from '../runtime.ts';
 import { nextAfterEdit, publishProfileEdit } from '../publish.ts';
 import { confirm, isInteractive } from '../prompt.ts';
 
@@ -44,18 +52,20 @@ export interface Disconnected {
   readonly credential: string | null;
   /** Set when the credential was left because something else still needs it. */
   readonly credentialSharedWith: readonly string[];
+  /**
+   * The profiles that lost a grant on this connection.
+   *
+   * Reported rather than counted, because a connection belongs to the workspace
+   * (ADR-057) and the profiles that lose one are not the profile the command was
+   * run against. Empty means it was granted by nobody, which is a legitimate
+   * state for an account connected and not yet used.
+   */
+  readonly ungranted: readonly string[];
+  /** Connections left in the workspace, not in the profile. */
   readonly remaining: number;
   readonly published: string;
 }
 
-export interface Relabelled {
-  readonly profile: string;
-  readonly target: string;
-  readonly key: string;
-  readonly from: string;
-  readonly to: string;
-  readonly published: string;
-}
 
 export interface DisconnectFlags extends GlobalFlags {
   readonly yes?: boolean | undefined;
@@ -63,9 +73,6 @@ export interface DisconnectFlags extends GlobalFlags {
   readonly json?: boolean | undefined;
 }
 
-export interface RelabelFlags extends GlobalFlags {
-  readonly json?: boolean | undefined;
-}
 
 /**
  * Find the one connection a key names.
@@ -75,45 +82,64 @@ export interface RelabelFlags extends GlobalFlags {
  * is nothing to choose here, and a bare `gmail` with two accounts declared would
  * be a command guessing which one to throw away.
  */
-function locate(config: Config, key: string, profile: string): Located {
+export function locate(
+  connections: readonly ConnectionConfig[],
+  key: string,
+  workspace: string,
+): Located {
   if (!key.includes('.')) {
-    const matches = config.connections.filter((one) => one.provider === key);
+    const matches = connections.filter((one) => one.provider === key);
     throw new Error(
       `"${key}" names a provider, not a connection.\n` +
         (matches.length > 0
-          ? `  This profile declares ${matches.map((one) => `${one.provider}.${one.id}`).join(', ')}.\n`
+          ? `  This workspace holds ${matches.map((one) => `${one.provider}.${one.id}`).join(', ')}.\n`
           : '') +
-        `  Run: lanes link status --profile ${profile}`,
+        `  Run: lanes link connection list --workspace ${workspace}`,
     );
   }
 
-  const index = config.connections.findIndex((one) => `${one.provider}.${one.id}` === key);
+  const index = connections.findIndex((one) => `${one.provider}.${one.id}` === key);
   if (index === -1) {
     throw new Error(
-      `Profile "${profile}" does not declare "${key}".\n` +
-        `  Run: lanes link status --profile ${profile}`,
+      `Workspace "${workspace}" holds no connection "${key}".\n` +
+        `  Run: lanes link connection list --workspace ${workspace}`,
     );
   }
 
-  return { index, connection: config.connections[index] as ConnectionConfig };
+  return { index, connection: connections[index] as ConnectionConfig };
 }
 
 /**
- * Refuse for a reserved provider, and say what to do instead.
+ * Refuse to remove the last instance of a built-in surface, and say why.
  *
- * `memory`, `skills`, `vault`, `setup` and `identity` are not accounts — they are
- * what the profile is *for*, they hold no credential, and each is granted by a
- * policy line this command does not touch. Removing the connection alone would
- * leave the policy granting `memory.*` against nothing: a config that is wrong
- * rather than merely untidy, which is the same reason `knowledge use` takes its
- * own block back. Hand-editing is the honest path and the file says so.
+ * A reserved provider is a connection like any other now (ADR-059), so
+ * `disconnect memory.acme` is a real thing to do and it works: the instance goes,
+ * every profile's grant on it goes, and the bytes stay where `rm -r` can find
+ * them.
+ *
+ * The *last* one is different, and refusing is honesty rather than caution. The
+ * owner layer arrives granted and is repaired back into place on the next
+ * `start`, `connect` or `deploy` (ADR-050), so removing the only `memory`
+ * connection succeeds, prints a success line, and is undone by the next command
+ * the operator runs. A command that reports a change the system immediately
+ * reverses is worse than one that refuses.
+ *
+ * `deny` is the way off, and it always was — the same line ADR-050 documents.
  */
-function refuseReserved(key: string, provider: string, path: string): void {
+function refuseLastReserved(
+  key: string,
+  provider: string,
+  connections: readonly ConnectionConfig[],
+): void {
   if (!RESERVED_PROVIDER_IDS.includes(provider)) return;
+  if (connections.filter((one) => one.provider === provider).length > 1) return;
+
   throw new Error(
-    `"${key}" is part of what this profile is, not an account it holds.\n` +
-      `  ${provider} keeps no credential, and its policy grant is a separate line this command does not touch.\n` +
-      `  To remove it, delete both from ${path} by hand.`,
+    `"${key}" is the only ${provider} connection in this workspace.\n` +
+      `  The owner layer is repaired back on the next start, connect or deploy, so removing it\n` +
+      `  would report a change that the next command undoes.\n` +
+      `  To take the surface away from a profile, deny it:\n` +
+      `    lanes link policy deny "${provider}.*" --connection ${key} --profile <name>`,
   );
 }
 
@@ -128,103 +154,110 @@ function refuseReserved(key: string, provider: string, path: string): void {
  * `unauthorized` for a `connect` nobody ran.
  */
 export function connectionsSharingCredential(
-  config: Config,
+  connections: readonly ConnectionConfig[],
   ref: string,
   exceptIndex: number,
   manifestFor: (provider: string) => Parameters<typeof credentialRefFor>[1],
 ): string[] {
-  return config.connections
+  return connections
     .filter((one, i) => i !== exceptIndex && credentialRefFor(one, manifestFor(one.provider)) === ref)
     .map((one) => `${one.provider}.${one.id}`);
 }
 
 /**
- * Take back the allow rules that named the provider, once nothing declares it.
+ * Take the grant row back from a profile that named this connection.
  *
- * Not a tidy-up. `assertReferentialIntegrity` refuses an allow rule naming a
- * provider with no connection, and `save` validates — so disconnecting the last
- * connection of a provider *failed*, with a config error about a policy line the
- * operator had not touched, and nothing removed. Every single-account provider
- * was undisconnectable, which is most of them: the bug reproduced on `slack.*`
- * and would have on `bunq.*`, while a profile with two Gmail accounts could
- * disconnect one perfectly well.
+ * Exact, where this used to be a search. A rule named a *capability*, so
+ * disconnecting the last Gmail meant hunting every rule whose capability began
+ * `gmail.` and deciding whether it was now dangling — and getting that wrong
+ * either left a config the loader refuses or silently dropped a rule about an
+ * account that was still there. A grant names the connection (ADR-058), so
+ * removing it is finding one row.
  *
- * Symmetry is the argument for removing rather than warning. `connect` writes
- * the row *and* the rule, and the pair is what `config-repair.ts` calls both
- * halves or neither — a rule with nothing behind it grants nothing and is what
- * that file exists to stop being written.
+ * Symmetry is still the argument. `connect` writes the connection and the
+ * profiles that asked for it get a grant; a connection that goes takes its
+ * grants with it, because a grant naming nothing is what
+ * `assertGrantsResolve` refuses at load.
  *
- * `allow: ['*']` is untouched: it names no provider, so nothing about it becomes
- * false. Narrower rules go with the wide one — `gmail.send_message` is as
- * dangling as `gmail.*` once the last Gmail is gone, and the loader refuses it
- * for the same reason.
- *
- * `deny` is left alone, deliberately. The loader permits a deny naming a
- * provider with no connection, because denying something you have not connected
- * yet is a reasonable thing to write ahead of time — and removing it here would
- * silently re-permit whatever it covered if the account came back.
+ * Returns whether anything was removed, so the caller can report which profiles
+ * it touched rather than claiming all of them.
  */
-function dropProviderRules(document: ConfigDocument, config: Config, index: number): void {
-  const going = config.connections[index];
-  if (!going) return;
-
-  const stillDeclared = config.connections.some(
-    (one, i) => i !== index && one.provider === going.provider,
-  );
-  if (stillDeclared) return;
-
-  const rules = document.getIn(['policy', 'allow']) as { items?: unknown[] } | null;
+function dropGrantRow(document: ConfigDocument, key: string): boolean {
+  const rows = document.getIn(['grants']) as { items?: unknown[] } | null;
   const doomed: number[] = [];
 
-  (rules?.items ?? []).forEach((_rule, at) => {
-    const bare = document.getIn(['policy', 'allow', at]);
-    const capability =
-      typeof bare === 'string' ? bare : document.getIn(['policy', 'allow', at, 'capability']);
-    if (typeof capability !== 'string') return;
-
-    if (capability.split('.')[0] === going.provider) doomed.push(at);
+  (rows?.items ?? []).forEach((_row, at) => {
+    if (document.getIn(['grants', at, 'connection']) === key) doomed.push(at);
   });
 
   // Descending, so each removal cannot move the index of one still to come.
-  for (const at of doomed.reverse()) document.removeFrom(['policy', 'allow'], at);
+  for (const at of doomed.reverse()) document.removeFrom(['grants'], at);
+  return doomed.length > 0;
 }
 
 export async function removeConnection(
   key: string,
   flags: DisconnectFlags,
 ): Promise<{ resolution: Resolution; disconnected: Disconnected } | null> {
-  const runtime = await openRuntime(flags);
+  const runtime = await openWorkspaceRuntime(flags);
 
   try {
-    const { resolution, config, target } = runtime;
-    const located = locate(config, key, resolution.profile);
-    const document = await ConfigDocument.open(resolution.workspaceRoot, resolution.profile);
+    const { resolution, target } = runtime;
+    const root = resolution.workspaceRoot;
 
-    refuseReserved(key, located.connection.provider, document.path);
+    const connectionsFile = await readConnections(root);
+    const located = locate(connectionsFile.connections, key, target);
 
-    if (!(await confirmed(key, flags))) return null;
+    refuseLastReserved(key, located.connection.provider, connectionsFile.connections);
+
+    // Which profiles lose a grant, computed before anything is asked, because it
+    // is the fact that decides whether this is a small change or a large one. A
+    // connection belongs to the workspace now (ADR-057), so disconnecting it
+    // reaches every profile that named it — including ones the operator is not
+    // thinking about, which is exactly why the confirmation lists them.
+    const affected = await profilesGranting(root, key);
+
+    if (!(await confirmed(key, affected, flags))) return null;
 
     const manifestFor = (provider: string) => runtime.registry.get(provider)?.manifest;
     const ref = credentialRefFor(located.connection, manifestFor(located.connection.provider));
-    const shared = ref ? connectionsSharingCredential(config, ref, located.index, manifestFor) : [];
+    const shared = ref
+      ? connectionsSharingCredential(connectionsFile.connections, ref, located.index, manifestFor)
+      : [];
 
-    // The config edit first. If deleting the credential fails, a connection left
-    // declared with no credential reports `unauthorized`, which is recoverable by
-    // running `connect`. The reverse — credential gone, declaration kept, edit
-    // failed — is the same state, so ordering costs nothing either way; doing the
-    // edit first means the file is right even if the store is unreachable.
-    // Both edits before the one `save`, so the file is never written in the
-    // state where the row is gone and the rule that named it is not — which is
-    // the state the loader refuses.
-    dropProviderRules(document, config, located.index);
-    document.removeFrom(['connections'], located.index);
-    await document.save();
+    // Grants first, then the connection. That order is the one the loader can
+    // survive halfway through: a profile granting a connection that is gone is
+    // refused at load, while a connection nothing grants is merely unused. So if
+    // the process dies between the two writes, the workspace still opens.
+    for (const profile of affected) {
+      const document = await ConfigDocument.openKey(root, `profiles/${profile}.yaml`);
+      if (dropGrantRow(document, key)) await document.save();
+    }
+
+    const connectionsDocument = await ConfigDocument.openKey(root, CONNECTIONS_FILE);
+    connectionsDocument.removeFrom(['connections'], located.index);
+    await connectionsDocument.save();
 
     let removed: string | null = null;
     if (ref && shared.length === 0 && flags.keepCredential !== true) {
       await runtime.credentials.delete(ref);
       removed = ref;
     }
+
+    // `profiles` is the half of this that is easy to lose. A disconnect takes
+    // the account away from every profile that named it, and a row saying only
+    // "gmail.work removed" would leave a reader to work out which agents
+    // stopped being able to reach it.
+    await recordConfigChange(runtime.config, root, target, {
+      capability: 'config.connection.remove',
+      scope: target,
+      connection: key,
+      arguments: {
+        account: located.connection.account,
+        profiles: affected,
+        credentialRemoved: removed !== null,
+      },
+    });
 
     return {
       resolution,
@@ -235,8 +268,21 @@ export async function removeConnection(
         account: located.connection.account,
         credential: removed,
         credentialSharedWith: shared,
-        remaining: config.connections.length - 1,
-        published: nextAfterEdit(await publishProfileEdit({ resolution, config, target })),
+        remaining: connectionsFile.connections.length - 1,
+        ungranted: affected,
+        published: nextAfterEdit(
+          await publishProfileEdit({
+            resolution,
+            config: runtime.config,
+            target,
+            // Every profile that lost a grant, not just the one this ran under.
+            // Publishing one left the bucket with a `connections.yaml` missing
+            // the connection and a sibling still granting it — which
+            // `assertGrantsResolve` refuses at load, so `openReconciled` skipped
+            // that profile and it silently stopped being served.
+            touched: [...new Set([resolution.profile, ...affected])],
+          }),
+        ),
       },
     };
   } finally {
@@ -244,10 +290,34 @@ export async function removeConnection(
   }
 }
 
+/**
+ * Every profile in the workspace whose grants name this connection.
+ *
+ * Read from the files rather than from the open runtime, which knows about one
+ * profile. Reading them all is the point: the operator named a connection, and
+ * the set of profiles that lose something is not visible from the one they
+ * happen to have selected.
+ */
+async function profilesGranting(root: string, key: string): Promise<string[]> {
+  const names = await listProfiles(root);
+  const granting: string[] = [];
+
+  for (const name of names) {
+    const { config } = await loadProfileConfig(root, name);
+    if (config.grants.some((grant) => grant.connection === key)) granting.push(name);
+  }
+
+  return granting;
+}
+
 /** A plain y/N. Not `profile remove`'s type-the-name, which guards the
  *  destruction of whole stores; this takes back one authorisation that `connect`
  *  can grant again. */
-async function confirmed(key: string, flags: DisconnectFlags): Promise<boolean> {
+async function confirmed(
+  key: string,
+  affected: readonly string[],
+  flags: DisconnectFlags,
+): Promise<boolean> {
   if (flags.yes === true) return true;
   if (!isInteractive()) {
     throw new Error(
@@ -255,8 +325,18 @@ async function confirmed(key: string, flags: DisconnectFlags): Promise<boolean> 
         `  Pass --yes to proceed.`,
     );
   }
+
+  // The profiles are named in the question rather than printed above it. A
+  // connection is the workspace's now, so "disconnect gmail.personal" can take
+  // the account away from a profile the operator is not looking at, and the one
+  // place that is certain to be read is the line they have to answer.
+  const reach =
+    affected.length === 0
+      ? 'no profile grants it'
+      : `${affected.length} profile(s) lose it: ${affected.join(', ')}`;
+
   // Defaults to no: this deletes a credential, and a stray return should not.
-  return confirm(`Disconnect ${key} and delete its credential?`, false);
+  return confirm(`Disconnect ${key} and delete its credential? (${reach})`, false);
 }
 
 export async function disconnect(key: string | undefined, flags: DisconnectFlags): Promise<void> {
@@ -270,7 +350,7 @@ export async function disconnect(key: string | undefined, flags: DisconnectFlags
   const { resolution, disconnected: result } = outcome;
 
   return emit(flags.json, result, () => {
-    announce(resolution);
+    announceWorkspace(resolution);
     print(ok(`disconnected ${style.bold(result.key)}${result.account ? ` (${result.account})` : ''}`));
 
     if (result.credential) {
@@ -285,78 +365,15 @@ export async function disconnect(key: string | undefined, flags: DisconnectFlags
       );
     }
 
-    print(style.dim(`      ${result.remaining} connection(s) left in this profile.`));
+    if (result.ungranted.length > 0) {
+      print(`      ungranted   ${result.ungranted.join(', ')}`);
+    }
+    print(style.dim(`      ${result.remaining} connection(s) left in this workspace.`));
     // The state record survives on purpose, and the next reconcile is what marks
     // it disabled. Saying so stops "it is still in `status`" reading as a failure.
     print(
       style.dim(
         '      The state record stays until the next reconcile, which marks it disabled rather than deleting it.',
-      ),
-    );
-    if (result.published) print(style.dim(`      ${result.published}`));
-  })
-}
-
-/**
- * Rename a connection, writing `label` and never `account`.
- *
- * It wrote `account` until it was noticed that `account` is not a display name:
- * `settleIdentity` matches on it to tell a repair from a new account,
- * `idFromAccount` derives the id from it, and `gmail.send_message` writes it
- * into a `From` header. Renaming through it therefore un-recognised the account
- * it renamed — the next `connect` added a second row beside it.
- */
-export async function renameConnection(
-  key: string,
-  label: string,
-  flags: RelabelFlags,
-): Promise<{ resolution: Resolution; relabelled: Relabelled }> {
-  const runtime = await openRuntime(flags);
-
-  try {
-    const { resolution, config, target } = runtime;
-    const located = locate(config, key, resolution.profile);
-    const document = await ConfigDocument.open(resolution.workspaceRoot, resolution.profile);
-
-    document.setIn(['connections', located.index, 'label'], label);
-    await document.save();
-
-    return {
-      resolution,
-      relabelled: {
-        profile: resolution.profile,
-        target,
-        key,
-        // What it was called a moment ago, which is the account only until the
-        // first rename.
-        from: located.connection.label ?? located.connection.account,
-        to: label,
-        published: nextAfterEdit(await publishProfileEdit({ resolution, config, target })),
-      },
-    };
-  } finally {
-    await runtime.close();
-  }
-}
-
-export async function relabel(
-  key: string | undefined,
-  label: string | undefined,
-  flags: RelabelFlags,
-): Promise<void> {
-  if (!key) throw new Error('Which connection? Run: lanes link status');
-  if (!label) throw new Error(`What should ${key} be called? Run: lanes link relabel ${key} "New name"`);
-
-  const { resolution, relabelled: result } = await renameConnection(key, label, flags);
-
-  return emit(flags.json, result, () => {
-    announce(resolution);
-    print(ok(`${style.bold(result.key)} is now ${style.bold(result.to)}`));
-    if (result.from) print(`      was     ${style.dim(result.from)}`);
-    // The label is a display name in two places, and only one of them changed.
-    print(
-      style.dim(
-        '      The state store keeps the old name until the next reconcile, which updates it.',
       ),
     );
     if (result.published) print(style.dim(`      ${result.published}`));

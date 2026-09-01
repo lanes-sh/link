@@ -9,7 +9,7 @@ import type { Config, DeployConfig, TargetConfig } from '#profile';
  *
  * Shared because getting it wrong is silent in the worst way. `outputs` asked
  * the driver; `mcp add` built the local URL unconditionally, so
- * `lanes link mcp add --target cloud` registered `http://127.0.0.1:7337/mcp`
+ * `lanes link mcp add --workspace cloud` registered `http://127.0.0.1:7337/mcp`
  * with the agent — a registration that looks successful, names the right
  * server, and points at a port with nothing behind it. One of the two had the
  * answer and the other could not see it, which is what a copied line does

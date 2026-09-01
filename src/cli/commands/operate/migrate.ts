@@ -1,7 +1,10 @@
-import { ConfigError, resolveSelection, resolveTargetWorkspace, resolveWorkspaceRoot } from '#profile';
+import {
+  CONNECTIONS_FILE,
+  listProfiles, ConfigError, resolveSelection, resolveTargetWorkspace, resolveWorkspaceRoot,
+  SUPPORTED_CONTRACT } from '#profile';
 import { ConfigDocument } from '../../config-edit.ts';
 import { migrateRenamedProviders, pendingRenames, shapeOf } from '../../config-migrate.ts';
-import { migrateWorkspace, needsMigration } from '../../workspace-migrate.ts';
+import { migrateToCurrentContract } from '../../workspace-migrate.ts';
 import { emit, fail, ok, print, style, warn } from '../../output.ts';
 import { openSecretStoreFor, type GlobalFlags } from '../../runtime.ts';
 
@@ -52,16 +55,25 @@ export async function migratedRenamedProviders(
   const root = await resolveTargetWorkspace(localRoot, target).catch(() => localRoot);
 
   const selection = await resolveSelection({ profileFlag: flags.profile, root });
-  const document = await ConfigDocument.open(root, selection.profile);
+
+  // The rename is a property of the *connection*, so it is found in the
+  // workspace's file (ADR-057) — and applied across every profile, because any
+  // of them may grant the row being renamed.
+  const document = await ConfigDocument.openKey(root, CONNECTIONS_FILE);
   if (pendingRenames(document).length === 0) return false;
+
+  const profiles: ConfigDocument[] = [];
+  for (const name of await listProfiles(root)) {
+    profiles.push(await ConfigDocument.open(root, name));
+  }
 
   // Shape-only, because the check this document fails runs after the schema.
   // Throws when it is malformed beyond a rename, which is a better sentence
   // than the referential one it would otherwise be reported under.
-  const config = shapeOf(document);
+  const config = shapeOf(await ConfigDocument.open(root, selection.profile));
   const credentials = await openSecretStoreFor(config, root, target);
 
-  const migration = await migrateRenamedProviders(document, credentials, {
+  const migration = await migrateRenamedProviders(document, profiles, credentials, {
     apply: flags.fix === true,
   });
 
@@ -141,9 +153,14 @@ export async function migratedContract(flags: RenameFlags, refusal: unknown): Pr
   const where = await resolveTargetWorkspace(root, target).catch(() => null);
   if (where === null) return false;
 
-  if (!(await needsMigration(where))) return false;
+  // Running the migration is how "is there anything to do" is answered, rather
+  // than a predicate beside it. The predicate was `needsMigration`, which asks
+  // only about contract 1 — so a contract-2 bucket, the exact thing this
+  // function exists to rescue, returned false here and fell through to the
+  // refusal it was supposed to fix. With `--fix` absent this writes nothing.
+  const migration = await migrateToCurrentContract(where, { apply: flags.fix === true });
+  if (migration.alreadyCurrent) return false;
 
-  const migration = await migrateWorkspace(where, { apply: flags.fix === true });
   const applied = flags.fix === true;
   const remote = where !== root;
 
@@ -166,8 +183,8 @@ export async function migratedContract(flags: RenameFlags, refusal: unknown): Pr
       print();
       print(
         applied
-          ? ok('migrated to contract 2 — a target is declared by the workspace, not by each profile')
-          : warn('this workspace is contract 1, and nothing here reads that any more'),
+          ? ok(`migrated to contract ${SUPPORTED_CONTRACT} — a workspace declares its own adapters, and holds the connections a profile grants`)
+          : warn(`this workspace is behind contract ${SUPPORTED_CONTRACT}, and nothing here reads that any more`),
       );
       for (const change of migration.changes) print(`  ${change}`);
 
@@ -177,15 +194,15 @@ export async function migratedContract(flags: RenameFlags, refusal: unknown): Pr
           style.dim(
             applied
               ? '  The endpoint serving this bucket is running an older image and cannot read\n' +
-                `  what was just written. Roll a new one: lanes link deploy --target ${target}`
-              : `  lanes link deploy --target ${target} migrates it and ships the image that\n` +
+                `  what was just written. Roll a new one: lanes link deploy --workspace ${target}`
+              : `  lanes link deploy --workspace ${target} migrates it and ships the image that\n` +
                 '  understands it, in one step. Prefer that to --fix here.',
           ),
         );
         return;
       }
 
-      if (!applied) print(style.dim(`  Fix it with: lanes link doctor --fix --target ${target}`));
+      if (!applied) print(style.dim(`  Fix it with: lanes link doctor --fix --workspace ${target}`));
     },
   );
 

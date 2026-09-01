@@ -73,7 +73,15 @@ export async function withRuntime(
  * the candidates rather than picking.
  */
 export function ownerConnection(config: Config, provider: string, flags: OwnerFlags): string {
-  const candidates = config.connections.filter((connection) => connection.provider === provider);
+  // Derived from the grants, not from the workspace's connections. The question
+  // is which store *this profile* may reach, and a workspace holding
+  // `memory.acme` that this profile does not grant is not a candidate — offering
+  // it would let the CLI write somewhere the endpoint would refuse to read
+  // (ADR-057, ADR-058).
+  const prefix = `${provider}.`;
+  const candidates = config.grants
+    .filter((grant) => grant.connection.startsWith(prefix))
+    .map((grant) => ({ id: grant.connection.slice(prefix.length) }));
 
   if (flags.connection) {
     const match = candidates.find((connection) => connection.id === flags.connection);
@@ -90,7 +98,10 @@ export function ownerConnection(config: Config, provider: string, flags: OwnerFl
 
   if (candidates.length === 0) {
     throw new ConfigError(
-      `This profile has no ${provider} connection. Add one with: lanes link connect ${provider}`,
+      `This profile grants no ${provider} connection.\n` +
+        `  Connect one to the workspace, then grant it:\n` +
+        `    lanes link connect ${provider}\n` +
+        `    lanes link grant ${provider}.<id> --profile ${config.instance.profile}`,
     );
   }
   if (candidates.length > 1) {

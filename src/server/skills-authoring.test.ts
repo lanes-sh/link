@@ -69,19 +69,17 @@ function skillsFixture(): { store: BlobStore; refresh: (registry: ProviderRegist
 
 function config(profile: string, port: number, policy: string) {
   return parseConfig(`
-contract: 2
+contract: 3
 instance:
   profile: ${profile}
   port: ${port}
 limits:
   requests_per_minute: 1000
   upstream_calls_per_minute: 1000
-connections:
-  - id: owner
-    provider: skills
-    account: Owner
-policy:
-${policy}
+grants:
+  - connection: skills.owner
+${policy.split('\n').filter((line) => line.trim().length > 0).map((line) => `  ${line}`).join('\n')}
+members: []
 `).config;
 }
 

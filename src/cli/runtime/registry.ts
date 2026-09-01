@@ -3,7 +3,7 @@ import type { ProviderDefinition } from '#connectivity';
 import { ConfigError } from '#profile';
 import { ProviderRegistry } from '#registry';
 import { RESERVED_BY_GRAMMAR } from '../commands/connect/custom/spec.ts';
-import { loadProfileProviders } from '#providers/custom/index.ts';
+import { loadWorkspaceProviders } from '#providers/custom/index.ts';
 import { loadProfileSkills, type LoadedSkill } from '#providers/skills/store.ts';
 import { exampleProvider } from '#providers/example/provider.ts';
 import {
@@ -138,21 +138,20 @@ export function buildRegistry(owner: OwnerLayerOptions = {}): ProviderRegistry {
  * overriding it — an operator shadowing `gmail` by accident would be very hard
  * to diagnose from the outside.
  *
- * The profile is a parameter rather than read from a config here because two of
- * the three callers do not have one: `deploy` walks every profile in turn, and
- * `profile remove` is holding the name of the one being deleted. Passing it
- * makes "which profile's manifests" a question the caller has already answered.
+ * No profile parameter any more. Manifests moved to the workspace with the
+ * connections they describe (ADR-057), so "which profile's manifests" stopped
+ * being a question — and with it the whole reason `deploy` had to rebuild a
+ * registry per profile to collect credential refs.
  */
 export async function buildRegistryWithWorkspace(
   root: string,
-  profile: string,
   owner: OwnerLayerOptions = {},
 ): Promise<ProviderRegistry> {
   const skills =
     owner.skills ?? (owner.skillStore ? await loadProfileSkills(owner.skillStore) : []);
   const registry = buildRegistry({ ...owner, skills });
 
-  for (const { manifest, path } of await loadProfileProviders(root, profile)) {
+  for (const { manifest, path } of await loadWorkspaceProviders(root)) {
     if (registry.has(manifest.id)) {
       throw new ConfigError(
         `${path}: provider "${manifest.id}" is already built in. Rename it, or remove the file to use the built-in.`,

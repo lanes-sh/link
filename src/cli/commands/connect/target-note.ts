@@ -1,5 +1,5 @@
 import type { Resolution } from '#profile';
-import { announce } from '../../output.ts';
+import { announce, announceWorkspace } from '../../output.ts';
 
 /**
  * The line `connect` prints before it acts.
@@ -23,6 +23,7 @@ import { announce } from '../../output.ts';
 export function announceConnectTarget(
   runtime: { readonly resolution: Resolution },
   json?: boolean | undefined,
+  granting = true,
 ): void {
   // `emit`'s early return only protects lines printed *at* the emit, and this
   // one has to precede the browser — so it carries its own guard, the one
@@ -30,5 +31,9 @@ export function announceConnectTarget(
   // beside `emit`: a line of prose in front of a JSON document corrupts it.
   if (json === true) return;
 
-  announce(runtime.resolution);
+  // Without `--profile` this connects into the workspace and edits no profile,
+  // so naming the one a runtime happened to resolve would report a subject the
+  // command does not have.
+  if (granting) announce(runtime.resolution);
+  else announceWorkspace(runtime.resolution);
 }

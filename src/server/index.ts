@@ -4,6 +4,7 @@ import { capabilityIdForToolName } from '#server/mcp';
 import { ATTACHMENTS_PATH, handleAttachments } from './attachments.ts';
 import { allowedHostnamesFor, rebindingRefusal } from './rebinding.ts';
 import { ANY_ORIGIN, corsAware, type CorsPolicy } from './cors.ts';
+import { isReadPath, readRoutes, type ReadDeps } from './read/routes.ts';
 import type { Generation } from './generation.ts';
 import type { Generations } from './generations.ts';
 import {
@@ -67,6 +68,16 @@ export interface ServerOptions {
    * — a page the owner happens to be visiting — before this would be reached.
    */
   readonly meterUnauthenticated?: boolean | undefined;
+  /**
+   * The dashboard's read surface, when this bind may serve it (ADR-064).
+   *
+   * Another property of the bind address, decided in the same lines of
+   * `serve()` as `cors` and the meter. Absent on loopback, where the TLS
+   * listener in `./read/open.ts` serves it on its own port instead — a
+   * cross-origin grant on `127.0.0.1` is what `./rebinding.ts` refuses
+   * outright, and ADR-039's rule is not being relaxed to fit this in.
+   */
+  readonly read?: ReadDeps | undefined;
 }
 
 export const MCP_PATH = '/mcp';
@@ -155,6 +166,8 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
           healthPath: HEALTH_PATH,
           isAuthorizationPath,
           authorizationEnabled: options.authorization !== undefined,
+          isReadPath,
+          readEnabled: options.read !== undefined,
         });
         if (refusal) {
           options.log.warn('rejected request', { reason: 'unauthenticated_rate' });
@@ -186,6 +199,17 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
             ? { profile: options.primary, profiles: options.generations.current.names() }
             : {}),
         });
+      }
+
+      // Above the 404 gate because these are deliberately not in the three-path
+      // set, and never through `options.authenticator`: the pairing token is a
+      // different credential for a different surface, and one shared check
+      // would make each able to do the other's job (ADR-063). Below the meter,
+      // because verifying one costs a credential-store read. Only what
+      // `isReadPath` matched is handed over — `readRoutes` answers everything
+      // it is given, so a wider hand-off would swallow `/mcp`.
+      if (options.read && isReadPath(url.pathname)) {
+        return await readRoutes(request, options.read);
       }
 
       if (
@@ -344,8 +368,15 @@ export function serve(options: ServeOptions): RunningServer {
   const cors: CorsPolicy | undefined = loopback
     ? undefined
     : { allowedOrigins: primary.config.auth.allowed_origins ?? [ANY_ORIGIN] };
+  // The fourth property of this bind address, decided with the other three.
+  // Never on loopback: `./read/open.ts` serves it there over TLS on its own
+  // port, and a deployment-only grant that leaked onto `127.0.0.1` is exactly
+  // what ADR-039 refuses. Discarded rather than overridable, as `cors` is.
+  const read = loopback ? undefined : options.read;
+
   const handler = createRequestHandler({
     ...options,
+    ...(read ? { read } : { read: undefined }),
     // Off on loopback for the same reason `cors` is undefined there, and decided
     // here so every property of the bind address is decided together. An
     // explicit `true` wins, which is how a test drives the deployed behaviour.

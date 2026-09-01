@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createMemoryCredentials, createMemoryState } from '#stores/state/testing.ts';
 import { defineProvider } from '#connectivity';
-import { parseConfig } from '#profile';
+import type { ConnectionConfig } from '#profile';
 import { applyReconcile, formatPlan, planIsNoop, planReconcile } from './reconcile.ts';
 
 /**
@@ -21,31 +21,27 @@ const manifestFor = (provider: string) =>
         auth: { kind: 'oauth' },
       });
 
-const config = (body: string) =>
-  parseConfig(`
-contract: 2
-instance:
-  profile: personal
-${body}
-`).config;
+/**
+ * Reconcile takes the accounts, not a profile.
+ *
+ * It always did in substance — every line of it walked `config.connections` —
+ * and ADR-057 made that literal: connections belong to the workspace, so the
+ * function that keeps their state in step is handed the rows rather than a
+ * profile that happens to list them.
+ */
+const EXAMPLE_ONLY: ConnectionConfig[] = [
+  { id: 'a', provider: 'example', account: 'Scratch' },
+];
 
-const EXAMPLE_ONLY = config(`
-connections:
-  - id: a
-    provider: example
-    account: Scratch
-`);
-
-const WITH_GMAIL = config(`
-connections:
-  - id: a
-    provider: example
-    account: Scratch
-  - id: main
-    provider: gmail
-    account: personal@example.com
-    credential_ref: gmail/main
-`);
+const WITH_GMAIL: ConnectionConfig[] = [
+  { id: 'a', provider: 'example', account: 'Scratch' },
+  {
+    id: 'main',
+    provider: 'gmail',
+    account: 'personal@example.com',
+    credential_ref: 'gmail/main',
+  },
+];
 
 describe('first reconcile', () => {
   test('creates every declared connection', async () => {
@@ -182,15 +178,10 @@ describe('drift is reported in both directions', () => {
 
     await applyReconcile(WITH_GMAIL, state, await planReconcile(WITH_GMAIL, state, credentials));
 
-    const other = config(`
-connections:
-  - id: a
-    provider: example
-    account: Scratch
-  - id: b
-    provider: example
-    account: Second
-`);
+    const other: ConnectionConfig[] = [
+    { id: 'a', provider: 'example', account: 'Scratch' },
+    { id: 'b', provider: 'example', account: 'Second' },
+  ];
 
     const plan = await planReconcile(other, state, credentials);
     expect(plan.missingInDatabase).toEqual(['example.b']);
@@ -210,12 +201,9 @@ describe('renaming', () => {
     );
     const created = await state.connections.get('example', 'a');
 
-    const renamed = config(`
-connections:
-  - id: a
-    provider: example
-    account: Renamed
-`);
+    const renamed: ConnectionConfig[] = [
+    { id: 'a', provider: 'example', account: 'Renamed' },
+  ];
 
     const plan = await planReconcile(renamed, state, credentials);
     expect(plan.actions).toEqual([
@@ -231,12 +219,9 @@ connections:
 });
 
 describe('credential refs derive from the connection', () => {
-  const derived = config(`
-connections:
-  - id: ada_lovelace
-    provider: gmail
-    account: ada.lovelace@example.com
-`);
+  const derived: ConnectionConfig[] = [
+    { id: 'ada_lovelace', provider: 'gmail', account: 'ada.lovelace@example.com' },
+  ];
 
   test('an omitted ref resolves to <provider>/<id>', async () => {
     const state = createMemoryState();
@@ -283,13 +268,9 @@ connections:
    * had reintroduced from the other side.
    */
   describe('a hand-placed ref on the connection', () => {
-    const shared = config(`
-connections:
-  - id: ada_lovelace
-    provider: gmail
-    account: ada.lovelace@example.com
-    credential_ref: google/shared
-`);
+    const shared: ConnectionConfig[] = [
+    { id: 'ada_lovelace', provider: 'gmail', account: 'ada.lovelace@example.com', credential_ref: 'google/shared' },
+  ];
 
     test('does not stand in for the credential the connection authenticates with', async () => {
       const plan = await planReconcile(
@@ -323,13 +304,9 @@ connections:
       // A `local` provider authenticates with nothing, so there is no derived
       // ref to disagree with — and `resolveSecretRefs` makes this connection's
       // whole allowlist, which `https://lanes.sh/docs/link/creating-a-provider` says outright.
-      const local = config(`
-connections:
-  - id: a
-    provider: example
-    account: Scratch
-    credential_ref: acme/api_key
-`);
+      const local: ConnectionConfig[] = [
+    { id: 'a', provider: 'example', account: 'Scratch', credential_ref: 'acme/api_key' },
+  ];
 
       const missing = await planReconcile(
         local,
@@ -357,12 +334,9 @@ describe('reconnecting an account already held', () => {
     const state = createMemoryState();
     const credentials = createMemoryCredentials({ 'gmail/ada_lovelace': 'token' });
 
-    const declared = config(`
-connections:
-  - id: ada_lovelace
-    provider: gmail
-    account: ada.lovelace@example.com
-`);
+    const declared: ConnectionConfig[] = [
+    { id: 'ada_lovelace', provider: 'gmail', account: 'ada.lovelace@example.com' },
+  ];
 
     await applyReconcile(
       declared,

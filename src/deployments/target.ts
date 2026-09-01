@@ -69,14 +69,14 @@ export async function openSecrets(input: TargetInput): Promise<SecretStore> {
       return createFileSecretStore({
         path: workspacePath(
           root,
-          declared.credentials.path ?? layout.credentials(config.instance.profile),
+          declared.credentials.path ?? layout.credentials(),
         ),
       });
 
     case 'gcp-secret-manager': {
       if (!declared.credentials.project) {
         throw new ConfigError(
-          `targets.${target}.credentials.project is required for the gcp-secret-manager adapter.`,
+          `workspaces.${target}.credentials.project is required for the gcp-secret-manager adapter.`,
         );
       }
       const { GcpSecretManagerStore } = await import('./adapters/gcp-secret-manager.ts');
@@ -97,8 +97,8 @@ export async function openSecrets(input: TargetInput): Promise<SecretStore> {
  * Its own root, `layout.state`, so it is not addressable from a provider's
  * blob namespace — the same containment `openAudit` relies on.
  */
-export function openState(storage: StorageFactory, profile: string): RuntimeState {
-  return createRuntimeState(storage(layout.state(profile)));
+export function openState(storage: StorageFactory): RuntimeState {
+  return createRuntimeState(storage(layout.state()));
 }
 
 /**
@@ -115,8 +115,8 @@ export function openState(storage: StorageFactory, profile: string): RuntimeStat
  * into (`layout.audit`), and that separation is what keeps ADR-007's wall
  * intact.
  */
-export function openAudit(storage: StorageFactory, profile: string): AuditStore {
-  return createBlobAuditStore({ storage: storage(layout.audit(profile)) });
+export function openAudit(storage: StorageFactory): AuditStore {
+  return createBlobAuditStore({ storage: storage(layout.audit()) });
 }
 
 /**
@@ -137,7 +137,7 @@ export async function openAuditSinks(
   secrets: SecretStore,
   log?: (message: string) => void,
 ): Promise<{ sink: AuditSink; reader: AuditReader }> {
-  const durable = openAudit(storage, input.config.instance.profile);
+  const durable = openAudit(storage);
   const declared = input.declared.audit?.sinks ?? [];
   if (declared.length === 0) return { sink: durable, reader: durable };
 
@@ -201,7 +201,7 @@ export async function openStorage(
   switch (declared.storage.adapter) {
     case 'filesystem': {
       const { createFilesystemBlobStore } = await import('./adapters/filesystem.ts');
-      const base = declared.storage.path ?? layout.blobs(config.instance.profile);
+      const base = declared.storage.path ?? layout.blobs();
       return (area) =>
         createFilesystemBlobStore({ root: workspacePath(root, area === undefined ? base : area) });
     }
@@ -214,12 +214,12 @@ export async function openStorage(
       // by hand in a console.
       const { bucket, prefix } = declared.storage;
       if (!bucket) {
-        throw new ConfigError(`targets.${target}.storage.bucket is required for the gcs adapter.`);
+        throw new ConfigError(`workspaces.${target}.storage.bucket is required for the gcs adapter.`);
       }
 
       const { createGcsBlobStore } = await import('./adapters/gcs.ts');
       const base = prefix ?? '';
-      const root = layout.blobs(config.instance.profile);
+      const root = layout.blobs();
 
       return (area) =>
         createGcsBlobStore({
@@ -231,25 +231,25 @@ export async function openStorage(
     case 's3': {
       const { bucket, endpoint, region, prefix } = declared.storage;
       if (!bucket) {
-        throw new ConfigError(`targets.${target}.storage.bucket is required for the s3 adapter.`);
+        throw new ConfigError(`workspaces.${target}.storage.bucket is required for the s3 adapter.`);
       }
 
       const accessKeyId = await requireSecret(
         secrets,
         declared.storage.access_key_id_ref,
-        `targets.${target}.storage.access_key_id_ref`,
+        `workspaces.${target}.storage.access_key_id_ref`,
         target,
       );
       const secretAccessKey = await requireSecret(
         secrets,
         declared.storage.secret_access_key_ref,
-        `targets.${target}.storage.secret_access_key_ref`,
+        `workspaces.${target}.storage.secret_access_key_ref`,
         target,
       );
 
       const { createS3BlobStore } = await import('./adapters/s3.ts');
       const base = prefix ?? '';
-      const root = layout.blobs(config.instance.profile);
+      const root = layout.blobs();
 
       return (area) =>
         createS3BlobStore({
@@ -289,7 +289,7 @@ export async function requireSecret(
   if (!value) {
     throw new ConfigError(
       `${field} names "${ref}", which is not in this target's secret store. ` +
-        `Store it with: lanes link secrets set ${ref} --target ${target}`,
+        `Store it with: lanes link secrets set ${ref} --workspace ${target}`,
     );
   }
   return value;

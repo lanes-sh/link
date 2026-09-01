@@ -1,11 +1,10 @@
 import {
   authorizationServerMetadata,
   protectedResourceMetadata,
-  type AuthorizeRequest,
   type OAuthResult,
   type OAuthServer,
 } from '#auth';
-import { approvalPage } from '#cli/callback-page.ts';
+import { noticePage } from '#cli/callback-page.ts';
 
 /**
  * The HTTP surface of the authorization flow.
@@ -24,6 +23,7 @@ export const PROTECTED_RESOURCE_PATH = '/.well-known/oauth-protected-resource';
 export const AUTHORIZATION_SERVER_PATH = '/.well-known/oauth-authorization-server';
 const REGISTER_PATH = '/register';
 const AUTHORIZE_PATH = '/authorize';
+const CALLBACK_PATH = '/authorize/callback';
 const TOKEN_PATH = '/token';
 
 export interface AuthorizationSurface {
@@ -50,6 +50,7 @@ export function isAuthorizationPath(pathname: string): boolean {
     pathname === AUTHORIZATION_SERVER_PATH ||
     pathname === REGISTER_PATH ||
     pathname === AUTHORIZE_PATH ||
+    pathname === CALLBACK_PATH ||
     pathname === TOKEN_PATH
   );
 }
@@ -125,35 +126,37 @@ export async function handleAuthorization(
   if (!server) return new Response('Not found', { status: 404 });
 
   if (path === REGISTER_PATH && request.method === 'POST') {
-    return render(await server.register(await safeJson(request)), request, surface.target);
+    return render(await server.register(await safeJson(request)), request);
   }
 
-  if (path === AUTHORIZE_PATH) {
-    if (request.method === 'GET') {
-      return render(await server.authorize(url.searchParams), request, surface.target);
-    }
-    if (request.method === 'POST') {
-      const form = new URLSearchParams(await request.text());
-      return render(
-        await server.approve(requestFromForm(form), form.get('token') ?? ''),
-        request,
-        surface.target,
-      );
-    }
+  // Who this endpoint is, from the point of view of *this* request. Derived
+  // from `Host` rather than config for the reason `publicOrigin` gives: a
+  // deployed instance's hostname is assigned at deploy time, and an assertion
+  // whose audience does not match exactly is refused.
+  const endpoint = {
+    resource: `${origin}${surface.mcpPath}`,
+    callbackUrl: `${origin}${CALLBACK_PATH}`,
+  };
+
+  if (path === AUTHORIZE_PATH && request.method === 'GET') {
+    return render(await server.authorize(url.searchParams, endpoint), request);
+  }
+
+  // The browser returning from lanes.sh. A GET, because it arrives as a
+  // top-level navigation from a 302 — which is also why nothing here reads
+  // `Origin`: a navigation carries none. See `rebinding.ts`.
+  if (path === CALLBACK_PATH && request.method === 'GET') {
+    return render(await server.callback(url.searchParams, endpoint), request);
   }
 
   if (path === TOKEN_PATH && request.method === 'POST') {
-    return render(
-      await server.token(new URLSearchParams(await request.text())),
-      request,
-      surface.target,
-    );
+    return render(await server.token(new URLSearchParams(await request.text())), request);
   }
 
   return new Response('Method not allowed', { status: 405 });
 }
 
-function render(result: OAuthResult, request: Request, target: string): Response {
+function render(result: OAuthResult, request: Request): Response {
   switch (result.kind) {
     case 'json':
       return json(result.body, result.status);
@@ -161,95 +164,12 @@ function render(result: OAuthResult, request: Request, target: string): Response
     case 'redirect':
       return new Response(null, { status: 302, headers: { location: result.location } });
 
-    case 'consent':
-      return approvalPage({
-        // The name if it gave one, the identifier if not. Either way the
-        // redirect host goes on the screen beside it — a client may call itself
-        // anything, but it cannot change where the code is sent.
-        client: result.clientName ?? result.request.clientId,
-        redirectHost: hostOf(result.request.redirectUri),
-        // The page's policy has to admit the redirect the page's own approval
-        // ends in, or the browser blocks it. See `formActionFor`.
-        ...formActionFor(result.request.redirectUri),
-        action: `${publicOrigin(request)}${AUTHORIZE_PATH}`,
-        fields: formFromRequest(result.request),
-        retry: result.retry,
-        target,
-      });
-
     case 'error':
-      return new Response(result.message, { status: result.status });
-  }
-}
-
-/**
- * The authorization request, carried through the approval form.
- *
- * Round-tripped through hidden fields rather than held in a server-side session:
- * the deployed endpoint replaces instances between requests, so a session begun
- * on one and submitted to another would be gone. Nothing here is a secret — the
- * client sent all of it in the query string — and none of it is trusted on the
- * way back, because `approve` re-checks the client and the redirect URI against
- * what is registered before it mints anything.
- */
-function formFromRequest(request: AuthorizeRequest): Record<string, string> {
-  return {
-    client_id: request.clientId,
-    redirect_uri: request.redirectUri,
-    code_challenge: request.codeChallenge,
-    scope: request.scope,
-    ...(request.state !== undefined ? { state: request.state } : {}),
-    ...(request.resource !== undefined ? { resource: request.resource } : {}),
-  };
-}
-
-function requestFromForm(form: URLSearchParams): AuthorizeRequest {
-  return {
-    clientId: form.get('client_id') ?? '',
-    redirectUri: form.get('redirect_uri') ?? '',
-    codeChallenge: form.get('code_challenge') ?? '',
-    scope: form.get('scope') ?? '',
-    state: form.get('state') ?? undefined,
-    resource: form.get('resource') ?? undefined,
-  };
-}
-
-function hostOf(uri: string): string {
-  try {
-    return new URL(uri).host;
-  } catch {
-    return uri;
-  }
-}
-
-/**
- * The redirect target as a CSP source, for the consent page's `form-action`.
- *
- * Chrome and Safari check that directive against the redirect a form submission
- * produces, so the page has to name where its own approval is about to send the
- * browser — `'self'` alone mints the code and then blocks its delivery.
- *
- * Taken from the request being approved rather than from what the client
- * registered, because the two legitimately differ: a native client registers
- * `http://localhost/callback` and binds whatever port it got (RFC 8252), and
- * the origin the browser navigates to is the one carrying that port. It is
- * already checked against the registration — by `authorize` before this page is
- * rendered, and again by `approve` before anything is minted — and it cannot
- * move the token, because the form's `action` is built here rather than read
- * from the request.
- *
- * An origin and nothing else, because `isSafeRedirect` registers nothing else:
- * https, or http on loopback. A private-use scheme — `vscode:`, the other shape
- * RFC 8252 allows — would need a scheme-source here, and is refused two steps
- * earlier, so a branch for it would be a branch nothing can reach.
- */
-function formActionFor(uri: string): { formAction?: string } {
-  try {
-    const { protocol, origin } = new URL(uri);
-    if (protocol !== 'http:' && protocol !== 'https:') return {};
-    return { formAction: origin };
-  } catch {
-    return {};
+      // A page rather than a bare string, because the audience changed. These
+      // used to be read by a client following a redirect; now the interesting
+      // ones — "no profile lists you" — are read by a person in a browser who
+      // has just signed in and needs to know what to do next.
+      return noticePage(result.message, result.status);
   }
 }
 

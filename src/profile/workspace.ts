@@ -5,7 +5,16 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { parse as parseYaml } from 'yaml';
 import { ConfigError } from './load.ts';
-import { workspaceSchema, type Config, type WorkspaceConfig } from './schema.ts';
+import {
+  SUPPORTED_CONTRACT,
+  connectionsFileSchema,
+  workspaceSchema,
+  type Config,
+  type ConnectionsFile,
+  type WorkspaceConfig,
+} from './schema.ts';
+import { assertConnectionsUnique, assertNoRenamedProviders } from './connections.ts';
+import { findSecrets, formatSecretFindings } from './secret-detection.ts';
 
 /**
  * Workspace and profile resolution.
@@ -152,6 +161,52 @@ export async function loadProfileConfig(
   return parseConfig(text, shown);
 }
 
+/** `connections.yaml` sits beside `lanes-link.yaml`, at the workspace root. */
+export const CONNECTIONS_FILE = 'connections.yaml';
+
+/**
+ * Every account authorised in this workspace (ADR-057).
+ *
+ * Absent is not an error. A workspace that has never connected anything has no
+ * file, and returning an empty set rather than throwing is what lets `profile
+ * add`, `status` and `doctor` answer on a fresh install — the same reasoning
+ * `readWorkspace` uses for returning null.
+ *
+ * Read through the workspace store rather than the filesystem, so a deployed
+ * revision whose root is a bucket URL loads it (ADR-049). That was the exact
+ * bug manifests hit: a filesystem read against a `gs://` root silently found
+ * nothing and every custom provider vanished.
+ */
+export async function readConnections(workspaceRoot: string): Promise<ConnectionsFile> {
+  const path = join(workspaceRoot, CONNECTIONS_FILE);
+  const text = await readWorkspaceFile(workspaceFiles(workspaceRoot), CONNECTIONS_FILE);
+  if (text === null) return { contract: SUPPORTED_CONTRACT, connections: [], oauth_apps: {} };
+
+  const raw = parseYaml(text);
+
+  const secrets = findSecrets(raw);
+  if (secrets.length > 0) {
+    throw new ConfigError(
+      `${path}: ${formatSecretFindings(secrets)}`,
+      secrets.map((finding) => finding.path),
+    );
+  }
+
+  const parsed = connectionsFileSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new ConfigError(
+      `${path}:\n${parsed.error.issues.map((i) => `  ${i.path.join('.')}: ${i.message}`).join('\n')}`,
+    );
+  }
+
+  assertConnectionsUnique(parsed.data.connections);
+  assertNoRenamedProviders(
+    parsed.data.connections,
+    'lanes link doctor --fix --profile <name> --workspace <name>',
+  );
+  return parsed.data;
+}
+
 export async function readWorkspace(workspaceRoot: string): Promise<WorkspaceConfig | null> {
   const path = join(workspaceRoot, WORKSPACE_FILE);
   const text = await readWorkspaceFile(workspaceFiles(workspaceRoot), WORKSPACE_FILE);
@@ -219,7 +274,7 @@ export function noProfileNamed(
   if (available.length === 0) {
     return new ConfigError(
       `--profile is required, and ${workspaceRoot} holds no profiles yet.\n` +
-        '  Create one with: lanes link profile add <name> --target local',
+        '  Create one with: lanes link profile add <name> --workspace local',
     );
   }
 
@@ -230,7 +285,7 @@ export function noProfileNamed(
       'nothing else selects one.\n\n' +
       `  Profiles in ${workspaceRoot}\n` +
       available.map((name) => `    ${name}`).join('\n') +
-      `\n\n  e.g. lanes link status --profile ${available[0]} --target <target>` +
+      `\n\n  e.g. lanes link status --profile ${available[0]} --workspace <name>` +
       (stale
         ? `\n\n  LANES_LINK_PROFILE=${stale} is set in this shell and is no longer read.\n` +
           '  Unset it, or pass --profile.'

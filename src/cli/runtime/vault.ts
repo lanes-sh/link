@@ -1,4 +1,5 @@
-import { layout, workspacePath } from '#profile';
+import {
+  soleGrantFor, layout, vaultRef, workspacePath } from '#profile';
 import type { SecretStore } from '#secrets';
 import {
   createBlobVaultStore,
@@ -36,10 +37,15 @@ export function openVault(
   const { declared, config, root } = input;
   const vault = declared.vault ?? { adapter: 'file' as const };
 
+  // The vault connection this profile grants (ADR-059). `main` when it grants
+  // none, which keeps a profile that denied the vault opening against the same
+  // document every other profile uses rather than inventing a second one.
+  const connection = soleGrantFor(config, 'vault') ?? 'main';
+
   switch (vault.adapter) {
     case 'file':
       return createFileVaultStore({
-        path: workspacePath(root, vault.path ?? layout.vault(config.instance.profile)),
+        path: workspacePath(root, vault.path ?? layout.vault(connection)),
       });
 
     case 'secret':
@@ -47,15 +53,24 @@ export function openVault(
       // so the credential store holds ciphertext it cannot read. Separate
       // document, separate key, separate environment variable — the backend
       // was never what kept the two stores apart. ADR-022.
+      //
+      // Named per connection, like the file adapter. A `ref` written by hand
+      // still wins, because a deployment that already seals under one name has
+      // to keep opening it — but the default carries the instance, so two
+      // profiles granting different vaults share nothing. Without this only
+      // `file` honoured ADR-059 and every deployed workspace, which uses this
+      // adapter or `blob`, had one document behind every vault connection:
+      // ADR-059 calls that the worst of the three collisions, because the wrong
+      // answer is a credential.
       return createSecretVaultStore({
         store: credentials,
-        ...(vault.ref !== undefined ? { ref: vault.ref } : {}),
+        ref: vaultRef(declared, config),
       });
 
     case 'blob':
       return createBlobVaultStore({
         store: storage(),
-        ...(vault.path !== undefined ? { key: vault.path } : {}),
+        key: vault.path ?? layout.vaultKey(connection),
       });
   }
 }

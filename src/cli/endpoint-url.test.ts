@@ -6,7 +6,7 @@ import { deploymentIdentity, endpointUrl } from './endpoint-url.ts';
  * Which address a command hands to an agent.
  *
  * The failure this guards is silent in the worst way: `mcp add` built the local
- * URL unconditionally, so `--target cloud` registered
+ * URL unconditionally, so `--workspace cloud` registered
  * `http://127.0.0.1:7337/mcp` with the harness. The command reported success,
  * named the right server, and pointed at a port with nothing behind it — and
  * the first symptom was a failed tool call, later, somewhere else.

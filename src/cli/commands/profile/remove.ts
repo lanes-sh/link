@@ -13,6 +13,7 @@ import {
 import { parseDocument } from 'yaml';
 import { rm } from 'node:fs/promises';
 import { terminalPrompter, type Prompter } from '../../prompt.ts';
+import { recordConfigChange } from '../../audit-change.ts';
 import { announceProfile, emit, fail, ok, print, style } from '../../output.ts';
 import {
   buildRegistryWithWorkspace,
@@ -21,6 +22,7 @@ import {
   resolveProfileOnly,
   type GlobalFlags,
 } from '../../runtime.ts';
+import { loadWorkspaceProfiles } from '#profile';
 import { removalPlan, renderPlan, type RemovalItem, type RemovalPlan } from './removal.ts';
 
 /**
@@ -255,7 +257,7 @@ export async function removeProfile(name: string, flags: RemoveFlags): Promise<v
   announceProfile(selection);
 
   const root = selection.workspaceRoot;
-  const registry = await buildRegistryWithWorkspace(root, name);
+  const registry = await buildRegistryWithWorkspace(root);
   const files = workspaceFiles(root);
   const { declared } = await openTarget(root, target);
 
@@ -265,6 +267,11 @@ export async function removeProfile(name: string, flags: RemoveFlags): Promise<v
     openSecrets: (target) => openSecretStoreFor(config, root, target),
     openBlobs: (target, area) => openBlobStoreFor(config, root, target, area),
     readDefaultProfile: async () => (await readWorkspace(root))?.default_profile,
+    // What the workspace keeps. The credential store is one file for all of
+    // them now, so anything a survivor declares is not this removal's to delete.
+    survivors: (await loadWorkspaceProfiles(root)).loaded
+      .filter((one) => one.profile !== name)
+      .map((one) => one.config),
   });
 
   renderPlan(plan);
@@ -284,6 +291,14 @@ export async function removeProfile(name: string, flags: RemoveFlags): Promise<v
     removeDirectory: async (path) => await rm(workspacePath(root, path), { recursive: true, force: true }),
     clearDefaultProfile: async () => await clearDefault(root),
     retry: retryCommand,
+  });
+
+  // Before the render, and against the config loaded above — the profile's file
+  // is gone by now, so a helper that re-read it would find nothing.
+  await recordConfigChange(config, root, target, {
+    capability: 'config.profile.remove',
+    scope: name,
+    arguments: { connections: config.grants.map((grant) => grant.connection) },
   });
 
   return emit(flags.json, outcome, () => renderOutcome(outcome));

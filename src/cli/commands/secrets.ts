@@ -1,14 +1,20 @@
 import { ConfigError } from '#profile';
 import { assertValidSecretRef } from '#secrets';
-import { announce, announceProfile, heading, ok, print, style } from '../output.ts';
-import { openSecretStoreFor, resolveProfile, resolveProfileOnly, type GlobalFlags } from '../runtime.ts';
+import { announceWorkspace, announceProfile, heading, ok, print, style } from '../output.ts';
+import {
+  openSecretStoreFor,
+  primaryProfile,
+  resolveProfile,
+  resolveProfileOnly,
+  type GlobalFlags,
+} from '../runtime.ts';
 
 /**
  * `lanes link secrets` — moving credential values between a profile's targets.
  *
  * Credentials follow the target, because each target has its own credential
- * store: `lanes link connect gmail.side --target cloud` writes the refresh token into
- * Secret Manager, and the same command with `--target local` writes it into
+ * store: `lanes link connect gmail.side --workspace cloud` writes the refresh token into
+ * Secret Manager, and the same command with `--workspace local` writes it into
  * the encrypted file. That is the right default and it leaves one gap, which
  * this command fills — a setup built locally first, and now wanted in the
  * cloud, without re-running every OAuth flow.
@@ -43,7 +49,7 @@ export async function secretsPush(flags: SecretsFlags): Promise<void> {
 
   const refs = await source.list();
   if (refs.length === 0) {
-    print(style.dim(`No credentials in target "${flags.from}".`));
+    print(style.dim(`No credentials in workspace "${flags.from}".`));
     return;
   }
 
@@ -104,7 +110,7 @@ export async function secretsSet(ref: string | undefined, flags: GlobalFlags): P
   if (!ref) {
     throw new ConfigError(
       'Usage: lanes link secrets set <ref>   (the value is read from stdin)\n' +
-        '  e.g. printf %s "$DATABASE_URL" | lanes link secrets set cloud/database_url --target cloud',
+        '  e.g. printf %s "$DATABASE_URL" | lanes link secrets set cloud/database_url --workspace cloud',
     );
   }
   assertValidSecretRef(ref);
@@ -119,8 +125,16 @@ export async function secretsSet(ref: string | undefined, flags: GlobalFlags): P
     );
   }
 
-  const { resolution, config, target } = await resolveProfile(flags);
-  announce(resolution);
+  // The credential store belongs to the workspace since contract 3, so every
+  // profile opened the same one and naming one chose nothing. A profile is
+  // still resolved, because `openSecretStoreFor` reads the adapter set through
+  // one — so the banner names the workspace rather than reporting whichever
+  // profile happened to supply it.
+  const { resolution, config, target } = await resolveProfile({
+    ...flags,
+    profile: await primaryProfile(flags),
+  });
+  announceWorkspace(resolution);
 
   const value = (await Bun.stdin.text()).replace(/\n$/, '');
   if (!value) {
@@ -133,20 +147,28 @@ export async function secretsSet(ref: string | undefined, flags: GlobalFlags): P
   const replacing = await credentials.has(ref);
   await credentials.set(ref, value);
 
-  print(ok(`${replacing ? 'replaced' : 'stored'} ${style.bold(ref)} in target ${target}`));
+  print(ok(`${replacing ? 'replaced' : 'stored'} ${style.bold(ref)} in workspace ${target}`));
   if (replacing) {
     print(style.dim('  Anything still using the old value will start failing.'));
   }
 }
 
 export async function secretsList(flags: GlobalFlags): Promise<void> {
-  const { resolution, config, target } = await resolveProfile(flags);
-  announce(resolution);
+  // The credential store belongs to the workspace since contract 3, so every
+  // profile opened the same one and naming one chose nothing. A profile is
+  // still resolved, because `openSecretStoreFor` reads the adapter set through
+  // one — so the banner names the workspace rather than reporting whichever
+  // profile happened to supply it.
+  const { resolution, config, target } = await resolveProfile({
+    ...flags,
+    profile: await primaryProfile(flags),
+  });
+  announceWorkspace(resolution);
 
   const credentials = await openSecretStoreFor(config, resolution.workspaceRoot, target);
   const refs = await credentials.list();
 
-  heading(`Credential references in target ${target} (${refs.length})`);
+  heading(`Credential references in workspace ${target} (${refs.length})`);
   if (refs.length === 0) {
     print(style.dim('  none'));
   } else {

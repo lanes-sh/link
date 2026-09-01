@@ -3,7 +3,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { collidingRefs, collisionRefusal, servingProfiles } from './serving.ts';
+import { servingProfiles } from './serving.ts';
 
 /**
  * Which profiles a deploy sends, and whether they can share one store.
@@ -151,56 +151,13 @@ describe('deciding which profiles a deploy sends', () => {
   });
 });
 
-describe('two profiles sharing one credential store', () => {
-  test('the same connection id in both is a collision', async () => {
-    // `gmail/main` is one secret in one project. The last deploy wins, and
-    // nothing downstream can catch it — by then the credential is valid.
-    const root = await workspace({
-      personal: profileYaml('personal', { gmail: 'main' }),
-      work: profileYaml('work', { gmail: 'main' }),
-    });
-
-    const found = await collidingRefs(root, ['personal', 'work']);
-    expect(found).toMatchObject([{ ref: 'gmail/main', profiles: ['personal', 'work'] }]);
-  });
-
-  test('different ids are not', async () => {
-    const root = await workspace({
-      personal: profileYaml('personal', { gmail: 'main' }),
-      work: profileYaml('work', { gmail: 'desk' }),
-    });
-
-    expect(await collidingRefs(root, ['personal', 'work'])).toEqual([]);
-  });
-
-  test('one profile alone can never collide with itself', async () => {
-    const root = await workspace({
-      personal: profileYaml('personal', { gmail: 'main' }),
-      work: profileYaml('work', { gmail: 'main' }),
-    });
-
-    expect(await collidingRefs(root, ['personal'])).toEqual([]);
-  });
-
-  test('the shared endpoint token is not a collision, because sharing it is the design', async () => {
-    // Every profile defaults to `profile/token`, and ADR-009 says one endpoint
-    // has one token. Reporting it would fire on every multi-profile deploy.
-    const root = await workspace({
-      personal: profileYaml('personal'),
-      work: profileYaml('work'),
-    });
-
-    expect(await collidingRefs(root, ['personal', 'work'])).toEqual([]);
-  });
-
-  test('the refusal names the reference and both profiles', async () => {
-    const message = collisionRefusal(
-      [{ ref: 'gmail/main', profiles: ['personal', 'work'] }],
-      'cloud',
-    );
-
-    expect(message).toContain('gmail/main   personal, work');
-    expect(message).toContain('the last deploy');
-    expect(message).toContain('separate projects');
-  });
-});
+/**
+ * The collision preflight is gone, and that is the point.
+ *
+ * Two profiles each holding their own `gmail.main` both derived the flat ref
+ * `gmail/main` into one credential store — the last deploy winning, with no
+ * later symptom worth having, so `deploy` refused before it started. A
+ * connection belongs to the workspace now and `<provider>.<id>` is unique by
+ * construction (ADR-057), so the state cannot be written: it is refused at load
+ * by `assertConnectionsUnique`, long before a deploy is involved.
+ */

@@ -1,10 +1,10 @@
 import { parse as parseYaml } from 'yaml';
 import { z } from 'zod';
 import {
+  SINGLE_INSTANCE_PROVIDERS,
   SUPPORTED_CONTRACT,
   configSchema,
   type Config,
-  type PolicyRuleConfig,
 } from './schema.ts';
 import { findSecrets, formatSecretFindings } from './secret-detection.ts';
 
@@ -21,7 +21,7 @@ export class ConfigError extends Error {
 export interface LoadedConfig {
   readonly config: Config;
   readonly source: string;
-  /** `provider.id` for every declared connection, in declaration order. */
+  /** `provider.id` for every connection this profile grants, in declaration order. */
   readonly connectionKeys: readonly string[];
 }
 
@@ -208,7 +208,7 @@ export const RENAMED_PROVIDERS: Readonly<Record<string, ProviderRename>> = {
  * and whoever is reading this refusal just typed which one.
  */
 function repairCommand(config: Config): string {
-  return `lanes link doctor --fix --profile ${config.instance.profile} --target <target>`;
+  return `lanes link doctor --fix --profile ${config.instance.profile} --workspace <name>`;
 }
 
 /** The rename a row is owed, or `null` when it is owed none. */
@@ -221,7 +221,7 @@ export function renamedProviderFor(connection: {
   return moved;
 }
 
-function renamedProvider(
+export function describeRename(
   connection: { provider: string; account: string },
   repair: string,
 ): string | null {
@@ -241,30 +241,74 @@ function renamedProvider(
 function assertReferentialIntegrity(config: Config, source: string): void {
   const problems: string[] = [];
 
-  // There is nothing to check about targets here any more. A profile declares
-  // none (ADR-052): the workspace holding this file declares the one target it
-  // lives in, and `workspaceSchema` is what validates that. A profile is now
-  // portable between targets precisely because it says nothing about them.
+  // Nothing about targets is checked here any more. A profile declares none
+  // (ADR-052): the workspace holding this file declares the one it lives in.
+  //
+  // Nothing about *connections* is either, and that is newer. A connection
+  // belongs to the workspace (ADR-057), so whether a grant names a real one is
+  // a question this file cannot answer on its own — `assertGrantsResolve` in
+  // `./connections.ts` answers it once `connections.yaml` has been read. What
+  // is checkable from one profile alone is checked here, and only that.
 
-  // Connection ids are unique per provider, so `gmail.main` and
-  // `icloud_mail.main` can coexist.
-  const connectionKeys = new Set<string>();
-  const providerNames = new Set(config.connections.map((connection) => connection.provider));
-
-  config.connections.forEach((connection, index) => {
-    const key = `${connection.provider}.${connection.id}`;
-    if (connectionKeys.has(key)) {
-      problems.push(`connections[${index}]: duplicate connection "${key}"`);
+  // A grant names one connection, so every capability in it belongs to that
+  // connection's provider. Worth refusing rather than warning: `allowedConnections`
+  // filters candidates to the capability's own provider before policy is
+  // consulted, so `allow: [calendar.*]` on a row granting `gmail.personal`
+  // matches nothing, ever, while reading exactly like a grant that works.
+  const grantKeys = new Set<string>();
+  config.grants.forEach((grant, index) => {
+    if (grantKeys.has(grant.connection)) {
+      problems.push(`grants[${index}]: duplicate grant for "${grant.connection}"`);
     }
-    connectionKeys.add(key);
+    grantKeys.add(grant.connection);
 
-    const renamed = renamedProvider(connection, repairCommand(config));
-    if (renamed) problems.push(`connections[${index}]: ${renamed}`);
+    const provider = grant.connection.split('.')[0] ?? '';
+
+    // The renamed-provider check is not here any more. It compares a row's
+    // *account* against the label the built-in keeps — "is this really Google
+    // Tasks?" — and an account lives in `connections.yaml` now (ADR-057). A
+    // profile grant carries only the key, so asking here would either need the
+    // other file or answer from nothing; `assertNoRenamedProviders` asks where
+    // the answer is.
+
+    for (const [field, rules] of [
+      ['allow', grant.allow],
+      ['deny', grant.deny],
+    ] as const) {
+      rules.forEach((rule, ruleIndex) => {
+        if (rule.capability === '*') return;
+        const named = rule.capability.split('.')[0] ?? '';
+        if (named === provider) return;
+
+        problems.push(
+          `grants[${index}].${field}[${ruleIndex}]: "${rule.capability}" names provider ` +
+            `"${named}", but this row grants "${grant.connection}". A rule here governs ` +
+            `that connection and nothing else, so it can only name "${provider}.*".`,
+        );
+      });
+    }
   });
 
-  // Same reason as a duplicate connection: two entries with the same kind and
-  // value cannot both be meant, and the one that loses is invisible. It matters
-  // more here than it looks, because the two would usually differ only in their
+  // At most one skills grant and one vault grant, for the reason
+  // `SINGLE_INSTANCE_PROVIDERS` gives: both surface as flat names with no
+  // argument to route on, so a second instance is a collision rather than a
+  // choice.
+  for (const provider of SINGLE_INSTANCE_PROVIDERS) {
+    const granted = config.grants
+      .map((grant) => grant.connection)
+      .filter((ref) => ref.startsWith(`${provider}.`));
+
+    if (granted.length > 1) {
+      problems.push(
+        `grants: ${granted.join(' and ')} — a profile may grant one "${provider}" connection. ` +
+          `It is surfaced by name with nothing to route on, so two would be one name for two things.`,
+      );
+    }
+  }
+
+  // Same reason as a duplicate grant: two entries with the same kind and value
+  // cannot both be meant, and the one that loses is invisible. It matters more
+  // here than it looks, because the two would usually differ only in their
   // `note` — so the discarded one is precisely the guidance someone wrote down
   // to stop an agent picking wrong.
   const identityKeys = new Set<string>();
@@ -276,28 +320,17 @@ function assertReferentialIntegrity(config: Config, source: string): void {
     identityKeys.add(key);
   });
 
-  const checkRules = (rules: readonly PolicyRuleConfig[], field: 'allow' | 'deny'): void => {
-    rules.forEach((rule, index) => {
-      const where = `policy.${field}[${index}]`;
-      if (rule.capability === '*') return;
-
-      // A rule naming a provider with no connection is almost always a typo,
-      // and one that fails open-looking: it reads as a grant while matching
-      // nothing. Worth saying, but not fatal for a `deny` — denying something
-      // you have not connected yet is a perfectly reasonable thing to write
-      // ahead of time.
-      const providerOfCapability = rule.capability.split('.')[0] ?? '';
-      if (field === 'allow' && !providerNames.has(providerOfCapability)) {
-        problems.push(
-          `${where}: "${rule.capability}" names provider "${providerOfCapability}", which has no connection` +
-            (providerNames.size > 0 ? ` (have: ${[...providerNames].join(', ')})` : ''),
-        );
-      }
-    });
-  };
-
-  checkRules(config.policy.allow, 'allow');
-  checkRules(config.policy.deny, 'deny');
+  // A subject listed twice is one row deciding the role and the other doing
+  // nothing, and which one wins is iteration order. Since the two would differ
+  // only in `role`, the silent loser is exactly the line someone added to
+  // promote or demote somebody (ADR-060).
+  const subjects = new Set<string>();
+  config.members.forEach((member, index) => {
+    if (subjects.has(member.subject)) {
+      problems.push(`members[${index}]: duplicate subject "${member.subject}"`);
+    }
+    subjects.add(member.subject);
+  });
 
   if (problems.length > 0) {
     throw new ConfigError(`${source}:\n${problems.map((p) => `  ${p}`).join('\n')}`, problems);
@@ -316,7 +349,7 @@ export function parseConfig(text: string, source = '<config>'): LoadedConfig {
   return {
     config,
     source,
-    connectionKeys: config.connections.map((c) => `${c.provider}.${c.id}`),
+    connectionKeys: config.grants.map((grant) => grant.connection),
   };
 }
 

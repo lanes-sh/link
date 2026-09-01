@@ -2,7 +2,8 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseConfig } from '#profile';
+import {
+  readConnections, parseConfig } from '#profile';
 import { createProfile } from './profile.ts';
 import { addIdentity, identityList, readIdentity, removeIdentity } from './identity.ts';
 
@@ -81,12 +82,27 @@ describe('declaring an identity makes it readable', () => {
 
     const { added } = await addIdentity('name', 'Ada', { ...WHERE, note: 'for papers' });
 
-    expect(added.provisioned).toEqual(['connections += identity.main', 'policy.allow += identity.*']);
+    expect(added.provisioned).toEqual([
+      'connections.yaml += identity.main',
+      'grants += identity.main',
+      'grants[].allow += identity.*',
+    ]);
 
     const config = await onDisk(root);
     expect(config.identity).toEqual([{ kind: 'name', value: 'Ada', note: 'for papers' }]);
-    expect(config.connections.some((row) => row.provider === 'identity')).toBe(true);
-    expect(config.policy.allow.some((rule) => rule.capability === 'identity.*')).toBe(true);
+    // The row is in the workspace and the grant is in the profile (ADR-057), and
+    // `identity add` writes both or neither — a grant naming a connection that
+    // does not exist is refused at load.
+    expect((await readConnections(root)).connections.some((row) => row.provider === 'identity')).toBe(
+      true,
+    );
+    expect(
+      config.grants.some(
+        (grant) =>
+          grant.connection === 'identity.main' &&
+          grant.allow.some((rule) => rule.capability === 'identity.*'),
+      ),
+    ).toBe(true);
   });
 
   test('a second entry provisions nothing, because there is nothing left to do', async () => {
@@ -169,8 +185,10 @@ describe('removing an entry', () => {
 
     const config = await onDisk(root);
     expect(config.identity).toEqual([]);
-    expect(config.connections.some((row) => row.provider === 'identity')).toBe(true);
-    expect(config.policy.allow.some((rule) => rule.capability === 'identity.*')).toBe(true);
+    expect((await readConnections(root)).connections.some((row) => row.provider === 'identity')).toBe(
+      true,
+    );
+    expect(config.grants.some((grant) => grant.allow.some((rule) => rule.capability === 'identity.*'))).toBe(true);
   });
 });
 

@@ -1,4 +1,4 @@
-import { VAULT_DOCUMENT_REF, type SecretRef } from '#secrets';
+import type { SecretRef } from '#secrets';
 import type { DeployStep, ProvisionInput } from '../driver.ts';
 import { encodeRef } from '../adapters/gcp-secret-manager.ts';
 import { bucketSteps } from './bucket.ts';
@@ -312,12 +312,12 @@ export async function provisionSteps(
     // mind: nothing here was wrong, it was incomplete, and being incomplete
     // looked exactly like being finished. Reading mail 403'd an hour after every
     // deploy.
-    const rotatable = [
-      ...(input.declared.vault?.adapter === 'secret'
-        ? [input.declared.vault.ref ?? VAULT_DOCUMENT_REF]
-        : []),
-      ...(input.rotatable ?? []),
-    ];
+    // Both kinds arrive already derived: the vault document is named per vault
+    // connection (ADR-059) and only `prepare.ts` has the profile configs to work
+    // it out. Naming `vault/document` here — the contract-2 constant — created
+    // and granted one secret while `openVault` asked for another, and the
+    // revision died on `PERMISSION_DENIED` before it could listen. See `vaultRef`.
+    const rotatable = [...(input.rotatable ?? [])];
 
     // Read, named one secret at a time, for the same reason the write side is:
     // a resource-level grant needs no condition to be scoped.

@@ -1,9 +1,9 @@
-import { workspaceYaml } from '#profile/testing.ts';
+import { connectionsYaml, workspaceYaml } from '#profile/testing.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { layout } from '#profile';
+import { CONNECTIONS_FILE, layout } from '#profile';
 import { createFileSecretStore } from '#secrets';
 import { openSecretStoreFor, openRuntime, resolveProfile } from './runtime.ts';
 
@@ -19,13 +19,16 @@ import { openSecretStoreFor, openRuntime, resolveProfile } from './runtime.ts';
 const roots: string[] = [];
 const previousHome = process.env['LANES_LINK_HOME'];
 
-const PROFILE = `contract: 2
+const PROFILE = `contract: 3
 
 instance:
   profile: personal
 
-policy:
-  allow: ['*']
+grants:
+  - { connection: memory.main, allow: ['memory.*'], deny: [] }
+  - { connection: skills.main, allow: ['skills.*'], deny: [] }
+  - { connection: vault.main, allow: ['vault.*'], deny: [] }
+members: []
 `;
 
 /**
@@ -36,10 +39,10 @@ policy:
  * by the workspace that is them — which is exactly the shape this file is here
  * to exercise.
  */
-const TARGETS = `contract: 2
+const TARGETS = `contract: 3
 default_profile: personal
 
-targets:
+workspaces:
   local:
     credentials: { adapter: file,       path: ./data/personal.credentials.enc }
     storage:     { adapter: filesystem, path: ./data/files }
@@ -73,6 +76,7 @@ async function workspace(): Promise<string> {
   await mkdir(join(root, 'profiles'), { recursive: true });
   await writeFile(join(root, 'lanes-link.yaml'), TARGETS);
   await writeFile(join(root, 'profiles', 'personal.yaml'), PROFILE);
+  await writeFile(join(root, CONNECTIONS_FILE), connectionsYaml());
 
   process.env['LANES_LINK_HOME'] = root;
   return root;
@@ -102,13 +106,15 @@ describe('the local target', () => {
 });
 
 describe('the owner layer follows the target — ADR-014', () => {
-  test("skills load from the profile's own directory — ADR-030", async () => {
+  test("skills load from the granted connection's directory — ADR-059", async () => {
     const root = await workspace();
     // Not `<root>/skills/`, which is where they lived while every profile
-    // shared them. A skill left there now loads for nobody, deliberately.
-    await mkdir(join(root, layout.skills('personal')), { recursive: true });
+    // shared them, and not `data/<profile>/skills.d/` either — they follow the
+    // skills *connection* a profile grants now (ADR-059). A skill left at
+    // either old path loads for nobody, deliberately.
+    await mkdir(join(root, layout.skills('main')), { recursive: true });
     await writeFile(
-      join(root, layout.skills('personal'), 'review-diff.md'),
+      join(root, layout.skills('main'), 'review-diff.md'),
       '---\ndescription: Review a diff\n---\nReview it.\n',
     );
     await mkdir(join(root, 'skills'), { recursive: true });
@@ -124,7 +130,7 @@ describe('the owner layer follows the target — ADR-014', () => {
       );
       // The same store the provider reads, exposed so `lanes link skills` cannot drift
       // into a second spelling of the same layout.
-      expect((await runtime.skills.list()).map((blob) => blob.key)).toEqual(['review-diff.md']);
+      expect((await runtime.skills?.list())?.map((blob) => blob.key)).toEqual(['review-diff.md']);
       expect(runtime.registry.capabilities().map((entry) => entry.id)).not.toContain(
         'skills.stale',
       );
@@ -139,11 +145,12 @@ describe('the owner layer follows the target — ADR-014', () => {
 
     try {
       await runtime.vault.put('owner', { id: 'token', value: 'secret' });
-      // Inside the profile's own directory, beside its state and its
-      // credential store — one profile, one folder.
-      expect(await Bun.file(join(root, 'data', 'personal', 'vault.enc')).exists()).toBe(true);
+      // Under the vault connection this profile grants (ADR-059), not under the
+      // profile — a profile owns no bytes now, and two profiles granting the
+      // same vault reach the same sealed document.
+      expect(await Bun.file(join(root, 'data', 'vault.d', 'main.enc')).exists()).toBe(true);
       // Its own key, never the credential store's.
-      expect(await Bun.file(join(root, 'data', 'personal', 'vault.enc.key')).exists()).toBe(true);
+      expect(await Bun.file(join(root, 'data', 'vault.d', 'main.enc.key')).exists()).toBe(true);
     } finally {
       await runtime.close();
     }
@@ -159,7 +166,14 @@ describe('the owner layer follows the target — ADR-014', () => {
     try {
       await runtime.vault.put('owner', { id: 'token', value: 'secret' });
 
-      expect(await Bun.file(join(root, 'data', 'files', 'vault.enc')).exists()).toBe(true);
+      // `vault.d/<connection>.enc`, not a single `vault.enc`: one sealed
+      // document per vault connection (ADR-059), and the blob adapter honours
+      // that as the file adapter does. It used to write one document for every
+      // vault connection in the workspace, which is the collision whose wrong
+      // answer is a credential.
+      expect(
+        await Bun.file(join(root, 'data', 'files', 'vault.d', 'main.enc')).exists(),
+      ).toBe(true);
       expect(await Bun.file(join(root, 'data', 'personal.vault.enc')).exists()).toBe(false);
     } finally {
       delete process.env['LANES_LINK_VAULT_KEY'];

@@ -11,7 +11,7 @@ import { CONNECT_CUSTOM_FLAGS, RESERVED_BY_GRAMMAR } from './commands/connect/cu
  * saying.
  *
  * The bug this file exists for is not a wrong answer, it is a missing one:
- * `main.ts` built an options literal for `profile add` and dropped `--target`
+ * `main.ts` built an options literal for `profile add` and dropped `--workspace`
  * into it, and nothing refused because nothing held a list of what the command
  * accepts. A table only helps if it cannot fall behind the grammar, so the first
  * test reads `main.ts` rather than trusting anyone to keep two files in step.
@@ -68,7 +68,7 @@ describe('every dispatched command declares what it needs', () => {
   test('an unrecognised command still gets the strict default', () => {
     // Not an oversight, and the safe direction: a command nobody classified
     // asks for both rather than silently opening whatever it likes.
-    expect(requirementFor('something-new', undefined)).toBe('profile+target');
+    expect(requirementFor('something-new', undefined)).toBe('profile+workspace');
   });
 });
 
@@ -80,40 +80,55 @@ const nowhere = { LANES_LINK_HOME: '/nonexistent-workspace-for-a-test' };
 describe('requiring a selection', () => {
 
   test('refuses a command that names no profile, once it has a target', async () => {
-    // `connect` acts on one account, so the profile is the subject and there is
-    // nothing to fall back to. `status` used to stand here and no longer can:
-    // its subject is the target (ADR-043).
+    // `policy allow` edits one profile's grants, so the profile is the subject
+    // and there is nothing to fall back to. `connect` used to stand here and no
+    // longer can: a connection belongs to the workspace, and connecting one is
+    // not an edit to any profile (ADR-057).
     //
     // The target has to be given first, and that is the ordering ADR-052
     // inverted: a profile lives in one target's workspace, so "which profiles
     // exist" cannot be answered — or refused usefully — until the target is
     // known.
     await expect(
-      requireSelection('connect', undefined, { target: 'local' }, nowhere),
+      requireSelection('policy', 'allow', { workspace: 'local' }, nowhere),
     ).rejects.toThrow('--profile is required');
   });
 
   test('asks for the target before the profile, because the target says where to look', async () => {
-    await expect(requireSelection('connect', undefined, {}, nowhere)).rejects.toThrow(
-      '--target is required',
+    await expect(requireSelection('policy', 'allow', {}, nowhere)).rejects.toThrow(
+      '--workspace is required',
     );
+  });
+
+  test('connect asks for a workspace and not for a profile', async () => {
+    // The account is authorised into the workspace; granting it to a profile is
+    // the second act and the only one that is a profile's (ADR-057). Requiring
+    // `--profile` made "connect this account" mean "connect it and decide what
+    // may be done with it", which are different decisions taken at different
+    // times.
+    await expect(requireSelection('connect', undefined, {}, nowhere)).rejects.toThrow(
+      '--workspace is required',
+    );
+    await expect(
+      requireSelection('connect', undefined, { workspace: 'local' }, nowhere),
+    ).resolves.toBeUndefined();
   });
 
   test('asks a target-scoped command for a target, and not for a profile', async () => {
     await expect(requireSelection('status', undefined, {}, nowhere)).rejects.toThrow(
-      '--target is required',
+      '--workspace is required',
     );
     await expect(
-      requireSelection('status', undefined, { target: 'cloud' }, nowhere),
+      requireSelection('status', undefined, { workspace: 'cloud' }, nowhere),
     ).resolves.toBeUndefined();
   });
 
   test('and still accepts --profile there, as a filter', async () => {
     await expect(
-      requireSelection('status', undefined, { target: 'cloud', profile: 'work' }, nowhere),
+      requireSelection('status', undefined, { workspace: 'cloud', profile: 'work' }, nowhere),
     ).resolves.toBeUndefined();
     expect(() =>
-      assertKnownFlags('status', undefined, { target: 'cloud', profile: 'work' }),
+      assertKnownFlags('status', undefined, { workspace: 'cloud', profile: 'work' }),
     ).not.toThrow();
   });
 
@@ -126,10 +141,10 @@ describe('requiring a selection', () => {
     for (const command of ['check', 'config show', 'policy list'] as const) {
       const [first, second] = command.split(' ');
       await expect(requireSelection(first!, second, { profile: 'work' }, nowhere)).rejects.toThrow(
-        '--target is required',
+        '--workspace is required',
       );
       await expect(
-        requireSelection(first!, second, { profile: 'work', target: 'local' }, nowhere),
+        requireSelection(first!, second, { profile: 'work', workspace: 'local' }, nowhere),
       ).resolves.toBeUndefined();
     }
   });
@@ -144,20 +159,20 @@ describe('requiring a selection', () => {
 
   test('accepts a command that names both', async () => {
     await expect(
-      requireSelection('status', undefined, { profile: 'work', target: 'cloud' }, nowhere),
+      requireSelection('status', undefined, { profile: 'work', workspace: 'cloud' }, nowhere),
     ).resolves.toBeUndefined();
   });
 
   test('asks profile add for a target, because that is where the file goes', async () => {
     // It named neither while every profile was written into the same directory.
-    // `--target` now decides *which workspace* it is created in (ADR-052), so it
+    // `--workspace` now decides *which workspace* it is created in (ADR-052), so it
     // is the one thing the command cannot proceed without. The profile name is
     // still positional.
     await expect(requireSelection('profile', 'add', {}, nowhere)).rejects.toThrow(
-      '--target is required',
+      '--workspace is required',
     );
     await expect(
-      requireSelection('profile', 'add', { target: 'local' }, nowhere),
+      requireSelection('profile', 'add', { workspace: 'local' }, nowhere),
     ).resolves.toBeUndefined();
   });
 
@@ -183,8 +198,8 @@ describe('refusing a flag the command does not read', () => {
     expect(() => assertKnownFlags('status', undefined, { porfile: 'work' })).toThrow(
       'Did you mean --profile?',
     );
-    expect(() => assertKnownFlags('status', undefined, { taget: 'cloud' })).toThrow(
-      'Did you mean --target?',
+    expect(() => assertKnownFlags('status', undefined, { workspce: 'cloud' })).toThrow(
+      'Did you mean --workspace?',
     );
   });
 
@@ -197,11 +212,11 @@ describe('refusing a flag the command does not read', () => {
     );
   });
 
-  test('refuses --target on a command with nothing to select', () => {
-    // The reported bug, as a test: `profile add work --target cloud` printed ok
+  test('refuses --workspace on a command with nothing to select', () => {
+    // The reported bug, as a test: `profile add work --workspace cloud` printed ok
     // and dropped the flag. It now declares a target rather than selecting one,
     // so it is accepted here — but a profile flag is not.
-    expect(() => assertKnownFlags('profile', 'add', { target: 'cloud' })).not.toThrow();
+    expect(() => assertKnownFlags('profile', 'add', { workspace: 'cloud' })).not.toThrow();
     expect(() => assertKnownFlags('profile', 'add', { profile: 'work' })).toThrow('Unknown flag');
   });
 
@@ -228,13 +243,13 @@ describe('refusing a flag the command does not read', () => {
  *
  * The table said `profile` for five commands and their handlers called
  * `resolveProfile`, which requires a target — while `assertKnownFlags` refused
- * `--target` because the table said they did not take one. Every one of them was
+ * `--workspace` because the table said they did not take one. Every one of them was
  * unrunnable in both spellings at once:
  *
  *     $ lanes link check --profile personal
- *     error  --target is required.
- *     $ lanes link check --profile personal --target local
- *     error  Unknown flag "--target" for "lanes link check".
+ *     error  --workspace is required.
+ *     $ lanes link check --profile personal --workspace local
+ *     error  Unknown flag "--workspace" for "lanes link check".
  *
  * A requirement and an allowlist that disagree cannot be caught by testing
  * either one, which is why this asserts the pair — and asserts it over the whole
@@ -257,8 +272,8 @@ describe('every command is runnable in the spelling it demands', () => {
       if (requires === 'none') continue;
 
       const flags: Record<string, string> = {};
-      if (requires === 'profile+target') flags['profile'] = 'work';
-      if (requires === 'target' || requires === 'profile+target') flags['target'] = 'local';
+      if (requires === 'profile+workspace') flags['profile'] = 'work';
+      if (requires === 'workspace' || requires === 'profile+workspace') flags['workspace'] = 'local';
 
       expect(() => assertKnownFlags(first, second, flags), `${key} accepts what it requires`).not.toThrow();
     }
@@ -270,8 +285,8 @@ describe('every command is runnable in the spelling it demands', () => {
       if (twoWord.has(key) && second === undefined) continue;
 
       const flags: Record<string, string> = {};
-      if (requires === 'profile+target') flags['profile'] = 'work';
-      if (requires === 'target' || requires === 'profile+target') flags['target'] = 'local';
+      if (requires === 'profile+workspace') flags['profile'] = 'work';
+      if (requires === 'workspace' || requires === 'profile+workspace') flags['workspace'] = 'local';
 
       await expect(
         requireSelection(first, second, flags, nowhere),
@@ -286,7 +301,7 @@ describe('every command is runnable in the spelling it demands', () => {
     // point of naming them here is that moving four of the five would leave the
     // fifth quietly unrunnable.
     for (const key of ['check', 'config show', 'policy list', 'secrets push', 'identity list']) {
-      expect(SELECTION[key], key).toBe('profile+target');
+      expect(SELECTION[key], key).toBe('profile+workspace');
     }
   });
 
@@ -294,17 +309,17 @@ describe('every command is runnable in the spelling it demands', () => {
     // Both take the name as an argument, so a `--profile` flag could only name a
     // second one and disagree with it.
     await expect(
-      requireSelection('profile', 'remove', { target: 'local' }, nowhere),
+      requireSelection('profile', 'remove', { workspace: 'local' }, nowhere),
     ).resolves.toBeUndefined();
     expect(() => assertKnownFlags('profile', 'remove', { profile: 'work' })).toThrow('Unknown flag');
   });
 
-  test('profile remove takes the --target that says which workspace holds it', () => {
+  test('profile remove takes the --workspace that says which workspace holds it', () => {
     // It used to mean "decommission this one target's stores and keep the
     // profile". It now says where the profile *is* (ADR-052), and is required
     // rather than optional.
     expect(() =>
-      assertKnownFlags('profile', 'remove', { target: 'cloud', 'dry-run': true }),
+      assertKnownFlags('profile', 'remove', { workspace: 'cloud', 'dry-run': true }),
     ).not.toThrow();
   });
 
@@ -345,17 +360,18 @@ describe('every command is runnable in the spelling it demands', () => {
     );
   });
 
-  test('and it needs both a profile and a target, like connect', async () => {
-    // The target first, because it is what says which workspace holds the
-    // profile (ADR-052) — so a command naming neither is refused for the target.
+  test('and it needs a workspace, like every other connect', async () => {
+    // `connect custom` declares a provider and authorises it, both of which are
+    // the workspace's (ADR-057). It takes `--profile` optionally, for the same
+    // reason `connect` does: to grant what it just connected.
     await expect(requireSelection('connect', 'custom', {}, nowhere)).rejects.toThrow(
-      '--target is required',
+      '--workspace is required',
     );
     await expect(
-      requireSelection('connect', 'custom', { target: 'local' }, nowhere),
-    ).rejects.toThrow('--profile is required');
+      requireSelection('connect', 'custom', { workspace: 'local' }, nowhere),
+    ).resolves.toBeUndefined();
     await expect(
-      requireSelection('connect', 'custom', { profile: 'work', target: 'local' }, nowhere),
+      requireSelection('connect', 'custom', { profile: 'work', workspace: 'local' }, nowhere),
     ).resolves.toBeUndefined();
   });
 

@@ -1,3 +1,4 @@
+import { registering } from './registration.ts';
 import { auth, discoverOAuthProtectedResourceMetadata } from '@modelcontextprotocol/client';
 import { CredentialOAuthProvider } from '#connectivity/auth/index.ts';
 import type { SecretStore } from '#secrets';
@@ -146,10 +147,9 @@ export async function authorise(input: {
 
     const scope = manifest.auth.scopes.length > 0 ? manifest.auth.scopes.join(' ') : undefined;
 
-    const first = await auth(provider as never, {
-      serverUrl,
-      ...(scope ? { scope } : {}),
-    });
+    const first = await registering(manifest, serverUrl, () =>
+      auth(provider as never, { serverUrl, ...(scope ? { scope } : {}) }),
+    );
 
     if (first === 'AUTHORIZED') {
       progress(ok('already authorised'));

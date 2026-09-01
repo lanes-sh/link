@@ -146,23 +146,58 @@ Credentials follow the target, because each target has its own credential store.
 ### Example (`config/personal.example.yaml`)
 
 ```yaml
-contract: 2
+contract: 3
 
 instance:
   profile: personal
 
-# Adapter selection is per target. Everything below targets is
-# target-independent and declared exactly once.
+# Adapter selection is per workspace. Everything below is workspace-independent
+# and declared exactly once.
 
 limits:
   requests_per_minute: 120        # per profile
   upstream_calls_per_minute: 60   # per connection, protects vendor quota
 
-# App registrations. Shared by every connection of that vendor.
-oauth_apps:
-  google:
-    client_id_ref: google/client_id
-    client_secret_ref: google/client_secret
+# One row per connection this profile may reach, and what it may do with each.
+#
+# The accounts themselves are in connections.yaml beside this file: authorising
+# an account and deciding what may be done with it are two acts, and only the
+# second belongs to a profile (ADR-057). A row here *is* the grant — naming a
+# connection is what makes it reachable, and the allow list is what makes any of
+# its capabilities callable. An account the workspace holds and this file does
+# not name is simply absent.
+#
+# Rules name capabilities of the row's own provider, which is what lets the two
+# mailboxes below differ (ADR-058).
+grants:
+  - connection: gmail.ada_lovelace
+    allow: ['gmail.*']
+    deny:  [gmail.users.drafts.send]
+  - connection: gmail.rin_shaw
+    allow: [gmail.users.messages.list, gmail.users.messages.get]
+    deny:  []
+  - connection: example.local
+    allow: ['example.*']
+    deny:  []
+
+# Who may consume this profile. Empty is nobody, not everybody — default deny on
+# the identity axis (ADR-060).
+members:
+  - { subject: lanes:SUBJECT, role: owner }
+
+# The bearer token is for CI. A person signs in instead: a client that asks for
+# authorization is sent to the Lanes login and comes back as somebody (ADR-062).
+auth:
+  mode: bearer
+  token_ref: profile/token
+  authorization:
+    mode: self
+```
+
+### Example (`connections.yaml`)
+
+```yaml
+contract: 3
 
 # One entry per authorised account. "account" is the identity the provider
 # reports, resolved at connect time, and the id derives from it — so this list
@@ -184,24 +219,17 @@ connections:
     provider: example
     account: Scratch
 
-# One token for the endpoint this profile serves — which since ADR-009 is every
-# profile in the workspace. A narrower grant is a narrower profile, not a
-# narrower client (ADR-003); a boundary that must hold against the agent itself
-# is a second workspace.
-auth:
-  mode: bearer
-  token_ref: profile/token
-
-# Default deny. Only listed rules grant access, and an absent policy block
-# grants nothing at all.
-policy:
-  allow: ['*']
-  deny:  [gmail.users.drafts.send]
+# App registrations. Shared by every connection of that vendor.
+oauth_apps:
+  google:
+    client_id_ref: google/client_id
+    client_secret_ref: google/client_secret
 ```
 
-Rules name capabilities, never connections: `gmail.*` covers every Gmail account in the profile.
-Three forms — `*`, `gmail.*`, `gmail.users.drafts.send` — and a trailing `.*` at any depth is the
-only wildcard. Do not build a policy expression language.
+A rule names a capability of its row's own provider: `gmail.*` covers everything Gmail offers *for
+that one account*, which is what lets the two mailboxes above differ (ADR-058). Three forms — `*`,
+`gmail.*`, `gmail.users.drafts.send` — and a trailing `.*` at any depth is the only wildcard. Do not
+build a policy expression language.
 
 ### Validation rules
 

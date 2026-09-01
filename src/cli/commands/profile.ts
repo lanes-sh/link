@@ -1,7 +1,9 @@
+import { newConnectionsTemplate, newProfileTemplate, newWorkspaceTemplate } from '../config-templates.ts';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  CONNECTIONS_FILE,
   ConfigError,
   WORKSPACE_FILE,
   listProfiles,
@@ -13,8 +15,11 @@ import {
   resolveTargetWorkspace,
   resolveWorkspaceRoot,
 } from '#profile';
-import { newProfileTemplate, newWorkspaceTemplate } from '../config-edit.ts';
+
+import { recordConfigChange } from '../audit-change.ts';
+import { resolveProfile } from '../runtime.ts';
 import { emit, ok, print, style, table } from '../output.ts';
+import { readSession } from '#auth/lanes/session.ts';
 
 /**
  * Profile management.
@@ -58,7 +63,7 @@ export interface ProfileListing {
  *
  * It now decides *where the file goes* rather than what is written in it: a
  * profile lives in one target's workspace and declares nothing about it
- * (ADR-052), so `--target cloud` writes into the bucket and the endpoint there
+ * (ADR-052), so `--workspace cloud` writes into the bucket and the endpoint there
  * serves it on its next reconcile.
  */
 export async function createProfile(
@@ -69,7 +74,7 @@ export async function createProfile(
   const target = options.targets[0]!;
 
   // The workspace file before the target is resolved, not after. `profile add
-  // <name> --target local` on an empty directory is how a workspace comes into
+  // <name> --workspace local` on an empty directory is how a workspace comes into
   // existence, and the target it names is declared *by* that file — so writing
   // it second means resolving a target nothing has declared yet.
   if (!isRemoteWorkspace(local) && !existsSync(join(local, WORKSPACE_FILE))) {
@@ -79,6 +84,14 @@ export async function createProfile(
 
   const root = await resolveTargetWorkspace(local, target);
   const path = profilePath(root, name);
+
+  // The connections file comes into existence with the workspace, carrying the
+  // owner layer. It is written before the profile because the profile's grants
+  // name rows in it, and `assertGrantsResolve` refuses a grant with nothing
+  // behind it — so a profile written first would not load until this existed.
+  if (!(await workspaceFiles(root).has(CONNECTIONS_FILE))) {
+    await writeWorkspaceFile(workspaceFiles(root), CONNECTIONS_FILE, newConnectionsTemplate());
+  }
 
   if (await workspaceFiles(root).has(`profiles/${name}.yaml`)) {
     throw new Error(`Profile "${name}" already exists at ${path}`);
@@ -99,10 +112,23 @@ export async function createProfile(
   // sibling's, or asked. It declares no target now (ADR-052): it is written into
   // the workspace of the target it was named with, and that workspace already
   // says where its bytes go.
+  // The signed-in subject, so the profile reaches somebody the moment it
+  // exists. Without it every new profile shipped `members: []` while the
+  // template writes `authorization: mode: self` — an endpoint that advertises
+  // OAuth and lists nobody, where the owner signs in at lanes.sh and is told no
+  // profile lists them. A local stdio or CI caller still worked, which is why a
+  // smoke test passed: those carry `profiles: undefined` and `mayReach` admits
+  // everything.
+  //
+  // Null when nobody is signed in, which is a real state — `lanes auth login`
+  // has not been run yet — and the template then says how to fix it rather than
+  // inventing a subject.
+  const session = await readSession();
+
   await writeWorkspaceFile(
     workspaceFiles(root),
     `profiles/${name}.yaml`,
-    newProfileTemplate(name, port),
+    newProfileTemplate(name, port, session?.subject),
   );
 
   return { name, path, port, targets: options.targets, copiedFrom: {} };
@@ -142,8 +168,8 @@ export async function profileAdd(
   if (options.targets.length === 0) {
     throw new ConfigError(
       'Say which targets this profile declares:\n' +
-        `  lanes link profile add ${name} --target local\n` +
-        `  lanes link profile add ${name} --target local --target cloud\n` +
+        `  lanes link profile add ${name} --workspace local\n` +
+        `  lanes link profile add ${name} --workspace local --workspace cloud\n` +
         '\n' +
         '  A target is where a profile runs — a credential store and a blob store.\n' +
         '  There is no default to inherit before the profile exists.',
@@ -152,11 +178,21 @@ export async function profileAdd(
 
   const created = await createProfile(name, options);
 
+  // Re-read rather than assembled from `created`, because the file on disk is
+  // what a workspace with a remote credential store needs to open one.
+  const primary = created.targets[0]!;
+  const { resolution, config } = await resolveProfile({ profile: created.name, target: primary });
+  await recordConfigChange(config, resolution.workspaceRoot, primary, {
+    capability: 'config.profile.add',
+    scope: created.name,
+    arguments: { port: created.port, workspace: primary },
+  });
+
   return emit(options.json, created, () => {
     print(ok(`created profile ${style.bold(created.name)}`));
     print(`      config   ${created.path}`);
     print(`      port     ${created.port}`);
-    print(`      targets  ${created.targets.join(', ')}`);
+    print(`      workspace  ${created.targets.join(', ')}`);
 
     for (const [target, from] of Object.entries(created.copiedFrom)) {
       print(`      ${style.dim(`${target} adapters copied from profile "${from}"`)}`);
@@ -165,7 +201,7 @@ export async function profileAdd(
     print();
     print(
       style.dim(
-        `Next: lanes link connect example --profile ${created.name} --target ${created.targets[0]}`,
+        `Next: lanes link connect example --profile ${created.name} --workspace ${created.targets[0]}`,
       ),
     );
   });
@@ -180,7 +216,7 @@ export async function profileList(
   return emit(options.json, listing, () => {
     if (listing.profiles.length === 0) {
       print(style.dim(`No profiles in ${listing.root}.`));
-      print(style.dim('Create one with: lanes link profile add personal --target local'));
+      print(style.dim('Create one with: lanes link profile add personal --workspace local'));
       return;
     }
 
@@ -210,7 +246,7 @@ export function profileDefault(name: string | undefined): never {
   throw new ConfigError(
     'lanes link profile default was removed.\n' +
       '  Nothing reads default_profile any more — pass --profile on every command:\n' +
-      `    lanes link status --profile ${name ?? '<name>'} --target <target>\n` +
+      `    lanes link status --profile ${name ?? '<name>'} --workspace <name>\n` +
       '  If the key is still in lanes-link.yaml it is inert, and safe to delete.',
   );
 }

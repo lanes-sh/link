@@ -92,7 +92,7 @@ export async function connectCustom(
   if (options.json !== true) announce(resolution);
 
   const path = manifestPath(workspaceRoot, profile, providerId);
-  const rerun = `${PROGRAM} connect custom ${providerId} --profile ${profile} --target ${target}`;
+  const rerun = `${PROGRAM} connect custom ${providerId} --profile ${profile} --workspace ${target}`;
 
   const prompter =
     options.prompter ??

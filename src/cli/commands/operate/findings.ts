@@ -1,3 +1,4 @@
+import { grantedConnections } from '../../runtime.ts';
 import { ownerPrincipal } from '#auth';
 import type { DiscoveredCapability } from '#connectivity';
 import { allowedConnections } from '#policy';
@@ -49,7 +50,7 @@ export async function reportCapabilityDrift(
   const principal = ownerPrincipal(runtime.config.instance.profile).id;
 
   for (const entry of runtime.registry.list()) {
-    const connection = runtime.config.connections.find((c) => c.provider === entry.manifest.id);
+    const connection = grantedConnections(runtime).find((c) => c.provider === entry.manifest.id);
     if (!connection) continue;
 
     const connector = runtime.connectorFor(entry.manifest.id, connection.id);

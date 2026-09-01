@@ -78,12 +78,12 @@ async function editRegistry(
     (await readWorkspaceFile(files, WORKSPACE_FILE)) ?? `contract: ${SUPPORTED_CONTRACT}\n`;
 
   const document = parseDocument(text);
-  const targets = (document.toJSON()?.targets ?? {}) as Record<string, WorkspaceTarget>;
+  const targets = (document.toJSON()?.workspaces ?? {}) as Record<string, WorkspaceTarget>;
 
   edit(targets);
 
-  if (Object.keys(targets).length === 0) document.deleteIn(['targets']);
-  else document.setIn(['targets'], sorted(targets));
+  if (Object.keys(targets).length === 0) document.deleteIn(['workspaces']);
+  else document.setIn(['workspaces'], sorted(targets));
 
   // Validated before it lands, on the rendered tree rather than the input, so
   // what is checked is what would be read back.

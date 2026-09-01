@@ -61,7 +61,7 @@ describe('classifyOAuth', () => {
  * reported as broken by a probe that simply asked the resolver about everything.
  */
 describe('probeConnections, before the resolver', () => {
-  const forSelection = (command: string) => `${command} --profile p --target t`;
+  const forSelection = (command: string) => `${command} --profile p --workspace <name>`;
 
   const store = (seed: Record<string, string> = {}): SecretStore => {
     const map = new Map(Object.entries(seed));
@@ -130,7 +130,7 @@ describe('probeConnections, before the resolver', () => {
     );
 
     expect(result!.verdict).toBe('missing');
-    expect(result!.fix).toBe('lanes link connect icloud_mail.main --profile p --target t');
+    expect(result!.fix).toBe('lanes link connect icloud_mail.main --profile p --workspace <name>');
   });
 
   test('the owner layer needs no credential and costs no store read', async () => {

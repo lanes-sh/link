@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { approvalPage, completionPage } from './callback-page.ts';
+import { completionPage, noticePage } from './callback-page.ts';
 
 /**
  * Every page this repository serves, held to the design system.
@@ -148,17 +148,7 @@ describe('type comes from the tokens', () => {
 describe('what a browser actually receives', () => {
   const PAGES: ReadonlyArray<[string, Response]> = [
     ['completion', completionPage({ heading: 'Connected', detail: '.', ok: true })],
-    [
-      'approval',
-      approvalPage({
-        client: 'A client',
-        redirectHost: 'example.com',
-        fields: {},
-        action: '/authorize',
-        retry: false,
-        target: 'local',
-      }),
-    ],
+    ['notice', noticePage('No profile on this endpoint lists you.', 403)],
   ];
 
   for (const [name, response] of PAGES) {
@@ -188,9 +178,10 @@ describe('what a browser actually receives', () => {
       expect(csp).toContain("form-action 'self'");
       expect(csp).toContain('https://fonts.googleapis.com');
       expect(csp).toContain('https://fonts.gstatic.com');
-      // Script is allowed exactly where there is one: the consent screen has a
-      // submit spinner, and the page a connect flow lands on has nothing.
-      expect(csp.includes('script-src')).toBe(name !== 'completion');
+      // No page here runs script any more. The one that did was the consent
+      // form, whose submit spinner was the only thing that widening bought —
+      // and identity moved to lanes.sh with it (ADR-062).
+      expect(csp).not.toContain('script-src');
     });
   }
 });

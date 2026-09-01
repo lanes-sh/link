@@ -48,11 +48,20 @@ const README = new URL('../README.md', import.meta.url).pathname;
  * `LANES_DOCS_DIR` points at `src/content/docs/link` in that checkout; unset,
  * the completeness check skips rather than passing by not looking.
  */
+/**
+ * The catalogue page, which is `providers.mdx` and not `connect.mdx`.
+ *
+ * It moved: `connect.mdx` became the guide to *how* connecting works and now
+ * links to the catalogue rather than being it. This pointed at the old file for
+ * long enough that the two checks below reported 105 missing providers on a
+ * website where every one of them is documented, which is the failure mode a
+ * cross-repository test has and a same-repository one does not.
+ */
 const CONNECT = process.env.LANES_DOCS_DIR
-  ? join(process.env.LANES_DOCS_DIR, 'connect.mdx')
+  ? join(process.env.LANES_DOCS_DIR, 'providers.mdx')
   : undefined;
 
-/** The guide's path, for the checks `skipIf` already gates on it existing. */
+/** The catalogue's path, for the checks `skipIf` already gates on it existing. */
 function connectGuide(): string {
   if (CONNECT === undefined) throw new Error('LANES_DOCS_DIR is not set');
   return CONNECT;
@@ -75,7 +84,7 @@ describe('the README', () => {
     expect(readme).toContain('src/providers/README.md');
   });
 
-  test.skipIf(CONNECT === undefined)('the connect guide gives a command for every provider', async () => {
+  test.skipIf(CONNECT === undefined)('the catalogue gives a command for every provider', async () => {
     const named = new Set(connectTargetsIn(await readFile(connectGuide(), 'utf8')));
 
     const missing = PROVIDER_MANIFESTS.map((manifest) => manifest.id).filter(
@@ -85,7 +94,7 @@ describe('the README', () => {
     expect(missing).toEqual([]);
   });
 
-  test.skipIf(CONNECT === undefined)('the connect guide marks exactly the untested providers', async () => {
+  test.skipIf(CONNECT === undefined)('the catalogue marks exactly the untested providers', async () => {
     // A status maintained in two places is a status that is wrong in one of
     // them. `untested.ts` is the source; this is the check that the prose agrees
     // with it, in both directions — an unmarked untested provider overclaims,

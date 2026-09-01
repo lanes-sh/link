@@ -1,3 +1,4 @@
+import { wasDefaulted } from './selection-require.ts';
 import type { Resolution } from '#profile';
 
 /**
@@ -126,12 +127,44 @@ export function announceProfile(selection: {
   print(style.dim(`profile ${style.bold(selection.profile)}  ${selection.workspaceRoot}`));
 }
 
+/**
+ * The line every command prints before its output.
+ *
+ * It names the workspace, and whether that workspace was *typed* or came from
+ * `default_workspace`. The provenance is not decoration: ADR-037 removed sticky
+ * selection because "the dotfile nothing prints" is how an operator runs a
+ * command against the wrong thing, and ADR-061 gives the default back only on
+ * the condition that it announces itself. Dropping the `(default)` marker for
+ * tidiness would reverse that decision.
+ */
 export function announce(resolution: Resolution): void {
+  const provenance = wasDefaulted(resolution.target) ? ' (default)' : '';
+
   print(
     style.dim(
       `profile ${style.bold(resolution.profile)}  ` +
-        `target ${style.bold(resolution.target)}  ` +
+        `workspace ${style.bold(resolution.target)}${provenance}  ` +
         `${resolution.workspaceRoot}`,
+    ),
+  );
+}
+
+/**
+ * The same line, for a command whose subject is the workspace.
+ *
+ * It names no profile, and that is the point rather than a saving. A
+ * workspace-level command still opens a runtime, and a runtime carries a
+ * profile — so `announce` would print whichever one happened to be picked, and
+ * a reader would take it for the thing being acted on. The audit log is one
+ * chain for the whole workspace; saying `profile personal` above it describes a
+ * log that does not exist.
+ */
+export function announceWorkspace(resolution: Resolution): void {
+  const provenance = wasDefaulted(resolution.target) ? ' (default)' : '';
+
+  print(
+    style.dim(
+      `workspace ${style.bold(resolution.target)}${provenance}  ${resolution.workspaceRoot}`,
     ),
   );
 }
