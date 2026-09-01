@@ -885,3 +885,55 @@ describe('the registry a half-recorded deploy left behind', () => {
     expect((await readYaml(root, 'lanes-link.yaml'))['default_workspace']).toBe('local');
   });
 });
+
+describe('a rerun after the profile stamps were interrupted', () => {
+  test("does not rebuild connections.yaml from the profiles that are left", async () => {
+    // `rewriteProfiles` stamps profiles one at a time and runs last, so an
+    // interruption part way through leaves some at contract 3 and some at 2.
+    // `legacy` then holds only the stragglers, and rebuilding the file from
+    // them deleted the already-migrated rows — while their grants still named
+    // those connections.
+    //
+    // The shape that bites: two profiles hold `gmail.main` for different
+    // mailboxes and hoist to `gmail.main` and `gmail.main_2`. Rebuild from the
+    // second alone and `gmail.main` comes back naming the *other* mailbox, with
+    // the first profile's surviving grant pointing at it. Nothing errors.
+    const root = await workspace({
+      personal: legacy({
+        profile: 'personal',
+        connections: '  - { id: main, provider: gmail, account: ada@example.com }',
+      }),
+      work: legacy({
+        profile: 'work',
+        connections: '  - { id: main, provider: gmail, account: sam@example.com }',
+      }),
+    });
+
+    await migrateToContract3(root, { apply: true });
+    const after = await refs(root);
+    expect(after).toContain('gmail.main');
+    expect(after).toContain('gmail.main_2');
+
+    // Put `work` back to contract 2 — exactly what an interruption between the
+    // two profile saves leaves behind — and run it again.
+    const stalled = (await readFile(join(root, 'profiles', 'work.yaml'), 'utf8')).replace(
+      'contract: 3',
+      'contract: 2',
+    );
+    await writeFile(join(root, 'profiles', 'work.yaml'), stalled);
+
+    await migrateToContract3(root, { apply: true });
+
+    const rows = (
+      (await readYaml(root, 'connections.yaml')) as {
+        connections?: { provider: string; id: string; account?: string }[];
+      }
+    ).connections;
+
+    // personal's mailbox is still the one `gmail.main` names.
+    expect(rows?.find((row) => row.provider === 'gmail' && row.id === 'main')?.account).toBe(
+      'ada@example.com',
+    );
+    expect(await refs(root)).toContain('gmail.main_2');
+  });
+});

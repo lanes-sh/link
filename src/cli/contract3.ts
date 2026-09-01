@@ -222,7 +222,25 @@ export async function migrateToContract3(
   return result;
 }
 
-/** The hoisted rows, plus every profile's `oauth_apps` merged into one block. */
+/**
+ * The hoisted rows, plus every profile's `oauth_apps` merged into one block.
+ *
+ * **Anything already in the file survives**, which is the rule `writeRegistry`
+ * states for the same reason: a workspace part way through this has entries that
+ * are already right, and re-deriving them from what is left would undo a
+ * correction.
+ *
+ * Not a tidiness argument here. `rewriteProfiles` stamps profiles one at a time
+ * and `legacy` holds only those still at contract 2, so an interruption part way
+ * through it left a rerun hoisting a *subset* — and this overwrote the file with
+ * it, deleting the already-migrated profiles' rows. Their grants named those
+ * connections still. In the shape that actually bites, two profiles held
+ * `gmail.main` for different mailboxes and were hoisted to `gmail.main` and
+ * `gmail.main_2`; the rerun rebuilt the file from the second profile alone, so
+ * `gmail.main` came back naming the *other* person's mailbox and the first
+ * profile's surviving grant pointed at it. Nothing errored, and
+ * `loadProfileConfig` returned ok.
+ */
 async function writeConnections(
   root: string,
   rows: readonly LegacyConnection[],
@@ -231,9 +249,25 @@ async function writeConnections(
   const apps: Record<string, unknown> = {};
   for (const config of legacy.values()) Object.assign(apps, config.oauth_apps ?? {});
 
+  const held = await readWorkspaceFile(workspaceFiles(root), CONNECTIONS_FILE);
+  const current = held === null ? null : ConfigDocument.fromText(held, CONNECTIONS_FILE);
+  const previous = ((current?.toJSON() as { connections?: unknown } | null)?.connections ??
+    []) as LegacyConnection[];
+
+  const merged = new Map<string, LegacyConnection>();
+  for (const row of rows) merged.set(keyOf(row), row);
+  // Second, so a row this run re-derived does not displace the one already
+  // written for it.
+  for (const row of previous) {
+    if (typeof row?.provider === 'string' && typeof row?.id === 'string') merged.set(keyOf(row), row);
+  }
+
   const document = ConfigDocument.fromText(newConnectionsTemplate(), CONNECTIONS_FILE);
-  document.setIn(['connections'], rows);
-  document.setIn(['oauth_apps'], apps);
+  document.setIn(['connections'], [...merged.values()]);
+  document.setIn(['oauth_apps'], {
+    ...((current?.toJSON() as { oauth_apps?: Record<string, unknown> } | null)?.oauth_apps ?? {}),
+    ...apps,
+  });
 
   await writeWorkspaceFile(workspaceFiles(root), CONNECTIONS_FILE, document.toString());
 }
