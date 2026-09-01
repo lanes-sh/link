@@ -1,4 +1,5 @@
 import { forProfile } from '#auth';
+import { clientLabelFrom } from './client-info.ts';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { isPromptResult } from '#connectivity';
@@ -49,17 +50,19 @@ export function registerPrompt(
       description: describeWithConnections(capability.description, entry.reachable),
       argsSchema: z.object(shape),
     },
-    async (args: Record<string, unknown>) => {
+    async (args: Record<string, unknown>, extra?: unknown) => {
       const { profile, connection, ...rest } = args;
       const scope = resolveScope(entry, profile, connection);
       if ('error' in scope) throw new Error(scope.error);
+
+      const label = clientLabelFrom(extra) ?? options.clientLabel;
 
       const outcome = await options.profiles.get(scope.profile)!.dispatcher.invoke({
         principal: forProfile(options.principal, scope.profile),
         capabilityId: id,
         connectionKey: scope.connectionKey,
         arguments: rest,
-        clientLabel: options.clientLabel,
+        ...(label ? { clientLabel: label } : {}),
       });
 
       // A prompt has no `isError` to carry a refusal in, so a denial is a

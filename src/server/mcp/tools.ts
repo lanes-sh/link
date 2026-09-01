@@ -2,6 +2,7 @@ import { forProfile } from '#auth';
 import { fromJsonSchema, type McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { isToolResult } from '#connectivity';
+import { clientLabelFrom } from './client-info.ts';
 import { toolNameFor } from './naming.ts';
 import { resourceLinkRouter } from './routing.ts';
 import { sanitizeSchema } from './schema.ts';
@@ -112,8 +113,12 @@ export function registerLocalTool(
 function makeHandler(capabilityId: string, entry: MergedCapability, options: BuildServerOptions) {
   // `unknown` because the JSON-Schema overload types it that way; the schema
   // has already validated the shape by the time this runs.
-  return async (args: unknown) => {
+  return async (args: unknown, extra?: unknown) => {
     const { profile, connection, ...rest } = (args ?? {}) as Record<string, unknown>;
+
+    // The request first, then whatever the transport knew before the call —
+    // which on a stateless POST is nothing, and is why the request is asked.
+    const label = clientLabelFrom(extra) ?? options.clientLabel;
 
     const name = String(profile);
     const runtime = options.profiles.get(name);
@@ -152,7 +157,7 @@ function makeHandler(capabilityId: string, entry: MergedCapability, options: Bui
       capabilityId,
       connectionKey: String(connection),
       arguments: rest,
-      clientLabel: options.clientLabel,
+      ...(label ? { clientLabel: label } : {}),
     });
 
     if (!outcome.ok) {

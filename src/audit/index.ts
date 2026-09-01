@@ -58,11 +58,18 @@ export interface AuditEvent {
   readonly principal: string;
 
   /**
-   * The MCP `clientInfo` name, when the caller supplied one.
+   * The MCP `clientInfo` name, when the caller repeated it on the request.
    *
    * OBSERVABILITY ONLY. This is self-reported by the client and is never
    * consulted for authorization — it exists so you can see which agent made a
    * call, not to decide what that agent may do.
+   *
+   * "On the request" is load-bearing and was wrong for this field's whole life:
+   * it claimed to hold the `clientInfo` name and read an `x-mcp-client` header
+   * that no MCP client sends, so it was empty on every event ever written. The
+   * name arrives in the request envelope now (`mcp/client-info.ts`). A client
+   * that announces itself only at `initialize` and never repeats it is still
+   * anonymous here, which is the honest answer rather than one inferred.
    */
   readonly clientLabel?: string;
 
