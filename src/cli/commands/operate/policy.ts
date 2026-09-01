@@ -1,6 +1,7 @@
 import { loadConfigFile } from '#profile';
+import { recordConfigChange } from '../../audit-change.ts';
 import { ConfigDocument } from '../../config-edit.ts';
-import { announce, announceProfile, heading, ok, print, style, table } from '../../output.ts';
+import { announce, announceProfile, heading, ok, print, style, table, warn } from '../../output.ts';
 import { resolveProfile, resolveProfileOnly, type GlobalFlags } from '../../runtime.ts';
 import { nextAfterEdit, publishProfileEdit } from '../../publish.ts';
 
@@ -96,6 +97,19 @@ export async function policyRule(
   // Validation runs before the write, so a rule naming a provider other than the
   // row's own fails here rather than matching nothing at runtime.
   await document.save();
+
+  await recordConfigChange(
+    config,
+    resolution.workspaceRoot,
+    target,
+    {
+      capability: effect === 'allow' ? 'config.policy.allow' : 'config.policy.deny',
+      scope: resolution.profile,
+      connection: key,
+      arguments: { capability },
+    },
+    (note) => print(warn(note)),
+  );
 
   announce(resolution);
   print(ok(`${effect} ${style.bold(capability)} on ${style.bold(key)}`));

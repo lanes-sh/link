@@ -1,8 +1,9 @@
 import { readSession } from '#auth/lanes/session.ts';
+import { recordConfigChange } from '../audit-change.ts';
 import { ConfigError, readRegistry, resolveWorkspaceRoot } from '#profile';
 import { ConfigDocument } from '../config-edit.ts';
 import { describeMember, workspaceMembers } from '#auth/lanes/members.ts';
-import { announce, emit, heading, ok, print, style, table } from '../output.ts';
+import { announce, emit, heading, ok, print, style, table, warn } from '../output.ts';
 import { nextAfterEdit, publishProfileEdit } from '../publish.ts';
 import { resolveProfile, type GlobalFlags } from '../runtime.ts';
 
@@ -138,6 +139,18 @@ export async function membersAdd(
   document.addTo(['members'], { subject: wanted, role }, { inline: true });
   await document.save();
 
+  await recordConfigChange(
+    config,
+    resolution.workspaceRoot,
+    target,
+    {
+      capability: 'config.member.add',
+      scope: resolution.profile,
+      arguments: { subject: wanted, role },
+    },
+    (note) => print(warn(note)),
+  );
+
   const published = nextAfterEdit(await publishProfileEdit({ resolution, config, target }));
 
   return emit(flags.json, { profile: resolution.profile, subject: wanted, role }, () => {
@@ -164,6 +177,14 @@ export async function membersRemove(
   const document = await ConfigDocument.open(resolution.workspaceRoot, resolution.profile);
   document.removeFrom(['members'], at);
   await document.save();
+
+  await recordConfigChange(
+    config,
+    resolution.workspaceRoot,
+    target,
+    { capability: 'config.member.remove', scope: resolution.profile, arguments: { subject } },
+    (note) => print(warn(note)),
+  );
 
   const published = nextAfterEdit(await publishProfileEdit({ resolution, config, target }));
 

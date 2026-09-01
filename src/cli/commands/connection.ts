@@ -10,6 +10,7 @@ import {
 } from '#profile';
 import { ConfigDocument } from '../config-edit.ts';
 import { announce, announceWorkspace, emit, ok, print, style, warn } from '../output.ts';
+import { recordConfigChange } from './../audit-change.ts';
 import { openWorkspaceRuntime, type GlobalFlags } from '../runtime.ts';
 import { nextAfterEdit, publishProfileEdit } from '../publish.ts';
 import { confirm, isInteractive } from '../prompt.ts';
@@ -242,6 +243,21 @@ export async function removeConnection(
       await runtime.credentials.delete(ref);
       removed = ref;
     }
+
+    // `profiles` is the half of this that is easy to lose. A disconnect takes
+    // the account away from every profile that named it, and a row saying only
+    // "gmail.work removed" would leave a reader to work out which agents
+    // stopped being able to reach it.
+    await recordConfigChange(runtime.config, root, target, {
+      capability: 'config.connection.remove',
+      scope: target,
+      connection: key,
+      arguments: {
+        account: located.connection.account,
+        profiles: affected,
+        credentialRemoved: removed !== null,
+      },
+    });
 
     return {
       resolution,

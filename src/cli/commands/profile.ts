@@ -16,6 +16,8 @@ import {
   resolveWorkspaceRoot,
 } from '#profile';
 
+import { recordConfigChange } from '../audit-change.ts';
+import { resolveProfile } from '../runtime.ts';
 import { emit, ok, print, style, table } from '../output.ts';
 import { readSession } from '#auth/lanes/session.ts';
 
@@ -175,6 +177,16 @@ export async function profileAdd(
   }
 
   const created = await createProfile(name, options);
+
+  // Re-read rather than assembled from `created`, because the file on disk is
+  // what a workspace with a remote credential store needs to open one.
+  const primary = created.targets[0]!;
+  const { resolution, config } = await resolveProfile({ profile: created.name, target: primary });
+  await recordConfigChange(config, resolution.workspaceRoot, primary, {
+    capability: 'config.profile.add',
+    scope: created.name,
+    arguments: { port: created.port, workspace: primary },
+  });
 
   return emit(options.json, created, () => {
     print(ok(`created profile ${style.bold(created.name)}`));

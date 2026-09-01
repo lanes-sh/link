@@ -1,6 +1,7 @@
 import { CONNECTIONS_FILE, readConnections, type Resolution } from '#profile';
 import { ConfigDocument } from '../config-edit.ts';
 import { announce, announceWorkspace, emit, ok, print, style } from '../output.ts';
+import { recordConfigChange } from '../audit-change.ts';
 import { openWorkspaceRuntime, type GlobalFlags } from '../runtime.ts';
 import { nextAfterEdit, publishProfileEdit } from '../publish.ts';
 import { locate } from './connection.ts';
@@ -60,6 +61,13 @@ export async function renameConnection(
     const document = await ConfigDocument.openKey(root, CONNECTIONS_FILE);
     document.setIn(['connections', located.index, 'label'], label);
     await document.save();
+
+    await recordConfigChange(config, root, target, {
+      capability: 'config.connection.relabel',
+      scope: target,
+      connection: key,
+      arguments: { from: located.connection.label ?? located.connection.account, to: label },
+    });
 
     return {
       resolution,

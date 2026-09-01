@@ -9,6 +9,7 @@ import {
   type LoadedProfile,
   resolveWorkspaceRoot,
 } from '#profile';
+import { recordConfigChange } from '../../audit-change.ts';
 import { ok, print, style, warn } from '../../output.ts';
 import { confirm, isInteractive } from '../../prompt.ts';
 import type { SecretStore } from '#secrets';
@@ -143,6 +144,18 @@ export async function pair(flags: PairFlags, deps: PairDeps = {}): Promise<void>
   const existing = rotating ? null : await credentials.get(PAIR_TOKEN_REF);
   const token = existing ?? `llp_${randomBytes(32).toString('base64url')}`;
   if (existing === null) await credentials.set(PAIR_TOKEN_REF, token);
+
+  // The token itself never goes in, obviously. What is worth recording is that
+  // a credential reading the whole workspace now exists, and when — and for a
+  // rotation, that whatever a browser was holding stopped working at that
+  // moment.
+  if (existing === null) {
+    await recordConfigChange(chosen.config, root, target, {
+      capability: rotating ? 'config.pair.rotate' : 'config.pair.mint',
+      scope: target,
+      arguments: { readPort, certificate },
+    });
+  }
 
   print(ok(certificate === 'reused' ? 'certificate already installed' : 'certificate installed'));
   if (rotating) {

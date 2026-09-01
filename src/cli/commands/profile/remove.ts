@@ -13,6 +13,7 @@ import {
 import { parseDocument } from 'yaml';
 import { rm } from 'node:fs/promises';
 import { terminalPrompter, type Prompter } from '../../prompt.ts';
+import { recordConfigChange } from '../../audit-change.ts';
 import { announceProfile, emit, fail, ok, print, style } from '../../output.ts';
 import {
   buildRegistryWithWorkspace,
@@ -290,6 +291,14 @@ export async function removeProfile(name: string, flags: RemoveFlags): Promise<v
     removeDirectory: async (path) => await rm(workspacePath(root, path), { recursive: true, force: true }),
     clearDefaultProfile: async () => await clearDefault(root),
     retry: retryCommand,
+  });
+
+  // Before the render, and against the config loaded above — the profile's file
+  // is gone by now, so a helper that re-read it would find nothing.
+  await recordConfigChange(config, root, target, {
+    capability: 'config.profile.remove',
+    scope: name,
+    arguments: { connections: config.grants.map((grant) => grant.connection) },
   });
 
   return emit(flags.json, outcome, () => renderOutcome(outcome));

@@ -1,5 +1,6 @@
 import { CONNECTIONS_FILE } from '#profile';
 import { credentialRefForConnection, WRITE_BUNDLE } from '#connectivity';
+import { recordConfigChange } from '../../audit-change.ts';
 import { ConfigDocument } from '../../config-edit.ts';
 import { ensureOwnerLayer, repaired } from '../../config-repair.ts';
 import { emit, print } from '../../output.ts';
@@ -355,6 +356,21 @@ export async function runConnect(
     // still rewrites the file — which would restamp a profile nobody asked to
     // edit.
     if (granting) await document.save();
+
+    // A connection belongs to the workspace, so the row is scoped to the
+    // workspace even when a profile was granted it in the same breath — the
+    // grant is its own event, written by `grant`.
+    await recordConfigChange(
+      runtime.config,
+      runtime.resolution.workspaceRoot,
+      runtime.target,
+      {
+        capability: 'config.connection.create',
+        scope: runtime.target,
+        connection: connectionKey,
+        arguments: { account, ...(label ? { label } : {}) },
+      },
+    );
 
     // Where the endpoint that has to serve this reads its config, and then a
     // nudge to re-read it. Neither is a deploy (ADR-029).
