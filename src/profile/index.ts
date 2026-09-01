@@ -48,6 +48,7 @@ export {
   connectionRefOf,
   selectConnections,
   soleGrantFor,
+  vaultRef,
   type SelectedConnection,
 } from './connections.ts';
 

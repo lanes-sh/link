@@ -306,8 +306,21 @@ describe('what the revision is granted, against what it writes', () => {
 });
 
 describe('the vault, which is the one thing a revision writes back to its store', () => {
+  // Handed in, the way `deploy` hands it in. The vault document is named per
+  // vault connection (ADR-059), so only `prepare.ts` — which has the profile
+  // configs — can work it out. `provisionSteps` naming `vault/document` itself
+  // is the defect these tests used to pin: it created and granted one secret
+  // while `openVault` asked for another, and the revision died on
+  // `PERMISSION_DENIED` before it could listen on its port.
+  const VAULT = 'vault/main';
   const provision = (declared: TargetConfig) =>
-    provisionSteps({ deploy: cloudrun, declared, target: 'cloud', profiles: [PROFILE] });
+    provisionSteps({
+      deploy: cloudrun,
+      declared,
+      target: 'cloud',
+      profiles: [PROFILE],
+      rotatable: [VAULT],
+    });
 
   test('the document secret is created here, so the revision never needs secrets.create', async () => {
     // `secrets.create` is project-level: a revision holding it could mint
@@ -318,7 +331,7 @@ describe('the vault, which is the one thing a revision writes back to its store'
       (step) => step.argv[0] === 'secrets' && step.argv[1] === 'create',
     );
 
-    expect(create?.argv).toContain('vault__document');
+    expect(create?.argv).toContain('vault__main');
     expect(create?.tolerateFailure).toBe(true);
   });
 
@@ -328,13 +341,25 @@ describe('the vault, which is the one thing a revision writes back to its store'
       (step) => step.argv[0] === 'secrets' && step.argv[1] === 'add-iam-policy-binding',
     )!;
 
-    expect(binding.argv[2]).toBe('vault__document');
+    expect(binding.argv[2]).toBe('vault__main');
     expect(binding.argv).toContain('roles/secretmanager.secretVersionAdder');
   });
 
-  test('a target with no vault is granted nothing extra', async () => {
+  test('a target with no vault contributes no ref, so nothing extra is granted', async () => {
+    // The *decision* moved to `prepare.ts` with the profile configs; what stays
+    // provision's is that it grants exactly what it was handed and invents
+    // nothing. `rotatableRefs` is what turns "this target has no vault" into an
+    // empty list, and `readableRefs` is covered beside it.
     const { vault: _vault, ...withoutVault } = target;
-    const roles = (await provision(withoutVault as TargetConfig))
+    const roles = (
+      await provisionSteps({
+        deploy: cloudrun,
+        declared: withoutVault as TargetConfig,
+        target: 'cloud',
+        profiles: [PROFILE],
+        rotatable: [],
+      })
+    )
       .flatMap((step) => step.argv)
       .filter((argument) => argument.startsWith('roles/'));
 
@@ -466,7 +491,7 @@ describe('the credentials a revision rotates, against what it is bound to', () =
   });
 
   test('each rotatable secret is created here too, for the reason the vault one is', async () => {
-    const steps = await provisionWith(['gmail/ada_lovelace']);
+    const steps = await provisionWith(['gmail/ada_lovelace', 'vault/main']);
     const created = steps
       .filter((step) => step.argv[0] === 'secrets' && step.argv[1] === 'create')
       .map((step) => step.argv[2]!);
@@ -474,7 +499,7 @@ describe('the credentials a revision rotates, against what it is bound to', () =
     // A binding cannot attach to a secret that does not exist, and a connection
     // authorised after the last deploy has no secret up here yet.
     expect(created).toContain('gmail__ada_lovelace');
-    expect(created).toContain('vault__document');
+    expect(created).toContain('vault__main');
   });
 
   test('a manual client stays the operator\'s, and is never bound', async () => {

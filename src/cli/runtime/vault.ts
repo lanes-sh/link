@@ -1,5 +1,5 @@
 import {
-  soleGrantFor, layout, workspacePath } from '#profile';
+  soleGrantFor, layout, vaultRef, workspacePath } from '#profile';
 import type { SecretStore } from '#secrets';
 import {
   createBlobVaultStore,
@@ -64,7 +64,7 @@ export function openVault(
       // answer is a credential.
       return createSecretVaultStore({
         store: credentials,
-        ref: vault.ref ?? `vault/${connection}`,
+        ref: vaultRef(declared, config),
       });
 
     case 'blob':

@@ -1,10 +1,10 @@
-import { CONNECTIONS_FILE } from '#profile';
+import { CONNECTIONS_FILE, type TargetConfig } from '#profile';
 import { workspaceYaml } from '#profile/testing.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { rotatableRefs } from './prepare.ts';
+import { readableRefs, rotatableRefs } from './prepare.ts';
 import {
   deployedWorkspace,
   isWorkspaceConfig,
@@ -334,10 +334,50 @@ members: []
     // Per connection, never per provider: two mailboxes hold two refresh
     // tokens, and binding one would leave the other failing exactly as before.
     // Sorted, which is what makes the list stable across runs.
-    expect(await rotatableRefs(root, undefined)).toEqual([
+    expect(await rotatableRefs(root, undefined, undefined)).toEqual([
       'gmail/ada_lovelace',
       'gmail/rin_shaw',
     ]);
+  });
+
+  const vaultTarget = (vault: TargetConfig['vault']): TargetConfig =>
+    ({
+      credentials: { adapter: 'gcp-secret-manager', project: 'my-project' },
+      storage: { adapter: 'gcs', bucket: 'your-bucket' },
+      vault,
+    }) as TargetConfig;
+
+  test('the vault document is named per connection, the way openVault opens it', async () => {
+    // The blocker this pins. `openVault` names the document `vault/<connection>`
+    // (ADR-059); `provisionSteps` named `vault/document`, the contract-2
+    // constant. So a deploy created and granted one secret and the revision
+    // asked Secret Manager for another, got `PERMISSION_DENIED`, exited 1, and
+    // never listened on its port — on every deployed workspace that did not
+    // hand-write `vault.ref`. A rehearsal that sets one tests the path nobody
+    // takes, which is exactly how this reached a live endpoint.
+    //
+    // Both sets, because the revision reads the document at startup and writes
+    // it back under policy (ADR-022): a ref in only one of them is the same 403.
+    // Granting no vault is the ordinary case and resolves to `main`, which is
+    // what keeps a profile that denied the vault opening the same document as
+    // everyone else rather than inventing a second one.
+    const root = await workspaceOf({
+      personal: '  - { id: ada_lovelace, provider: gmail, account: a@example.test }',
+    });
+    const declared = vaultTarget({ adapter: 'secret' });
+
+    expect(await rotatableRefs(root, undefined, declared)).toContain('vault/main');
+    expect(await readableRefs(root, undefined, declared)).toContain('vault/main');
+    expect(await rotatableRefs(root, undefined, declared)).not.toContain('vault/document');
+  });
+
+  test('a hand-written ref still wins, because a sealed document keeps its name', async () => {
+    const root = await workspaceOf({
+      personal: '  - { id: ada_lovelace, provider: gmail, account: a@example.test }',
+    });
+    const declared = vaultTarget({ adapter: 'secret', ref: 'vault/kept' });
+
+    expect(await rotatableRefs(root, undefined, declared)).toContain('vault/kept');
   });
 
   test('a provider that authenticates with nothing contributes nothing', async () => {
@@ -345,7 +385,7 @@ members: []
 
     // A grant on a secret nobody writes is a grant that says the boundary is
     // wider than it is.
-    expect(await rotatableRefs(root, undefined)).toEqual([]);
+    expect(await rotatableRefs(root, undefined, undefined)).toEqual([]);
   });
 
   test('every profile the upload sends, when none is named', async () => {
@@ -357,7 +397,7 @@ members: []
       work: '  - { id: theirs, provider: gmail, account: b@example.test }',
     });
 
-    expect(await rotatableRefs(root, undefined)).toEqual(['gmail/mine', 'gmail/theirs']);
+    expect(await rotatableRefs(root, undefined, undefined)).toEqual(['gmail/mine', 'gmail/theirs']);
   });
 
   test('naming a profile changes nothing, because the accounts are the workspace\'s', async () => {
@@ -371,7 +411,7 @@ members: []
     // now (ADR-057) and `connections.yaml` always goes up, so every account is
     // served whichever profiles were named — and a credential the revision
     // cannot read is a broken account, not a boundary being widened.
-    expect(await rotatableRefs(root, ['personal'])).toEqual(['gmail/mine', 'gmail/theirs']);
+    expect(await rotatableRefs(root, ['personal'], undefined)).toEqual(['gmail/mine', 'gmail/theirs']);
   });
 
   test('a profile that cannot be read is skipped, not fatal', async () => {
@@ -382,7 +422,7 @@ members: []
 
     // Matching the repair: a broken sibling nobody named should not cost the
     // operator a rollout, and provisioning happens before anything is uploaded.
-    expect(await rotatableRefs(root, undefined)).toEqual(['gmail/mine']);
+    expect(await rotatableRefs(root, undefined, undefined)).toEqual(['gmail/mine']);
   });
 });
 

@@ -1,5 +1,5 @@
 import { ConfigError, describeRename } from './load.ts';
-import type { Config, ConnectionConfig, GrantConfig } from './schema.ts';
+import type { Config, ConnectionConfig, GrantConfig, TargetConfig } from './schema.ts';
 
 /**
  * The join between a profile and the workspace it lives in.
@@ -135,6 +135,25 @@ export function soleGrantFor(config: Config, provider: string): string | undefin
   const prefix = `${provider}.`;
   const granted = config.grants.find((grant) => grant.connection.startsWith(prefix));
   return granted?.connection.slice(prefix.length);
+}
+
+/**
+ * Where this profile's vault document lives, in one spelling.
+ *
+ * **Two places derived this, and they disagreed.** `openVault` names it per
+ * connection (ADR-059) — `vault/main` for a profile granting `vault.main` — and
+ * the deploy's provisioning step named `vault/document`, the contract-2 constant.
+ * So every deployed workspace that did not hand-write `vault.ref` created and
+ * granted one secret and then asked Secret Manager for another: the revision got
+ * `PERMISSION_DENIED` on the ref nothing had made, exited 1, and never listened
+ * on its port. A deploy that hand-wrote a `ref` worked, which is what kept this
+ * out of sight — a rehearsal that sets one is testing the path nobody takes.
+ *
+ * `ref` still wins where it is written, because a deployment already sealing
+ * under one name has to keep opening it.
+ */
+export function vaultRef(declared: TargetConfig | undefined, config: Config): string {
+  return declared?.vault?.ref ?? `vault/${soleGrantFor(config, 'vault') ?? 'main'}`;
 }
 
 /**

@@ -1,6 +1,6 @@
 import { credentialRefFor, ownClientRefsFor, rotatableCredentialRefsFor } from '#registry';
 import {
-  readConnections, listProfiles, loadProfileConfig, type Config, type TargetConfig } from '#profile';
+  readConnections, listProfiles, loadProfileConfig, vaultRef, type Config, type TargetConfig } from '#profile';
 import { VAULT_DOCUMENT_REF, VAULT_KEY_REF, generateVaultKey, type SecretStore } from '#secrets';
 import { ok, print, style, warn } from '#cli/output.ts';
 import { buildRegistryWithWorkspace, ensureProfileToken } from '#cli/runtime.ts';
@@ -67,6 +67,7 @@ export interface PrepareResult {
 export async function rotatableRefs(
   root: string,
   profiles: readonly string[] | undefined,
+  declared: TargetConfig | undefined,
 ): Promise<string[]> {
   const refs = new Set<string>();
   const wanted = profiles === undefined ? undefined : new Set(profiles);
@@ -81,7 +82,12 @@ export async function rotatableRefs(
       continue;
     }
 
-    void config;
+    // `vault.put` is a capability an agent may hold under policy (ADR-022), so
+    // the revision rewrites this one — and it is per vault connection, which is
+    // what makes this a per-profile pass rather than a target-level constant.
+    // The loop had been reduced to `void config` when the derivation moved out;
+    // this is it moving back, next to the config it needs.
+    if (declared?.vault?.adapter === 'secret') refs.add(vaultRef(declared, config));
   }
 
   // Once, outside the profile loop. Connections and the manifests that describe
@@ -139,9 +145,12 @@ export async function readableRefs(
 ): Promise<string[]> {
   const refs = new Set<string>();
 
+  // Only the key is the target's. The *document* is named per vault connection
+  // (ADR-059), so it is added inside the profile loop below — naming it here
+  // meant `vault/document`, which is not what `openVault` opens, and the
+  // revision 403'd on a ref nothing had created. See `vaultRef`.
   if (declared?.vault?.adapter === 'secret') {
     refs.add(VAULT_KEY_REF);
-    refs.add(declared.vault.ref ?? VAULT_DOCUMENT_REF);
   } else if (declared?.vault?.adapter === 'blob') {
     // Ciphertext lives in the bucket, but the key that opens it is still here.
     refs.add(VAULT_KEY_REF);
@@ -160,6 +169,7 @@ export async function readableRefs(
     }
 
     refs.add(config.auth.token_ref);
+    if (declared?.vault?.adapter === 'secret') refs.add(vaultRef(declared, config));
     // The OIDC audience check reads this on every verify (`server/endpoint.ts`).
     if (config.auth.authorization?.mode === 'oidc') {
       refs.add(config.auth.authorization.client_id_ref);

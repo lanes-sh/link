@@ -4,6 +4,7 @@ import {
   listProfiles,
   loadWorkspaceProfiles,
   readRegistry,
+  resolveTargetWorkspace,
   type WorkspaceProfiles,
 } from '#profile';
 import { rotatableCredentialRefsFor } from '#registry';
@@ -50,7 +51,16 @@ export async function servingProfiles(input: {
     return { profiles: [...named], primary: named[0]! };
   }
 
-  const living = await listProfiles(workspaceRoot);
+  // **Where the profiles actually are, which is not this machine.** After
+  // ADR-052 a deployed target's profiles live in its workspace, so listing the
+  // local root answered with whatever happened to be here: an empty workspace
+  // holding nothing but a pointer refused a redeploy of a live endpoint
+  // outright, and a local profile the bucket does not hold would have been sent
+  // to a revision that cannot open it. A declaration resolves back to the local
+  // root, which is the right answer there — a first deploy is exactly the case
+  // where the profiles are still on this machine and about to be uploaded.
+  const where = await resolveTargetWorkspace(workspaceRoot, target).catch(() => workspaceRoot);
+  const living = await listProfiles(where);
 
   if (living.length === 0) {
     throw new ConfigError(

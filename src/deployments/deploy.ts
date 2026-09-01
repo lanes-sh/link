@@ -154,7 +154,7 @@ export async function deploy(flags: DeployFlags): Promise<void> {
   // below are, and read from config and manifests before anything opens a
   // store — `--dry-run` must reach the printed step list without touching a
   // credential.
-  const rotatable = await rotatableRefs(resolution.workspaceRoot, serving);
+  const rotatable = await rotatableRefs(resolution.workspaceRoot, serving, declared);
   const readable = await readableRefs(resolution.workspaceRoot, serving, declared);
   const provision = await driver.provision({
     deploy: deployConfig,
