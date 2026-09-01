@@ -2,7 +2,7 @@ import { readSession } from '#auth/lanes/session.ts';
 import { ConfigError } from '#profile';
 import { startEndpoint } from '#server/endpoint.ts';
 import { streamLogger } from '#server/logging.ts';
-import { repairOwnerLayer } from '../../config-repair.ts';
+import { repairOwnerLayer } from '../../config-repair-sweep.ts';
 import { announce, ok, print, style, warn } from '../../output.ts';
 import { staleNudge } from '../../release.ts';
 import { primaryProfile, resolveProfile, type GlobalFlags } from '../../runtime.ts';

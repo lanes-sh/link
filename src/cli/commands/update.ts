@@ -1,9 +1,9 @@
 import { homedir } from 'node:os';
 import { join, sep } from 'node:path';
 import { installRoot, resolveWorkspaceRoot } from '#profile';
-import { repairOwnerLayer } from '../config-repair.ts';
-import { migrateToCurrentContract, type ContractMigration } from '../workspace-migrate.ts';
-import type { Contract3Migration } from '../contract3.ts';
+import { repairOwnerLayer } from '../config-repair-sweep.ts';
+import { migrateToCurrentContract, needsMigration, type ContractMigration } from '../workspace-migrate.ts';
+import { needsContract3, type Contract3Migration } from '../contract3.ts';
 import { emit, fail, ok, print, printErr, progress, style, warn } from '../output.ts';
 import { PACKAGE, release, type ReleaseState } from '../release.ts';
 import { version } from '../version.ts';
@@ -186,16 +186,10 @@ export async function update(flags: UpdateFlags): Promise<void> {
     // same breath.
     const migrated = await migrateLocal(root, flags.json === true ? progress : print);
 
-    // Only on a workspace the migration actually finished.
-    //
-    // The repair writes contract-3 shapes — a `connections.yaml`, a `grants:`
-    // block — and running it after a refusal put both into a workspace still at
-    // contract 2, behind a message that had just said nothing was written. The
-    // stray `connections.yaml` it created then read as a partly-migrated
-    // workspace to everything that opened it afterwards.
-    //
-    // A refusal must not be followed by a write. The next run repairs it once
-    // the migration succeeds, which is the same courtesy one command later.
+    // Only on a workspace that is actually at the current contract — see
+    // `migrateLocal`. The repair writes contract-3 shapes, and writing them
+    // after a refusal that said nothing had been written is what left a stray
+    // `connections.yaml` in a contract-2 workspace.
     if (migrated) {
       await repairOwnerLayer(root, undefined, {
         ...(flags.json === true ? { report: progress } : {}),
@@ -362,9 +356,24 @@ async function migrateLocal(root: string, say: (line: string) => void): Promise<
     return true;
   } catch (error) {
     say(`could not migrate this workspace: ${error instanceof Error ? error.message : String(error)}`);
-    say('  the owner-layer repair is skipped until it does — nothing else was changed');
-    return false;
+
+    // **Still behind, not "something threw".** Keying the repair on the throw
+    // suppressed it for the whole workspace when one profile failed to
+    // migrate — so the others, already current, never received a newly shipped
+    // surface, which is the case `update` runs the repair for at all. One
+    // unreadable profile is a per-profile warning, which the repair already
+    // gives it.
+    const behind = await stillBehind(root);
+    if (behind) say('  the owner-layer repair is skipped until it does');
+    return !behind;
   }
+}
+
+/** Anything still below the current contract. Unreadable counts as behind. */
+function stillBehind(root: string): Promise<boolean> {
+  return needsMigration(root)
+    .then(async (one) => one || (await needsContract3(root)))
+    .catch(() => true);
 }
 
 /** Contract 1 to contract 2: targets move from the profile to the workspace. */

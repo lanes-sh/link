@@ -3,7 +3,7 @@ import { applyMoves, planMoves, type Move } from './contract3-data.ts';
 import {
   mergeCredentials,
   planCredentials,
-  refRenames,
+  connectionRefs,
   type CredentialPlan,
 } from './contract3-credentials.ts';
 import { parseDocument } from 'yaml';
@@ -11,6 +11,7 @@ import {
   CONNECTIONS_FILE,
   ConfigError,
   DATA_DIR,
+  isRemoteWorkspace,
   WORKSPACE_FILE,
   layout,
   listProfiles,
@@ -147,7 +148,7 @@ export async function migrateToContract3(
   // refusal leaves the workspace exactly as it was.
   const plans: CredentialPlan[] = [...legacy].map(([profile, config]) => ({
     profile,
-    renames: refRenames(perProfile.get(profile) ?? new Map()),
+    renames: connectionRefs(perProfile.get(profile) ?? new Map()),
     tokenRef:
       typeof config.auth?.token_ref === 'string' ? config.auth.token_ref : DEFAULT_TOKEN_REF,
   }));
@@ -304,7 +305,21 @@ async function rewriteRegistry(root: string): Promise<void> {
     // deployment to whatever the last contract-2 command had written. That
     // write is fixed at source, and this is what repairs a file already
     // carrying both.
-    document.setIn(['workspaces'], { ...workspaces, ...(registry?.workspaces ?? {}) });
+    const merged: Record<string, unknown> = { ...workspaces };
+    for (const [name, entry] of Object.entries(registry?.workspaces ?? {})) {
+      const derived = merged[name];
+      // Per field, not per entry. The newer block is what `editRegistry` wrote
+      // when it could not see `targets:`, and `sync` writes only `{ at }` — so
+      // replacing the entry wholesale discarded `primary` (which schema.ts calls
+      // the one question about a deployment that must not be guessed at),
+      // `last_deploy`, and the whole `deploy:` block carrying project and
+      // region. Preserving the record was the entire point of the merge.
+      merged[name] =
+        derived !== null && typeof derived === 'object' && entry !== null && typeof entry === 'object'
+          ? { ...(derived as Record<string, unknown>), ...(entry as Record<string, unknown>) }
+          : entry;
+    }
+    document.setIn(['workspaces'], merged);
     document.removeIn(['targets']);
   }
 
@@ -327,9 +342,20 @@ async function rewriteRegistry(root: string): Promise<void> {
   // A pointer carries `at:`; a workspace declaring its own adapters does not.
   if (document.getIn(['default_workspace']) === undefined) {
     const names = Object.keys(workspaces);
-    const here = names.find(
-      (name) => (workspaces[name] as { at?: unknown } | undefined)?.at === undefined,
-    );
+    const here = names.find((name) => {
+      const entry = workspaces[name] as
+        | { at?: unknown; storage?: { adapter?: unknown } }
+        | undefined;
+      // A pointer is here when it points at a path rather than a bucket:
+      // `resolveTargetWorkspace` follows a local one just as happily.
+      if (typeof entry?.at === 'string') return !isRemoteWorkspace(entry.at);
+      // Otherwise it declares its own adapters, and only a filesystem one is on
+      // this machine. Reading "no `at:`" as "local" missed that a cloud target
+      // surveyed by `bootstrap` but never rolled out is a *declaration* — so a
+      // deploy that failed at build or IAM left the same 403 default this was
+      // written to prevent.
+      return entry?.storage?.adapter === 'filesystem';
+    });
     const chosen = here ?? names[0];
     if (chosen !== undefined) document.setIn(['default_workspace'], chosen);
   }

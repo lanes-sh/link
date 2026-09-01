@@ -11,7 +11,7 @@ import {
   publishWorkspace,
   uploadWorkspace,
 } from './upload.ts';
-import { repairOwnerLayer } from '#cli/config-repair.ts';
+import { repairOwnerLayer } from '#cli/config-repair-sweep.ts';
 import { layout, parseConfig, workspaceFiles } from '#profile';
 
 const roots: string[] = [];

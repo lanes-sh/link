@@ -23,11 +23,8 @@ import { createFileSecretStore } from '#secrets';
  */
 export interface CredentialPlan {
   readonly profile: string;
-  /**
-   * `${provider}/${oldId}` → `${provider}/${newId}`, for every connection the
-   * hoist renamed.
-   */
-  readonly renames: ReadonlyMap<string, string>;
+  /** Every connection-derived credential ref, and where it is going. */
+  readonly renames: ReadonlyMap<string, RefTarget>;
   /** This profile's endpoint token ref, which is deliberately not migrated. */
   readonly tokenRef: string;
 }
@@ -40,34 +37,49 @@ export interface CredentialMerge {
   readonly tokens: readonly string[];
 }
 
+/** Where a credential ref is going, and which connection it belongs to after. */
+export interface RefTarget {
+  readonly to: string;
+  /** The settled `provider.id` this ref's connection became. */
+  readonly connection: string;
+}
+
 /**
- * The credential refs a set of connection renames implies.
+ * The credential ref of every connection the hoist touched, renamed or not.
  *
- * `credentialRefForConnection` derives `${provider}/${connectionId}` for every
- * auth kind that has a per-connection credential, and `hoistConnections`
- * renames the connection with `{ ...connection, id }` — which leaves the
- * derived ref pointing at the old id. So a profile whose `github.main` became
- * `github.main_2` still claimed `github/main`, and two profiles claiming one
- * ref with two different tokens is what aborted the migration.
+ * `credentialRefForConnection` derives `${app ?? provider}/${connectionId}` for
+ * every auth kind that has a per-connection credential, and `hoistConnections`
+ * renames the connection with `{ ...connection, id }` — which leaves the derived
+ * ref pointing at the old id. So a profile whose `github.main` became
+ * `github.main_2` still claimed `github/main`, and two profiles claiming one ref
+ * with two different tokens is what aborted the migration.
  *
- * Only the derived form is renamed. A row carrying an explicit `credential_ref`
- * placed it by hand, and an `app`-scoped ref (`auth.app ?? manifest.id`) is
- * shared across a vendor's connections on purpose; neither is keyed on the
- * connection id, so neither follows a rename. A conflict either of those causes
- * is refused by the plan below with the ref named.
+ * **Unrenamed connections are in here too**, which is not redundancy: the
+ * `connection` half is what tells `readMerged` that two refs landing on one
+ * target belong to the same connection and are therefore a merge rather than a
+ * clash. Without it a single profile declaring `gmail.main` and `gmail.archive`
+ * for one mailbox — legal under contract 2, and the reason tokens are
+ * per-connection at all, since the scopes differ — was hoisted into one row and
+ * then refused with "Two profiles hold different values", naming one profile
+ * twice and prescribing a rename that cannot help.
+ *
+ * Only the `<provider>/<id>` spelling is derived here. A provider declaring
+ * `auth.app` stores under `<app>/<id>` and a row carrying an explicit
+ * `credential_ref` stores wherever it says — neither is reconstructable without
+ * the manifest, which this migration does not load. Those refs are carried
+ * across untouched, and a genuine clash between two of them is refused by name.
  */
-export function refRenames(mapping: ReadonlyMap<string, string>): Map<string, string> {
-  const refs = new Map<string, string>();
+export function connectionRefs(mapping: ReadonlyMap<string, string>): Map<string, RefTarget> {
+  const refs = new Map<string, RefTarget>();
 
   for (const [from, to] of mapping) {
-    if (from === to) continue;
     const before = from.indexOf('.');
     const after = to.indexOf('.');
     if (before < 0 || after < 0) continue;
-    refs.set(
-      `${from.slice(0, before)}/${from.slice(before + 1)}`,
-      `${to.slice(0, after)}/${to.slice(after + 1)}`,
-    );
+    refs.set(`${from.slice(0, before)}/${from.slice(before + 1)}`, {
+      to: `${to.slice(0, after)}/${to.slice(after + 1)}`,
+      connection: to,
+    });
   }
 
   return refs;
@@ -100,7 +112,11 @@ async function readMerged(
   plans: readonly CredentialPlan[],
 ): Promise<{ merged: Map<string, string>; tokens: Set<string> }> {
   const merged = new Map<string, string>();
-  const held = new Map<string, string>();
+  const held = new Map<string, { profile: string; connection?: string }>();
+  // One entry per endpoint-token ref, holding what each profile had under it.
+  // Decided after the walk, because whether it can be carried across depends on
+  // whether the profiles agree — which is not known until they have all been read.
+  const endpoint = new Map<string, Map<string, string>>();
   const tokens = new Set<string>();
 
   if (isRemoteWorkspace(root)) return { merged, tokens };
@@ -132,11 +148,6 @@ async function readMerged(
       // first time a command asks, and the old stores are not deleted — so the
       // cost is re-registering a client, and no account has to be authorised
       // again.
-      if (ref === plan.tokenRef) {
-        tokens.add(ref);
-        continue;
-      }
-
       let value: string | null;
       try {
         value = await store.get(ref);
@@ -145,25 +156,76 @@ async function readMerged(
       }
       if (value === null) continue;
 
-      const target = plan.renames.get(ref) ?? ref;
+      // The endpoint's own bearer token, held under one ref by every profile
+      // because `authSchema` defaults `token_ref` to `profile/token`. Set aside
+      // rather than merged here; see below.
+      if (ref === plan.tokenRef) {
+        const seen = endpoint.get(ref) ?? new Map<string, string>();
+        seen.set(plan.profile, value);
+        endpoint.set(ref, seen);
+        continue;
+      }
+
+      const mapped = plan.renames.get(ref);
+      const target = mapped?.to ?? ref;
       const first = merged.get(target);
 
       if (first !== undefined) {
         if (first === value) continue;
+
+        // Two refs on one target whose connections are the same connection.
+        // That is the hoist merging two rows for one account — legal under
+        // contract 2, where `gmail.main` and `gmail.archive` could hold the
+        // same mailbox at different scopes — and there is one connection now,
+        // so one token. The first row is the one that survived the hoist, so
+        // its credential is the one that belongs to it.
+        const owner = held.get(target);
+        if (mapped !== undefined && owner?.connection === mapped.connection) continue;
+
         throw new ConfigError(
-          `Two profiles hold different values for the credential "${target}", and this ` +
-            `migration cannot choose between them.\n` +
-            `  ${held.get(target) ?? 'another profile'} and ${plan.profile} both hold it. Both ` +
-            `are real credentials for different accounts, and picking either would point a ` +
-            `connection at the wrong one.\n` +
-            `  Nothing has been written. Rename one connection before migrating, so its ` +
-            `credential ref differs.`,
+          `Two credentials want to be at "${target}", and this migration cannot choose ` +
+            `between them.\n` +
+            `  ${owner?.profile ?? 'another profile'} and ${plan.profile} both hold one. Both ` +
+            `are real credentials, and picking either would point a connection at the wrong ` +
+            `account.\n` +
+            `  Nothing has been written. Give one of them its own credential_ref before ` +
+            `migrating.`,
         );
       }
 
       merged.set(target, value);
-      held.set(target, plan.profile);
+      held.set(target, {
+        profile: plan.profile,
+        ...(mapped === undefined ? {} : { connection: mapped.connection }),
+      });
     }
+  }
+
+  // **A token is only left behind when the profiles disagree about it.**
+  //
+  // Under contract 2 each profile had its own store, so one ref meant one value
+  // per profile and contract 3's single store cannot hold three of them. But a
+  // workspace with one profile — or three that were registered from the same
+  // token — has nothing to choose between, and dropping it there was gratuitous:
+  // every client registered against that endpoint started getting 401s after a
+  // routine `update`, for a conflict that did not exist.
+  //
+  // Where they do disagree it is still left behind rather than picked between.
+  // It is minted locally rather than granted by anybody, `ensureProfileToken`
+  // writes a fresh one the first time a command asks, and the old stores are not
+  // deleted — so the cost is re-registering a client, and no account has to be
+  // authorised again.
+  for (const [ref, byProfile] of endpoint) {
+    const values = new Set(byProfile.values());
+    const agreed = values.size === 1 ? [...values][0] : undefined;
+
+    if (agreed === undefined || merged.has(ref)) {
+      tokens.add(ref);
+      continue;
+    }
+
+    merged.set(ref, agreed);
+    held.set(ref, { profile: [...byProfile.keys()].join(', ') });
   }
 
   return { merged, tokens };

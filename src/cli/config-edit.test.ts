@@ -6,14 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ConfigDocument } from './config-edit.ts';
 import { CONNECTIONS_FILE } from '#profile';
-import {
-  DEFAULT_SURFACES,
-  ensureOwnerLayer,
-  repairOwnerLayer,
-  ensureReservedConnection,
-  repairLines,
-  type SurfaceRepair,
-} from './config-repair.ts';
+import { DEFAULT_SURFACES, ensureOwnerLayer, ensureReservedConnection, repairLines, type SurfaceRepair } from './config-repair.ts';
+import { repairOwnerLayer } from './config-repair-sweep.ts';
 
 /**
  * The config file is the source of truth, and an operator is meant to be able
@@ -618,5 +612,67 @@ describe('the repair reads this profile\'s grants, not the workspace\'s first ro
       changes: [],
       granted: [],
     });
+  });
+});
+
+describe('a profile granting two instances of one surface', () => {
+  const twoInstances = [
+    'contract: 3',
+    'connections:',
+    '  - { id: team, provider: memory, account: Memory }',
+    '  - { id: personal, provider: memory, account: Memory }',
+    '',
+  ].join('\n');
+
+  test('a deny on either of them switches the surface off', () => {
+    // Reading only the first matching row let a deny be stepped around: the
+    // repair widened the other instance and reported the surface granted, which
+    // is the one thing `ensureReservedConnection` says it must never do.
+    const connections = ConfigDocument.fromText(twoInstances, CONNECTIONS_FILE);
+    const profile = ConfigDocument.fromText(
+      [
+        'contract: 3',
+        'grants:',
+        '  - { connection: memory.team, allow: [], deny: [] }',
+        '  - { connection: memory.personal, allow: [], deny: [memory.*] }',
+        '',
+      ].join('\n'),
+    );
+
+    expect(ensureReservedConnection(connections, profile, 'memory')).toEqual({
+      changes: [],
+      granted: [],
+    });
+  });
+
+  test('a grant on either of them counts as having the surface', () => {
+    const connections = ConfigDocument.fromText(twoInstances, CONNECTIONS_FILE);
+    const profile = ConfigDocument.fromText(
+      [
+        'contract: 3',
+        'grants:',
+        '  - { connection: memory.team, allow: [], deny: [] }',
+        '  - { connection: memory.personal, allow: [memory.*], deny: [] }',
+        '',
+      ].join('\n'),
+    );
+
+    expect(ensureReservedConnection(connections, profile, 'memory').granted).toEqual([]);
+  });
+
+  test('a connection value with no dot in it matches no provider', () => {
+    // These rows are raw unvalidated YAML. Slicing at the dot answered -1 for a
+    // dotless value, and `'vaults'.slice(0, -1)` is `'vault'` — so a typo was
+    // widened while the real surface stayed unreachable.
+    const connections = ConfigDocument.fromText(
+      'contract: 3\nconnections:\n  - { id: main, provider: vault, account: Vault }\n',
+      CONNECTIONS_FILE,
+    );
+    const profile = ConfigDocument.fromText(
+      'contract: 3\ngrants:\n  - { connection: vaults, allow: [], deny: [] }\n',
+    );
+
+    const repair = ensureReservedConnection(connections, profile, 'vault');
+    expect(repair.changes).toEqual(['grants += vault.main']);
   });
 });

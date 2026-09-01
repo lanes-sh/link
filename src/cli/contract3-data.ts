@@ -26,6 +26,19 @@ export interface Move {
    * `upsert` would write a second record beside it.
    */
   readonly rewrite?: (data: Uint8Array) => Uint8Array;
+  /**
+   * Write only where the destination is empty; leave the source alone if not.
+   *
+   * For the objects two profiles can legitimately both hold — a connection they
+   * share, a provider-keyed cache, one custom manifest — where a second copy is
+   * a duplicate rather than a clash. `claim` drops the loser from the plan, but
+   * only within one run: the winner's source is deleted and the loser's is not,
+   * so a rerun saw a different first claimant, found the destination holding
+   * somebody else's bytes, and threw. Permanently — and `rewriteProfiles` stamps
+   * the contract *after* the moves, so an interruption during them forces
+   * exactly that rerun.
+   */
+  readonly whenAbsent?: boolean;
 }
 
 /**
@@ -88,8 +101,16 @@ export async function planMoves(
         });
         continue;
       }
+      // Under ADR-030 a manifest lived in the profile, so an operator using
+      // their own connector in two profiles holds two copies of one file. They
+      // are the same manifest; refusing byte-identical files and asking for the
+      // data directory's layout was not a useful answer.
       if (head === 'providers.d') {
-        moves.push({ from: blob.key, to: `${layout.providers()}/${tail.join('/')}` });
+        const move = claim(claimed, {
+          from: blob.key,
+          to: `${layout.providers()}/${tail.join('/')}`,
+        });
+        if (move !== null) moves.push(move);
         continue;
       }
       // One object per event, under a key that already carries the timestamp
@@ -183,7 +204,8 @@ function stateMove(
     return { from, to: here };
   }
 
-  const namespace = tail.slice(0, -1).map(decodeSegment).join('/');
+  const segments = tail.slice(0, -1).map(decodeSegment);
+  const namespace = segments.join('/');
   const key = decodeSegment(leaf.slice(0, -'.json'.length));
 
   // A cache keyed on the provider id, not on a connection — so two profiles
@@ -192,6 +214,19 @@ function stateMove(
   // alike as "not discovered yet", and `connect` refreshes it. First one wins.
   if (namespace === 'discovery') {
     return claim(claimed, { from, to: here });
+  }
+
+  // `<provider>/<connection>` — a provider's own state, keyed on the connection
+  // exactly as its blobs are. Left out of the first pass, so two profiles
+  // holding one provider's fixed-name object (`dav`'s home, `bunq`'s session)
+  // still aimed at one key.
+  if (segments.length === 2) {
+    const [provider, connection] = segments as [string, string];
+    const settled = mapping.get(`${provider}.${connection}`);
+    if (settled === undefined) return { from, to: here };
+
+    const id = settled.slice(settled.indexOf('.') + 1);
+    return claim(claimed, { from, to: `${layout.state()}/${objectKey(`${provider}/${id}`, key)}` });
   }
 
   if (namespace !== CONNECTIONS_NAMESPACE) return { from, to: here };
@@ -223,7 +258,7 @@ function stateMove(
 function claim(claimed: Set<string>, move: Move): Move | null {
   if (claimed.has(move.to)) return null;
   claimed.add(move.to);
-  return move;
+  return { ...move, whenAbsent: true };
 }
 
 /**
@@ -324,7 +359,11 @@ async function applyMove(files: BlobStore, move: Move): Promise<void> {
     // Raced away between the two calls, so there is nothing there after all and
     // the ordinary path below is still the right one.
     if (held !== null) {
+      // Another instance of the same connection, or another profile's copy of
+      // one shared cache, got there first. Left where it is rather than
+      // refused — and rerunnable, which is the whole point.
       if (!sameBytes(held, data)) {
+        if (move.whenAbsent === true) return;
         throw new ConfigError(
           `Two objects want to be at ${move.to}, and this migration cannot merge them.\n` +
             `  ${move.from} is the second, and what is already there is not a copy of it.\n` +

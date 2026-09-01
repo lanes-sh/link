@@ -1,6 +1,11 @@
 import { parseDocument } from 'yaml';
 import { readWorkspaceFile, workspaceFiles, writeWorkspaceFile } from './files.ts';
-import { SUPPORTED_CONTRACT, workspaceSchema, type WorkspaceTarget } from './schema.ts';
+import {
+  SUPPORTED_CONTRACT,
+  workspaceSchema,
+  workspaceTargetSchema,
+  type WorkspaceTarget,
+} from './schema.ts';
 import { WORKSPACE_FILE } from './workspace.ts';
 
 /**
@@ -111,7 +116,15 @@ async function editRegistry(
 
   // Validated before it lands, on the rendered tree rather than the input, so
   // what is checked is what would be read back.
-  workspaceSchema.parse(document.toJSON());
+  //
+  // `workspaceSchema` declares no `targets` key and zod strips what it does not
+  // declare, so on the legacy branch parsing the whole document checks nothing
+  // at all — an entry that is neither pointer nor declaration, or one trying to
+  // be both, landed silently and only surfaced weeks later when the migration
+  // converted it and refused. The entries are checked directly there, in the
+  // contract-3 shape `current` normalised them to.
+  if (legacy) for (const entry of Object.values(targets)) workspaceTargetSchema.parse(entry);
+  else workspaceSchema.parse(document.toJSON());
 
   await writeWorkspaceFile(files, WORKSPACE_FILE, String(document));
 }

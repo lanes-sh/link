@@ -586,12 +586,11 @@ describe('merging credentials', () => {
     expect(await (await credentials(root, 'personal')).get('profile/token')).toBe('llk_personal');
   });
 
-  test('a ref two profiles genuinely disagree on refuses before anything is written', async () => {
-    // Same provider and account, so the hoist merges them into one row and
-    // there is no rename to separate the refs. Both values are real, and this
-    // must not pick. The refusal has to land in the *plan*: it used to throw
-    // from `mergeCredentials`, by which point `rewriteRegistry` had already
-    // stamped the workspace at contract 3.
+  test('two profiles sharing one account keep one credential between them', async () => {
+    // Same provider and account, so `hoistConnections` merges them into a single
+    // row — and a single row has a single credential. This used to refuse with
+    // "Two profiles hold different values", which was a refusal on a merge the
+    // migration had just performed itself.
     const root = await workspace({
       personal: withGithub('personal', 'example-org'),
       work: withGithub('work', 'example-org'),
@@ -599,6 +598,29 @@ describe('merging credentials', () => {
 
     await (await credentials(root, 'personal')).set('github/main', 'one');
     await (await credentials(root, 'work')).set('github/main', 'two');
+
+    await migrateToContract3(root, { apply: true });
+
+    expect((await refs(root)).filter((key) => key.startsWith('github.'))).toEqual(['github.main']);
+    const merged = createFileSecretStore({ path: join(root, 'data', 'credentials.enc') });
+    expect(await merged.get('github/main')).toBe('one');
+  });
+
+  test('a credential neither connection owns refuses before anything is written', async () => {
+    // An OAuth *client* is registered per profile and stored under a ref keyed
+    // on the app, not on a connection — so no rename can separate two of them
+    // and there is nothing to merge. Both are real, and this must not pick.
+    //
+    // The refusal has to land in the plan: it used to throw from
+    // `mergeCredentials`, by which point `rewriteRegistry` had already stamped
+    // the workspace at contract 3.
+    const root = await workspace({
+      personal: legacy({ profile: 'personal' }),
+      work: legacy({ profile: 'work' }),
+    });
+
+    await (await credentials(root, 'personal')).set('google/client_id', 'one');
+    await (await credentials(root, 'work')).set('google/client_id', 'two');
 
     await expect(migrateToContract3(root, { apply: true })).rejects.toThrow(
       /cannot choose between them/,
@@ -614,7 +636,10 @@ describe('merging credentials', () => {
     await (await credentials(root, 'personal')).set('profile/token', 'llk_one');
 
     const preview = await migrateToContract3(root, { apply: false });
-    expect(preview.credentials).toEqual(['memory/main']);
+    // `profile/token` among them: one profile cannot disagree with itself, so
+    // there is nothing to leave behind and dropping it would have logged every
+    // client out for a conflict that does not exist.
+    expect(preview.credentials).toEqual(['memory/main', 'profile/token']);
 
     await migrateToContract3(root, { apply: true });
     const merged = createFileSecretStore({ path: join(root, 'data', 'credentials.enc') });
@@ -717,5 +742,146 @@ describe('a registry carrying both blocks', () => {
     expect(registry.workspaces?.['cloud']?.last_deploy_version).toBe('0.8.0');
     // And the entry only `targets:` knew about is still carried across.
     expect(registry.workspaces?.['local']).toBeDefined();
+  });
+});
+
+describe('running the migration again after it was interrupted', () => {
+  const bytes = (text: string) => new TextEncoder().encode(text);
+  const under = (profile: string, namespace: string, key: string) =>
+    `data/${profile}/state.kv/${objectKey(namespace, key)}`;
+
+  test('a shared connection\'s duplicate does not wedge the rerun', async () => {
+    // `claim` drops the loser within one run, but the winner's source is deleted
+    // and the loser's is not — so the rerun saw a different first claimant,
+    // found the destination holding somebody else's bytes, and threw. Every
+    // subsequent run reproduced it, and `rewriteProfiles` stamps the contract
+    // *after* the moves, so an interruption during them forces exactly this.
+    const files = createMemoryBlobStore();
+    await files.put(under('personal', 'connections.v1', 'gmail.main'), bytes('{"id":"main","u":"A"}'));
+    await files.put(under('work', 'connections.v1', 'gmail.main'), bytes('{"id":"main","u":"B"}'));
+
+    const shared = new Map([
+      ['personal', new Map([['gmail.main', 'gmail.main']])],
+      ['work', new Map([['gmail.main', 'gmail.main']])],
+    ]);
+
+    for (let run = 0; run < 3; run += 1) {
+      await applyMoves(files, await planMoves(files, ['personal', 'work'], shared));
+    }
+
+    expect(await files.has(`data/state.kv/${objectKey('connections.v1', 'gmail.main')}`)).toBe(true);
+  });
+
+  test("a provider's own state follows the connection rename, like its blobs do", async () => {
+    // `state.kv/<provider>/<connection>` is keyed on the connection exactly as
+    // `data/<provider>/<connection>/` is. Left out of the first pass, so two
+    // profiles holding one provider's fixed-name object — `dav`'s home,
+    // `bunq`'s session — still aimed at one key.
+    const files = createMemoryBlobStore();
+    await files.put(under('personal', 'icloud_mail/main', 'dav.home'), bytes('home-personal'));
+    await files.put(under('work', 'icloud_mail/main', 'dav.home'), bytes('home-work'));
+
+    await applyMoves(
+      files,
+      await planMoves(
+        files,
+        ['personal', 'work'],
+        new Map([
+          ['personal', new Map([['icloud_mail.main', 'icloud_mail.main']])],
+          ['work', new Map([['icloud_mail.main', 'icloud_mail.work']])],
+        ]),
+      ),
+    );
+
+    expect(await files.get(`data/state.kv/${objectKey('icloud_mail/main', 'dav.home')}`)).toEqual(
+      bytes('home-personal'),
+    );
+    expect(await files.get(`data/state.kv/${objectKey('icloud_mail/work', 'dav.home')}`)).toEqual(
+      bytes('home-work'),
+    );
+  });
+
+  test('one custom manifest held by two profiles is a duplicate, not a refusal', async () => {
+    // Under ADR-030 a manifest lived in the profile, so an operator using their
+    // own connector in two profiles has two copies of one file.
+    const files = createMemoryBlobStore();
+    await files.put('data/personal/providers.d/mything.yaml', bytes('id: mything'));
+    await files.put('data/work/providers.d/mything.yaml', bytes('id: mything'));
+
+    await applyMoves(files, await planMoves(files, ['personal', 'work'], new Map()));
+
+    expect(await files.get('data/providers.d/mything.yaml')).toEqual(bytes('id: mything'));
+  });
+});
+
+describe('the registry a half-recorded deploy left behind', () => {
+  test('a field only the stale targets: entry carries is not dropped', async () => {
+    // Merging per entry rather than per field discarded `primary` — which
+    // schema.ts calls the one question about a deployment that must not be
+    // guessed at — along with `last_deploy` and the `deploy:` block naming the
+    // project and region. Preserving the record is the whole point of the merge.
+    const root = await mkdtemp(join(tmpdir(), 'lanes-c3-'));
+    homes.push(root);
+
+    await writeFile(
+      join(root, 'lanes-link.yaml'),
+      [
+        'contract: 2',
+        'targets:',
+        '  cloud:',
+        '    workspace: gs://your-bucket',
+        '    primary: personal',
+        '    last_deploy_version: 0.7.2',
+        'workspaces:',
+        '  cloud:',
+        '    at: gs://your-bucket',
+        '    last_deploy_version: 0.8.0',
+        '',
+      ].join('\n'),
+    );
+    await mkdir(join(root, 'profiles'), { recursive: true });
+    await writeFile(join(root, 'profiles', 'personal.yaml'), legacy({ profile: 'personal' }));
+
+    await migrateToContract3(root, { apply: true });
+
+    const cloud = (
+      (await readYaml(root, 'lanes-link.yaml')) as {
+        workspaces?: Record<string, { primary?: string; last_deploy_version?: string }>;
+      }
+    ).workspaces?.['cloud'];
+
+    expect(cloud?.last_deploy_version).toBe('0.8.0');
+    expect(cloud?.primary).toBe('personal');
+  });
+
+  test('a cloud target surveyed but never rolled out is not made the default', async () => {
+    // `bootstrap` writes the surveyed adapters into the local registry before
+    // the rollout, and only `recordDeployment` later replaces them with a
+    // pointer. A deploy that failed at build or IAM therefore leaves a *declared*
+    // cloud entry with no `at:` — so reading "no at:" as "on this machine" chose
+    // the bucket, which is the 403 this was written to prevent.
+    const root = await mkdtemp(join(tmpdir(), 'lanes-c3-'));
+    homes.push(root);
+
+    await writeFile(
+      join(root, 'lanes-link.yaml'),
+      [
+        'contract: 2',
+        'targets:',
+        '  cloud:',
+        '    credentials: { adapter: gcp-secret-manager, project: my-project }',
+        '    storage: { adapter: gcs, bucket: your-bucket }',
+        '  local:',
+        '    credentials: { adapter: file }',
+        '    storage: { adapter: filesystem }',
+        '',
+      ].join('\n'),
+    );
+    await mkdir(join(root, 'profiles'), { recursive: true });
+    await writeFile(join(root, 'profiles', 'personal.yaml'), legacy({ profile: 'personal' }));
+
+    await migrateToContract3(root, { apply: true });
+
+    expect((await readYaml(root, 'lanes-link.yaml'))['default_workspace']).toBe('local');
   });
 });
