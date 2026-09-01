@@ -31,12 +31,11 @@ export interface Move {
    *
    * For the objects two profiles can legitimately both hold — a connection they
    * share, a provider-keyed cache, one custom manifest — where a second copy is
-   * a duplicate rather than a clash. `claim` drops the loser from the plan, but
-   * only within one run: the winner's source is deleted and the loser's is not,
-   * so a rerun saw a different first claimant, found the destination holding
-   * somebody else's bytes, and threw. Permanently — and `rewriteProfiles` stamps
-   * the contract *after* the moves, so an interruption during them forces
-   * exactly that rerun.
+   * a duplicate rather than a clash. `claim` drops the loser within one run, but
+   * deletes the winner's source and leaves the loser's: the rerun then saw a
+   * different first claimant, found foreign bytes at the destination, and threw,
+   * permanently. `rewriteProfiles` stamps the contract *after* the moves, so an
+   * interruption during them forces exactly that rerun.
    */
   readonly whenAbsent?: boolean;
 }
@@ -113,9 +112,8 @@ export async function planMoves(
         if (move !== null) moves.push(move);
         continue;
       }
-      // One object per event, under a key that already carries the timestamp
-      // and the profile in every record — so concatenating three profiles' logs
-      // is exactly moving the objects across, with nothing to reconcile.
+      // One object per event under a key already carrying the timestamp, so
+      // concatenating three profiles' logs is exactly moving them across.
       if (head === 'audit.log') {
         moves.push({ from: blob.key, to: `${DATA_DIR}/audit.log/${tail.join('/')}` });
         continue;
@@ -179,14 +177,12 @@ function assertOneObjectPerDestination(moves: readonly Move[]): void {
  * called unreachable, and it was reachable from any workspace with two profiles
  * in it.
  *
- * Keys are decoded rather than pattern-matched. On disk the namespace and key
- * are percent-encoded per segment (`connections%2Ev1/vault%2Emain.json`), and
- * reassembling that by hand at this call site would be the second spelling of
- * an encoding that must have exactly one.
+ * Keys are decoded rather than pattern-matched: on disk both halves are
+ * percent-encoded per segment (`connections%2Ev1/vault%2Emain.json`), and
+ * respelling that here would be a second copy of an encoding that must have one.
  *
- * `null` means leave it where it is. Nothing is deleted by not moving it, the
- * old `data/<profile>/` tree survives the migration either way, and `doctor`
- * names what is left.
+ * `null` means leave it where it is — nothing is deleted by not moving it, and
+ * `doctor` names what is left.
  */
 function stateMove(
   from: string,
@@ -204,14 +200,23 @@ function stateMove(
     return { from, to: here };
   }
 
-  const segments = tail.slice(0, -1).map(decodeSegment);
+  // `decodeSegment` is `decodeURIComponent`, which throws `URIError` on a stray
+  // `%`. Aborting somebody's whole migration on `URI error`, naming no file, is
+  // not an answer — an undecodable key is one this does not understand, and
+  // those are moved as they are.
+  let segments: string[];
+  let key: string;
+  try {
+    segments = tail.slice(0, -1).map(decodeSegment);
+    key = decodeSegment(leaf.slice(0, -'.json'.length));
+  } catch {
+    return { from, to: here };
+  }
   const namespace = segments.join('/');
-  const key = decodeSegment(leaf.slice(0, -'.json'.length));
 
-  // A cache keyed on the provider id, not on a connection — so two profiles
-  // that both connected the same vendor hold two entries under one key. They
-  // describe the same manifest, `open.ts` treats a miss and a corrupt entry
-  // alike as "not discovered yet", and `connect` refreshes it. First one wins.
+  // Keyed on the provider id, not a connection, so two profiles on the same
+  // vendor hold two entries under one key. `open.ts` treats a miss and a corrupt
+  // entry alike as "not discovered yet" and `connect` refreshes it: first wins.
   if (namespace === 'discovery') {
     return claim(claimed, { from, to: here });
   }
@@ -235,17 +240,15 @@ function stateMove(
   // the provider-blob branch does, and wrong in the same way if it is skipped.
   const settled = mapping.get(key);
 
-  // A record for a connection the profile no longer declares. It was orphaned
-  // under contract 2 already — no row, and `hoistConnections` reads rows — so
-  // hoisting it would manufacture a connection that nothing grants and no
-  // credential backs, and its key can collide with a rename that is real.
+  // Orphaned under contract 2 already — no row, and `hoistConnections` reads
+  // rows — so hoisting it would manufacture a connection nothing grants, and its
+  // key can collide with a rename that is real.
   if (settled === undefined) return null;
 
   const to = `${layout.state()}/${objectKey(CONNECTIONS_NAMESPACE, settled)}`;
 
-  // Two profiles that connected the same account merge into one row, so both
-  // hold a record for it. They describe one connection; the second differs only
-  // in when it was last written.
+  // Two profiles on one account merge into one row, so both hold a record for
+  // it. One connection; the second differs only in when it was written.
   if (settled === key) return claim(claimed, { from, to });
 
   const dot = settled.indexOf('.');
@@ -264,13 +267,10 @@ function claim(claimed: Set<string>, move: Move): Move | null {
 /**
  * A connection record, told what it is now called.
  *
- * Spread rather than assigned field by field so the operator's key order — and
- * anything a later version added that this one does not know about — survives
- * the rewrite.
- *
- * Bytes that are not a JSON object are returned untouched. This is a migration,
- * and refusing to move something because it could not be parsed would strand it
- * under a profile directory nothing reads.
+ * Spread rather than assigned field by field, so key order and anything a later
+ * version added survive. Bytes that are not a JSON object are returned
+ * untouched: refusing to move what would not parse strands it under a profile
+ * directory nothing reads.
  */
 function retarget(data: Uint8Array, provider: string, id: string): Uint8Array {
   let record: unknown;
