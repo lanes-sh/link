@@ -55,6 +55,9 @@ export interface AuditTail {
       readonly capability: string;
       readonly arguments: Readonly<Record<string, unknown>>;
       readonly authorization: string;
+      readonly status: string;
+      readonly durationMs: number;
+      readonly error?: { readonly kind: string; readonly message: string } | undefined;
     }[]
   >;
 }
@@ -194,6 +197,12 @@ async function handle(
           // to what is sensitive, and the log's own would stop being the truth.
           arguments: event.arguments,
           authorization: event.authorization,
+          // Authorised and then failed is a state the four fields above cannot
+          // express, and it is the one worth seeing: a call the policy allowed
+          // and the provider refused reads as a successful call without these.
+          status: event.status,
+          durationMs: event.durationMs,
+          error: event.error ?? null,
         })),
       },
       200,

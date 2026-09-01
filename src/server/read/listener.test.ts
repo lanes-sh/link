@@ -58,6 +58,8 @@ const AUDIT: AuditTail = {
       capability: 'gmail.users.messages.list',
       arguments: { q: '<redacted>' },
       authorization: 'allowed',
+      status: 'ok',
+      durationMs: 42,
     },
     {
       id: 'evt_2',
@@ -68,6 +70,11 @@ const AUDIT: AuditTail = {
       capability: 'gmail.users.messages.get',
       arguments: {},
       authorization: 'denied_default',
+      // Allowed and then failed is the state the wire could not express before
+      // these three fields, so one of the two rows carries it.
+      status: 'error',
+      durationMs: 7,
+      error: { kind: 'upstream', message: 'the mailbox said no' },
     },
   ],
 };
@@ -197,6 +204,32 @@ describe('what can be reached', () => {
     // Redacted where it was written, and not redacted again here: a second rule
     // would be a second answer to what is sensitive.
     expect(body.events[0]?.arguments).toEqual({ q: '<redacted>' });
+  });
+
+  test('a call that was allowed and then failed says so', async () => {
+    // `authorization` and `status` answer different questions, and a surface
+    // carrying only the first reports a failed call as a successful one. The
+    // detail view in the dashboard is built on these three.
+    const response = await read('/audit?limit=10');
+    const body = (await response.json()) as {
+      events: {
+        authorization: string;
+        status: string;
+        durationMs: number;
+        error: { kind: string; message: string } | null;
+      }[];
+    };
+
+    expect(body.events[0]).toMatchObject({
+      authorization: 'allowed',
+      status: 'ok',
+      durationMs: 42,
+      error: null,
+    });
+    expect(body.events[1]).toMatchObject({
+      status: 'error',
+      error: { kind: 'upstream', message: 'the mailbox said no' },
+    });
   });
 
   test('the log narrows to one profile', async () => {
