@@ -138,6 +138,24 @@ the item id is recorded verbatim, because a log that cannot say *which* item was
 very little, and the value records `<withheld>` and nothing else. Redaction resolves before the
 policy decision, so a denied vault call is redacted exactly like an allowed one.
 
+**Amendment (0.8.0): a search query is the question, not the answer, and it is kept.**
+`memory.search` withheld its `query`, on the argument that a memory query is at least as revealing as
+a Gmail search query. That is true, and it is an argument about the wrong thing. A search term is not
+the owner's material; it is what an *agent* went looking for in that material, which is the question
+the log exists to answer. Withheld, every search read alike: memory was searched, twice, and matched
+nothing, with no way to tell a calendar lookup from a rummage through someone's medical notes.
+
+The pairing is what makes this safe rather than a loosening. The question is recorded and the answer
+is not: `entry` keeps a `uri`, `get` keeps an `id`, `write` keeps `id`, `title` and `tags`, and no
+capability on this provider keeps a body. A reader of the log learns what was asked and still cannot
+learn what came back.
+
+The old rule was reasoning about [`audit/fanout.ts`](../../../src/audit/fanout.ts): a workspace may
+declare secondary sinks, and copies sent to stdout or an OTLP collector leave the machine. That
+exposure is real and it is the operator's to weigh, which is exactly what declaring a sink is. It was
+never a reason to withhold from the durable log on the operator's own disk, where the only reader is
+the person the entries are about.
+
 ---
 
 ## What M4 had to change in core, contradicting `docs/detailed/init.md`

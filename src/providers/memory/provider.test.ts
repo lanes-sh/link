@@ -254,11 +254,26 @@ describe('what reaches the audit log', () => {
     expect(JSON.stringify(redacted)).not.toContain('the secret body');
   });
 
-  test('a search query is withheld entirely, like a mail search', () => {
+  test('a search query is kept, because it is the question rather than the answer', () => {
     const search = memoryProvider.capabilities.find((capability) => capability.name === 'search')!;
+    const redacted = search.redact!({ query: 'salary review', tag: 'work', limit: 10 });
 
-    // No rule declared means the default: names and types, never values.
-    expect(search.redact).toBeUndefined();
+    // What an agent went looking for is the thing this log exists to answer.
+    // Withheld, every search read alike and a calendar lookup could not be told
+    // from a rummage through someone's medical notes.
+    expect(redacted['query']).toBe('salary review');
+    expect(redacted['tag']).toBe('work');
+  });
+
+  test('keeping the query does not start keeping what it found', () => {
+    // The pairing is the whole argument for the line above: the question is
+    // recorded and the answer is not. `entry` and `get` keep an address and an
+    // id, and no capability on this provider keeps a body.
+    const bodies = memoryProvider.capabilities
+      .filter((capability) => capability.name === 'entry' || capability.name === 'get')
+      .map((capability) => capability.redact!({ uri: 'memory://entry/x', id: 'x', body: 'secret' }));
+
+    for (const redacted of bodies) expect(redacted['body']).toBe('<string:6>');
   });
 
   test('a resource read records its address but not its contents', () => {

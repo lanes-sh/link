@@ -272,8 +272,26 @@ export const memoryProvider: ProviderDefinition = defineLocalProvider({
         tag: z.string().optional().describe('Restrict to entries carrying this tag'),
         limit: z.number().int().min(1).max(50).optional().describe(`Maximum results (default ${DEFAULT_LIMIT})`),
       }),
-      // Nothing kept: a memory query is as revealing as a Gmail search query,
-      // and frequently more so — it is the owner's own material being asked for.
+      // Kept, and this reverses the rule the rest of this file follows.
+      //
+      // The old comment here read "a memory query is as revealing as a Gmail
+      // search query, and frequently more so", which is true and is an argument
+      // about the wrong thing. A search term is not the owner's material: it is
+      // what an *agent* went looking for in that material, which is precisely
+      // the question this log exists to answer. Withholding it leaves a record
+      // saying memory was searched, twice, and matched nothing, with no way to
+      // tell a calendar lookup from a rummage through someone's medical notes.
+      //
+      // The body stays withheld either way — `entry` and `get` keep only `uri`
+      // and `id`, so what was *found* is still not in here. This records the
+      // question, not the answer.
+      //
+      // The reason for the old rule was `audit/fanout.ts`: a workspace may ship
+      // copies to stdout or an OTLP collector, and those leave the machine. That
+      // is a real exposure and it is the operator's to weigh, which is what a
+      // declared sink is. It is not a reason to withhold from the durable log on
+      // the operator's own disk.
+      redact: keepKeys('query', 'tag', 'limit'),
       async handler({ query, tag, limit }, context) {
         const needle = query.toLowerCase();
         const entries = await allEntries(context.storage);
