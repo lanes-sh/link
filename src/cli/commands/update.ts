@@ -184,11 +184,23 @@ export async function update(flags: UpdateFlags): Promise<void> {
     // a contract it does not implement until someone redeploys. `deploy` is what
     // migrates a bucket, because it is the command that ships the image in the
     // same breath.
-    await migrateLocal(root, flags.json === true ? progress : print);
+    const migrated = await migrateLocal(root, flags.json === true ? progress : print);
 
-    await repairOwnerLayer(root, undefined, {
-      ...(flags.json === true ? { report: progress } : {}),
-    });
+    // Only on a workspace the migration actually finished.
+    //
+    // The repair writes contract-3 shapes — a `connections.yaml`, a `grants:`
+    // block — and running it after a refusal put both into a workspace still at
+    // contract 2, behind a message that had just said nothing was written. The
+    // stray `connections.yaml` it created then read as a partly-migrated
+    // workspace to everything that opened it afterwards.
+    //
+    // A refusal must not be followed by a write. The next run repairs it once
+    // the migration succeeds, which is the same courtesy one command later.
+    if (migrated) {
+      await repairOwnerLayer(root, undefined, {
+        ...(flags.json === true ? { report: progress } : {}),
+      });
+    }
   }
 
   const report = {
@@ -330,7 +342,7 @@ function sayContract3(migration: Contract3Migration, say: (line: string) => void
   say(`  The old per-profile credential stores are left in place; remove them once this works.`);
 }
 
-async function migrateLocal(root: string, say: (line: string) => void): Promise<void> {
+async function migrateLocal(root: string, say: (line: string) => void): Promise<boolean> {
   try {
     // One call, both steps, in order — a workspace that predates both walks
     // through them rather than jumping, so each step's reasoning applies to the
@@ -347,8 +359,11 @@ async function migrateLocal(root: string, say: (line: string) => void): Promise<
 
     if (migration.legacy) sayLegacyTargets(migration.legacy, say);
     if (migration.contract3) sayContract3(migration.contract3, say);
+    return true;
   } catch (error) {
     say(`could not migrate this workspace: ${error instanceof Error ? error.message : String(error)}`);
+    say('  the owner-layer repair is skipped until it does — nothing else was changed');
+    return false;
   }
 }
 

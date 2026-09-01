@@ -1,6 +1,6 @@
-import { ConfigError, DATA_DIR, isRemoteWorkspace, layout } from '#profile';
-import { createFileSecretStore } from '#secrets';
+import { ConfigError, DATA_DIR, layout } from '#profile';
 import type { BlobStore } from '#stores/blobs';
+import { CONNECTIONS_NAMESPACE, decodeSegment, objectKey } from '#stores/state';
 
 /**
  * The half of the contract-3 migration that moves bytes rather than YAML.
@@ -15,104 +15,17 @@ import type { BlobStore } from '#stores/blobs';
 export interface Move {
   readonly from: string;
   readonly to: string;
-}
-
-/** `gmail.main` — how a connection is addressed in every file after this. */
-function keyOf(connection: { provider: string; id: string }): string {
-  return `${connection.provider}.${connection.id}`;
-}
-
-/**
- * Which credential refs the merged store will hold.
- *
- * Read-only, and it runs before anything is written so the report an operator
- * confirms is the real one. A ref present in two profiles' stores with two
- * different values is the one thing this cannot resolve, and it is reported
- * rather than merged: both are real credentials, and picking either would point
- * a connection at the wrong account's token.
- *
- * **A workspace in a bucket has nothing to merge, and this says so rather than
- * finding out.** `workspacePath` refuses a filesystem adapter against a remote
- * root, so the only credential store such a workspace can declare is
- * `gcp-secret-manager` — whose refs were never scoped by profile, and are
- * therefore already what contract 3 wants. Without the guard the path below is
- * built by string interpolation into `gs://bucket/data/<profile>/credentials.enc`
- * and handed to `Bun.file`, where the failure is swallowed by the `catch` and
- * reads exactly like a workspace with no credentials in it.
- */
-export async function planCredentials(root: string, profiles: readonly string[]): Promise<string[]> {
-  if (isRemoteWorkspace(root)) return [];
-
-  const refs = new Set<string>();
-
-  for (const profile of profiles) {
-    const store = createFileSecretStore({ path: `${root}/${DATA_DIR}/${profile}/credentials.enc` });
-    try {
-      for (const ref of await store.list()) refs.add(ref);
-    } catch {
-      // A store that will not open is reported by `doctor`, not here. This is a
-      // preview and must not fail on a workspace that is already broken.
-    }
-  }
-
-  return [...refs].sort();
-}
-
-/**
- * Copy every profile's credentials into the workspace store.
- *
- * Written and read back before the old stores are touched, which is the whole
- * of the safety argument: a half-finished merge that has not deleted anything is
- * recoverable by running it again, and one that deleted first is not.
- *
- * The old stores are left in place regardless. They are a few kilobytes, they
- * are the only copy of anything if this went wrong, and `doctor` names them so
- * an operator can remove them once the endpoint has served a request.
- *
- * Skipped entirely for a workspace in a bucket, for the reason `planCredentials`
- * gives: its credentials are in Secret Manager under refs that were never
- * per-profile, so there is no second store to fold in.
- */
-export async function mergeCredentials(root: string, profiles: readonly string[]): Promise<void> {
-  if (isRemoteWorkspace(root)) return;
-
-  const destination = createFileSecretStore({ path: `${root}/${layout.credentials()}` });
-
-  for (const profile of profiles) {
-    const source = createFileSecretStore({ path: `${root}/${DATA_DIR}/${profile}/credentials.enc` });
-
-    let refs: string[];
-    try {
-      refs = await source.list();
-    } catch {
-      continue;
-    }
-
-    for (const ref of refs) {
-      const value = await source.get(ref);
-      if (value === null) continue;
-
-      const held = await destination.get(ref);
-      if (held !== null) {
-        if (held === value) continue;
-        throw new ConfigError(
-          `Two profiles hold different values for the credential "${ref}", and this migration ` +
-            `cannot choose between them.\n` +
-            `  Both are real credentials for different accounts, and picking either would point a ` +
-            `connection at the wrong one.\n` +
-            `  Rename one connection before migrating, so its credential ref differs.`,
-        );
-      }
-
-      await destination.set(ref, value);
-      if ((await destination.get(ref)) !== value) {
-        throw new ConfigError(
-          `The credential "${ref}" did not read back after being written to ` +
-            `${layout.credentials()}. Nothing has been deleted; fix the store and run this again.`,
-        );
-      }
-    }
-  }
+  /**
+   * Rewrite the object's bytes on the way across.
+   *
+   * Only a connection record needs this, and it needs it for a reason a plain
+   * copy cannot serve: `ConnectionRepository.list` reads `provider` and `id`
+   * out of the record *body*, not out of the key it was stored under. A renamed
+   * connection whose bytes were copied verbatim would sit at
+   * `connections.v1/vault.work` still calling itself `vault.main`, and the next
+   * `upsert` would write a second record beside it.
+   */
+  readonly rewrite?: (data: Uint8Array) => Uint8Array;
 }
 
 /**
@@ -136,6 +49,10 @@ export async function planMoves(
   perProfile: ReadonlyMap<string, ReadonlyMap<string, string>>,
 ): Promise<Move[]> {
   const moves: Move[] = [];
+  // Destinations inside `state.kv` that an earlier profile already claimed, for
+  // the two namespaces where a second claim is a duplicate rather than a
+  // conflict. See `stateMove`.
+  const claimed = new Set<string>();
 
   for (const profile of profiles) {
     const mapping = perProfile.get(profile) ?? new Map<string, string>();
@@ -147,9 +64,7 @@ export async function planMoves(
       if (head === undefined) continue;
 
       // The credential store is merged rather than moved, and the old copy is
-      // deliberately left behind. `state.kv` and `audit.log` are per profile and
-      // become the workspace's, but their contents already carry the profile in
-      // every record, so they are concatenated by moving the objects across.
+      // deliberately left behind.
       if (head === 'credentials.enc' || head === 'credentials.enc.key') continue;
 
       // The instance this profile's single-instance surfaces became. Both are
@@ -177,8 +92,16 @@ export async function planMoves(
         moves.push({ from: blob.key, to: `${layout.providers()}/${tail.join('/')}` });
         continue;
       }
-      if (head === 'state.kv' || head === 'audit.log') {
-        moves.push({ from: blob.key, to: `${DATA_DIR}/${head}/${tail.join('/')}` });
+      // One object per event, under a key that already carries the timestamp
+      // and the profile in every record — so concatenating three profiles' logs
+      // is exactly moving the objects across, with nothing to reconcile.
+      if (head === 'audit.log') {
+        moves.push({ from: blob.key, to: `${DATA_DIR}/audit.log/${tail.join('/')}` });
+        continue;
+      }
+      if (head === 'state.kv') {
+        const move = stateMove(blob.key, tail, mapping, claimed);
+        if (move !== null) moves.push(move);
         continue;
       }
 
@@ -217,12 +140,116 @@ function assertOneObjectPerDestination(moves: readonly Move[]): void {
       throw new ConfigError(
         `Two objects want to be at ${move.to}, and this migration cannot merge them.\n` +
           `  ${first} and ${move.from}. Nothing has been written.\n` +
-          '  This should be unreachable: the hoist gives every profile its own instance of ' +
-          'each owner-layer surface. Please report it with the layout of your data directory.',
+          '  Please report it with the layout of your data directory.',
       );
     }
     seen.set(move.to, move.from);
   }
+}
+
+/**
+ * Where one object under a profile's `state.kv` is going.
+ *
+ * `state.kv` used to be moved verbatim, on the grounds that its records "already
+ * carry the profile". They do not. `connections.v1` is keyed on
+ * `<provider>.<id>` — precisely what the hoist renames — so every profile's
+ * owner layer wrote `connections.v1/vault.main`, and three profiles aimed three
+ * objects at one key. That is the collision `assertOneObjectPerDestination`
+ * called unreachable, and it was reachable from any workspace with two profiles
+ * in it.
+ *
+ * Keys are decoded rather than pattern-matched. On disk the namespace and key
+ * are percent-encoded per segment (`connections%2Ev1/vault%2Emain.json`), and
+ * reassembling that by hand at this call site would be the second spelling of
+ * an encoding that must have exactly one.
+ *
+ * `null` means leave it where it is. Nothing is deleted by not moving it, the
+ * old `data/<profile>/` tree survives the migration either way, and `doctor`
+ * names what is left.
+ */
+function stateMove(
+  from: string,
+  tail: readonly string[],
+  mapping: ReadonlyMap<string, string>,
+  claimed: Set<string>,
+): Move | null {
+  const here = `${layout.state()}/${tail.join('/')}`;
+  const leaf = tail[tail.length - 1];
+
+  // Not an object this module wrote: moved as it is, and still held to the
+  // one-object-per-destination rule, because an unrecognised collision is a
+  // thing to refuse rather than to resolve by guessing.
+  if (tail.length < 2 || leaf === undefined || !leaf.endsWith('.json')) {
+    return { from, to: here };
+  }
+
+  const namespace = tail.slice(0, -1).map(decodeSegment).join('/');
+  const key = decodeSegment(leaf.slice(0, -'.json'.length));
+
+  // A cache keyed on the provider id, not on a connection — so two profiles
+  // that both connected the same vendor hold two entries under one key. They
+  // describe the same manifest, `open.ts` treats a miss and a corrupt entry
+  // alike as "not discovered yet", and `connect` refreshes it. First one wins.
+  if (namespace === 'discovery') {
+    return claim(claimed, { from, to: here });
+  }
+
+  if (namespace !== CONNECTIONS_NAMESPACE) return { from, to: here };
+
+  // This profile's old key, through this profile's mapping — the same lookup
+  // the provider-blob branch does, and wrong in the same way if it is skipped.
+  const settled = mapping.get(key);
+
+  // A record for a connection the profile no longer declares. It was orphaned
+  // under contract 2 already — no row, and `hoistConnections` reads rows — so
+  // hoisting it would manufacture a connection that nothing grants and no
+  // credential backs, and its key can collide with a rename that is real.
+  if (settled === undefined) return null;
+
+  const to = `${layout.state()}/${objectKey(CONNECTIONS_NAMESPACE, settled)}`;
+
+  // Two profiles that connected the same account merge into one row, so both
+  // hold a record for it. They describe one connection; the second differs only
+  // in when it was last written.
+  if (settled === key) return claim(claimed, { from, to });
+
+  const dot = settled.indexOf('.');
+  const provider = settled.slice(0, dot);
+  const id = settled.slice(dot + 1);
+  return claim(claimed, { from, to, rewrite: (data) => retarget(data, provider, id) });
+}
+
+/** First claim on a destination wins; a later one is left where it is. */
+function claim(claimed: Set<string>, move: Move): Move | null {
+  if (claimed.has(move.to)) return null;
+  claimed.add(move.to);
+  return move;
+}
+
+/**
+ * A connection record, told what it is now called.
+ *
+ * Spread rather than assigned field by field so the operator's key order — and
+ * anything a later version added that this one does not know about — survives
+ * the rewrite.
+ *
+ * Bytes that are not a JSON object are returned untouched. This is a migration,
+ * and refusing to move something because it could not be parsed would strand it
+ * under a profile directory nothing reads.
+ */
+function retarget(data: Uint8Array, provider: string, id: string): Uint8Array {
+  let record: unknown;
+  try {
+    record = JSON.parse(new TextDecoder().decode(data));
+  } catch {
+    return data;
+  }
+
+  if (record === null || typeof record !== 'object' || Array.isArray(record)) return data;
+
+  return new TextEncoder().encode(
+    JSON.stringify({ ...(record as Record<string, unknown>), provider, id }),
+  );
 }
 
 /**
@@ -282,8 +309,14 @@ export async function applyMoves(files: BlobStore, moves: readonly Move[]): Prom
 
 /** One object, moved or finished. Never deletes before the copy reads back. */
 async function applyMove(files: BlobStore, move: Move): Promise<void> {
-  const data = await files.get(move.from);
-  if (data === null) return;
+  const source = await files.get(move.from);
+  if (source === null) return;
+
+  // Before the comparison below as well as before the write. Comparing the
+  // *source* bytes against a destination that holds the rewritten ones would
+  // read an already-finished move as a collision, and refuse the one rerun this
+  // file promises.
+  const data = move.rewrite === undefined ? source : move.rewrite(source);
 
   if (await files.has(move.to)) {
     const held = await files.get(move.to);
@@ -295,9 +328,8 @@ async function applyMove(files: BlobStore, move: Move): Promise<void> {
         throw new ConfigError(
           `Two objects want to be at ${move.to}, and this migration cannot merge them.\n` +
             `  ${move.from} is the second, and what is already there is not a copy of it.\n` +
-            '  Nothing has been deleted. This should be unreachable: the hoist gives every ' +
-            'profile its own instance of each owner-layer surface. Please report it with the ' +
-            'layout of your data directory.',
+            '  Nothing has been deleted. Please report it with the layout of your data ' +
+            'directory.',
         );
       }
 

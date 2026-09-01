@@ -1,5 +1,11 @@
 import { newConnectionsTemplate } from './config-templates.ts';
-import { applyMoves, mergeCredentials, planCredentials, planMoves, type Move } from './contract3-data.ts';
+import { applyMoves, planMoves, type Move } from './contract3-data.ts';
+import {
+  mergeCredentials,
+  planCredentials,
+  refRenames,
+  type CredentialPlan,
+} from './contract3-credentials.ts';
 import { parseDocument } from 'yaml';
 import {
   CONNECTIONS_FILE,
@@ -73,7 +79,17 @@ export interface LegacyProfile {
   readonly connections?: LegacyConnection[];
   readonly policy?: { allow?: unknown[]; deny?: unknown[] };
   readonly oauth_apps?: Record<string, unknown>;
+  /**
+   * Read for `token_ref` alone, and read raw rather than through `authSchema`:
+   * this walks profiles that have not been validated, and a profile that fails
+   * validation for an unrelated reason still has an endpoint token to leave
+   * behind.
+   */
+  readonly auth?: { token_ref?: string };
 }
+
+/** The schema default, and what every profile written by the CLI carries. */
+const DEFAULT_TOKEN_REF = 'profile/token';
 
 /** Whether this workspace still holds anything at contract 2. */
 export async function needsContract3(workspaceRoot: string): Promise<boolean> {
@@ -129,7 +145,14 @@ export async function migrateToContract3(
 
   // Everything that can be computed is computed before the first write, so a
   // refusal leaves the workspace exactly as it was.
-  const credentials = await planCredentials(workspaceRoot, [...legacy.keys()]);
+  const plans: CredentialPlan[] = [...legacy].map(([profile, config]) => ({
+    profile,
+    renames: refRenames(perProfile.get(profile) ?? new Map()),
+    tokenRef:
+      typeof config.auth?.token_ref === 'string' ? config.auth.token_ref : DEFAULT_TOKEN_REF,
+  }));
+
+  const credentials = await planCredentials(workspaceRoot, plans);
   const moves = await planMoves(files, [...legacy.keys()], perProfile);
 
   const changes: string[] = [
@@ -137,8 +160,14 @@ export async function migrateToContract3(
     ...renames.map((rename) => `renamed ${rename.from} to ${rename.to} (${rename.reason})`),
     ...[...legacy.keys()].map((profile) => `profiles/${profile}.yaml: contract 3, grants`),
   ];
-  if (credentials.length > 0) {
-    changes.push(`${layout.credentials()}: ${credentials.length} credential(s) merged`);
+  if (credentials.refs.length > 0) {
+    changes.push(`${layout.credentials()}: ${credentials.refs.length} credential(s) merged`);
+  }
+  if (credentials.tokens.length > 0) {
+    changes.push(
+      `${credentials.tokens.join(', ')}: left behind — one endpoint token per workspace now, ` +
+        'and a fresh one is minted on the next command',
+    );
   }
   if (moves.length > 0) changes.push(`${moves.length} object(s) moved to their connection`);
 
@@ -147,7 +176,7 @@ export async function migrateToContract3(
     profiles: [...legacy.keys()],
     connections: rows.map(keyOf),
     renames,
-    credentials,
+    credentials: credentials.refs,
     moved: moves.map((move) => move.to),
     changes,
     alreadyCurrent: false,
@@ -170,7 +199,7 @@ export async function migrateToContract3(
   // workspace" and there was no way back.
   await rewriteRegistry(workspaceRoot);
   await writeConnections(workspaceRoot, rows, legacy);
-  await mergeCredentials(workspaceRoot, [...legacy.keys()]);
+  await mergeCredentials(workspaceRoot, plans);
 
   // **The bytes move before the profile says they have.**
   //

@@ -5,8 +5,11 @@ import { join } from 'node:path';
 import { parse } from 'yaml';
 import { migrateToContract3 } from './contract3.ts';
 import { migrateToCurrentContract } from './workspace-migrate.ts';
-import { applyMoves, planCredentials, planMoves } from './contract3-data.ts';
+import { applyMoves, planMoves } from './contract3-data.ts';
+import { planCredentials } from './contract3-credentials.ts';
 import { createMemoryBlobStore } from '#stores/blobs/testing.ts';
+import { createFileSecretStore } from '#secrets';
+import { objectKey } from '#stores/state';
 
 /**
  * Contract 2 to contract 3, against a real workspace on disk.
@@ -375,7 +378,8 @@ describe('a workspace in a bucket', () => {
     // `gs://.../data/personal/credentials.enc`, handed it to `Bun.file`, and let
     // the catch report an empty list, which is the same answer for the wrong
     // reason and would have hidden a real store that would not open.
-    expect(await planCredentials('gs://your-bucket', ['personal'])).toEqual([]);
+    const plan = { profile: 'personal', renames: new Map(), tokenRef: 'profile/token' };
+    expect(await planCredentials('gs://your-bucket', [plan])).toEqual({ refs: [], tokens: [] });
   });
 });
 
@@ -401,5 +405,219 @@ describe('the contract stamp is the record that this finished', () => {
     expect(await readFile(join(root, 'data', 'personal', 'memory', 'main', 'a.md'), 'utf8')).toBe(
       'mine',
     );
+  });
+});
+
+describe('state.kv', () => {
+  const bytes = (text: string) => new TextEncoder().encode(text);
+  const record = (provider: string, id: string) =>
+    bytes(JSON.stringify({ provider, id, status: 'active', createdAt: '2026-01-01T00:00:00.000Z' }));
+  const under = (profile: string, namespace: string, key: string) =>
+    `data/${profile}/state.kv/${objectKey(namespace, key)}`;
+  const hoisted = (namespace: string, key: string) =>
+    `data/state.kv/${objectKey(namespace, key)}`;
+
+  async function body(files: ReturnType<typeof createMemoryBlobStore>, key: string) {
+    const raw = await files.get(key);
+    return raw === null ? null : (JSON.parse(new TextDecoder().decode(raw)) as Record<string, unknown>);
+  }
+
+  test('a renamed connection takes its record with it, key and body', async () => {
+    // The defect this whole file was reopened for. `state.kv` was moved
+    // verbatim on the grounds that its records "already carry the profile" —
+    // but `connections.v1` is keyed on `<provider>.<id>`, which is exactly what
+    // the hoist renames, so every profile's owner layer aimed an object at
+    // `connections.v1/vault.main` and the migration refused.
+    //
+    // The body matters as much as the key: `ConnectionRepository.list` reads
+    // `provider` and `id` out of the record, so a verbatim copy would sit at
+    // `vault.work` still calling itself `vault.main`.
+    const files = createMemoryBlobStore();
+    await files.put(under('personal', 'connections.v1', 'vault.main'), record('vault', 'main'));
+    await files.put(under('work', 'connections.v1', 'vault.main'), record('vault', 'main'));
+
+    const moves = await planMoves(
+      files,
+      ['personal', 'work'],
+      new Map([
+        ['personal', new Map([['vault.main', 'vault.main']])],
+        ['work', new Map([['vault.main', 'vault.work']])],
+      ]),
+    );
+    await applyMoves(files, moves);
+
+    expect(await body(files, hoisted('connections.v1', 'vault.main'))).toMatchObject({
+      provider: 'vault',
+      id: 'main',
+    });
+    expect(await body(files, hoisted('connections.v1', 'vault.work'))).toMatchObject({
+      provider: 'vault',
+      id: 'work',
+    });
+    // Everything else the record carried survives the retarget.
+    expect(await body(files, hoisted('connections.v1', 'vault.work'))).toMatchObject({
+      createdAt: '2026-01-01T00:00:00.000Z',
+    });
+    expect(await files.has(under('work', 'connections.v1', 'vault.main'))).toBe(false);
+  });
+
+  test('a record for a connection the profile no longer declares is left where it is', async () => {
+    // No row means the hoist never saw it, so there is nothing to map it to.
+    // Moving it anyway would manufacture a connection that nothing grants and
+    // no credential backs — and its key can collide with a rename that is real.
+    const files = createMemoryBlobStore();
+    await files.put(under('personal', 'connections.v1', 'tasks.main'), record('tasks', 'main'));
+    await files.put(under('personal', 'connections.v1', 'gmail.old'), record('gmail', 'old'));
+
+    const moves = await planMoves(
+      files,
+      ['personal'],
+      new Map([['personal', new Map([['tasks.main', 'tasks.personal']])]]),
+    );
+    await applyMoves(files, moves);
+
+    expect(await files.has(hoisted('connections.v1', 'tasks.personal'))).toBe(true);
+    expect(await files.has(hoisted('connections.v1', 'gmail.old'))).toBe(false);
+    // Left, not deleted. Nothing this migration does not understand is lost.
+    expect(await files.has(under('personal', 'connections.v1', 'gmail.old'))).toBe(true);
+  });
+
+  test('two profiles that share one account keep one record between them', async () => {
+    // Same provider, same account: the hoist merges them into one row, so both
+    // profiles map to the same key and both hold a record describing it. One
+    // connection, one record — this is a duplicate, not a collision.
+    const files = createMemoryBlobStore();
+    await files.put(under('personal', 'connections.v1', 'gmail.main'), record('gmail', 'main'));
+    await files.put(under('work', 'connections.v1', 'gmail.main'), record('gmail', 'main'));
+
+    const shared = new Map([
+      ['personal', new Map([['gmail.main', 'gmail.main']])],
+      ['work', new Map([['gmail.main', 'gmail.main']])],
+    ]);
+
+    await applyMoves(files, await planMoves(files, ['personal', 'work'], shared));
+
+    expect(await files.has(hoisted('connections.v1', 'gmail.main'))).toBe(true);
+    expect(await files.has(under('work', 'connections.v1', 'gmail.main'))).toBe(true);
+  });
+
+  test('the discovery cache is keyed on the provider, so the first profile wins', async () => {
+    // Not per connection: `open.ts` reads it by manifest id, and a miss or a
+    // corrupt entry both mean "not discovered yet", which `connect` refreshes.
+    const files = createMemoryBlobStore();
+    await files.put(under('personal', 'discovery', 'gmail'), bytes('["personal"]'));
+    await files.put(under('work', 'discovery', 'gmail'), bytes('["work"]'));
+
+    await applyMoves(files, await planMoves(files, ['personal', 'work'], new Map()));
+
+    expect(await files.get(hoisted('discovery', 'gmail'))).toEqual(bytes('["personal"]'));
+    expect(await files.has(under('work', 'discovery', 'gmail'))).toBe(true);
+  });
+
+  test('the audit log is still concatenated object by object', async () => {
+    // One object per event under a key that already carries the timestamp, so
+    // three profiles' logs merge by moving them and nothing collides.
+    const files = createMemoryBlobStore();
+    await files.put('data/personal/audit.log/2026/01/a.json', bytes('one'));
+    await files.put('data/work/audit.log/2026/01/b.json', bytes('two'));
+
+    await applyMoves(files, await planMoves(files, ['personal', 'work'], new Map()));
+
+    expect(await files.get('data/audit.log/2026/01/a.json')).toEqual(bytes('one'));
+    expect(await files.get('data/audit.log/2026/01/b.json')).toEqual(bytes('two'));
+  });
+});
+
+describe('merging credentials', () => {
+  async function credentials(root: string, profile: string) {
+    await mkdir(join(root, 'data', profile), { recursive: true });
+    return createFileSecretStore({ path: join(root, 'data', profile, 'credentials.enc') });
+  }
+
+  const withGithub = (profile: string, account: string) =>
+    legacy({
+      profile,
+      connections: `  - { id: main, provider: github, account: ${account} }`,
+    });
+
+  test("a renamed connection's credential ref follows the rename", async () => {
+    // `credentialRefForConnection` derives `<provider>/<id>`, and the hoist
+    // renamed the connection with `{ ...connection, id }` — leaving the derived
+    // ref behind. Two profiles then claimed `github/main` with two different
+    // tokens, which aborted the migration on a rename it had just made itself.
+    const root = await workspace({
+      personal: withGithub('personal', 'example-org'),
+      work: withGithub('work', 'example-user'),
+    });
+
+    await (await credentials(root, 'personal')).set('github/main', 'token-for-org');
+    await (await credentials(root, 'work')).set('github/main', 'token-for-user');
+
+    await migrateToContract3(root, { apply: true });
+
+    expect(await refs(root)).toContain('github.main');
+    expect(await refs(root)).toContain('github.main_2');
+
+    const merged = createFileSecretStore({ path: join(root, 'data', 'credentials.enc') });
+    expect(await merged.get('github/main')).toBe('token-for-org');
+    expect(await merged.get('github/main_2')).toBe('token-for-user');
+  });
+
+  test('the endpoint token is left behind rather than picked between', async () => {
+    // Every profile keeps it under one ref because the schema defaults
+    // `token_ref` to `profile/token`. One store now, so three profiles are
+    // three values for one key and no merge means anything. It is minted
+    // locally, `ensureProfileToken` writes a fresh one on the next command, and
+    // the old stores are not deleted — so nothing has to be authorised again.
+    const root = await workspace({
+      personal: legacy({ profile: 'personal' }),
+      work: legacy({ profile: 'work' }),
+    });
+
+    await (await credentials(root, 'personal')).set('profile/token', 'llk_personal');
+    await (await credentials(root, 'work')).set('profile/token', 'llk_work');
+
+    const migration = await migrateToContract3(root, { apply: true });
+
+    const merged = createFileSecretStore({ path: join(root, 'data', 'credentials.enc') });
+    expect(await merged.get('profile/token')).toBe(null);
+    expect(migration.changes.join('\n')).toContain('profile/token');
+    // Not deleted: the old store is the only copy, and it stays one.
+    expect(await (await credentials(root, 'personal')).get('profile/token')).toBe('llk_personal');
+  });
+
+  test('a ref two profiles genuinely disagree on refuses before anything is written', async () => {
+    // Same provider and account, so the hoist merges them into one row and
+    // there is no rename to separate the refs. Both values are real, and this
+    // must not pick. The refusal has to land in the *plan*: it used to throw
+    // from `mergeCredentials`, by which point `rewriteRegistry` had already
+    // stamped the workspace at contract 3.
+    const root = await workspace({
+      personal: withGithub('personal', 'example-org'),
+      work: withGithub('work', 'example-org'),
+    });
+
+    await (await credentials(root, 'personal')).set('github/main', 'one');
+    await (await credentials(root, 'work')).set('github/main', 'two');
+
+    await expect(migrateToContract3(root, { apply: true })).rejects.toThrow(
+      /cannot choose between them/,
+    );
+
+    expect((await readYaml(root, 'lanes-link.yaml'))['contract']).toBe(2);
+    expect((await readYaml(root, 'profiles/personal.yaml'))['contract']).toBe(2);
+  });
+
+  test('the preview reports the same refs the apply writes', async () => {
+    const root = await workspace({ personal: legacy({ profile: 'personal' }) });
+    await (await credentials(root, 'personal')).set('memory/main', 'value');
+    await (await credentials(root, 'personal')).set('profile/token', 'llk_one');
+
+    const preview = await migrateToContract3(root, { apply: false });
+    expect(preview.credentials).toEqual(['memory/main']);
+
+    await migrateToContract3(root, { apply: true });
+    const merged = createFileSecretStore({ path: join(root, 'data', 'credentials.enc') });
+    expect(await merged.get('memory/main')).toBe('value');
   });
 });

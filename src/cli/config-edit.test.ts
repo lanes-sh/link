@@ -508,3 +508,45 @@ oauth_apps: {}
     expect(repairLines(ensureOwnerLayer(again.connections, again.profile))).toEqual([]);
   });
 });
+
+describe('appending to a key that is not there yet', () => {
+  test('a second append lands, and the sequence is written as a block', () => {
+    // `addTo` used to create the sequence by setting a plain JS array. That is
+    // not a collection the document API will traverse — the hazard `setIn`
+    // documents one method above — so the *first* append landed and the second
+    // found a value with no `.add` and threw `existing.add is not a function`.
+    // `#expand` reads `.items` and was silently a no-op for the same reason,
+    // leaving the sequence in flow style.
+    //
+    // Latent for as long as every path this is called with already existed.
+    // `grants:` is genuinely absent on a contract-2 profile being repaired,
+    // which is what finally made the second append reachable — and what turned
+    // one upgrade into three warnings and an unrepaired workspace.
+    const document = ConfigDocument.fromText('contract: 3\n');
+
+    document.addTo(['grants'], { connection: 'example.a', allow: ['example.*'], deny: [] });
+    document.addTo(['grants'], { connection: 'example.b', allow: ['example.*'], deny: [] });
+
+    const rows = (document.getIn(['grants']) as { items?: unknown[] })?.items ?? [];
+    expect(rows).toHaveLength(2);
+    expect(document.toString()).toContain('grants:\n  - connection: example.a');
+    expect(document.toString()).toContain('  - connection: example.b');
+  });
+
+  test('the whole owner layer is granted to a profile with no grants block', () => {
+    // The path that actually broke: seven surfaces, appended one at a time, to
+    // a profile that has never had a `grants:` key. The first surface used to
+    // succeed and the second threw, so the profile was left with one grant of
+    // seven and the command reported a warning instead of a repair.
+    const connections = ConfigDocument.fromText(newConnectionsTemplate(), CONNECTIONS_FILE);
+    const profile = ConfigDocument.fromText('contract: 3\n');
+
+    const repair = ensureOwnerLayer(connections, profile);
+
+    const rows = (profile.getIn(['grants']) as { items?: unknown[] })?.items ?? [];
+    expect(rows).toHaveLength(DEFAULT_SURFACES.length);
+    for (const surface of DEFAULT_SURFACES) {
+      expect(repair.granted).toContain(`${surface}.*`);
+    }
+  });
+});
