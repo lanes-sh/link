@@ -122,6 +122,34 @@ describe('declaredRefs', () => {
 
     expect(refs).toEqual(['profile/token', 'vault/document']);
   });
+
+  test('a ref a surviving profile also declares is left alone', () => {
+    // The credential store is one file per workspace since contract 3, and
+    // every profile takes the template default `token_ref: profile/token`. So
+    // removing one profile deleted the endpoint token the others are served by,
+    // and the deployed revision then refused every request with "No profile
+    // token in this target's credential store". The vault ref is read off the
+    // target and is identical for every profile there, which made the sibling's
+    // sealed items unrecoverable in the same command.
+    const sealed = target({ vault: { adapter: 'secret', ref: 'vault/document' } } as never);
+
+    expect(declaredRefs(config(), sealed, [config()])).toEqual([]);
+  });
+
+  test('with nobody staying, it is still the profile\'s to lose', () => {
+    // The last profile in a workspace: there is no survivor to share with, so
+    // the token and the vault go with it.
+    const sealed = target({ vault: { adapter: 'secret', ref: 'vault/document' } } as never);
+
+    expect(declaredRefs(config(), sealed, [])).toEqual(['profile/token', 'vault/document']);
+  });
+
+  test('a survivor with a different token ref does not protect this one', () => {
+    // Sharing is the reason to keep a ref, not the mere existence of a sibling.
+    const other = config({ auth: { mode: 'bearer', token_ref: 'other/token' } } as never);
+
+    expect(declaredRefs(config(), target(), [other])).toContain('profile/token');
+  });
 });
 
 // --- removalPlan -----------------------------------------------------------

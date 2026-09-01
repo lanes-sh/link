@@ -5,12 +5,7 @@ import type { AuthorizationSurface } from './oauth.ts';
 import type { ProfileRuntime } from './mcp/index.ts';
 import { AuthenticatorChain } from '#auth';
 import { openAuthorization } from './authorization.ts';
-import { serveRead, type RunningReadListener } from './read/listener.ts';
-import {
-  PAIR_CERT_REF,
-  PAIR_KEY_REF,
-  PAIR_TOKEN_REF,
-} from '#cli/commands/operate/pair.ts';
+import { openReadListener } from './read/open.ts';
 import type { Logger } from '#connectivity';
 import { silentLogger } from './logging.ts';
 import { listProfiles, readConnections } from '#profile';
@@ -133,18 +128,33 @@ async function openReconciled(options: {
       }
     }
 
-    for (const [name, runtime] of runtimes) {
-      // The accounts this profile reaches, which is what reconcile is about.
-      const granted = runtime.connections.map(({ connection }) => connection);
-      const result = await planReconcile(granted, runtime.state, runtime.credentials, runtime.manifestFor);
-      if (!planIsNoop(result)) {
-        reporter.reconciled({
-          profile: name,
-          plan: formatPlan(result),
-          ofMany: runtimes.size > 1,
-        });
-        await applyReconcile(granted, runtime.state, result);
-      }
+    // Once for the workspace, over every connection the workspace holds.
+    //
+    // Runtime state is one store per workspace since contract 3, and reconcile
+    // disables everything in it that the connection list does not declare — so
+    // running it per profile over that profile's *grants* had each pass disable
+    // the connections only the other profiles granted. Two profiles was enough:
+    // the second pass disabled the first's accounts, every later call was
+    // refused `denied_connection_unauthorized`, and restarting flipped which
+    // profile survived.
+    //
+    // The primary's runtime is used for the stores because they are the same
+    // stores for every profile here. `workspaceConnections` is the whole list,
+    // which is what "undeclared" has to be measured against.
+    const declared = primary.workspaceConnections;
+    const result = await planReconcile(
+      declared,
+      primary.state,
+      primary.credentials,
+      primary.manifestFor,
+    );
+    if (!planIsNoop(result)) {
+      reporter.reconciled({
+        profile: primary.resolution.profile,
+        plan: formatPlan(result),
+        ofMany: false,
+      });
+      await applyReconcile(declared, primary.state, result);
     }
 
     return { primary, runtimes };
@@ -341,56 +351,5 @@ export async function startStdioEndpoint(
   } catch (error) {
     await closeAll(runtimes);
     throw error;
-  }
-}
-
-/**
- * The dashboard's read surface, if this workspace has been paired.
- *
- * Absent by default and absent for every workspace that has not run
- * `lanes link pair`, which is the whole shape of ADR-063: a browser origin
- * reaching loopback is a grant somebody makes deliberately, not a property of
- * running an endpoint. All three pieces must be present — the token and both
- * halves of the certificate — because a partial pairing would bind a port
- * serving something no browser will connect to.
- *
- * Bound one above the MCP port, and a failure to bind is reported rather than
- * fatal: the endpoint is what the operator ran this for, and refusing to serve
- * it because a second port is occupied would be the wrong trade.
- */
-async function openReadListener(
-  primary: Runtime,
-  server: RunningServer,
-  profiles: () => ReadonlyMap<string, ProfileRuntime>,
-  log: Logger,
-): Promise<RunningReadListener | null> {
-  const [token, cert, key] = await Promise.all([
-    primary.credentials.get(PAIR_TOKEN_REF),
-    primary.credentials.get(PAIR_CERT_REF),
-    primary.credentials.get(PAIR_KEY_REF),
-  ]);
-
-  if (token === null || cert === null || key === null) return null;
-
-  const bound = new URL(server.url);
-
-  try {
-    return serveRead({
-      host: bound.hostname,
-      port: Number(bound.port) + 1,
-      workspace: primary.target,
-      profiles,
-      audit: primary.audit,
-      connections: async () =>
-        (await readConnections(primary.resolution.workspaceRoot)).connections,
-      token,
-      tls: { cert, key },
-    });
-  } catch (error) {
-    log.warn('could not serve the dashboard read surface', {
-      port: Number(bound.port) + 1,
-      reason: error instanceof Error ? error.message : String(error),
-    });
-    return null;
   }
 }

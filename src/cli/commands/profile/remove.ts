@@ -21,6 +21,7 @@ import {
   resolveProfileOnly,
   type GlobalFlags,
 } from '../../runtime.ts';
+import { loadWorkspaceProfiles } from '#profile';
 import { removalPlan, renderPlan, type RemovalItem, type RemovalPlan } from './removal.ts';
 
 /**
@@ -265,6 +266,11 @@ export async function removeProfile(name: string, flags: RemoveFlags): Promise<v
     openSecrets: (target) => openSecretStoreFor(config, root, target),
     openBlobs: (target, area) => openBlobStoreFor(config, root, target, area),
     readDefaultProfile: async () => (await readWorkspace(root))?.default_profile,
+    // What the workspace keeps. The credential store is one file for all of
+    // them now, so anything a survivor declares is not this removal's to delete.
+    survivors: (await loadWorkspaceProfiles(root)).loaded
+      .filter((one) => one.profile !== name)
+      .map((one) => one.config),
   });
 
   renderPlan(plan);

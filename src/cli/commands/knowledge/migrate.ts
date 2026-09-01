@@ -43,20 +43,59 @@ export interface Movable {
  * it once means `localContents`, `removeLocal` and `moveOut` each became a loop
  * over this rather than a branch on a literal.
  */
-type LocalArea = { readonly store: BlobStore; readonly prefix: string };
+/**
+ * One area's local home: where to look, and what of that key is the repository's.
+ *
+ * Two prefixes rather than one, and the difference is the whole fix. `scope` is
+ * what is listed — `memory/<instance>/`, so a profile sees only the instance it
+ * grants. `prefix` is what is stripped to get the repository path, which stays
+ * `memory/<instance>/<file>` because that is the layout ADR-041 documents and
+ * what makes two profiles' notes distinguishable in one repository.
+ *
+ * Collapsing them listed every profile's memory and then wrote it flat.
+ */
+type LocalArea = {
+  readonly store: BlobStore;
+  readonly scope: string;
+  readonly prefix: string;
+};
+
+/** The connection ids this profile's memory and entities live under. */
+export interface Instances {
+  readonly memory: string;
+  readonly entities: string;
+}
 
 function localAreas(
   storage: BlobStore,
   skills: BlobStore | null,
+  /** Which instance of each surface this profile grants (ADR-059). */
+  instances: Instances,
 ): Record<KnowledgeArea, LocalArea> {
   return {
-    memory: { store: storage, prefix: `${KNOWLEDGE_LAYOUT.memory}/` },
+    // Scoped to the instance this profile grants, not to the surface.
+    //
+    // `layout.blobs()` is the whole workspace since contract 3, so a prefix of
+    // `memory/` matched every profile's memory — and `knowledge use github
+    // --migrate --profile personal` therefore committed `work`'s notes to
+    // personal's repository and then deleted them locally, leaving `work`
+    // reading an empty store with no knowledge block of its own. `skills` was
+    // already connection-scoped, which is why it alone was correct.
+    memory: {
+      store: storage,
+      scope: `${KNOWLEDGE_LAYOUT.memory}/${instances.memory}/`,
+      prefix: `${KNOWLEDGE_LAYOUT.memory}/`,
+    },
     // Null becomes an empty area rather than a refusal: a profile granting no
     // skills connection has none to move, and `knowledge use` should still move
     // its memory and entities rather than failing on the one area that is empty
     // by construction (ADR-059).
-    skills: { store: skills ?? EMPTY_AREA, prefix: '' },
-    entities: { store: storage, prefix: `${KNOWLEDGE_LAYOUT.entities}/` },
+    skills: { store: skills ?? EMPTY_AREA, scope: '', prefix: '' },
+    entities: {
+      store: storage,
+      scope: `${KNOWLEDGE_LAYOUT.entities}/${instances.entities}/`,
+      prefix: `${KNOWLEDGE_LAYOUT.entities}/`,
+    },
   };
 }
 
@@ -85,14 +124,15 @@ export async function localContents(
   /** Null when the profile grants no skills connection (ADR-059). */
   skills: BlobStore | null,
   knowledge: KnowledgeConfig,
+  instances: Instances,
 ): Promise<Movable[]> {
-  const areas = localAreas(storage, skills);
+  const areas = localAreas(storage, skills, instances);
   const found: Movable[] = [];
 
   for (const area of AREAS) {
-    const { store, prefix } = areas[area];
+    const { store, scope, prefix } = areas[area];
 
-    for (const entry of await store.list(prefix)) {
+    for (const entry of await store.list(scope)) {
       const data = await store.get(entry.key);
       if (data === null) continue; // Listed then deleted; not worth failing over.
 
@@ -148,8 +188,9 @@ export async function removeLocal(
   /** Null when the profile grants no skills connection (ADR-059). */
   skills: BlobStore | null,
   movable: readonly Movable[],
+  instances: Instances,
 ): Promise<void> {
-  const areas = localAreas(storage, skills);
+  const areas = localAreas(storage, skills, instances);
 
   for (const item of movable) {
     const { store, prefix } = areas[item.area];
@@ -172,9 +213,10 @@ export async function moveOut(
   storage: BlobStore,
   /** Null when the profile grants no skills connection (ADR-059). */
   skills: BlobStore | null,
+  instances: Instances,
 ): Promise<Record<KnowledgeArea, number>> {
   const { entries } = await repository.entries();
-  const areas = localAreas(storage, skills);
+  const areas = localAreas(storage, skills, instances);
   const counts: Record<KnowledgeArea, number> = { memory: 0, skills: 0, entities: 0 };
 
   for (const entry of entries.values()) {

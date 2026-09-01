@@ -100,7 +100,7 @@ async function useGithub(flags: KnowledgeFlags): Promise<void> {
   const runtime = await openRuntime(flags, { fetch: flags.fetch });
   try {
     announce(runtime.resolution);
-    const selection = ` --profile ${runtime.resolution.profile} --target ${runtime.target}`;
+    const selection = ` --profile ${runtime.resolution.profile} --workspace ${runtime.target}`;
 
     if (runtime.knowledge) {
       print(style.dim(`  This profile already reads ${runtime.knowledge.describe}.`));
@@ -134,7 +134,16 @@ async function useGithub(flags: KnowledgeFlags): Promise<void> {
       ['  token', viewer, style.dim('can write')],
     ]);
 
-    const movable = await localContents(runtime.storage, runtime.skills ?? null, knowledge);
+    // Which instances this profile grants, so `memory/` and `entities/` reach
+    // only its own and not every profile's (ADR-059).
+    const instances = grantedInstances(runtime.config);
+
+    const movable = await localContents(
+      runtime.storage,
+      runtime.skills ?? null,
+      knowledge,
+      instances,
+    );
     const moving = await decideMigration(movable.length > 0, flags);
 
     if (moving) {
@@ -153,7 +162,7 @@ async function useGithub(flags: KnowledgeFlags): Promise<void> {
       if (flags.keep) {
         print(style.dim('  --keep: the local copies are still there, and are no longer read.'));
       } else {
-        await removeLocal(runtime.storage, runtime.skills ?? null, movable);
+        await removeLocal(runtime.storage, runtime.skills ?? null, movable, instances);
         print(ok('removed the local copies'));
       }
     } else if (movable.length > 0) {
@@ -208,7 +217,13 @@ async function useLocal(flags: KnowledgeFlags): Promise<void> {
       flags.migrate ??
       (await agreedTo(flags, `Copy everything in ${knowledge.repo} back onto this target's storage?`))
     ) {
-      const moved = await moveOut(repository, knowledge, local.storage, local.skills);
+      const moved = await moveOut(
+        repository,
+        knowledge,
+        local.storage,
+        local.skills,
+        grantedInstances(runtime.config),
+      );
       print(
         ok(
           `wrote back ${moved.memory} memory entr${moved.memory === 1 ? 'y' : 'ies'}, ` +
@@ -319,4 +334,22 @@ async function agreedTo(flags: KnowledgeFlags, question: string): Promise<boolea
   const yes = await confirm(question, true);
   if (!yes) print(style.dim('  cancelled'));
   return yes;
+}
+
+/**
+ * The memory and entities instances one profile grants.
+ *
+ * `main` where a profile grants none, which is what a profile that predates the
+ * owner layer looks like and is also where a fresh one puts them. The point is
+ * that this is never the *surface* — `memory/` alone matches every profile's
+ * notes now that the blob root is the workspace's.
+ */
+function grantedInstances(config: Parameters<typeof soleGrantFor>[0]): {
+  memory: string;
+  entities: string;
+} {
+  return {
+    memory: soleGrantFor(config, 'memory') ?? 'main',
+    entities: soleGrantFor(config, 'entities') ?? 'main',
+  };
 }

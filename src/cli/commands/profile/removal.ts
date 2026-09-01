@@ -30,7 +30,23 @@ import { print, style, warn } from '../../output.ts';
  * reports those rather than guessing, which is the honest position: a guess
  * here is indistinguishable from another profile's credential.
  */
-export function declaredRefs(config: Config, declared: TargetConfig): string[] {
+export function declaredRefs(
+  config: Config,
+  declared: TargetConfig,
+  /**
+   * What the profiles that are staying declare.
+   *
+   * Nothing in here is deleted, however plainly the profile being removed also
+   * declares it. The credential store is one file per *workspace* since
+   * contract 3, and every profile takes the template default
+   * `token_ref: profile/token` — so removing one profile deleted the endpoint
+   * token the others are served by, and the deployed revision then refused every
+   * request with "No profile token in this target's credential store". The vault
+   * ref is read off the target and is identical for every profile there, which
+   * made the sibling's sealed items unrecoverable in the same command.
+   */
+  survivors: readonly Config[] = [],
+): string[] {
   const refs = new Set<string>([config.auth.token_ref]);
 
   // Read off the *target*, not the profile. `vaultTargetSchema` sits inside
@@ -55,7 +71,20 @@ export function declaredRefs(config: Config, declared: TargetConfig): string[] {
     refs.add(config.auth.authorization.client_id_ref);
   }
 
-  return [...refs];
+  // Shared with a profile that is staying, so not ours to delete. Computed the
+  // same way for the survivors as for this one, because "what does a profile
+  // declare" has to have one answer.
+  const kept = new Set(
+    survivors.flatMap((other) => [
+      other.auth.token_ref,
+      ...(declared.vault?.adapter === 'secret' ? [declared.vault.ref ?? 'vault/document'] : []),
+      ...(other.auth.authorization?.mode === 'oidc'
+        ? [other.auth.authorization.client_id_ref]
+        : []),
+    ]),
+  );
+
+  return [...refs].filter((ref) => !kept.has(ref));
 }
 
 export interface RemovalItem {
@@ -89,6 +118,14 @@ export interface PlanOptions {
   readonly openSecrets: (target: string) => Promise<SecretStore>;
   readonly openBlobs: (target: string, area?: string) => Promise<BlobStore>;
   readonly readDefaultProfile?: (() => Promise<string | undefined>) | undefined;
+  /**
+   * The profiles that are staying.
+   *
+   * So a credential both this one and a survivor declares is left alone — see
+   * `declaredRefs`. Defaulted to empty, which is the single-profile workspace
+   * and the shape every existing caller had.
+   */
+  readonly survivors?: readonly Config[] | undefined;
 }
 
 const reason = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause));
@@ -145,7 +182,7 @@ export async function removalPlan(
     try {
       const secrets = await options.openSecrets(name);
       const present = await secrets.list();
-      const mine = new Set(declaredRefs(config, declared));
+      const mine = new Set(declaredRefs(config, declared, options.survivors ?? []));
 
       for (const ref of present) if (mine.has(ref)) items.push({ target: name, kind: 'secret', id: ref });
 
