@@ -193,7 +193,7 @@ the whole inventory by connector and credential type:
 
 The same code, the same config, in all three. Only the storage adapters change.
 
-| | **Local** | **Your own cloud** | **Lanes Cloud** |
+| | **Local** | **Self-Hosted** | **Lanes Cloud** |
 |---|---|---|---|
 | Runs on | your machine | your GCP project, on Cloud Run | managed for you |
 | Needs | Bun, nothing else | a Google Cloud billing account | — |
@@ -201,7 +201,7 @@ The same code, the same config, in all three. Only the storage adapters change.
 | Reachable from | that machine | anywhere, including your phone | anywhere |
 | Status | ready | ready | **coming soon** |
 
-**Local** is the fastest way to start, and where most people stay. **Your own cloud** is what you
+**Local** is the fastest way to start, and where most people stay. **Self-Hosted** is what you
 want if you need to reach it from claude.ai, ChatGPT, or a phone — `lanes link deploy` creates the
 project, the bucket, the service account, and the revision on its first run. **Lanes Cloud** is the
 managed version; because it is the same data model, a workspace you build today moves across rather
