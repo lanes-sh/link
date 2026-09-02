@@ -14,6 +14,7 @@ import { ConfigDocument } from './config-edit.ts';
 import { C3 } from './contract3-layout.ts';
 import { grantingProfiles, planMoves, type DataPlan, type Renames } from './contract4-data.ts';
 import { planRenames } from './contract4-rename.ts';
+import { ensureRegistryContract } from './config-repair-sweep.ts';
 import {
   assertConnectionsSavable,
   readConnectionRows,
@@ -153,6 +154,12 @@ export async function migrateToContract4(
   }
 
   await renameRegistry(workspaceRoot);
+
+  // The registry's own stamp, which the byte-for-byte rename carries across
+  // unchanged. Here rather than inside `renameRegistry` because that function
+  // returns early on a workspace already holding `workspaces.yaml`, which is
+  // exactly the workspace whose stamp is stale.
+  await ensureRegistryContract(workspaceRoot);
   await applyMoves(files, plan.moves);
 
   // Credentials before the rows: a ref is derived from the id, so the rows must
