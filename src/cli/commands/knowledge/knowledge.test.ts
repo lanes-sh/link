@@ -373,7 +373,11 @@ describe('knowledge show', () => {
 
     const output = await captureStdout(() => knowledgeShow({ ...SELECT }));
 
-    expect(output).toContain('data/skills.d');
+    // Inside the profile, and under the skills connection it grants (ADR-066).
+    // Both segments are shown because both decide which bytes these are.
+    expect(output).toContain('profiles/personal/memory');
+    expect(output).toContain('profiles/personal/skills.d/main');
+    expect(output).toContain('profiles/personal/entities');
     expect(output).toContain('lanes link knowledge use github');
   });
 

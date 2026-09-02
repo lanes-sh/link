@@ -145,12 +145,17 @@ describe('the owner layer follows the target — ADR-014', () => {
 
     try {
       await runtime.vault.put('owner', { id: 'token', value: 'secret' });
-      // Under the vault connection this profile grants (ADR-059), not under the
-      // profile — a profile owns no bytes now, and two profiles granting the
-      // same vault reach the same sealed document.
-      expect(await Bun.file(join(root, 'data', 'vault.d', 'main.enc')).exists()).toBe(true);
+      // Inside the profile, under the vault connection it grants — both
+      // segments (ADR-066). Two profiles granting one vault hold two sealed
+      // documents, which is the whole reversal: the wrong answer here is a
+      // credential read by the wrong profile.
+      expect(
+        await Bun.file(join(root, layout.vault('personal', 'main'))).exists(),
+      ).toBe(true);
       // Its own key, never the credential store's.
-      expect(await Bun.file(join(root, 'data', 'vault.d', 'main.enc.key')).exists()).toBe(true);
+      expect(
+        await Bun.file(join(root, `${layout.vault('personal', 'main')}.key`)).exists(),
+      ).toBe(true);
     } finally {
       await runtime.close();
     }

@@ -48,7 +48,7 @@ describe('what a deploy sends up', () => {
     // is a provider the revision has never heard of.
     expect(isWorkspaceConfig('profiles/personal/skills.d/main/review-diff/SKILL.md')).toBe(true);
     expect(isWorkspaceConfig('profiles/personal/skills.d/main/review-diff.md')).toBe(true);
-    expect(isWorkspaceConfig('data/providers.d/acme.yaml')).toBe(true);
+    expect(isWorkspaceConfig('providers.d/acme.yaml')).toBe(true);
   });
 
   test('the old paths do not go — nothing reads them now', () => {
@@ -74,20 +74,20 @@ describe('what a deploy sends up', () => {
     }
   });
 
-  test('reaching into data/ matches whole segments, never prefixes', () => {
-    // The allowlist names two directories inside the tree it otherwise refuses
+  test('the authored areas match whole segments, never prefixes', () => {
+    // The allowlist names two areas inside a tree it otherwise refuses
     // wholesale. A prefix match would send anything merely starting with the
-    // same letters, and the thing on the other side of that boundary is the
-    // credential store.
+    // same letters, and the thing on the other side of that boundary is a
+    // profile's sealed vault.
     for (const key of [
-      'data/skills.detour/leak.md',
-      'data/providers.disabled/acme.yaml',
-      'data/skills.d',
-      'data/providers.d',
+      'profiles/personal/skills.detour/leak.md',
+      'providers.disabled/acme.yaml',
+      'profiles/personal/skills.d',
+      'providers.d',
       // The area itself, with a connection but no file — a directory is not a
       // file to send.
       'profiles/personal/skills.d/main',
-      'data//skills.d/review-diff.md',
+      'profiles/personal//skills.d/review-diff.md',
     ]) {
       expect({ key, sent: isWorkspaceConfig(key) }).toEqual({ key, sent: false });
     }
@@ -109,13 +109,36 @@ describe('what a deploy sends up', () => {
     expect(isWorkspaceConfig('profiles/work/profile.yaml', ['personal'])).toBe(false);
   });
 
-  test('the authored areas are not filtered by profile, because they cannot be', () => {
-    // Skills and manifests are keyed by *connection* now (ADR-057, ADR-059), and
-    // any profile in the workspace may grant one — so "only this profile's
-    // skills" is not a set that can be computed, and withholding them would
-    // deploy an endpoint whose prompts are missing.
+  test('skills are filtered by profile and manifests are not', () => {
+    // The two authored areas sit at different levels and are filtered
+    // differently, which follows from where ADR-066 and ADR-057 put them. A
+    // manifest is the workspace's — it defines a connection any profile may
+    // grant — so it goes up whole. Skills are inside a profile again, so
+    // sending them on a deploy that does not carry that profile would put one
+    // profile's procedures in front of another's endpoint.
     expect(isWorkspaceConfig('profiles/personal/skills.d/main/a.md', ['personal'])).toBe(true);
-    expect(isWorkspaceConfig('data/providers.d/acme.yaml', ['personal'])).toBe(true);
+    expect(isWorkspaceConfig('profiles/work/skills.d/main/a.md', ['personal'])).toBe(false);
+
+    expect(isWorkspaceConfig('providers.d/acme.yaml', ['personal'])).toBe(true);
+    expect(isWorkspaceConfig('providers.d/acme.yaml', ['work'])).toBe(true);
+  });
+
+  test('a profile keeps its state, its vault and its blobs to itself', () => {
+    // Everything else under `profiles/<name>/` is state, a sealed vault, or a
+    // provider's own bytes — none of it configuration, and the vault is a
+    // credential. Named here because the profile directory is now inside the
+    // allowlist's reach, where before `data/` excluded the lot.
+    for (const key of [
+      'profiles/personal/state.kv/cursors%2Ev1/x.json',
+      'profiles/personal/vault.d/main.enc',
+      'profiles/personal/vault.d/main.enc.key',
+      'profiles/personal/memory/main/note.md',
+      'profiles/personal/gmail/ada_lovelace/attachments/x.pdf',
+      'credentials.enc',
+      'credentials.enc.key',
+    ]) {
+      expect({ key, sent: isWorkspaceConfig(key, ['personal']) }).toEqual({ key, sent: false });
+    }
   });
 
   test('the connections file always goes, and the registry never does', () => {
@@ -171,8 +194,8 @@ oauth_apps: {}
   // The grant is what says the surface is reachable now: a row *is* the
   // connection and the rule together (ADR-058), so there is no second half to
   // check for.
-  const has = async (root: string, name: string): Promise<boolean> =>
-    (await readFile(join(root, 'profiles', name, 'profile.yaml'), 'utf8')).includes('connection: setup.');
+  const has = async (root: string, key: string): Promise<boolean> =>
+    (await readFile(join(root, 'profiles', key), 'utf8')).includes('connection: setup.');
 
   test('every profile it would upload, when none is named', async () => {
     const root = await workspace('personal', 'work');
@@ -182,8 +205,8 @@ oauth_apps: {}
     // `work` is going to the bucket too, so it is going to be served. Repairing
     // a narrower set than the upload sends would leave it served and dark,
     // which is this bug one profile over.
-    expect(await has(root, 'personal')).toBe(true);
-    expect(await has(root, 'work')).toBe(true);
+    expect(await has(root, 'personal/profile.yaml')).toBe(true);
+    expect(await has(root, 'work/profile.yaml')).toBe(true);
   });
 
   test('only the named one, matching what the upload sends', async () => {
@@ -191,10 +214,10 @@ oauth_apps: {}
 
     await repairOwnerLayer(root, ['personal']);
 
-    expect(await has(root, 'personal')).toBe(true);
+    expect(await has(root, 'personal/profile.yaml')).toBe(true);
     // Not touched: it is not going up, so editing it would be this command
     // changing config it was not asked about.
-    expect(await has(root, 'work')).toBe(false);
+    expect(await has(root, 'work/profile.yaml')).toBe(false);
   });
 
   test('reports where it is told to, so a --json caller keeps its stdout', async () => {
@@ -207,7 +230,7 @@ oauth_apps: {}
 
     await repairOwnerLayer(root, undefined, { report: (line) => lines.push(line) });
 
-    expect(await has(root, 'personal')).toBe(true);
+    expect(await has(root, 'personal/profile.yaml')).toBe(true);
     expect(lines.join('\n')).toContain('owner layer');
   });
 
@@ -247,7 +270,7 @@ oauth_apps: {}
 
       await repairOwnerLayer(root, undefined);
 
-      expect(await has(root, 'personal')).toBe(true);
+      expect(await has(root, 'personal/profile.yaml')).toBe(true);
       expect(await readFile(join(root, 'profiles', 'personal.example.yaml'), 'utf8')).toBe(
         OLD('personal'),
       );
@@ -255,12 +278,19 @@ oauth_apps: {}
 
     test('a nested directory under profiles/ is not a profile', async () => {
       const root = await workspace('personal');
+      // Neither shape counts: `archive/old.yaml` is not a profile at the
+      // contract-3 spelling, and `archive/old/profile.yaml` is not one at the
+      // contract-4 spelling either — a profile is a *direct* child of
+      // `profiles/`, and a bucket listing is flat so a nested one would
+      // otherwise look like one.
       await write(root, 'archive/old.yaml', OLD('old'));
+      await write(root, 'archive/old/profile.yaml', OLD('old'));
 
       await repairOwnerLayer(root, undefined);
 
-      expect(await has(root, 'personal')).toBe(true);
-      expect(await has(root, 'archive/old')).toBe(false);
+      expect(await has(root, 'personal/profile.yaml')).toBe(true);
+      expect(await has(root, 'archive/old/profile.yaml')).toBe(false);
+      expect(await has(root, 'archive/old.yaml')).toBe(false);
     });
 
     test('a profile that cannot be read is warned about, not fatal', async () => {
@@ -272,7 +302,7 @@ oauth_apps: {}
       // sibling nobody named should not cost the operator their rollout.
       await repairOwnerLayer(root, undefined);
 
-      expect(await has(root, 'personal')).toBe(true);
+      expect(await has(root, 'personal/profile.yaml')).toBe(true);
     });
   });
 });
@@ -520,7 +550,7 @@ describe('the allowlist against a real workspace listing', () => {
       'connections.yaml': `contract: 3\nconnections: []\noauth_apps: {}\n`,
       [`${layout.skills('personal', 'main')}/review-diff/SKILL.md`]: '---\ndescription: d\n---\nb\n',
       [`${layout.skills('work', 'main')}/triage.md`]: '---\ndescription: d\n---\nb\n',
-      [`${layout.providers()}/acme.yaml`]: 'id: acme\n',
+      ['providers.d/acme.yaml']: 'id: acme\n',
       'credentials.enc': 'ciphertext',
       'credentials.enc.key': 'the key that opens it',
       'profiles/personal/vault.d/main.enc': 'ciphertext',
@@ -541,18 +571,18 @@ describe('the allowlist against a real workspace listing', () => {
   const landed = async (root: string): Promise<string[]> =>
     (await workspaceFiles(root).list('')).map((entry) => entry.key).sort();
 
-  test('the whole workspace goes, and nothing else in data/ does', async () => {
+  test('the whole workspace goes, and nothing a revision writes does', async () => {
     const { source, destination } = await populated();
 
     await uploadWorkspace(source, destination, undefined);
 
     expect(await landed(destination)).toEqual([
       'connections.yaml',
-      'data/providers.d/acme.yaml',
-      'profiles/personal/skills.d/main/review-diff/SKILL.md',
-      'profiles/personal/skills.d/work/triage.md',
       'profiles/personal/profile.yaml',
+      'profiles/personal/skills.d/main/review-diff/SKILL.md',
       'profiles/work/profile.yaml',
+      'profiles/work/skills.d/main/triage.md',
+      'providers.d/acme.yaml',
     ]);
   });
 
@@ -561,17 +591,15 @@ describe('the allowlist against a real workspace listing', () => {
 
     await uploadWorkspace(source, destination, ['personal']);
 
-    // The authored areas are keyed by connection now, and any profile may grant
-    // one — so "this profile's skills" is not a set that can be computed, and
-    // withholding them would deploy an endpoint whose prompts are missing
-    // (ADR-057, ADR-059). The profile files are still narrowed, which is the
-    // part that was ever about a profile.
+    // Both halves of the filter, in one listing: `work`'s declaration *and*
+    // its skills stay behind, because skills are inside a profile again
+    // (ADR-066). The manifest still goes — it is the workspace's, and defines a
+    // connection any profile may grant (ADR-057).
     expect(await landed(destination)).toEqual([
       'connections.yaml',
-      'data/providers.d/acme.yaml',
-      'profiles/personal/skills.d/main/review-diff/SKILL.md',
-      'profiles/personal/skills.d/work/triage.md',
       'profiles/personal/profile.yaml',
+      'profiles/personal/skills.d/main/review-diff/SKILL.md',
+      'providers.d/acme.yaml',
     ]);
   });
 
