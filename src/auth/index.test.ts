@@ -6,7 +6,8 @@ import { createFileSecretStore, generateCredentialKey, type SecretStore } from '
 import {
   BearerAuthenticator,
   generateProfileToken,
-  ownerPrincipal,
+  machinePrincipal,
+  mayReach,
   parseBearer,
   tokensMatch,
 } from './index.ts';
@@ -74,18 +75,114 @@ describe('generated tokens', () => {
 });
 
 describe('authentication', () => {
-  const options = {
-    profile: 'personal',
-    tokenRef: 'profile/token',
-    credentials: storeWith({ 'profile/token': 'llk_correct' }),
-  };
+  const SUBJECT = 'lanes:abc123';
 
-  test('accepts the profile token and resolves the owner principal', async () => {
+  /** One issued row, and the profiles its subject is a member of. */
+  const issued = (
+    overrides: {
+      credentials?: ReturnType<typeof storeWith>;
+      profilesFor?: (subject: string) => Promise<readonly string[]>;
+      now?: () => number;
+      rows?: readonly { id: string; subject: string; ref: string }[];
+    } = {},
+  ) => ({
+    profile: 'personal',
+    tokens: async () =>
+      overrides.rows ?? [{ id: 'tok1', subject: SUBJECT, ref: 'tokens/tok1' }],
+    credentials: overrides.credentials ?? storeWith({ 'tokens/tok1': 'llk_correct' }),
+    profilesFor: overrides.profilesFor ?? (async () => ['personal']),
+    ...(overrides.now ? { now: overrides.now } : {}),
+  });
+
+  const options = issued();
+
+  test('accepts an issued token and resolves the subject it names', async () => {
     const auth = new BearerAuthenticator(options);
     const outcome = await auth.authenticate('Bearer llk_correct');
 
     expect(outcome.ok).toBe(true);
-    if (outcome.ok) expect(outcome.principal).toEqual(ownerPrincipal('personal'));
+    // The whole of ADR-068: a static token is a person, with the profiles their
+    // membership gives them — not an owner with `profiles: undefined`, which is
+    // what it used to be and reached everything.
+    if (outcome.ok) {
+      expect(outcome.principal).toEqual(machinePrincipal(SUBJECT, 'personal', ['personal']));
+    }
+  });
+
+  test('reaches only the profiles its subject is a member of', async () => {
+    const auth = new BearerAuthenticator(
+      issued({ profilesFor: async () => ['personal', 'shared'] }),
+    );
+    const outcome = await auth.authenticate('Bearer llk_correct');
+
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(outcome.principal.profiles).toEqual(['personal', 'shared']);
+      // Not "all of them". `mayReach` reads `undefined` as unrestricted, so a
+      // machine principal that carried it would restore what this removed.
+      expect(outcome.principal.profiles).not.toBeUndefined();
+      expect(mayReach(outcome.principal, 'work')).toBe(false);
+    }
+  });
+
+  test('a subject no profile lists reaches nothing, rather than everything', async () => {
+    const auth = new BearerAuthenticator(issued({ profilesFor: async () => [] }));
+    const outcome = await auth.authenticate('Bearer llk_correct');
+
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(outcome.principal.profiles).toEqual([]);
+      expect(mayReach(outcome.principal, 'personal')).toBe(false);
+    }
+  });
+
+  test('a resolver that throws fails closed', async () => {
+    // Falling back to "every profile" here would restore the old behaviour at
+    // exactly the moment something is already wrong.
+    const auth = new BearerAuthenticator(
+      issued({
+        profilesFor: async () => {
+          throw new Error('members unreadable');
+        },
+      }),
+    );
+    expect(await auth.authenticate('Bearer llk_correct')).toEqual({
+      ok: false,
+      reason: 'invalid',
+    });
+  });
+
+  test('several rows each authenticate as their own subject', async () => {
+    const auth = new BearerAuthenticator(
+      issued({
+        rows: [
+          { id: 'tok1', subject: 'lanes:aaaaaa', ref: 'tokens/tok1' },
+          { id: 'tok2', subject: 'lanes:bbbbbb', ref: 'tokens/tok2' },
+        ],
+        credentials: storeWith({ 'tokens/tok1': 'llk_one', 'tokens/tok2': 'llk_two' }),
+        profilesFor: async (subject) => (subject === 'lanes:aaaaaa' ? ['personal'] : ['work']),
+      }),
+    );
+
+    const one = await auth.authenticate('Bearer llk_one');
+    const two = await auth.authenticate('Bearer llk_two');
+
+    expect(one.ok && one.principal.id).toBe('lanes:aaaaaa');
+    expect(one.ok && one.principal.profiles).toEqual(['personal']);
+    expect(two.ok && two.principal.id).toBe('lanes:bbbbbb');
+    expect(two.ok && two.principal.profiles).toEqual(['work']);
+  });
+
+  test('a row whose credential is missing matches nothing', async () => {
+    // What a half-finished `secrets push` leaves: the row travels with
+    // connections.yaml and the value does not.
+    const auth = new BearerAuthenticator(
+      issued({ credentials: storeWith({ 'tokens/tok2': 'llk_other' }) }),
+    );
+    expect(await auth.authenticate('Bearer llk_other')).toEqual({
+      ok: false,
+      reason: 'not_configured',
+    });
   });
 
   test('rejects a wrong token, a missing header, and a malformed one distinctly', async () => {
@@ -96,25 +193,21 @@ describe('authentication', () => {
     expect(await auth.authenticate('Basic xyz')).toEqual({ ok: false, reason: 'malformed' });
   });
 
-  test('fails closed when the profile has no token configured', async () => {
-    const auth = new BearerAuthenticator({ ...options, credentials: storeWith({}) });
+  test('fails closed when nothing has been issued', async () => {
+    const auth = new BearerAuthenticator(issued({ rows: [] }));
     expect(await auth.authenticate('Bearer anything')).toEqual({
       ok: false,
       reason: 'not_configured',
     });
   });
 
-  test("a token from one profile does not authenticate another profile's endpoint", async () => {
-    const personal = new BearerAuthenticator({
-      profile: 'personal',
-      tokenRef: 'profile/token',
-      credentials: storeWith({ 'profile/token': 'llk_personal' }),
-    });
-    const work = new BearerAuthenticator({
-      profile: 'work',
-      tokenRef: 'profile/token',
-      credentials: storeWith({ 'profile/token': 'llk_work' }),
-    });
+  test("a token from one workspace does not open another's endpoint", async () => {
+    const personal = new BearerAuthenticator(
+      issued({ credentials: storeWith({ 'tokens/tok1': 'llk_personal' }) }),
+    );
+    const work = new BearerAuthenticator(
+      issued({ credentials: storeWith({ 'tokens/tok1': 'llk_work' }) }),
+    );
 
     expect((await personal.authenticate('Bearer llk_work')).ok).toBe(false);
     expect((await work.authenticate('Bearer llk_personal')).ok).toBe(false);
@@ -122,12 +215,12 @@ describe('authentication', () => {
   });
 
   test('rotation is picked up once the cache is invalidated', async () => {
-    const credentials = storeWith({ 'profile/token': 'llk_old' });
-    const auth = new BearerAuthenticator({ ...options, credentials });
+    const credentials = storeWith({ 'tokens/tok1': 'llk_old' });
+    const auth = new BearerAuthenticator(issued({ credentials }));
 
     expect((await auth.authenticate('Bearer llk_old')).ok).toBe(true);
 
-    await credentials.set('profile/token', 'llk_new');
+    await credentials.set('tokens/tok1', 'llk_new');
     expect((await auth.authenticate('Bearer llk_old')).ok).toBe(true); // still cached
 
     auth.invalidateCache();
@@ -138,12 +231,12 @@ describe('authentication', () => {
   test('a rotated-in token is accepted without an explicit invalidation', async () => {
     // Nothing in production calls invalidateCache(), so a token the cache has
     // never seen has to be able to prove itself. The mismatch is the signal.
-    const credentials = storeWith({ 'profile/token': 'llk_old' });
-    const auth = new BearerAuthenticator({ ...options, credentials });
+    const credentials = storeWith({ 'tokens/tok1': 'llk_old' });
+    const auth = new BearerAuthenticator(issued({ credentials }));
 
     expect((await auth.authenticate('Bearer llk_old')).ok).toBe(true);
 
-    await credentials.set('profile/token', 'llk_new');
+    await credentials.set('tokens/tok1', 'llk_new');
     expect((await auth.authenticate('Bearer llk_new')).ok).toBe(true);
   });
 
@@ -153,12 +246,12 @@ describe('authentication', () => {
     // An attacker holding a leaked token is precisely the caller who never
     // produces a mismatch, so the cache also has to age out.
     let clock = 1_000;
-    const credentials = storeWith({ 'profile/token': 'llk_old' });
-    const auth = new BearerAuthenticator({ ...options, credentials, now: () => clock });
+    const credentials = storeWith({ 'tokens/tok1': 'llk_old' });
+    const auth = new BearerAuthenticator(issued({ credentials, now: () => clock }));
 
     expect((await auth.authenticate('Bearer llk_old')).ok).toBe(true);
 
-    await credentials.set('profile/token', 'llk_new');
+    await credentials.set('tokens/tok1', 'llk_new');
     expect((await auth.authenticate('Bearer llk_old')).ok).toBe(true); // inside the window
 
     clock += 10_000;
@@ -178,17 +271,18 @@ describe('rotation by another process', () => {
     const key = new Uint8Array(Buffer.from(generateCredentialKey(), 'base64'));
 
     const serving = createFileSecretStore({ path, key });
-    await serving.set('profile/token', 'llk_old');
+    await serving.set('tokens/tok1', 'llk_old');
 
     const auth = new BearerAuthenticator({
       profile: 'personal',
-      tokenRef: 'profile/token',
+      tokens: async () => [{ id: 'tok1', subject: 'lanes:abc123', ref: 'tokens/tok1' }],
       credentials: serving,
+      profilesFor: async () => ['personal'],
     });
     expect((await auth.authenticate('Bearer llk_old')).ok).toBe(true);
 
     // The CLI, in its own process, over the same file.
-    await createFileSecretStore({ path, key }).set('profile/token', 'llk_new');
+    await createFileSecretStore({ path, key }).set('tokens/tok1', 'llk_new');
 
     expect((await auth.authenticate('Bearer llk_new')).ok).toBe(true);
     expect((await auth.authenticate('Bearer llk_old')).ok).toBe(false);

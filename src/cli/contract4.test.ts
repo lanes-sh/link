@@ -507,7 +507,10 @@ describe('what it stamps, and when', () => {
       contract: number;
       grants: unknown[];
     };
-    expect(config.contract).toBe(SUPPORTED_CONTRACT);
+    // Four, not the newest. This step produces contract 4 and stops; reaching
+    // the current contract is `migrateToCurrentContract`'s job, and asserting
+    // the newest here would pass only until the next contract existed.
+    expect(config.contract).toBe(4);
     // Nothing about the file's *shape* changes — only where it lives.
     expect(config.grants).toHaveLength(1);
     expect(has(root, 'profiles/personal.yaml')).toBe(false);
@@ -766,7 +769,10 @@ describe('the contract it stamps on the registry', () => {
     const profile = parse(await read(root, 'profiles/personal/profile.yaml')) as {
       contract: number;
     };
-    expect(registry.contract).toBe(SUPPORTED_CONTRACT);
+    // The invariant is that the two agree, not that either names the newest:
+    // a registry stamped ahead of its profiles makes `isUnmigrated` report a
+    // finished migration with a later step still to run.
+    expect(registry.contract).toBe(4);
     expect(registry.contract).toBe(profile.contract);
   });
 

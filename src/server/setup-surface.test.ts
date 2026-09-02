@@ -80,7 +80,7 @@ function grantsFrom(policy: string, connections: readonly string[]): string {
 
 function config(profile: string, port: number, policy: string) {
   return parseConfig(`
-contract: 4
+contract: 5
 instance:
   profile: ${profile}
   port: ${port}
@@ -148,7 +148,7 @@ const never = startHarness({
   token: 'llk_never_token_value',
   providers: providersFor('never', []),
   config: parseConfig(`
-contract: 4
+contract: 5
 instance:
   profile: never
   port: ${neverPort}

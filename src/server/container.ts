@@ -73,7 +73,6 @@ try {
     port,
     host,
     // A deployed instance never mints its own token: see `endpoint.ts`.
-    mintToken: false,
     // Stdout is where Cloud Run collects logs, and a rejected credential on a
     // public URL is the event this exists for.
     log: streamLogger((line) => process.stdout.write(`${line}\n`)),
@@ -84,7 +83,6 @@ try {
         // into an image that will be replaced.
         log(`reconciled ${profile}\n${plan}`);
       },
-      tokenMinted() {},
     },
   });
 

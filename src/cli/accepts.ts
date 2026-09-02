@@ -68,8 +68,14 @@ export const ACCEPTS: Record<string, readonly string[]> = {
   'target show': ['workspace'],
   'mcp install-instructions': ['client'],
   pair: ['print', 'rotate', 'yes'],
-  'token show': ['show', 'raw'],
-  'token rotate': ['show', 'raw', 'yes'],
+  // `--id` names which row, and is required once more than one is issued.
+  // `--subject`/`--me` say who a new one is for, which is the whole of ADR-068.
+  token: ['json'],
+  'token list': ['json'],
+  'token issue': ['show', 'subject', 'me', 'label'],
+  'token show': ['show', 'raw', 'id'],
+  'token rotate': ['show', 'raw', 'yes', 'id'],
+  'token revoke': ['yes', 'id'],
   'audit tail': ['limit', 'denied-only', 'format'],
   'audit verify': ['limit', 'format'],
   attach: ['connection'],

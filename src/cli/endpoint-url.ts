@@ -42,19 +42,33 @@ export function localUrl(config: Config): string {
  *
  * Anonymous would be enough to prove a socket is bound, but the profile list is
  * behind the token, and the profile is the whole point of asking.
+ *
+ * **The token is optional** since ADR-068, because a healthy workspace may have
+ * issued none: a person's client signs in for itself and needs no static
+ * credential. Without one this still tells a caller whether anything is
+ * answering, which is the half every caller uses; `profiles` comes back empty
+ * rather than absent, so a caller cannot mistake "withheld" for "none served".
  */
-export async function endpointHealth(url: string, token: string): Promise<EndpointHealth | null> {
+export async function endpointHealth(
+  url: string,
+  token?: string | undefined,
+): Promise<EndpointHealth | null> {
   try {
     const probe = new URL(url);
     probe.pathname = '/health';
     const response = await fetch(probe, {
-      headers: { authorization: `Bearer ${token}` },
+      ...(token === undefined ? {} : { headers: { authorization: `Bearer ${token}` } }),
       signal: AbortSignal.timeout(700),
     });
     if (!response.ok) return null;
 
     const body = (await response.json()) as Partial<EndpointHealth>;
-    return body.profile ? { profile: body.profile, profiles: body.profiles ?? [body.profile] } : null;
+    if (body.profile) {
+      return { profile: body.profile, profiles: body.profiles ?? [body.profile] };
+    }
+    // Answered, but withheld the list — which is what an unauthenticated probe
+    // gets. Reporting the endpoint as absent would be wrong: it is up.
+    return token === undefined ? { profile: '', profiles: [] } : null;
   } catch {
     return null;
   }

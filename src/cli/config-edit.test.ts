@@ -131,7 +131,7 @@ describe('comments and ordering survive an edit', () => {
     // and its allow rule. Reading the starting state from the template would
     // leave this asserting nothing the day that changed, which is the day it
     // most needs to hold.
-    const { root, path } = await profileFile(`contract: 4
+    const { root, path } = await profileFile(`contract: 5
 
 instance:
   profile: personal
@@ -269,7 +269,7 @@ describe('repairing a profile that predates the setup surface', () => {
     ensureReservedConnection(p.connections, p.profile, 'lanes_setup');
 
   /** A profile as it was written before the surface, and as this operator's is. */
-  const OLD = `contract: 4
+  const OLD = `contract: 5
 instance:
   profile: personal
   port: 7337
@@ -279,7 +279,7 @@ members: []
 `;
 
   /** The workspace it lives in, with no owner-layer row in it. */
-  const OLD_CONNECTIONS = `contract: 4
+  const OLD_CONNECTIONS = `contract: 5
 connections:
   - { id: ada_lovelace, provider: gmail, account: ada.lovelace@example.com }
 oauth_apps: {}
@@ -385,7 +385,7 @@ oauth_apps: {}
 
   describe('a hand-edited file that no schema has seen', () => {
     test('a missing grants block is created rather than crashed on', async () => {
-      const p = await pair(`contract: 4\ninstance:\n  profile: personal\n`, OLD_CONNECTIONS);
+      const p = await pair(`contract: 5\ninstance:\n  profile: personal\n`, OLD_CONNECTIONS);
 
       expect(repairLines(ensureSetup(p))).toEqual([
         'connections.yaml += lanes_setup.lan1',
@@ -399,7 +399,7 @@ oauth_apps: {}
       // but `validateConfig` is what should say so, on the whole file, rather
       // than this dying on `.some`.
       const p = await pair(
-        `contract: 4\ninstance:\n  profile: personal\ngrants:\n  a: { connection: gmail.x }\n`,
+        `contract: 5\ninstance:\n  profile: personal\ngrants:\n  a: { connection: gmail.x }\n`,
         OLD_CONNECTIONS,
       );
 
@@ -448,7 +448,7 @@ oauth_apps: {}
  * shaped to prevent.
  */
 describe('repairing a profile that predates the owner layer', () => {
-  const OLD = `contract: 4
+  const OLD = `contract: 5
 instance:
   profile: personal
   port: 7337
@@ -457,7 +457,7 @@ grants:
 members: []
 `;
 
-  const OLD_CONNECTIONS = `contract: 4
+  const OLD_CONNECTIONS = `contract: 5
 connections:
   - { id: ada_lovelace, provider: gmail, account: ada.lovelace@example.com }
 oauth_apps: {}
@@ -519,7 +519,7 @@ describe('appending to a key that is not there yet', () => {
     // `grants:` is genuinely absent on a contract-2 profile being repaired,
     // which is what finally made the second append reachable — and what turned
     // one upgrade into three warnings and an unrepaired workspace.
-    const document = ConfigDocument.fromText('contract: 4\n');
+    const document = ConfigDocument.fromText('contract: 5\n');
 
     document.addTo(['grants'], { connection: 'example.a', allow: ['example.*'], deny: [] });
     document.addTo(['grants'], { connection: 'example.b', allow: ['example.*'], deny: [] });
@@ -536,7 +536,7 @@ describe('appending to a key that is not there yet', () => {
     // succeed and the second threw, so the profile was left with one grant of
     // seven and the command reported a warning instead of a repair.
     const connections = ConfigDocument.fromText(newConnectionsTemplate(), CONNECTIONS_FILE);
-    const profile = ConfigDocument.fromText('contract: 4\n');
+    const profile = ConfigDocument.fromText('contract: 5\n');
 
     const repair = ensureOwnerLayer(connections, profile);
 
@@ -550,7 +550,7 @@ describe('appending to a key that is not there yet', () => {
 
 describe('the repair reads this profile\'s grants, not the workspace\'s first row', () => {
   const workspaceRows = [
-    'contract: 4',
+    'contract: 5',
     'connections:',
     '  - { id: main, provider: lanes_memory, account: Memory }',
     '  - { id: demo, provider: lanes_memory, account: Memory }',
@@ -570,7 +570,7 @@ describe('the repair reads this profile\'s grants, not the workspace\'s first ro
     const connections = ConfigDocument.fromText(workspaceRows, CONNECTIONS_FILE);
     const profile = ConfigDocument.fromText(
       [
-        'contract: 4',
+        'contract: 5',
         'grants:',
         '  - { connection: lanes_memory.demo, allow: [lanes_memory.*], deny: [] }',
         '  - { connection: vault.demo, allow: [lanes_vault.*], deny: [] }',
@@ -590,7 +590,7 @@ describe('the repair reads this profile\'s grants, not the workspace\'s first ro
     // no-op, or a release adding a surface would never reach an existing
     // profile.
     const connections = ConfigDocument.fromText(workspaceRows, CONNECTIONS_FILE);
-    const profile = ConfigDocument.fromText('contract: 4\ngrants: []\n');
+    const profile = ConfigDocument.fromText('contract: 5\ngrants: []\n');
 
     const repair = ensureReservedConnection(connections, profile, 'lanes_memory');
 
@@ -604,7 +604,7 @@ describe('the repair reads this profile\'s grants, not the workspace\'s first ro
     const connections = ConfigDocument.fromText(workspaceRows, CONNECTIONS_FILE);
     const profile = ConfigDocument.fromText(
       [
-        'contract: 4',
+        'contract: 5',
         'grants:',
         '  - { connection: lanes_memory.demo, allow: [], deny: [lanes_memory.*] }',
         '',
@@ -620,7 +620,7 @@ describe('the repair reads this profile\'s grants, not the workspace\'s first ro
 
 describe('a profile granting two instances of one surface', () => {
   const twoInstances = [
-    'contract: 4',
+    'contract: 5',
     'connections:',
     '  - { id: team, provider: lanes_memory, account: Memory }',
     '  - { id: personal, provider: lanes_memory, account: Memory }',
@@ -634,7 +634,7 @@ describe('a profile granting two instances of one surface', () => {
     const connections = ConfigDocument.fromText(twoInstances, CONNECTIONS_FILE);
     const profile = ConfigDocument.fromText(
       [
-        'contract: 4',
+        'contract: 5',
         'grants:',
         '  - { connection: lanes_memory.team, allow: [], deny: [] }',
         '  - { connection: lanes_memory.personal, allow: [], deny: [lanes_memory.*] }',
@@ -652,7 +652,7 @@ describe('a profile granting two instances of one surface', () => {
     const connections = ConfigDocument.fromText(twoInstances, CONNECTIONS_FILE);
     const profile = ConfigDocument.fromText(
       [
-        'contract: 4',
+        'contract: 5',
         'grants:',
         '  - { connection: lanes_memory.team, allow: [], deny: [] }',
         '  - { connection: lanes_memory.personal, allow: [lanes_memory.*], deny: [] }',
@@ -668,11 +668,11 @@ describe('a profile granting two instances of one surface', () => {
     // dotless value, and `'vaults'.slice(0, -1)` is `'vault'` — so a typo was
     // widened while the real surface stayed unreachable.
     const connections = ConfigDocument.fromText(
-      'contract: 4\nconnections:\n  - { id: main, provider: lanes_vault, account: Vault }\n',
+      'contract: 5\nconnections:\n  - { id: main, provider: lanes_vault, account: Vault }\n',
       CONNECTIONS_FILE,
     );
     const profile = ConfigDocument.fromText(
-      'contract: 4\ngrants:\n  - { connection: vaults, allow: [], deny: [] }\n',
+      'contract: 5\ngrants:\n  - { connection: vaults, allow: [], deny: [] }\n',
     );
 
     const repair = ensureReservedConnection(connections, profile, 'lanes_vault');

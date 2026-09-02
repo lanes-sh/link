@@ -61,7 +61,6 @@ export async function start(
     flags: resolved,
     port: flags.port,
     only: flags.only,
-    mintToken: true,
     // Stderr, not stdout: `--json` and `--raw` callers parse the other stream.
     // A refused credential is the event worth seeing while this runs in the
     // foreground, and until now nothing printed it.
@@ -71,9 +70,6 @@ export async function start(
         if (ofMany) print(style.dim(`  ${profile}`));
         print(plan);
         print(ok(`reconciled ${ofMany ? profile : ''}`.trim()));
-      },
-      tokenMinted({ target }) {
-        print(warn(`minted a token — run: lanes link outputs --show --workspace ${target}`));
       },
     },
   });

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { BearerAuthenticator } from '#auth';
-import { allocatePort, wireProfiles, TEST_TOKEN } from '../harness.ts';
+import { allocatePort, wireProfiles, HARNESS_SUBJECT, TEST_TOKEN } from '../harness.ts';
 import { createRequestHandler, MCP_PATH, serve } from '../index.ts';
 import { ATTACHMENTS_PATH } from '../attachments.ts';
 import { ANY_ORIGIN, corsAware } from '../cors.ts';
@@ -84,8 +84,9 @@ function deployed(read: ReadDeps | undefined): (request: Request) => Promise<Res
     primary: 'personal',
     authenticator: new BearerAuthenticator({
       profile: 'personal',
-      tokenRef: 'profile/token',
+      tokens: async () => [{ id: 'tok1', subject: HARNESS_SUBJECT, ref: 'tokens/tok1' }],
       credentials,
+      profilesFor: async () => ['personal'],
     }),
     log,
     meterUnauthenticated: true,
@@ -240,8 +241,9 @@ describe('a deployment-only grant stays one', () => {
       primary: 'personal',
       authenticator: new BearerAuthenticator({
         profile: 'personal',
-        tokenRef: 'profile/token',
+        tokens: async () => [{ id: 'tok1', subject: 'lanes:harness0000', ref: 'tokens/tok1' }],
         credentials,
+        profilesFor: async () => ['personal'],
       }),
       log,
       host: '127.0.0.1',

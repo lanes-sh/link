@@ -31,19 +31,24 @@ const target = (over: Partial<TargetConfig> = {}): TargetConfig =>
 
 const config = (over: Partial<Config> = {}): Config =>
   ({
-    contract: 4,
+    contract: 5,
     instance: { profile: 'personal' },
-    auth: { mode: 'bearer', token_ref: 'profile/token' },
+    auth: { mode: 'bearer' },
     grants: [{ connection: 'gmail.someone', allow: [], deny: [] }],
     members: [],
     ...over,
   }) as unknown as Config;
 
 describe('declaredRefs', () => {
-  test("covers the profile's own token, and nothing an account owns", () => {
+  test('covers nothing an account owns, and no endpoint token', () => {
     const refs = declaredRefs(config(), target());
 
-    expect(refs).toContain('profile/token');
+    // **Not the endpoint token.** It is the workspace's since ADR-068, so a
+    // profile declares none and removing one cannot reach it. This is the fix
+    // for the bug the survivor check existed to work around: removing a profile
+    // used to delete the token its siblings were being served by.
+    expect(refs).not.toContain('profile/token');
+    expect(refs.some((ref) => ref.startsWith('tokens/'))).toBe(false);
 
     // **Not the connection, and not the OAuth client.** Both belong to the
     // workspace now (ADR-057), and every one of them may be granted by a profile
@@ -59,7 +64,6 @@ describe('declaredRefs', () => {
       config({
         auth: {
           mode: 'bearer',
-          token_ref: 'profile/token',
           authorization: {
             mode: 'oidc',
             issuer: 'https://issuer.example',
@@ -107,7 +111,6 @@ describe('declaredRefs', () => {
     const refs = declaredRefs(gone, target());
 
     expect(refs).not.toContain('no_such_provider/x');
-    expect(refs).toContain('profile/token');
   });
 
   test('the vault key is still the profile\'s to lose, and the connections are not', () => {
@@ -127,35 +130,27 @@ describe('declaredRefs', () => {
       target({ vault: { adapter: 'secret', ref: 'vault/document' } } as never),
     );
 
-    expect(refs).toEqual(['profile/token', 'vault/document']);
+    expect(refs).toEqual(['vault/document']);
   });
 
   test('a ref a surviving profile also declares is left alone', () => {
-    // The credential store is one file per workspace since contract 3, and
-    // every profile takes the template default `token_ref: profile/token`. So
-    // removing one profile deleted the endpoint token the others are served by,
-    // and the deployed revision then refused every request with "No profile
-    // token in this target's credential store". The vault ref is read off the
-    // target and is identical for every profile there, which made the sibling's
-    // sealed items unrecoverable in the same command.
+    // The vault ref is read off the target and is identical for every profile
+    // there, which once made a sibling's sealed items unrecoverable in this
+    // command. The endpoint token used to be the other half of this test and is
+    // no longer a case at all: it is not a profile's to declare (ADR-068).
     const sealed = target({ vault: { adapter: 'secret', ref: 'vault/document' } } as never);
 
     expect(declaredRefs(config(), sealed, [config()])).toEqual([]);
   });
 
-  test('with nobody staying, it is still the profile\'s to lose', () => {
+  test('with nobody staying, the vault is still the profile\'s to lose', () => {
     // The last profile in a workspace: there is no survivor to share with, so
-    // the token and the vault go with it.
+    // the vault goes with it. The endpoint token does not, and that is the
+    // point — a workspace can outlive its last profile's removal with its
+    // issued tokens intact, because they were never that profile's.
     const sealed = target({ vault: { adapter: 'secret', ref: 'vault/document' } } as never);
 
-    expect(declaredRefs(config(), sealed, [])).toEqual(['profile/token', 'vault/document']);
-  });
-
-  test('a survivor with a different token ref does not protect this one', () => {
-    // Sharing is the reason to keep a ref, not the mere existence of a sibling.
-    const other = config({ auth: { mode: 'bearer', token_ref: 'other/token' } } as never);
-
-    expect(declaredRefs(config(), target(), [other])).toContain('profile/token');
+    expect(declaredRefs(config(), sealed, [])).toEqual(['vault/document']);
   });
 });
 
@@ -235,7 +230,11 @@ describe('removalPlan', () => {
     // `profile add` of the same name.
     expect(ids(plan, 'file')).toEqual(['profiles/personal']);
 
-    expect(ids(plan, 'secret')).toContain('profile/token');
+    // Nothing. A profile with a plain target declares no credential of its own
+    // since ADR-068 — the endpoint token is the workspace's, and a connection's
+    // belongs to the account. The vault is the one that can still be here, and
+    // this target seals nothing.
+    expect(ids(plan, 'secret')).toEqual([]);
     expect(plan.items.some((item) => item.kind === 'config')).toBe(true);
   });
 
@@ -372,15 +371,24 @@ describe('removalPlan', () => {
   });
 
   test('a ref the profile does not declare is reported, never planned', async () => {
-    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
-      target: 'local',
-      declared: target(),
-      disposition: { kind: 'delete' as const },
-      openSecrets: async () => fakeSecrets(['profile/token', 'gmail/someone_else']),
-      openBlobs: async () => fakeBlobs([]),
-    });
+    // The vault document, which is the profile's remaining declared credential:
+    // sealed per target and named by it, so it goes with the removal. Contrasted
+    // against an account's, which outlives the profile whatever the profile said.
+    const plan = await removalPlan(
+      config(),
+      '/ws',
+      'personal',
+      registry,
+      {
+        target: 'local',
+        declared: target({ vault: { adapter: 'secret', ref: 'vault/document' } } as never),
+        disposition: { kind: 'delete' as const },
+        openSecrets: async () => fakeSecrets(['vault/document', 'gmail/someone_else']),
+        openBlobs: async () => fakeBlobs([]),
+      },
+    );
 
-    expect(ids(plan, 'secret')).toContain('profile/token');
+    expect(ids(plan, 'secret')).toContain('vault/document');
     expect(ids(plan, 'secret')).not.toContain('gmail/someone_else');
     expect(plan.untouched.flatMap((u) => u.refs)).toContain('gmail/someone_else');
   });

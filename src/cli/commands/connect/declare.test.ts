@@ -18,7 +18,7 @@ import { declareConnection } from './declare.ts';
  * when the account was what an unnamed row was called.
  */
 
-const EMPTY = `contract: 4
+const EMPTY = `contract: 5
 instance:
   profile: personal
   host: 127.0.0.1

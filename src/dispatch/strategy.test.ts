@@ -65,7 +65,7 @@ afterAll(async () => {
 });
 
 const CONFIG = parseConfig(`
-contract: 4
+contract: 5
 instance:
   profile: personal
 limits:

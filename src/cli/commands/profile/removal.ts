@@ -51,17 +51,19 @@ export function declaredRefs(
    * What the profiles that are staying declare.
    *
    * Nothing in here is deleted, however plainly the profile being removed also
-   * declares it. The credential store is one file per *workspace* since
-   * contract 3, and every profile takes the template default
-   * `token_ref: profile/token` — so removing one profile deleted the endpoint
-   * token the others are served by, and the deployed revision then refused every
-   * request with "No profile token in this target's credential store". The vault
-   * ref is read off the target and is identical for every profile there, which
-   * made the sibling's sealed items unrecoverable in the same command.
+   * declares it. The vault ref is read off the target and is identical for every
+   * profile there, which once made a sibling's sealed items unrecoverable in
+   * this command.
+   *
+   * **The endpoint token was the sharpest case here and is no longer a case.**
+   * Every profile took the default `token_ref: profile/token` out of one
+   * per-workspace store, so removing one deleted the token its siblings were
+   * served by. What fixed it is not a better survivor check: the token was never
+   * a profile's to declare (ADR-068), so removing one cannot reach it now.
    */
   survivors: readonly Config[] = [],
 ): string[] {
-  const refs = new Set<string>([config.auth.token_ref]);
+  const refs = new Set<string>();
 
   // Read off the *target*, not the profile. `vaultTargetSchema` sits inside
   // `targetSchema`, so two targets may seal the same items in different places;
@@ -100,7 +102,6 @@ export function declaredRefs(
   // declare" has to have one answer.
   const kept = new Set(
     survivors.flatMap((other) => [
-      other.auth.token_ref,
       ...(declared.vault?.adapter === 'secret' ? [vaultRef(declared, other)] : []),
       ...(other.auth.authorization?.mode === 'oidc'
         ? [other.auth.authorization.client_id_ref]

@@ -4,7 +4,7 @@ import {
   readConnections, listProfiles, loadProfileConfig, vaultRef, type Config, type TargetConfig } from '#profile';
 import { VAULT_DOCUMENT_REF, VAULT_KEY_REF, generateVaultKey, type SecretStore } from '#secrets';
 import { ok, print, style, warn } from '#cli/output.ts';
-import { buildRegistryWithWorkspace, ensureProfileToken } from '#cli/runtime.ts';
+import { buildRegistryWithWorkspace } from '#cli/runtime.ts';
 
 /**
  * Getting the target's credential store to the state a revision can boot from.
@@ -198,7 +198,6 @@ export async function readableRefs(
       continue;
     }
 
-    refs.add(config.auth.token_ref);
     if (declared?.vault?.adapter === 'secret') refs.add(vaultRef(declared, config));
     // The OIDC audience check reads this on every verify (`server/endpoint.ts`).
     if (config.auth.authorization?.mode === 'oidc') {
@@ -209,6 +208,13 @@ export async function readableRefs(
 
   // Once, for the reason `rotatableRefs` gives.
   const connectionsFile = await readConnections(root);
+
+  // The endpoint's own tokens, which are the workspace's rather than any
+  // profile's since ADR-068. Pushed so a deployed revision can authenticate a
+  // headless caller; the *rows* travel with `connections.yaml`, so a ref here
+  // without its value is a row that matches nothing and reads to the client
+  // exactly like a wrong token.
+  for (const issued of connectionsFile.tokens) refs.add(issued.ref);
   const registry = await buildRegistryWithWorkspace(root);
 
   for (const connection of connectionsFile.connections) {
@@ -227,7 +233,6 @@ export async function prepareSecrets(input: PrepareInput): Promise<PrepareResult
   const blocking: string[] = [];
   const warnings: string[] = [];
 
-  await seedProfileToken({ config, credentials, readOnly, blocking });
   await seedVaultKey({ declared: input.declared, credentials, readOnly });
 
   // Connection credentials are written by `connect`, against a real account, in
@@ -280,34 +285,4 @@ async function seedVaultKey(input: {
   print(ok(`minted the vault key at "${VAULT_KEY_REF}" — the revision reads it from there`));
 }
 
-/**
- * The endpoint's own bearer token.
- *
- * Minted rather than demanded, and not even asked about: it is a random string
- * this process generates correctly and the operator cannot usefully choose, so a
- * prompt would be a question with one answer. `ensureProfileToken` is the same
- * call `outputs` makes for a local target, which is what keeps "the token" one
- * thing rather than a per-command notion.
- *
- * The deployed container deliberately will *not* do this — a token invented
- * inside something that scales to zero is a token nobody can read back, and the
- * endpoint would come up healthy while rejecting every agent.
- */
-async function seedProfileToken(input: {
-  config: Config;
-  credentials: SecretStore;
-  readOnly: boolean;
-  blocking: string[];
-}): Promise<void> {
-  const ref = input.config.auth.token_ref;
-  if (await input.credentials.has(ref)) return;
-
-  if (input.readOnly) {
-    input.blocking.push(`the endpoint bearer token — nothing at "${ref}"`);
-    return;
-  }
-
-  const { created } = await ensureProfileToken(input.credentials, ref);
-  if (created) print(ok(`minted an endpoint token at "${ref}" — read it with lanes link token show`));
-}
 

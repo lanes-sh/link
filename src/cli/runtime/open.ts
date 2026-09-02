@@ -9,6 +9,7 @@ import {
   assertGrantsResolve,
   layout,
   listProfiles,
+  membersResolver,
   readConnections,
   selectConnections,
   soleGrantFor,
@@ -329,10 +330,16 @@ export async function openRuntime(
     registry,
     refreshSkills,
     dispatcher,
+    // The workspace's issued tokens, not a profile's (ADR-068). The rows are
+    // re-read on every reload so a `token revoke` lands inside the cache
+    // window, and the subject on the matching row is resolved through
+    // `members:` — so a bearer token reaches what its holder is a member of
+    // rather than everything the workspace holds.
     authenticator: new BearerAuthenticator({
       profile: config.instance.profile,
-      tokenRef: config.auth.token_ref,
+      tokens: async () => (await readConnections(root)).tokens,
       credentials,
+      profilesFor: membersResolver(root),
     }),
     connectorFor,
     authorizeRequest,

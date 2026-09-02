@@ -178,7 +178,7 @@ describe('reading every profile at once', () => {
    * look vanished from inside one profile.
    */
   const declaring = (profile: string): string =>
-    `contract: 4\ninstance: { profile: ${profile} }\n`;
+    `contract: 5\ninstance: { profile: ${profile} }\n`;
 
   test('loads each profile with its config', async () => {
     const root = await withTargets({
@@ -198,7 +198,7 @@ describe('reading every profile at once', () => {
     // dies on the first bad file stops working exactly when it is needed.
     const root = await withTargets({
       alpha: declaring('alpha'),
-      broken: 'contract: 4\ninstance: {}\n',
+      broken: 'contract: 5\ninstance: {}\n',
     });
 
     const workspace = await loadWorkspaceProfiles(root);

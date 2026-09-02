@@ -29,7 +29,7 @@ async function workspace(
   homes.push(root);
 
   if (registry !== null) await writeFile(join(root, 'workspaces.yaml'), registry);
-  await writeFile(join(root, 'connections.yaml'), 'contract: 4\nconnections: []\noauth_apps: {}\n');
+  await writeFile(join(root, 'connections.yaml'), 'contract: 5\nconnections: []\noauth_apps: {}\n');
 
   if (profile !== null) {
     await mkdir(join(root, 'profiles', 'personal'), { recursive: true });
@@ -104,7 +104,7 @@ describe('what it says when a profile will not open', () => {
     // at all. Seen for real, twice, with nothing after the colon.
     const root = await workspace(
       REGISTRY(SUPPORTED_CONTRACT),
-      'contract: 4\ninstance:\n  profile: personal\ngrants:\n' +
+      'contract: 5\ninstance:\n  profile: personal\ngrants:\n' +
         '  - { connection: 12345, allow: 7 }\nmembers: []\n',
     );
     const said: string[] = [];
