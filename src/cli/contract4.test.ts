@@ -745,3 +745,41 @@ describe('several sources merging onto one owner id', () => {
     expect(await read(root, 'profiles/personal/lanes_memory/lan1/from-main.md')).toBe('MAIN');
   });
 });
+
+/**
+ * The registry's own contract stamp, which the byte-for-byte rename carried
+ * across unchanged.
+ *
+ * Found on the upgrade that shipped 0.9.0: every profile said 4 and the
+ * registry beside them said 3, while a workspace `profile add` created said 4
+ * from the start. `isUnmigrated` is the one place a registry's own contract is
+ * read, and a stale stamp there answers a question about contract 4 with a
+ * refusal naming contract 1.
+ */
+describe('the contract it stamps on the registry', () => {
+  test('the migrated registry says what the profiles say', async () => {
+    const root = await workspace({ personal: ['memory.main'] });
+
+    await migrateToContract4(root, { apply: true });
+
+    const registry = parse(await read(root, 'workspaces.yaml')) as { contract: number };
+    const profile = parse(await read(root, 'profiles/personal/profile.yaml')) as {
+      contract: number;
+    };
+    expect(registry.contract).toBe(SUPPORTED_CONTRACT);
+    expect(registry.contract).toBe(profile.contract);
+  });
+
+  test('and everything else in it is left alone', async () => {
+    const root = await workspace({ personal: ['memory.main'] });
+
+    await migrateToContract4(root, { apply: true });
+
+    // The stamp is a one-field edit, not a rewrite: losing this file is losing
+    // the address of every target.
+    const registry = parse(await read(root, 'workspaces.yaml')) as {
+      workspaces: Record<string, { storage?: { adapter?: string } }>;
+    };
+    expect(registry.workspaces['local']?.storage?.adapter).toBe('filesystem');
+  });
+});

@@ -19,7 +19,9 @@ import { completionPage, noticePage } from './callback-page.ts';
 
 const SRC = new URL('.', import.meta.url).pathname;
 
-/** The eight tokens, plus the four tints derived from the two constant accents. */
+/** The eight tokens, plus the six tints. The accent is no longer constant across
+ *  themes: emerald needs a brighter value on the dark ground, so it and its two
+ *  tints appear twice. */
 const DECLARED = [
   '#EBEAE7',
   '#171717',
@@ -28,11 +30,14 @@ const DECLARED = [
   '#E2E1DD',
   '#202329',
   '#A8A29E',
-  '#A1845A',
+  '#059669',
+  '#34D399',
   '#A06060',
   'rgba(120,113,108,0.2)',
-  'rgba(161,132,90,0.1)',
-  'rgba(161,132,90,0.25)',
+  'rgba(5,150,105,0.1)',
+  'rgba(5,150,105,0.25)',
+  'rgba(52,211,153,0.1)',
+  'rgba(52,211,153,0.25)',
   'rgba(160,96,96,0.1)',
   'rgba(160,96,96,0.25)',
 ];
@@ -100,7 +105,7 @@ describe('colour comes from the tokens', () => {
       '--foreground',
       '--muted-foreground',
       '--border',
-      '--accent-gold',
+      '--accent-brand',
       '--destructive',
     ]) {
       expect(brand).toContain(`var(${token})`);
@@ -155,7 +160,7 @@ describe('what a browser actually receives', () => {
     test(`${name} carries the tokens and all three faces`, async () => {
       const body = await response.text();
 
-      expect(body).toContain('--accent-gold: #A1845A');
+      expect(body).toContain('--accent-brand: #059669');
       expect(body).toContain('prefers-color-scheme: dark');
       expect(body).toContain('background: var(--background)');
       // One request, three families: Lora heads, Geist speaks, Geist Mono for

@@ -90,18 +90,20 @@ describe('light and dark', () => {
     expect(body).not.toContain('#C08080');
   });
 
-  test('the success mark is gold, because gold is the only accent', async () => {
-    // The check used to be emerald, matching the tick the Lanes app puts against
-    // a connected integration. The design system is explicit — "gold for
-    // positive, neutral tokens otherwise" — so the green was the odd one out
-    // rather than the match it was meant to be.
+  test('the success mark carries the accent, because there is only one', async () => {
+    // This went the long way round. The check was emerald to match the tick the
+    // Lanes app puts against a connected integration, was changed to gold
+    // because the design system allowed exactly one accent and gold was it, and
+    // is emerald again now that emerald is that one accent. What is pinned here
+    // is the rule, not the hue: the mark takes the accent token and no colour of
+    // its own, so it moves when the token moves. The old gold must be gone.
     const body = await html(completionPage({ heading: 'Connected', detail: '.', ok: true }));
 
     expect(body).toContain('class="icon"');
-    expect(body).toContain('--accent-gold: #A1845A');
-    expect(body).toContain('.icon { display: block; margin: 0 auto 18px; color: var(--accent-gold); }');
-    expect(body).not.toContain('#059669');
-    expect(body).not.toContain('#34D399');
+    expect(body).toContain('--accent-brand: #059669');
+    expect(body).toContain('.icon { display: block; margin: 0 auto 18px; color: var(--accent-brand); }');
+    expect(body).not.toContain('#A1845A');
+    expect(body).not.toContain('#C2A373');
   });
 
   test('a failure is never marked as a success', async () => {
