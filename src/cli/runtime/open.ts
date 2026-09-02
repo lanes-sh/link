@@ -1,7 +1,7 @@
 import { BearerAuthenticator, ownerPrincipal } from '#auth';
 import type { SecretStore } from '#secrets';
 import type { AuditReader } from '#audit';
-import type { RuntimeState } from '#stores/state';
+import { DISCOVERY_NAMESPACE, type RuntimeState } from '#stores/state';
 import type { BlobStore } from '#stores/blobs';
 import type { AnyConnector, ProviderManifest } from '#connectivity';
 import { RateLimiter, allowedConnections } from '#policy';
@@ -127,7 +127,7 @@ export async function openRuntime(
   // own roots on the target's own storage and are untouched.
   const knowledge = await openKnowledge(adapters, credentials, options.fetch);
   const storage = knowledge ? routeBlobStore(storageFor(), knowledgeRoutes(knowledge)) : storageFor();
-  const state = openState(storageFor);
+  const state = openState(storageFor, config.instance.profile);
 
   // The durable log, plus any copies the target declares. `sink` is what
   // dispatch writes to; `audit` is what `tail` and `verify` read, and those are
@@ -148,10 +148,10 @@ export async function openRuntime(
   // `EMPTY_SKILLS` when none is granted: a profile that denies `skills.*` has
   // no store to open, and handing it the workspace root instead would serve
   // every other profile's procedures.
-  const skillsConnection = soleGrantFor(config, 'skills');
+  const skillsConnection = soleGrantFor(config, 'lanes_skills');
   const skills =
     knowledge?.skills ??
-    (skillsConnection === undefined ? undefined : skillStore(storageFor, skillsConnection));
+    (skillsConnection === undefined ? undefined : skillStore(storageFor, config.instance.profile, skillsConnection));
 
   // The vault's own store, beside the credential store and never it: a separate
   // document, a separate key, and a separate environment variable
@@ -269,7 +269,7 @@ export async function openRuntime(
       }
     }
 
-    const cached = await state.kv.get('discovery', entry.manifest.id);
+    const cached = await state.kv.get(DISCOVERY_NAMESPACE, entry.manifest.id);
     if (cached) {
       try {
         registry.setDiscovered(entry.manifest.id, JSON.parse(cached));

@@ -1,6 +1,6 @@
 # ADR-030: a profile owns its skills and its manifests
 
-**Status:** accepted · **Supersedes [ADR-012](012-owner-layer-primitives.md) §1's storage
+**Status:** accepted; its isolation restored by [ADR-066](066-a-profile-owns-its-data-again.md), its manifests still the workspace's (ADR-057) · **Supersedes [ADR-012](012-owner-layer-primitives.md) §1's storage
 location and part of [ADR-014](014-owner-layer-is-managed.md) §2** · **Restores
 [ADR-009](009-one-endpoint-per-workspace.md)'s "profiles share nothing"**
 

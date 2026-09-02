@@ -1,5 +1,5 @@
 import { CONNECTIONS_FILE } from '#profile';
-import { connectionsYaml, workspaceYaml } from '#profile/testing.ts';
+import { connectionsYaml, workspaceYaml, writeProfileFixture } from '#profile/testing.ts';
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -30,15 +30,15 @@ import { probe } from './setup.ts';
 const roots: string[] = [];
 const previousHome = process.env['LANES_LINK_HOME'];
 
-const PROFILE = `contract: 3
+const PROFILE = `contract: 4
 
 instance:
   profile: personal
 
 grants:
-  - { connection: memory.main, allow: [memory.*], deny: [] }
-  - { connection: skills.main, allow: [skills.*], deny: [] }
-  - { connection: entities.main, allow: [entities.*], deny: [] }
+  - { connection: lanes_memory.lan1, allow: [lanes_memory.*], deny: [] }
+  - { connection: lanes_skills.lan4, allow: [lanes_skills.*], deny: [] }
+  - { connection: lanes_entities.lan7, allow: [lanes_entities.*], deny: [] }
 members: []
 `;
 
@@ -57,19 +57,19 @@ async function workspace(seed = true): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'lanes-link-knowledge-'));
   roots.push(root);
 
-  await mkdir(join(root, 'profiles'), { recursive: true });
-  await writeFile(join(root, 'lanes-link.yaml'), workspaceYaml(['local'], {defaultProfile: 'personal'}));
-  await writeFile(join(root, 'profiles', 'personal.yaml'), PROFILE);
+  await mkdir(join(root, 'profiles', 'personal'), { recursive: true });
+  await writeFile(join(root, 'workspaces.yaml'), workspaceYaml(['local'], {defaultProfile: 'personal'}));
+  await writeProfileFixture(root, 'personal', PROFILE);
   await writeFile(join(root, CONNECTIONS_FILE), connectionsYaml());
 
   if (seed) {
-    await mkdir(join(root, 'data/memory/main'), { recursive: true });
-    await writeFile(join(root, 'data/memory/main/a-note.md'), ENTRY);
-    await mkdir(join(root, 'data/skills.d/main/triage'), { recursive: true });
-    await writeFile(join(root, 'data/skills.d/main/triage/SKILL.md'), SKILL);
-    await mkdir(join(root, 'data/entities/main'), { recursive: true });
-    await writeFile(join(root, 'data/entities/main/jan-bakker.md'), ENTITY);
-    await writeFile(join(root, 'data/entities/main/_index.json'), '{"v":1}');
+    await mkdir(join(root, 'profiles/personal/lanes_memory/lan1'), { recursive: true });
+    await writeFile(join(root, 'profiles/personal/lanes_memory/lan1/a-note.md'), ENTRY);
+    await mkdir(join(root, 'profiles/personal/skills.d/lan4/triage'), { recursive: true });
+    await writeFile(join(root, 'profiles/personal/skills.d/lan4/triage/SKILL.md'), SKILL);
+    await mkdir(join(root, 'profiles/personal/lanes_entities/lan7'), { recursive: true });
+    await writeFile(join(root, 'profiles/personal/lanes_entities/lan7/jan-bakker.md'), ENTITY);
+    await writeFile(join(root, 'profiles/personal/lanes_entities/lan7/_index.json'), '{"v":1}');
   }
 
   process.env['LANES_LINK_HOME'] = root;
@@ -78,13 +78,13 @@ async function workspace(seed = true): Promise<string> {
   // from the target's own credential store, exactly as it would after a first
   // interactive run.
   const { resolution, config } = await resolveProfile(SELECT);
-  const secrets = await openSecretStoreFor(config, resolution.workspaceRoot, 'local');
+  const secrets = await openSecretStoreFor(resolution.workspaceRoot, 'local');
   await secrets.set('knowledge/token', 'github_pat_stub');
 
   return root;
 }
 
-const readProfile = (root: string) => readFile(join(root, 'profiles', 'personal.yaml'), 'utf8');
+const readProfile = (root: string) => readFile(join(root, 'profiles', 'personal', 'profile.yaml'), 'utf8');
 
 let github: FakeGithub;
 beforeEach(() => {
@@ -113,21 +113,21 @@ describe('switching to a repository', () => {
     await use({ migrate: true });
 
     expect(github.files()).toEqual({
-      'memory/main/a-note.md': ENTRY,
+      'memory/lan1/a-note.md': ENTRY,
       'skills/triage/SKILL.md': SKILL,
-      'entities/main/jan-bakker.md': ENTITY,
+      'entities/lan7/jan-bakker.md': ENTITY,
       // The derived index travels with the documents it describes. Asserted
       // rather than tolerated: it is a cache in a documents repository, which
       // is a real cost of committing it, and it should be a decision somebody
       // made rather than something that happened.
-      'entities/main/_index.json': '{"v":1}',
+      'entities/lan7/_index.json': '{"v":1}',
     });
     // One commit for all of them, not one each.
     expect(github.calls.filter((call) => call.includes('/git/commits')).length).toBe(1);
 
-    expect(existsSync(join(root, 'data/memory/main/a-note.md'))).toBe(false);
-    expect(existsSync(join(root, 'data/skills.d/main/triage/SKILL.md'))).toBe(false);
-    expect(existsSync(join(root, 'data/entities/main/jan-bakker.md'))).toBe(false);
+    expect(existsSync(join(root, 'profiles/personal/lanes_memory/lan1/a-note.md'))).toBe(false);
+    expect(existsSync(join(root, 'profiles/personal/skills.d/lan4/triage/SKILL.md'))).toBe(false);
+    expect(existsSync(join(root, 'profiles/personal/lanes_entities/lan7/jan-bakker.md'))).toBe(false);
   });
 
   test('writes one block, on the profile', async () => {
@@ -150,8 +150,8 @@ describe('switching to a repository', () => {
     await use({ migrate: true, keep: true });
 
     expect(Object.keys(github.files())).toHaveLength(4);
-    expect(existsSync(join(root, 'data/memory/main/a-note.md'))).toBe(true);
-    expect(existsSync(join(root, 'data/entities/main/jan-bakker.md'))).toBe(true);
+    expect(existsSync(join(root, 'profiles/personal/lanes_memory/lan1/a-note.md'))).toBe(true);
+    expect(existsSync(join(root, 'profiles/personal/lanes_entities/lan7/jan-bakker.md'))).toBe(true);
   });
 
   test('--no-migrate switches and leaves what is stored where it is', async () => {
@@ -160,7 +160,7 @@ describe('switching to a repository', () => {
     await use({ migrate: false });
 
     expect(github.files()).toEqual({});
-    expect(existsSync(join(root, 'data/memory/main/a-note.md'))).toBe(true);
+    expect(existsSync(join(root, 'profiles/personal/lanes_memory/lan1/a-note.md'))).toBe(true);
     expect(await readProfile(root)).toContain('repo: my-org/my-notes');
   });
 
@@ -197,9 +197,9 @@ describe('switching to a repository', () => {
     await use({ migrate: true, path: 'context' });
 
     expect(Object.keys(github.files()).sort()).toEqual([
-      'context/entities/main/_index.json',
-      'context/entities/main/jan-bakker.md',
-      'context/memory/main/a-note.md',
+      'context/entities/lan7/_index.json',
+      'context/entities/lan7/jan-bakker.md',
+      'context/memory/lan1/a-note.md',
       'context/skills/triage/SKILL.md',
     ]);
   });
@@ -220,7 +220,7 @@ describe('refusals leave the profile exactly as it was', () => {
     await expect(use({ migrate: true })).rejects.toThrow(/is public/);
 
     expect(await readProfile(root)).not.toContain('knowledge:');
-    expect(existsSync(join(root, 'data/memory/main/a-note.md'))).toBe(true);
+    expect(existsSync(join(root, 'profiles/personal/lanes_memory/lan1/a-note.md'))).toBe(true);
     expect(github.files()).toEqual({});
   });
 
@@ -261,7 +261,7 @@ describe('refusals leave the profile exactly as it was', () => {
 
     await expect(use({ migrate: true })).rejects.toThrow(/did not read back correctly/);
 
-    expect(existsSync(join(root, 'data/memory/main/a-note.md'))).toBe(true);
+    expect(existsSync(join(root, 'profiles/personal/lanes_memory/lan1/a-note.md'))).toBe(true);
     expect(await readProfile(root)).not.toContain('knowledge:');
   });
 
@@ -280,9 +280,9 @@ describe('coming back', () => {
 
     await knowledgeUse('local', { ...SELECT, fetch: github.fetch, migrate: true, yes: true });
 
-    expect(await readFile(join(root, 'data/memory/main/a-note.md'), 'utf8')).toBe(ENTRY);
-    expect(await readFile(join(root, 'data/skills.d/main/triage/SKILL.md'), 'utf8')).toBe(SKILL);
-    expect(await readFile(join(root, 'data/entities/main/jan-bakker.md'), 'utf8')).toBe(
+    expect(await readFile(join(root, 'profiles/personal/lanes_memory/lan1/a-note.md'), 'utf8')).toBe(ENTRY);
+    expect(await readFile(join(root, 'profiles/personal/skills.d/lan4/triage/SKILL.md'), 'utf8')).toBe(SKILL);
+    expect(await readFile(join(root, 'profiles/personal/lanes_entities/lan7/jan-bakker.md'), 'utf8')).toBe(
       ENTITY,
     );
     expect(await readProfile(root)).not.toContain('knowledge:');
@@ -373,7 +373,11 @@ describe('knowledge show', () => {
 
     const output = await captureStdout(() => knowledgeShow({ ...SELECT }));
 
-    expect(output).toContain('data/skills.d');
+    // Inside the profile, and under the skills connection it grants (ADR-066).
+    // Both segments are shown because both decide which bytes these are.
+    expect(output).toContain('profiles/personal/lanes_memory');
+    expect(output).toContain('profiles/personal/skills.d/lan4');
+    expect(output).toContain('profiles/personal/lanes_entities');
     expect(output).toContain('lanes link knowledge use github');
   });
 
@@ -502,19 +506,27 @@ describe('removing a profile does not reach into the repository', () => {
 
     // `--dry-run`, so this asserts what the operator is shown *before* they
     // confirm — which is where a surprise of this size has to be said.
-    const { output } = await run(() => removeProfile('personal', { ...SELECT, dryRun: true, yes: true }));
+    //
+    // `--delete-data` is the sharper half of the assertion rather than a
+    // formality: the operator has said delete, and the repository still
+    // survives, because this command opens the target's declared storage and
+    // the routing that points memory at a repository is applied in
+    // `openRuntime`.
+    const { output } = await run(() =>
+      removeProfile('personal', { ...SELECT, dryRun: true, yes: true, deleteData: true }),
+    );
 
     expect(output).toContain('my-org/my-notes');
     expect(output).toContain('survive this removal');
     // The routing that points memory at a repository lives in `openRuntime`;
     // this command opens the target's declared storage, so it cannot see one.
-    expect(output).not.toContain('memory/main/a-note.md');
-    expect(output).not.toContain('entities/main/jan-bakker.md');
+    expect(output).not.toContain('memory/lan1/a-note.md');
+    expect(output).not.toContain('entities/lan7/jan-bakker.md');
     expect(github.files()).toEqual({
-      'memory/main/a-note.md': ENTRY,
+      'memory/lan1/a-note.md': ENTRY,
       'skills/triage/SKILL.md': SKILL,
-      'entities/main/jan-bakker.md': ENTITY,
-      'entities/main/_index.json': '{"v":1}',
+      'entities/lan7/jan-bakker.md': ENTITY,
+      'entities/lan7/_index.json': '{"v":1}',
     });
   });
 });

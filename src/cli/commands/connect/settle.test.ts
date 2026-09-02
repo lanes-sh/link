@@ -134,9 +134,11 @@ describe('the label a connection is given at connect time', () => {
     const settled = await settle({ prompter: prompter('Work mail') });
 
     expect(settled.label).toBe('Work mail');
-    // The two facts the id and the reconnect match are built from, unmoved.
+    // The account is what the reconnect match is built from, and it is unmoved
+    // by a label. The id is no longer built from anything — it is allocated,
+    // which is what stops a relabel ever moving a credential ref.
     expect(settled.account).toBe('ada@example.com');
-    expect(settled.connectionId).toBe('ada');
+    expect(settled.connectionId).toBe('con1');
   });
 
   test('offers the label already on the row when this connect is a reconnect', async () => {

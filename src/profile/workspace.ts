@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { layout, legacyProfileConfig, LEGACY_WORKSPACE_FILE, PROFILE_FILE } from './layout.ts';
 import { isRemoteWorkspace, readWorkspaceFile, workspaceFiles } from './files.ts';
 import { parseConfig, type LoadedConfig } from './load.ts';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
@@ -19,13 +20,8 @@ import { findSecrets, formatSecretFindings } from './secret-detection.ts';
 /**
  * Workspace and profile resolution.
  *
- * A workspace is a directory holding one or more profiles:
- *
- *   lanes-link.yaml      workspace settings: contract, default_profile
- *   profiles/
- *     personal.yaml
- *     work.yaml
- *   data/               local state per profile, gitignored
+ * A workspace holds its registry, its accounts, and one directory per profile.
+ * `layout.ts` has the tree.
  *
  * **A command says which profile it means, or it does not run** (ADR-037).
  * `--profile` is the only thing that selects one. `LANES_LINK_PROFILE` and
@@ -33,23 +29,23 @@ import { findSecrets, formatSecretFindings } from './secret-detection.ts';
  *
  * The argument this replaces was that persisted selection is how operators act
  * on the wrong thing, and that a *visible* fallback — an exported variable, a
- * key in a file the operator reads, and a line printed before every command —
- * was therefore safe. The first half stands and is why this rule exists at all.
+ * key in a file the operator reads, a line printed before every command — was
+ * therefore safe. The first half stands and is why this rule exists at all.
  * What did not survive is the conclusion: the printed line is a dim grey one,
  * and a fallback made an ignored flag survivable, so `profile add --target
  * cloud` dropping its flag surfaced on the *next* command, from a different
- * source, detached from its cause. A resolver with nothing to fall back to
- * cannot do that.
+ * source, detached from its cause. A resolver with nothing to fall back to cannot.
  *
  * The workspace root is deliberately not part of this and keeps its chain —
- * `LANES_LINK_HOME`, then an ancestor holding `lanes-link.yaml`, then
- * `~/.lanes-link`. Getting it wrong yields "no profiles here" rather than an
+ * `LANES_LINK_HOME`, then an ancestor holding `workspaces.yaml` (or the
+ * `lanes-link.yaml` it was called before contract 4), then `~/.lanes-link`.
+ * Getting it wrong yields "no profiles here" rather than an
  * action against the wrong account, it is the only channel a container has for
  * its bucket (ADR-023), and the ancestor walk is what makes a per-repository
  * workspace work at all.
  */
 
-export const WORKSPACE_FILE = 'lanes-link.yaml';
+export const WORKSPACE_FILE = 'workspaces.yaml';
 
 /** A profile, found. Everything a command needs before it has read the config. */
 export interface ProfileSelection {
@@ -104,7 +100,9 @@ export function resolveWorkspaceRoot(options: ResolveOptions = {}): string {
     // `existsSync`, not `Bun.file(path).size`: a missing file reports size 0,
     // so a `>= 0` check would call every candidate a workspace and stop at the
     // first directory it looked at.
-    if (existsSync(join(directory, WORKSPACE_FILE))) return directory;
+    // Either name: a root that cannot be found cannot be migrated.
+    const marker = (name: string): boolean => existsSync(join(directory, name));
+    if (marker(WORKSPACE_FILE) || marker(LEGACY_WORKSPACE_FILE)) return directory;
     const parent = dirname(directory);
     if (parent === directory) break;
     directory = parent;
@@ -114,7 +112,7 @@ export function resolveWorkspaceRoot(options: ResolveOptions = {}): string {
 }
 
 /**
- * Where Lanes Link itself is installed — the directory holding `package.json`,
+ * Where Lanes Link itself is installed — the directory with `package.json`,
  * and with it `skills/` and `docs/`.
  *
  * Not the workspace: this is the code, not the operator's data. Found by
@@ -144,7 +142,7 @@ export function installRoot(from: string): string {
  * workspace stopped being a directory.
  */
 export function profilePath(workspaceRoot: string, profile: string): string {
-  const key = `profiles/${profile}.yaml`;
+  const key = layout.profileConfig(profile);
   return isRemoteWorkspace(workspaceRoot) ? `${workspaceRoot}/${key}` : join(workspaceRoot, key);
 }
 
@@ -153,7 +151,7 @@ export async function loadProfileConfig(
   workspaceRoot: string,
   profile: string,
 ): Promise<LoadedConfig> {
-  const key = `profiles/${profile}.yaml`;
+  const key = layout.profileConfig(profile);
   const text = await readWorkspaceFile(workspaceFiles(workspaceRoot), key);
   const shown = profilePath(workspaceRoot, profile);
 
@@ -208,9 +206,13 @@ export async function readConnections(workspaceRoot: string): Promise<Connection
 }
 
 export async function readWorkspace(workspaceRoot: string): Promise<WorkspaceConfig | null> {
-  const path = join(workspaceRoot, WORKSPACE_FILE);
-  const text = await readWorkspaceFile(workspaceFiles(workspaceRoot), WORKSPACE_FILE);
+  // New name first: a workspace mid-migration still has the old file, and
+  // preferring it would undo the rename on the next write.
+  const files = workspaceFiles(workspaceRoot);
+  const current = await readWorkspaceFile(files, WORKSPACE_FILE);
+  const text = current ?? (await readWorkspaceFile(files, LEGACY_WORKSPACE_FILE));
   if (text === null) return null;
+  const path = join(workspaceRoot, current === null ? LEGACY_WORKSPACE_FILE : WORKSPACE_FILE);
 
   const parsed = workspaceSchema.safeParse(parseYaml(text));
   if (!parsed.success) {
@@ -223,15 +225,34 @@ export async function readWorkspace(workspaceRoot: string): Promise<WorkspaceCon
 
 export async function listProfiles(workspaceRoot: string): Promise<string[]> {
   try {
-    const entries = await workspaceFiles(workspaceRoot).list('profiles/');
-    return entries
-      .map((entry) => entry.key.slice('profiles/'.length))
-      .filter((name) => name.endsWith('.yaml') && !name.endsWith('.example.yaml'))
-      // Direct children only: a nested directory under `profiles/` is not a
-      // profile, and a bucket listing is flat so it would otherwise look like one.
-      .filter((name) => !name.includes('/'))
-      .map((name) => name.slice(0, -'.yaml'.length))
-      .sort();
+    const root = `${layout.profilesRoot()}/`;
+    const entries = await workspaceFiles(workspaceRoot).list(root);
+
+    // A profile is a *directory* holding a `profile.yaml` (ADR-067), so the
+    // shape matched is `<name>/profile.yaml`. The listing walks each profile's
+    // memory and assets on the way past, which is the price of the declaration
+    // sitting beside the bytes; `audit.log/` is the workspace's, so the largest
+    // collection is not in here.
+    //
+    // **Both shapes**, because every migration enumerates through here: listing
+    // only the new one leaves an unmigrated workspace holding no profiles as
+    // far as its own migration is concerned. Same rule as the marker file.
+    const names = new Set<string>();
+    for (const entry of entries) {
+      const rest = entry.key.slice(root.length);
+      const parts = rest.split('/');
+
+      if (parts.length === 2 && parts[1] === PROFILE_FILE) {
+        names.add(parts[0]!);
+        continue;
+      }
+
+      // Contract 3 and earlier. `.example.yaml` was never a profile.
+      if (parts.length === 1 && rest.endsWith('.yaml') && !rest.endsWith('.example.yaml')) {
+        names.add(rest.slice(0, -'.yaml'.length));
+      }
+    }
+    return [...names].sort();
   } catch {
     return [];
   }
@@ -254,8 +275,23 @@ export async function resolveSelection(options: ResolveOptions = {}): Promise<Pr
   if (!profile) throw noProfileNamed(workspaceRoot, await listProfiles(workspaceRoot), env);
 
   const path = profilePath(workspaceRoot, profile);
-  if (!(await workspaceFiles(workspaceRoot).has(`profiles/${profile}.yaml`))) {
+  const files = workspaceFiles(workspaceRoot);
+
+  if (!(await files.has(layout.profileConfig(profile)))) {
     const available = await listProfiles(workspaceRoot);
+
+    // **It exists, at the path contract 3 kept it.** Without this the refusal
+    // reads "profile personal does not exist. Available: personal" — what a
+    // listing that understands both layouts and a lookup that understands one
+    // produce together — and names no way forward (ADR-051).
+    if (await files.has(legacyProfileConfig(profile))) {
+      throw new ConfigError(
+        `Profile "${profile}" is still laid out the way contract 3 kept it, and nothing reads ` +
+          `that any more.\n  Migrate it with: lanes link doctor --fix --profile ${profile} ` +
+          '--workspace <name>',
+      );
+    }
+
     throw new ConfigError(
       `Profile "${profile}" does not exist (looked for ${path}).\n` +
         (available.length > 0 ? `Available: ${available.join(', ')}` : 'No profiles exist yet.'),

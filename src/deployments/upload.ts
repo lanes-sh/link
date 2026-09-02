@@ -1,6 +1,5 @@
 import {
   openTarget,
-  DATA_DIR,
   CONNECTIONS_FILE,
   WORKSPACE_FILE,
   layout,
@@ -58,16 +57,17 @@ export function deployedWorkspace(declared: TargetConfig): string | undefined {
  *
  * **Two areas inside `data/` are authored rather than accumulated.** Skills and
  * provider manifests have to go up or a deployed instance loses both — the
- * regression ADR-014 §2 fixed for skills. So this reaches into `data/` for
- * exactly those two, by whole path segment and never by prefix:
- * `data/skills.detour/` is not `skills.d`, and the difference between matching
- * it and not is a credential in a bucket.
+ * regression ADR-014 §2 fixed for skills. So the allowlist names those two
+ * areas, by whole path segment and never by prefix:
+ * `profiles/work/skills.detour/` is not `skills.d`, and the difference between
+ * matching it and not is a credential in a bucket.
  *
- * Neither is filtered by the profile set any more. Both are keyed by connection
- * now rather than by profile (ADR-057, ADR-059), and a connection can be
- * granted by any profile in the workspace — so sending "only this profile's
- * skills" is not a thing that can be computed, and withholding them would
- * deploy an endpoint whose prompts are missing.
+ * The two are filtered differently, and that follows from where they sit.
+ * A manifest is the workspace's (ADR-057) and defines a connection any profile
+ * may grant, so it goes up whole. Skills are back inside a profile (ADR-066),
+ * so they are filtered by the profile set exactly as the declarations are —
+ * sending a profile's procedures on a deploy that does not carry that profile
+ * would put one profile's material in front of another's endpoint.
  */
 export function isWorkspaceConfig(key: string, profiles?: readonly string[]): boolean {
   // **Never the workspace file.** It was sent, and it is the one file that must
@@ -86,39 +86,48 @@ export function isWorkspaceConfig(key: string, profiles?: readonly string[]): bo
   // wherever the workspace is read from (ADR-057).
   if (key === CONNECTIONS_FILE) return true;
 
-  if (isAuthoredArea(key)) return true;
-
   // A set rather than one name, because a deploy now sends every profile that
   // declares the target rather than the single one it was told. `undefined`
   // still means the whole workspace, and an *empty* set means nothing — which
   // is a distinction a bare string could not make.
   const wanted = profiles === undefined ? undefined : new Set(profiles);
+  const carried = (profile: string): boolean => wanted === undefined || wanted.has(profile);
 
-  if (!key.startsWith('profiles/') || !key.endsWith('.yaml')) return false;
-  const name = key.slice('profiles/'.length, -'.yaml'.length);
-  return wanted === undefined || wanted.has(name);
+  if (isManifest(key)) return true;
+
+  const segments = key.split('/');
+  if (segments[0] !== layout.profilesRoot()) return false;
+
+  const profile = segments[1];
+  if (profile === undefined || !carried(profile)) return false;
+
+  // The declaration itself.
+  if (key === layout.profileConfig(profile)) return true;
+
+  // `profiles/<profile>/skills.d/<connection>/…`, and at least one segment
+  // past the connection — a directory is not a file to send. Both skill
+  // layouts satisfy it: `<name>.md` is five segments and `<name>/SKILL.md` is
+  // six.
+  if (`${segments[0]}/${segments[1]}/${segments[2]}` === layout.skillsRoot(profile)) {
+    return segments.length >= 5;
+  }
+
+  // Everything else under a profile is state, a sealed vault, or a provider's
+  // own blobs. None of it is configuration and the vault is a credential.
+  return false;
 }
 
 /**
- * Whether `key` is inside one of the two authored areas.
+ * Whether `key` is one of the workspace's own provider manifests.
  *
- * Composed back out of `layout` rather than compared against literals, so a
+ * Composed back out of `layout` rather than compared against a literal, so a
  * renamed directory moves both this and the store that reads it, or neither.
- *
- * The segment counts differ because the layouts do, and both are the "a
- * directory is not a file to send" rule: a manifest is `data/providers.d/<file>`
- * and a skill is `data/skills.d/<connection>/<file>`, so requiring one more
- * segment than the area itself has is what stops the bare directory key
- * matching.
+ * Two segments at least, which is the "a directory is not a file to send" rule
+ * — `providers.d` alone is the area, `providers.d/<file>` is a manifest.
  */
-function isAuthoredArea(key: string): boolean {
+function isManifest(key: string): boolean {
   const segments = key.split('/');
-  if (segments.length < 3 || segments[0] !== DATA_DIR) return false;
-
-  const area = `${DATA_DIR}/${segments[1]}`;
-  if (area === layout.providers()) return segments.length >= 3;
-  if (area === layout.skillsRoot()) return segments.length >= 4;
-  return false;
+  return segments.length >= 2 && segments[0] === layout.providers();
 }
 
 /**

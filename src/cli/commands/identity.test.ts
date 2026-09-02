@@ -51,7 +51,7 @@ afterAll(async () => {
 
 /** The profile as it is on disk, parsed the way the endpoint parses it. */
 async function onDisk(root: string): Promise<ReturnType<typeof parseConfig>['config']> {
-  const text = await Bun.file(join(root, 'profiles', 'personal.yaml')).text();
+  const text = await Bun.file(join(root, 'profiles', 'personal', 'profile.yaml')).text();
   return parseConfig(text).config;
 }
 
@@ -82,10 +82,14 @@ describe('declaring an identity makes it readable', () => {
 
     const { added } = await addIdentity('name', 'Ada', { ...WHERE, note: 'for papers' });
 
+    // `lan8`: the template writes seven owner-layer rows and `identity` is the
+    // eighth, arriving with the first `identity add` rather than at creation
+    // (ADR-042). Ids are allocated across the workspace, so the number is the
+    // next free one rather than a per-provider count.
     expect(added.provisioned).toEqual([
-      'connections.yaml += identity.main',
-      'grants += identity.main',
-      'grants[].allow += identity.*',
+      'connections.yaml += lanes_identity.lan8',
+      'grants += lanes_identity.lan8',
+      'grants[].allow += lanes_identity.*',
     ]);
 
     const config = await onDisk(root);
@@ -93,14 +97,14 @@ describe('declaring an identity makes it readable', () => {
     // The row is in the workspace and the grant is in the profile (ADR-057), and
     // `identity add` writes both or neither — a grant naming a connection that
     // does not exist is refused at load.
-    expect((await readConnections(root)).connections.some((row) => row.provider === 'identity')).toBe(
+    expect((await readConnections(root)).connections.some((row) => row.provider === 'lanes_identity')).toBe(
       true,
     );
     expect(
       config.grants.some(
         (grant) =>
-          grant.connection === 'identity.main' &&
-          grant.allow.some((rule) => rule.capability === 'identity.*'),
+          grant.connection === 'lanes_identity.lan8' &&
+          grant.allow.some((rule) => rule.capability === 'lanes_identity.*'),
       ),
     ).toBe(true);
   });
@@ -185,10 +189,10 @@ describe('removing an entry', () => {
 
     const config = await onDisk(root);
     expect(config.identity).toEqual([]);
-    expect((await readConnections(root)).connections.some((row) => row.provider === 'identity')).toBe(
+    expect((await readConnections(root)).connections.some((row) => row.provider === 'lanes_identity')).toBe(
       true,
     );
-    expect(config.grants.some((grant) => grant.allow.some((rule) => rule.capability === 'identity.*'))).toBe(true);
+    expect(config.grants.some((grant) => grant.allow.some((rule) => rule.capability === 'lanes_identity.*'))).toBe(true);
   });
 });
 

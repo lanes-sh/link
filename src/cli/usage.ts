@@ -61,7 +61,11 @@ ${style.bold('Profiles')}
                                  rest are copied from a sibling profile
   ${PROGRAM} profile list [--json]
   ${PROGRAM} profile remove <name> [--workspace <name>] [--dry-run] [--yes] [--json]
-                                 the profile, its credentials, and its data
+                                 [--delete-data | --migrate-to <profile>]
+                                 the profile and its own token. Say which of
+                                 --delete-data or --migrate-to for its memory,
+                                 tasks, assets and skills — there is no default.
+                                 Accounts outlive it; disconnect removes those.
 
 ${style.bold('Workspaces')}
   ${PROGRAM} workspace list [--urls]   every workspace this one knows

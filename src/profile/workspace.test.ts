@@ -1,4 +1,4 @@
-import { workspaceYaml } from '#profile/testing.ts';
+import { workspaceYaml, writeProfileFixture } from '#profile/testing.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -17,12 +17,12 @@ async function workspace(profiles: string[], defaultProfile?: string): Promise<s
   roots.push(root);
 
   await writeFile(
-    join(root, 'lanes-link.yaml'),
+    join(root, 'workspaces.yaml'),
     `contract: 1\n${defaultProfile ? `default_profile: ${defaultProfile}\n` : ''}`,
   );
-  await mkdir(join(root, 'profiles'), { recursive: true });
+  await mkdir(join(root, 'profiles', 'alpha'), { recursive: true });
   for (const name of profiles) {
-    await writeFile(join(root, 'profiles', `${name}.yaml`), `contract: 1\n`);
+    await writeProfileFixture(root, name, `contract: 1\n`);
   }
   return root;
 }
@@ -103,6 +103,41 @@ describe('naming a profile', () => {
   });
 });
 
+describe('a workspace that has not been migrated yet', () => {
+  /**
+   * `listProfiles` understands both layouts and the lookup understands one,
+   * which is deliberate — a workspace needing migration has to be findable by
+   * the command that migrates it. What it produced together was a refusal
+   * reading "profile personal does not exist. Available: personal", naming no
+   * way forward. ADR-051 is the standing rule: a refusal has to name a command,
+   * and the command has to exist.
+   */
+  async function contract3(name: string): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), 'lanes-link-c3-'));
+    roots.push(root);
+    await writeFile(join(root, 'workspaces.yaml'), workspaceYaml(['local']));
+    await mkdir(join(root, 'profiles'), { recursive: true });
+    await writeFile(join(root, 'profiles', `${name}.yaml`), 'contract: 3\n');
+    return root;
+  }
+
+  test('a profile at the old path is told how to move, not told it is absent', async () => {
+    const root = await contract3('personal');
+
+    await expect(
+      resolveSelection({ env: { LANES_LINK_HOME: root }, profileFlag: 'personal' }),
+    ).rejects.toThrow(/contract 3[\s\S]*lanes link doctor --fix/);
+  });
+
+  test('a profile that really is absent still says so', async () => {
+    const root = await contract3('personal');
+
+    await expect(
+      resolveSelection({ env: { LANES_LINK_HOME: root }, profileFlag: 'work' }),
+    ).rejects.toThrow(/does not exist/);
+  });
+});
+
 describe('profile listing', () => {
   test('lists profiles and ignores example files', async () => {
     const root = await workspace(['personal', 'work'], 'personal');
@@ -125,10 +160,10 @@ describe('reading every profile at once', () => {
     const root = await mkdtemp(join(tmpdir(), 'lanes-link-ws-'));
     roots.push(root);
 
-    await writeFile(join(root, 'lanes-link.yaml'), workspaceYaml(['local']));
-    await mkdir(join(root, 'profiles'), { recursive: true });
+    await writeFile(join(root, 'workspaces.yaml'), workspaceYaml(['local']));
+    await mkdir(join(root, 'profiles', 'alpha'), { recursive: true });
     for (const [name, body] of Object.entries(profiles)) {
-      await writeFile(join(root, 'profiles', `${name}.yaml`), body);
+      await writeProfileFixture(root, name, body);
     }
     return root;
   }
@@ -143,7 +178,7 @@ describe('reading every profile at once', () => {
    * look vanished from inside one profile.
    */
   const declaring = (profile: string): string =>
-    `contract: 3\ninstance: { profile: ${profile} }\n`;
+    `contract: 4\ninstance: { profile: ${profile} }\n`;
 
   test('loads each profile with its config', async () => {
     const root = await withTargets({
@@ -155,7 +190,7 @@ describe('reading every profile at once', () => {
 
     expect(workspace.loaded.map((entry) => entry.profile)).toEqual(['alpha', 'beta']);
     expect(workspace.unreadable).toEqual([]);
-    expect(workspace.loaded[0]!.profilePath).toBe(join(root, 'profiles', 'alpha.yaml'));
+    expect(workspace.loaded[0]!.profilePath).toBe(join(root, 'profiles', 'alpha', 'profile.yaml'));
   });
 
   test('a profile that will not parse is reported, not thrown', async () => {
@@ -163,7 +198,7 @@ describe('reading every profile at once', () => {
     // dies on the first bad file stops working exactly when it is needed.
     const root = await withTargets({
       alpha: declaring('alpha'),
-      broken: 'contract: 3\ninstance: {}\n',
+      broken: 'contract: 4\ninstance: {}\n',
     });
 
     const workspace = await loadWorkspaceProfiles(root);

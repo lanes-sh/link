@@ -115,11 +115,7 @@ async function useGithub(flags: KnowledgeFlags): Promise<void> {
 
     // Nothing is written until this returns: the token is asked for, the
     // repository is probed, and either can refuse while the profile is intact.
-    const secrets = await openSecretStoreFor(
-      runtime.config,
-      runtime.resolution.workspaceRoot,
-      runtime.target,
-    );
+    const secrets = await openSecretStoreFor(runtime.resolution.workspaceRoot, runtime.target);
     const token = await resolveToken(secrets, knowledge.token_ref, knowledge.repo, selection, {
       replace: flags.replace,
     });
@@ -205,11 +201,7 @@ async function useLocal(flags: KnowledgeFlags): Promise<void> {
 
     // Built here rather than taken from `runtime.knowledge`, so both directions
     // of this command reach the repository through one constructor.
-    const secrets = await openSecretStoreFor(
-      runtime.config,
-      runtime.resolution.workspaceRoot,
-      runtime.target,
-    );
+    const secrets = await openSecretStoreFor(runtime.resolution.workspaceRoot, runtime.target);
     const token = await resolveToken(secrets, knowledge.token_ref, knowledge.repo, selection);
     const repository = repositoryFor(knowledge, token, flags.fetch);
 
@@ -270,12 +262,13 @@ async function openLocalStores(
     },
     runtime.credentials,
   );
-  // The *granted* connection, not the profile name. `layout.skills` changed
-  // meaning without changing arity at ADR-059, so the compiler was silent.
-  const skillsConnection = soleGrantFor(runtime.config, 'skills');
+  // The *granted* connection, beside the profile. `layout.skills` changed
+  // meaning without changing arity at ADR-059, so the compiler was silent;
+  // ADR-066 put the profile back in front of it, and it is an argument now.
+  const skillsConnection = soleGrantFor(runtime.config, 'lanes_skills');
   return {
     storage: factory(),
-    skills: skillsConnection === undefined ? null : factory(layout.skills(skillsConnection)),
+    skills: skillsConnection === undefined ? null : factory(layout.skills(runtime.config.instance.profile, skillsConnection)),
   };
 }
 
@@ -349,7 +342,7 @@ function grantedInstances(config: Parameters<typeof soleGrantFor>[0]): {
   entities: string;
 } {
   return {
-    memory: soleGrantFor(config, 'memory') ?? 'main',
-    entities: soleGrantFor(config, 'entities') ?? 'main',
+    memory: soleGrantFor(config, 'lanes_memory') ?? 'main',
+    entities: soleGrantFor(config, 'lanes_entities') ?? 'main',
   };
 }

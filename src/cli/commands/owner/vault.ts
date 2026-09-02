@@ -50,7 +50,7 @@ export async function vaultGet(id: string | undefined, flags: OwnerFlags): Promi
   const itemId = required(id, 'lanes link vault get <id> [--show]');
 
   await withRuntime(flags, async (runtime) => {
-    const connection = ownerConnection(runtime.config, 'vault', flags);
+    const connection = ownerConnection(runtime.config, 'lanes_vault', flags);
     const item = await runtime.vault.get(connection, itemId);
     if (!item) throw new ConfigError(`No vault item "${itemId}" in this profile.`);
 
@@ -77,7 +77,7 @@ export async function vaultSet(id: string | undefined, flags: OwnerFlags): Promi
   const value = await readStdin(`lanes link vault set ${itemId}`, 'the secret');
 
   await withRuntime(flags, async (runtime) => {
-    const connection = ownerConnection(runtime.config, 'vault', flags);
+    const connection = ownerConnection(runtime.config, 'lanes_vault', flags);
     const replacing = (await runtime.vault.get(connection, itemId)) !== null;
 
     await runtime.vault.put(connection, {
@@ -104,7 +104,7 @@ export async function vaultRemove(id: string | undefined, flags: OwnerFlags): Pr
   const itemId = required(id, 'lanes link vault remove <id>');
 
   await withRuntime(flags, async (runtime) => {
-    const connection = ownerConnection(runtime.config, 'vault', flags);
+    const connection = ownerConnection(runtime.config, 'lanes_vault', flags);
     const item = await runtime.vault.get(connection, itemId);
     if (!item) throw new ConfigError(`No vault item "${itemId}" in this profile.`);
 

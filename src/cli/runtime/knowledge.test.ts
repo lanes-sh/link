@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { KNOWLEDGE_LAYOUT, knowledgeRoot, parseRepository, knowledgeTargetSchema } from '#profile';
-import { knowledgeStores } from '#deployments/knowledge.ts';
+import { KNOWLEDGE_LAYOUT, KNOWLEDGE_PREFIX, knowledgeRoot, parseRepository, knowledgeTargetSchema } from '#profile';
+import { knowledgeRoutes, knowledgeStores } from '#deployments/knowledge.ts';
 import { GithubRepository } from '#deployments/adapters/github-repo.ts';
 import { createFakeGithub } from '#deployments/adapters/github-testing.ts';
 import { createMemoryBlobStore } from '#stores/blobs/testing.ts';
@@ -41,13 +41,10 @@ async function open(overrides: Record<string, unknown> = {}) {
   });
   const stores = await knowledgeStores(repository, config);
 
-  // Exactly what `openRuntime` builds: the profile's blob root with `memory/`
-  // and `entities/` routed away, and skills taken from the repository rather
-  // than the profile.
-  const storage = routeBlobStore(createMemoryBlobStore(), [
-    { prefix: `${KNOWLEDGE_LAYOUT.memory}/`, store: stores.memory },
-    { prefix: `${KNOWLEDGE_LAYOUT.entities}/`, store: stores.entities },
-  ]);
+  // `knowledgeRoutes` rather than a second list of routes: this file asserted
+  // against its own copy, so the prefixes could — and did — drift from the ones
+  // `openRuntime` actually installs. It builds exactly what the runtime builds.
+  const storage = routeBlobStore(createMemoryBlobStore(), knowledgeRoutes(stores));
 
   return { github, storage, skills: stores.skills };
 }
@@ -58,7 +55,7 @@ describe('a profile whose knowledge is in a repository', () => {
 
     // `scopeNamespace` and `scopeBlobStore` are what `buildProviderContext`
     // calls — the provider itself never learns where it is rooted.
-    const provider = scopeBlobStore(storage, scopeNamespace('memory', 'main'));
+    const provider = scopeBlobStore(storage, scopeNamespace('lanes_memory', 'main'));
     await provider.put(memoryStorage.key('a-note'), new TextEncoder().encode('body'), {
       contentType: 'text/markdown',
     });
@@ -69,7 +66,7 @@ describe('a profile whose knowledge is in a repository', () => {
   test('an entity and its derived index both land in the repository', async () => {
     const { github, storage } = await open();
 
-    const provider = scopeBlobStore(storage, scopeNamespace('entities', 'main'));
+    const provider = scopeBlobStore(storage, scopeNamespace('lanes_entities', 'main'));
     await provider.put(
       'jan-bakker.md',
       new TextEncoder().encode('---\nname: Jan Bakker\n---\n\n'),
@@ -91,12 +88,12 @@ describe('a profile whose knowledge is in a repository', () => {
   test('the CLI and the provider address the same object', async () => {
     const { storage } = await open();
 
-    const provider = scopeBlobStore(storage, scopeNamespace('memory', 'main'));
+    const provider = scopeBlobStore(storage, scopeNamespace('lanes_memory', 'main'));
     await provider.put(memoryStorage.key('shared'), new TextEncoder().encode('written by the provider'));
 
     // `lanes link memory` builds its store from the same two functions, which
-    // is the point of `memoryStore` in `commands/owner/memory.ts`.
-    const cli = scopeBlobStore(storage, scopeNamespace('memory', 'main'));
+    // is the point of `memoryStore` in `commands/owner/lanes_memory.ts`.
+    const cli = scopeBlobStore(storage, scopeNamespace('lanes_memory', 'main'));
     expect(new TextDecoder().decode((await cli.get('shared.md'))!)).toBe('written by the provider');
   });
 
@@ -104,7 +101,7 @@ describe('a profile whose knowledge is in a repository', () => {
     const { github, storage } = await open();
 
     for (const connection of ['main', 'work']) {
-      const store = scopeBlobStore(storage, scopeNamespace('memory', connection));
+      const store = scopeBlobStore(storage, scopeNamespace('lanes_memory', connection));
       await store.put('note.md', new TextEncoder().encode(connection));
     }
 
@@ -126,7 +123,7 @@ describe('a profile whose knowledge is in a repository', () => {
   test('a path prefix moves both areas and keeps them apart', async () => {
     const { github, storage, skills } = await open({ path: 'context' });
 
-    await scopeBlobStore(storage, scopeNamespace('memory', 'main')).put(
+    await scopeBlobStore(storage, scopeNamespace('lanes_memory', 'main')).put(
       'note.md',
       new TextEncoder().encode('m'),
     );
@@ -176,15 +173,25 @@ describe('the repository layout', () => {
     expect(knowledgeRoot(knowledge({ path: 'context' }), 'entities')).toBe('context/entities');
   });
 
-  test('a directory name is the provider namespace that routes into it', () => {
-    // If these ever differ, a write goes to one place and a read looks in
-    // another, and nothing fails — the entry is simply not there.
-    expect(KNOWLEDGE_LAYOUT.memory).toBe('memory');
-    expect(scopeNamespace('memory', 'main').startsWith(`${KNOWLEDGE_LAYOUT.memory}/`)).toBe(true);
-    expect(KNOWLEDGE_LAYOUT.entities).toBe('entities');
-    expect(scopeNamespace('entities', 'main').startsWith(`${KNOWLEDGE_LAYOUT.entities}/`)).toBe(
+  test('the route is the provider namespace, and the directory is the readable name', () => {
+    // These were one string, on the reasoning that one word doing both jobs
+    // could not disagree with itself. Contract 4 prefixed the owner layer, so
+    // they are two — and the pairing is what has to hold: the route must match
+    // what core scopes a store into, or a write goes to one place and a read
+    // looks in another with nothing failing. The entry is simply not there.
+    expect(KNOWLEDGE_PREFIX.memory).toBe('lanes_memory');
+    expect(scopeNamespace('lanes_memory', 'main').startsWith(`${KNOWLEDGE_PREFIX.memory}/`)).toBe(
       true,
     );
+    expect(KNOWLEDGE_PREFIX.entities).toBe('lanes_entities');
+    expect(
+      scopeNamespace('lanes_entities', 'main').startsWith(`${KNOWLEDGE_PREFIX.entities}/`),
+    ).toBe(true);
+
+    // And the repository keeps the reader's name: somebody browses this tree on
+    // GitHub, where `lanes_memory/` says nothing `memory/` does not.
+    expect(KNOWLEDGE_LAYOUT.memory).toBe('memory');
+    expect(KNOWLEDGE_LAYOUT.entities).toBe('entities');
   });
 
   test('what may move is still what a document is, and nothing else', () => {

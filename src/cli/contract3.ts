@@ -1,5 +1,6 @@
 import { newConnectionsTemplate } from './config-templates.ts';
-import { applyMoves, planMoves, type Move } from './contract3-data.ts';
+import { planMoves } from './contract3-data.ts';
+import { applyMoves } from './migrate-move.ts';
 import {
   mergeCredentials,
   planCredentials,
@@ -10,9 +11,7 @@ import { parseDocument } from 'yaml';
 import {
   CONNECTIONS_FILE,
   ConfigError,
-  DATA_DIR,
   isRemoteWorkspace,
-  WORKSPACE_FILE,
   layout,
   listProfiles,
   readWorkspaceFile,
@@ -22,7 +21,7 @@ import {
 import { RESERVED_PROVIDER_IDS } from '#connectivity';
 import { ConfigDocument } from './config-edit.ts';
 import { grantsFor, hoistConnections } from './contract3-shape.ts';
-
+import { C3 } from './contract3-layout.ts';
 /**
  * Contract 2 to contract 3: connections move out of the profile.
  *
@@ -44,8 +43,8 @@ import { grantsFor, hoistConnections } from './contract3-shape.ts';
  *      the old flat policy, which is exactly what contract 2 meant.
  *   4. Bytes move to their connection-keyed homes.
  *
- * The registry rename rides along at the end, because it is the one step that
- * cannot half-apply: it is a single document.
+ * The registry rename rides along at the end: it is one document and cannot
+ * half-apply.
  */
 
 /** What a divergent id was renamed to, and why. */
@@ -102,7 +101,7 @@ export async function needsContract3(workspaceRoot: string): Promise<boolean> {
 }
 
 async function readProfile(root: string, profile: string): Promise<LegacyProfile | null> {
-  const text = await readWorkspaceFile(workspaceFiles(root), `profiles/${profile}.yaml`);
+  const text = await readWorkspaceFile(workspaceFiles(root), C3.profile(profile));
   if (text === null) return null;
   try {
     return parseDocument(text).toJSON() as LegacyProfile;
@@ -162,7 +161,7 @@ export async function migrateToContract3(
     ...[...legacy.keys()].map((profile) => `profiles/${profile}.yaml: contract 3, grants`),
   ];
   if (credentials.refs.length > 0) {
-    changes.push(`${layout.credentials()}: ${credentials.refs.length} credential(s) merged`);
+    changes.push(`${C3.credentials()}: ${credentials.refs.length} credential(s) merged`);
   }
   if (credentials.tokens.length > 0) {
     changes.push(
@@ -280,7 +279,9 @@ async function rewriteProfiles(
   subject: string | undefined,
 ): Promise<void> {
   for (const [profile, config] of legacy) {
-    const document = await ConfigDocument.open(root, profile);
+    // `openKey` at the contract-3 path, not `open`, which resolves the live
+    // layout: this produces contract 3, and contract 4 moves what it produced.
+    const document = await ConfigDocument.openKey(root, C3.profile(profile));
 
     document.setIn(['contract'], 3);
     document.setIn(['grants'], grantsFor(config, perProfile.get(profile) ?? new Map()));
@@ -301,13 +302,13 @@ async function rewriteProfiles(
     document.removeIn(['policy']);
     document.removeIn(['oauth_apps']);
 
-    await document.save();
+    await document.save({ contract: 3 });
   }
 }
 
 /** `targets:` becomes `workspaces:`, and a pointer's `workspace:` becomes `at:`. */
 async function rewriteRegistry(root: string): Promise<void> {
-  const document = await ConfigDocument.openKey(root, WORKSPACE_FILE);
+  const document = await ConfigDocument.openKey(root, C3.workspace);
   const registry = document.toJSON() as {
     contract?: number;
     targets?: Record<string, { workspace?: string }>;

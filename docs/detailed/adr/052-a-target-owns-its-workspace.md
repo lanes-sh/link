@@ -1,6 +1,6 @@
 # ADR-052: A target owns its workspace, and a profile lives in exactly one
 
-**Status:** accepted · **Supersedes** [ADR-044](044-a-deployment-records-where-it-lives.md) ·
+**Status:** accepted; its `lanes-link.yaml` is `workspaces.yaml` since [ADR-067](067-one-directory-per-profile.md) · **Supersedes** [ADR-044](044-a-deployment-records-where-it-lives.md) ·
 **Amends** [ADR-043](043-a-target-scoped-command-acts-on-the-target.md) ·
 **Follows from** [ADR-023](023-the-workspace-is-not-in-the-image.md),
 [ADR-009](009-one-endpoint-per-workspace.md)

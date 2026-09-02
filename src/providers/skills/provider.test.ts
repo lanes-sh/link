@@ -133,7 +133,7 @@ describe('a skill body is still not readable without authoring — ADR-012 §1, 
     const provider = createSkillsProvider({ skills: [] });
 
     expect(provider.capabilities).toEqual([]);
-    expect(provider.manifest.id).toBe('skills');
+    expect(provider.manifest.id).toBe('lanes_skills');
   });
 });
 
@@ -142,7 +142,7 @@ describe('authoring a skill — ADR-014', () => {
     const { harness } = await authoring();
 
     expect(textOf(await harness.invoke('manage.write', { name: 'draft-reply', text: DOCUMENT })))
-      .toContain('skills_draft-reply');
+      .toContain('lanes_skills_draft-reply');
 
     // Required arguments plain, optional ones marked — enough for an agent to
     // decide whether the skill applies without reading its body.
@@ -193,8 +193,8 @@ describe('authoring a skill — ADR-014', () => {
   });
 
   test('the management tools are namespaced, so a skill cannot collide with one', async () => {
-    // A skill named `write` would otherwise be `skills.write` twice over. Skill
-    // names cannot contain a dot, so `skills.manage.*` can only mean these four.
+    // A skill named `write` would otherwise be `lanes_skills.write` twice over. Skill
+    // names cannot contain a dot, so `lanes_skills.manage.*` can only mean these four.
     const { provider } = await authoring([skill({ name: 'write' }), skill({ name: 'manage' })]);
     const names = provider.capabilities.map((capability) => capability.name);
 
@@ -207,7 +207,7 @@ describe('authoring a skill — ADR-014', () => {
 describe('what reaches the audit log', () => {
   test('a skill body is never a recorded argument', async () => {
     // The name is an address; the text is instructions, which are the content
-    // rather than the subject — the same trade `memory.write` makes.
+    // rather than the subject — the same trade `lanes_memory.write` makes.
     const { provider } = await authoring();
     const write = provider.capabilities.find((capability) => capability.name === 'manage.write')!;
 

@@ -92,7 +92,7 @@ export function createSetupProvider(options: SetupProviderOptions): ProviderDefi
   });
 
   return defineLocalProvider({
-    id: 'setup',
+    id: 'lanes_setup',
     name: 'Setup',
     version: '1.0.0',
     description:
@@ -147,7 +147,7 @@ export function createSetupProvider(options: SetupProviderOptions): ProviderDefi
           'The console steps, the values needed, and the exact command that connects it. ' +
           'Use this to tell the owner what to run — do not compose the command yourself.',
         inputSchema: z.object({
-          id: z.string().min(1).describe('Provider id, as listed by setup_overview — e.g. "notion"'),
+          id: z.string().min(1).describe('Provider id, as listed by lanes_setup_overview — e.g. "notion"'),
           connection: z
             .string()
             .optional()
@@ -167,7 +167,7 @@ export function createSetupProvider(options: SetupProviderOptions): ProviderDefi
                 {
                   type: 'text',
                   text:
-                    `No provider "${id}". Call setup_overview for the ids this endpoint knows.`,
+                    `No provider "${id}". Call lanes_setup_overview for the ids this endpoint knows.`,
                 },
               ],
               isError: true,

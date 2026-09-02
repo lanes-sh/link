@@ -127,6 +127,6 @@ export async function assetsRemove(name: string | undefined, flags: OwnerFlags):
  * it is built from the same two functions rather than spelled as a path.
  */
 export function assetsStore(runtime: Runtime, flags: OwnerFlags): BlobStore {
-  const connection = ownerConnection(runtime.config, 'assets', flags);
-  return scopeBlobStore(runtime.storage, scopeNamespace('assets', connection));
+  const connection = ownerConnection(runtime.config, 'lanes_assets', flags);
+  return scopeBlobStore(runtime.storage, scopeNamespace('lanes_assets', connection));
 }

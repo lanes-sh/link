@@ -1,4 +1,4 @@
-import { workspaceYaml } from '#profile/testing.ts';
+import { workspaceYaml, writeProfileFixture } from '#profile/testing.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -27,11 +27,11 @@ const roots: string[] = [];
 function profileYaml(name: string, options: { gmail?: string } = {}): string {
   return (
     `contract: 2\ninstance: { profile: ${name} }\n` +
-    `connections:\n  - { id: main, provider: setup, account: Setup }\n` +
+    `connections:\n  - { id: main, provider: lanes_setup, account: Setup }\n` +
     (options.gmail
       ? `  - { id: ${options.gmail}, provider: gmail, account: ${name}@example.com }\n`
       : '') +
-    `policy:\n  allow: [setup.*${options.gmail ? ', gmail.*' : ''}]\n`
+    `policy:\n  allow: [lanes_setup.*${options.gmail ? ', gmail.*' : ''}]\n`
   );
 }
 
@@ -42,10 +42,10 @@ async function workspace(
   const root = await mkdtemp(join(tmpdir(), 'lanes-link-serving-'));
   roots.push(root);
 
-  await writeFile(join(root, 'lanes-link.yaml'), workspaceFile);
+  await writeFile(join(root, 'workspaces.yaml'), workspaceFile);
   await mkdir(join(root, 'profiles'), { recursive: true });
   for (const [name, body] of Object.entries(profiles)) {
-    await writeFile(join(root, 'profiles', `${name}.yaml`), body);
+    await writeProfileFixture(root, name, body);
   }
   return root;
 }

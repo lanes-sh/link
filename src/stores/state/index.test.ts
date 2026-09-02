@@ -43,7 +43,7 @@ for (const [name, open] of backings) {
     async function use(body: (state: RuntimeState) => Promise<void>): Promise<void> {
       const backing = await open();
       try {
-        await body(createRuntimeState(backing.blobs, ticking()));
+        await body(createRuntimeState(backing.blobs, backing.blobs, ticking()));
       } finally {
         await backing.dispose();
       }

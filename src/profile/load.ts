@@ -39,8 +39,12 @@ export interface LoadedConfig {
  *  3. Schema shape.
  *  4. Referential integrity, which needs a well-formed document to check.
  */
-export function validateConfig(raw: unknown, source = '<config>'): Config {
-  const config = validateConfigShape(raw, source);
+export function validateConfig(
+  raw: unknown,
+  source = '<config>',
+  contract = SUPPORTED_CONTRACT,
+): Config {
+  const config = validateConfigShape(raw, source, contract);
   assertReferentialIntegrity(config, source);
   return config;
 }
@@ -58,12 +62,16 @@ export function validateConfig(raw: unknown, source = '<config>'): Config {
  * through `validateConfig`, and the split exists so that the one command whose
  * job is to fix a refusal is not blocked by it.
  */
-export function validateConfigShape(raw: unknown, source = '<config>'): Config {
+export function validateConfigShape(
+  raw: unknown,
+  source = '<config>',
+  contract = SUPPORTED_CONTRACT,
+): Config {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
     throw new ConfigError(`${source}: expected a YAML mapping at the top level`);
   }
 
-  assertSupportedContract(raw, source);
+  assertSupportedContract(raw, source, contract);
 
   const secrets = findSecrets(raw);
   if (secrets.length > 0) {
@@ -88,7 +96,17 @@ export function validateConfigShape(raw: unknown, source = '<config>'): Config {
  * risks reading a document as more permissive than the operator wrote it, and
  * refusing to start is always the safer failure.
  */
-function assertSupportedContract(raw: object, source: string): void {
+/**
+ * The contract this document must declare.
+ *
+ * `expected` is `SUPPORTED_CONTRACT` everywhere except inside a migration,
+ * which writes intermediate shapes on the way to the newest one — contract 1 to
+ * 2 to 3 to 4, saving at each step. Refusing those would mean a migration
+ * cannot use `ConfigDocument` at all and has to write YAML past the validator,
+ * losing the secret-shaped-value check that is the reason the validator runs on
+ * every save. A step that declares which contract it is producing keeps both.
+ */
+function assertSupportedContract(raw: object, source: string, expected: number): void {
   const contract = (raw as { contract?: unknown }).contract;
 
   if (typeof contract !== 'number' || !Number.isInteger(contract)) {
@@ -97,14 +115,20 @@ function assertSupportedContract(raw: object, source: string): void {
     );
   }
 
-  if (contract !== SUPPORTED_CONTRACT) {
-    const direction = contract > SUPPORTED_CONTRACT ? 'newer than' : 'older than';
+  if (contract !== expected) {
+    const direction = contract > expected ? 'newer than' : 'older than';
     throw new ConfigError(
       `${source}: contract ${contract} is ${direction} the contract this binary implements (${SUPPORTED_CONTRACT}). ` +
         `Refusing to load rather than guessing at what the document means. ` +
+        // **Naming the command is the whole point of this branch.** ADR-051
+        // records what a refusal that names none costs: `validateConfig` runs
+        // from every command, so one stale workspace takes `status`, `start`,
+        // `plan` and `doctor` down together, and "migrate the config" left an
+        // operator with a wall and no door. `doctor --fix` runs every migration
+        // between the contract on disk and this one.
         (contract > SUPPORTED_CONTRACT
           ? 'Upgrade lanes-link.'
-          : 'Migrate the config, or use a matching lanes-link version.'),
+          : 'Migrate it with: lanes link doctor --fix'),
     );
   }
 }
@@ -166,8 +190,11 @@ function formatZodIssues(error: z.ZodError): string {
 export interface ProviderRename {
   /** What a row naming the old id should say instead. */
   readonly to: string;
-  /** The account label that means this row is the built-in, not a vendor one. */
-  readonly keeps: string;
+  /**
+   * The account label that meant this row was the built-in rather than a
+   * vendor's, or `null` where the id belongs to nobody now.
+   */
+  readonly keeps: string | null;
   /** What the plain noun now names, for the sentence below. */
   readonly becomes: string;
   /** What it used to name. */
@@ -190,8 +217,12 @@ export interface ProviderRename {
 export const RENAMED_PROVIDERS: Readonly<Record<string, ProviderRename>> = {
   tasks: {
     to: 'google_tasks',
-    keeps: 'Tasks',
-    becomes: 'the built-in task list',
+    // **`null`, where this was `'Tasks'`.** The refusal existed because the
+    // built-in claimed `tasks`, so a stale Google Tasks row rebound to it and
+    // the label was the only evidence of which was meant (ADR-051). The
+    // built-in is `lanes_tasks` now, so no label makes a row here legitimate.
+    keeps: null,
+    becomes: 'nobody\u2019s provider id \u2014 the built-in task list is lanes_tasks',
     was: 'Google Tasks',
     noun: 'task list',
   },
@@ -217,8 +248,9 @@ export function renamedProviderFor(connection: {
   account: string;
 }): ProviderRename | null {
   const moved = RENAMED_PROVIDERS[connection.provider];
-  if (!moved || connection.account === moved.keeps) return null;
-  return moved;
+  if (!moved) return null;
+  // `keeps === null` means the id belongs to nobody, so no label exempts a row.
+  return moved.keeps !== null && connection.account === moved.keeps ? null : moved;
 }
 
 export function describeRename(
@@ -229,11 +261,15 @@ export function describeRename(
   if (!moved) return null;
 
   return (
-    `"${connection.provider}" is now ${moved.becomes}, and this row is labelled ` +
-    `"${connection.account}" rather than "${moved.keeps}".\n` +
+    (moved.keeps === null
+      ? `"${connection.provider}" is ${moved.becomes}.\n`
+      : `"${connection.provider}" is now ${moved.becomes}, and this row is labelled ` +
+        `"${connection.account}" rather than "${moved.keeps}".\n`) +
     `  If it was ${moved.was}: set provider to ${moved.to} here, and rename any ` +
     `"${connection.provider}.*" policy rule.\n` +
-    `  If it is your own ${moved.noun}: set account to ${moved.keeps}.\n` +
+    (moved.keeps === null
+      ? `  If it is your own ${moved.noun}: it is lanes_${connection.provider} now.\n`
+      : `  If it is your own ${moved.noun}: set account to ${moved.keeps}.\n`) +
     `  ${repair} applies the first, where a stored credential proves it.`
   );
 }

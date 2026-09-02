@@ -768,7 +768,7 @@ describe('reload', () => {
   /** A config naming exactly these connections, so one can be seen to appear. */
   function configWith(profile: string, port: number, ids: string[], policy: string): Config {
     return parseConfig(`
-contract: 3
+contract: 4
 instance:
   profile: ${profile}
   port: ${port}
@@ -943,7 +943,7 @@ members: []
       port,
       policy: READ_ONLY,
       config: configWith('personal', port, ['a'], READ_ONLY),
-      reopen: () => Promise.reject(new Error('profiles/personal.yaml: could not parse YAML')),
+      reopen: () => Promise.reject(new Error('profiles/personal/profile.yaml: could not parse YAML')),
     });
 
     try {

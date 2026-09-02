@@ -1,4 +1,4 @@
-import type { KeyValueStore } from '#stores/state';
+import { OAUTH_NAMESPACE, type KeyValueStore } from '#stores/state';
 
 /**
  * What an authorization server has to remember.
@@ -20,10 +20,26 @@ import type { KeyValueStore } from '#stores/state';
  * living about a minute.
  */
 
-const CLIENTS = 'oauth/clients';
-const CODES = 'oauth/codes';
-const TOKENS = 'oauth/tokens';
-const PENDING = 'oauth/pending';
+// Derived from `OAUTH_NAMESPACE`, not spelled. These were `oauth/clients` and
+// the rest while the namespace constant said `oauth.v1`, so the contract-4
+// migration moved every record to a key nothing read — every signed-in client
+// logged out, which is the outcome the migration exists to prevent. Worse, an
+// undotted namespace is not a workspace one, so `isWorkspaceNamespace` sent
+// live records into one profile's store: `profile remove <primary>` would take
+// the endpoint's registrations with it.
+const CLIENTS = `${OAUTH_NAMESPACE}/clients`;
+const CODES = `${OAUTH_NAMESPACE}/codes`;
+const TOKENS = `${OAUTH_NAMESPACE}/tokens`;
+const PENDING = `${OAUTH_NAMESPACE}/pending`;
+
+/**
+ * The four, for the test that holds them to `isWorkspaceNamespace`.
+ *
+ * Exported rather than retyped there: the pairing between what this module
+ * writes and where state routing sends it is the thing that broke, so the test
+ * reads the names off the module that owns them.
+ */
+export const OAUTH_SUBSPACES: readonly string[] = [CLIENTS, CODES, TOKENS, PENDING];
 
 /** Far above any real number of connectors, and far below a problem. */
 const MAX_CLIENTS = 200;

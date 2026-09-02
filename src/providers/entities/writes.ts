@@ -120,7 +120,7 @@ export const writeCapabilities: readonly Capability[] = [
               type: 'text',
               text: `${existing === null ? 'Declared' : 'Updated'} "${id}" on ${context.connection.key}.`,
             },
-            { type: 'resource_link', uri: `entities://entity/${id}`, name },
+            { type: 'resource_link', uri: `lanes-entities://entity/${id}`, name },
           ],
         };
       },

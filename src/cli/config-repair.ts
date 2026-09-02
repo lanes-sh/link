@@ -1,4 +1,5 @@
 import { ConfigDocument } from './config-edit.ts';
+import { nextConnectionId } from './identity.ts';
 
 /**
  * Giving a profile a reserved provider it is missing, without undoing a choice.
@@ -16,16 +17,16 @@ import { ConfigDocument } from './config-edit.ts';
  * than several that look alike.
  */
 
-/** The reserved provider ids that hold no account, and the label each row carries. */
+/** Lanes' own provider ids, and the label each row carries. */
 const RESERVED_SURFACES = {
-  memory: 'Memory',
-  tasks: 'Tasks',
-  assets: 'Assets',
-  skills: 'Skills',
-  vault: 'Vault',
-  setup: 'Setup',
-  identity: 'Identity',
-  entities: 'Entities',
+  lanes_memory: 'Memory',
+  lanes_tasks: 'Tasks',
+  lanes_assets: 'Assets',
+  lanes_skills: 'Skills',
+  lanes_vault: 'Vault',
+  lanes_setup: 'Setup',
+  lanes_identity: 'Identity',
+  lanes_entities: 'Entities',
 } as const;
 
 type ReservedSurface = keyof typeof RESERVED_SURFACES;
@@ -53,13 +54,13 @@ type ReservedSurface = keyof typeof RESERVED_SURFACES;
  * template writes and a diff between the two reads as a diff.
  */
 export const DEFAULT_SURFACES: readonly ReservedSurface[] = [
-  'memory',
-  'tasks',
-  'assets',
-  'skills',
-  'vault',
-  'setup',
-  'entities',
+  'lanes_memory',
+  'lanes_tasks',
+  'lanes_assets',
+  'lanes_skills',
+  'lanes_vault',
+  'lanes_setup',
+  'lanes_entities',
 ];
 
 /**
@@ -178,8 +179,16 @@ export function ensureReservedConnection(
     (row) => (row as { provider?: unknown } | null)?.provider === provider,
   ) as { id?: unknown } | undefined;
 
-  const key =
-    owned?.connection ?? `${provider}.${typeof declared?.id === 'string' ? declared.id : 'main'}`;
+  // The id an existing row already has, else the next free one. Opaque and
+  // allocated across the whole workspace, so `lan3` names exactly one row
+  // however many surfaces a repair adds in one pass.
+  const taken = rows.flatMap((row) => {
+    const id = (row as { id?: unknown } | null)?.id;
+    return typeof id === 'string' ? [id] : [];
+  });
+  const id = typeof declared?.id === 'string' ? declared.id : nextConnectionId(taken, true);
+
+  const key = owned?.connection ?? `${provider}.${id}`;
 
   // Whether the *workspace* needs a row, which is a separate question from
   // which one this profile grants: a profile cannot grant a connection that is
@@ -191,12 +200,13 @@ export function ensureReservedConnection(
   const granted: string[] = [];
 
   if (existing === undefined) {
-    // Inline, and `main` for the id, so a repaired workspace is spelled exactly
-    // like `newConnectionsTemplate` writes a fresh one. Two spellings of one row
-    // is how a template and its repair drift apart.
+    // Inline, and the allocated id, so a repaired workspace is spelled exactly
+    // like `newConnectionsTemplate` writes a fresh one — which is what
+    // `config-edit.test.ts` asserts by checking a fresh profile needs no repair.
+    // Two spellings of one row is how a template and its repair drift apart.
     connections.addTo(
       ['connections'],
-      { id: 'main', provider, account: RESERVED_SURFACES[provider] },
+      { id, provider, account: RESERVED_SURFACES[provider] },
       { inline: true },
     );
     changes.push(`connections.yaml += ${key}`);
@@ -307,6 +317,6 @@ export function ensureIdentityConnection(
   connections: ConfigDocument,
   profile: ConfigDocument,
 ): SurfaceRepair {
-  return ensureReservedConnection(connections, profile, 'identity');
+  return ensureReservedConnection(connections, profile, 'lanes_identity');
 }
 

@@ -81,6 +81,8 @@ Run.
 | [063](063-one-origin-may-read-a-loopback-endpoint.md) | One origin may read a loopback endpoint, over a certificate it installs |
 | [064](064-a-deployed-endpoint-is-read-over-its-own-url.md) | A deployed endpoint is read over its own URL, and pairing stops meaning a certificate |
 | [065](065-the-app-provisions-this-cli.md) | The desktop app installs and updates this CLI on its own lifecycle, and a foreign install is replaced rather than argued with |
+| [066](066-a-profile-owns-its-data-again.md) | A profile owns its data again: the bytes go back in front of the connection, and two profiles granting one instance share nothing |
+| [067](067-one-directory-per-profile.md) | One directory per profile, `data/` goes, and a connection id becomes opaque |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 
@@ -264,3 +266,24 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
   standing. The app names home. Anything else driving this CLI should assume the same obligation
   rather than inherit whatever directory it was launched from.
 
+- **ADR-066** reverses the half of ADR-059 that moved the owner layer's bytes beside the
+  connection. The argument for it was sound and the default undid it: the templates create every
+  profile granting the same instances, so a `work` profile made to keep work separate read
+  `personal`'s notes and nothing said so. The profile goes back in front of the bytes and the
+  instance stays behind it, so the shipped default is isolation and someone who wants two
+  memories in one profile still has them.
+
+  Worth reading for what it costs rather than what it restores. Cross-profile sharing is gone with
+  no replacement, and two profiles that were sharing one instance become two copies at the
+  migration — copied into each and the original left, because merging two sets of notes is not
+  reversible and picking one would take the other's away in silence.
+
+- **ADR-067** is the layout that follows: a profile is one directory holding its declaration and
+  everything it owns, `data/` goes, and `lanes-link.yaml` becomes `workspaces.yaml`. It also
+  renumbers every connection id to `lan<n>` and `con<n>`.
+
+  The part to read is why the id stopped describing its account. `idFromAccount` took the local
+  part, so the same name at two domains gave `ada_lovelace` and `ada_lovelace2` — and the id is
+  the whole of the `connection` enum a model chooses from. An id that half describes its account
+  is worse than one that does not. Note also that dropping `data/` does not remove the IAM
+  exclusion it existed for; it moves it, and turns a denylist into an allowlist.

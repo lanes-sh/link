@@ -57,7 +57,7 @@ function matches(task: Task, needle: string): boolean {
 }
 
 export const tasksProvider: ProviderDefinition = defineLocalProvider({
-  id: 'tasks',
+  id: 'lanes_tasks',
   name: 'Tasks',
   version: '1.0.0',
   description:
@@ -92,13 +92,13 @@ export const tasksProvider: ProviderDefinition = defineLocalProvider({
       name: 'task',
       title: 'Task',
       description: 'One task, addressed by its id.',
-      uriTemplate: 'tasks://task/{id}',
+      uriTemplate: 'lanes-tasks://task/{id}',
       mimeType: 'text/markdown',
       redact: keepKeys('uri'),
 
       async list(context) {
         return (await allTasks(context.storage)).map((task) => ({
-          uri: `tasks://task/${encodeURIComponent(task.id)}`,
+          uri: `lanes-tasks://task/${encodeURIComponent(task.id)}`,
           name: task.title,
         }));
       },
@@ -170,7 +170,7 @@ export const tasksProvider: ProviderDefinition = defineLocalProvider({
             ...shown.flatMap((task) => [
               {
                 type: 'resource_link' as const,
-                uri: `tasks://task/${encodeURIComponent(task.id)}`,
+                uri: `lanes-tasks://task/${encodeURIComponent(task.id)}`,
                 name: task.title,
               },
               { type: 'text' as const, text: `${task.id}  ${line(task)}` },
@@ -193,7 +193,7 @@ export const tasksProvider: ProviderDefinition = defineLocalProvider({
       name: 'get',
       title: 'Read a task',
       description:
-        'Return one task by id, notes included. The resource tasks://task/{id} is the same content; this exists for clients that do not read resources.',
+        'Return one task by id, notes included. The resource lanes-tasks://task/{id} is the same content; this exists for clients that do not read resources.',
       inputSchema: z.object({ id: z.string().min(1).describe('Task id') }),
       redact: keepKeys('id'),
       async handler({ id }, context) {
@@ -261,7 +261,7 @@ export const tasksProvider: ProviderDefinition = defineLocalProvider({
               type: 'text',
               text: `${existing ? 'Replaced' : 'Added'} task "${taskId}" on ${context.connection.key}.`,
             },
-            { type: 'resource_link', uri: `tasks://task/${taskId}`, name: title },
+            { type: 'resource_link', uri: `lanes-tasks://task/${taskId}`, name: title },
           ],
         };
       },

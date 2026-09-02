@@ -65,7 +65,7 @@ export function createIdentityProvider(options: IdentityProviderOptions): Provid
   const entries = options.entries ?? [];
 
   return defineLocalProvider({
-    id: 'identity',
+    id: 'lanes_identity',
     name: 'Identity',
     version: '1.0.0',
     description:

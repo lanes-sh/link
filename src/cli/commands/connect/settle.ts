@@ -3,7 +3,7 @@ import { bearerTokenAsStored } from '#connectivity/auth/index.ts';
 import type { SecretStore } from '#secrets';
 import type { ConnectionConfig, Config } from '#profile';
 import type { AnyConnector, ProviderManifest } from '#connectivity';
-import { idFromAccount, resolveAccount } from '../../identity.ts';
+import { nextConnectionId, resolveAccount } from '../../identity.ts';
 import { style } from '../../output.ts';
 import { PromptCancelled, terminalPrompter, type Prompter } from '../../prompt.ts';
 import { accountSiblings } from './accounts.ts';
@@ -151,15 +151,23 @@ export async function settleIdentity(input: {
     typed = true;
   }
 
-  const taken = siblings.map((candidate) => candidate.id);
+  // Every id in the workspace, not this provider's alone. An id is opaque now,
+  // so a reader has nothing but the number to go on and two rows sharing one
+  // across providers would be a needless second thing to hold in mind — and
+  // `con3` naming exactly one row is what makes it usable in a refusal.
+  const taken = runtime.workspaceConnections.map((candidate) => candidate.id);
 
+  // The reconnect match is on the *account*, which is what tells a repair from
+  // a second row. That is the whole reason `resolveAccount` runs before this:
+  // without it a failed attempt appends rather than repairs, which is how
+  // `Gmail main3` came to exist.
   const connectionId =
     explicitId ??
     (unaccounted
-      ? idFromAccount('main', taken)
+      ? nextConnectionId(taken, true)
       : (siblings.find(
           (candidate) => candidate.account.toLowerCase() === account!.toLowerCase(),
-        )?.id ?? idFromAccount(account, taken)));
+        )?.id ?? nextConnectionId(taken, false)));
 
   return {
     connectionId,

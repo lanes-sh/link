@@ -78,7 +78,7 @@ export class ProviderRegistry {
 
     if (!this.#allowReserved && RESERVED_PROVIDER_IDS.includes(manifest.id)) {
       throw new Error(
-        `Provider id "${manifest.id}" is reserved for the owner layer (memory, skills, vault) and cannot be claimed.`,
+        `Provider id "${manifest.id}" is reserved for the owner layer (the lanes_ surfaces) and cannot be claimed.`,
       );
     }
 

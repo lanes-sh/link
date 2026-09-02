@@ -114,7 +114,7 @@ describe('signing in', () => {
   test("a rejected password shows the provider's own explanation", async () => {
     // The transport cannot say why a login was refused — it must not know which
     // vendor it is talking to. The provider declares that sentence as
-    // `setup.troubleshooting`, and this is the whole of the transport's job:
+    // `lanes_setup.troubleshooting`, and this is the whole of the transport's job:
     // recognise the refusal and hand the sentence on.
     const fake = fakeServer(GREETING, [
       { expect: /^AUTHENTICATE PLAIN/, reply: 'a0001 NO [AUTHENTICATIONFAILED] Invalid\r\n' },

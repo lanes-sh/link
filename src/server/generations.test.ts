@@ -82,7 +82,7 @@ describe('reload', () => {
   test('a failure keeps the previous generation serving, and says why', async () => {
     const before = stub('before');
     const generations = generationsOver(before, () =>
-      Promise.reject(new Error('profiles/personal.yaml: could not parse YAML')),
+      Promise.reject(new Error('profiles/personal/profile.yaml: could not parse YAML')),
     );
 
     const result = await generations.reload();

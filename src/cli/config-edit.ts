@@ -4,6 +4,7 @@ import {
   CONNECTIONS_FILE,
   ConfigError,
   WORKSPACE_FILE,
+  LEGACY_WORKSPACE_FILE,
   workspaceSchema,
   assertConnectionsUnique,
   connectionsFileSchema,
@@ -15,6 +16,7 @@ import {
   validateConfigShape,
   workspaceFiles,
   writeWorkspaceFile,
+  layout,
 } from '#profile';
 
 /**
@@ -42,9 +44,13 @@ function validateDocument(
   raw: unknown,
   path: string,
   key: string | undefined,
-  options: { shapeOnly?: boolean },
+  options: { shapeOnly?: boolean; contract?: number },
 ): void {
-  if (key === WORKSPACE_FILE) {
+  // Either name. The contract-3 migration rewrites the registry under the name
+  // it still has, and a document checked against the wrong schema fails with
+  // "instance: expected object" — which reads as a corrupt profile rather than
+  // as a registry being validated as one.
+  if (key === WORKSPACE_FILE || key === LEGACY_WORKSPACE_FILE) {
     const parsed = workspaceSchema.safeParse(raw);
     if (!parsed.success) {
       throw new ConfigError(
@@ -74,8 +80,10 @@ function validateDocument(
     return;
   }
 
-  if (options.shapeOnly === true) validateConfigShape(raw, path);
-  else validateConfig(raw, path);
+  // `contract` is the one a migration is *producing*, and it is only ever
+  // passed by one: every other caller writes the newest.
+  if (options.shapeOnly === true) validateConfigShape(raw, path, options.contract);
+  else validateConfig(raw, path, options.contract);
 }
 
 export class ConfigDocument {
@@ -101,7 +109,7 @@ export class ConfigDocument {
    * `gs://` URL produces something that addresses nothing.
    */
   static async open(workspaceRoot: string, profile: string): Promise<ConfigDocument> {
-    return ConfigDocument.openKey(workspaceRoot, `profiles/${profile}.yaml`);
+    return ConfigDocument.openKey(workspaceRoot, layout.profileConfig(profile));
   }
 
   /**
@@ -275,7 +283,7 @@ export class ConfigDocument {
    * The half it keeps is the half that matters for a write: the schema, and the
    * scan that stops a credential value being written into config.
    */
-  async save(options: { shapeOnly?: boolean } = {}): Promise<void> {
+  async save(options: { shapeOnly?: boolean; contract?: number } = {}): Promise<void> {
     const rendered = this.toString();
 
     // Throws on any validation failure, including a credential value that has

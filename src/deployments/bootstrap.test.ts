@@ -92,8 +92,8 @@ describe('a target the workspace already answers', () => {
     const root = await mkdtemp(join(tmpdir(), 'lanes-link-bootstrap-'));
     roots.push(root);
     await writeFile(
-      join(root, 'lanes-link.yaml'),
-      'contract: 3\nworkspaces:\n  cloud:\n' +
+      join(root, 'workspaces.yaml'),
+      'contract: 4\nworkspaces:\n  cloud:\n' +
         '    credentials: { adapter: gcp-secret-manager, project: p }\n' +
         '    storage: { adapter: gcs, bucket: b }\n' +
         '    deploy:\n      platform: cloudrun\n      project: p\n' +
@@ -110,7 +110,7 @@ describe('a target the workspace already answers', () => {
     const root = await declared();
     return resolveTarget({
       config: complete,
-      profilePath: `${root}/profiles/personal.yaml`,
+      profilePath: `${root}/profiles/personal/profile.yaml`,
       workspaceRoot: root,
       profile: 'personal',
       target: 'cloud',

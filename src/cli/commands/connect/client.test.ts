@@ -76,8 +76,8 @@ afterAll(async () => {
 async function document(body?: string): Promise<ConfigDocument> {
   const root = await mkdtemp(join(tmpdir(), 'lanes-link-client-'));
   roots.push(root);
-  await mkdir(join(root, 'profiles'), { recursive: true });
-  await writeFile(join(root, 'profiles', 'personal.yaml'), body ?? newProfileTemplate('personal', 7337));
+  await mkdir(join(root, 'profiles', 'personal'), { recursive: true });
+  await writeFile(join(root, 'profiles', 'personal', 'profile.yaml'), body ?? newProfileTemplate('personal', 7337));
   return await ConfigDocument.open(root, 'personal');
 }
 

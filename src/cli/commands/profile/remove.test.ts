@@ -89,14 +89,14 @@ describe('executeRemoval', () => {
       plan([
         item({ kind: 'secret', id: 'gmail/someone' }),
         item({ kind: 'blob', id: 'state.kv/a' }),
-        item({ target: null, kind: 'config', id: '/ws/profiles/personal.yaml' }),
+        item({ target: null, kind: 'config', id: '/ws/profiles/personal/profile.yaml' }),
       ]),
       d,
     );
 
     expect(outcome.survived).toBe(0);
     expect(outcome.results.every((r) => r.status === 'removed')).toBe(true);
-    expect(d.removedConfig).toContain('/ws/profiles/personal.yaml');
+    expect(d.removedConfig).toContain('/ws/profiles/personal/profile.yaml');
   });
 
   test('a failing delete does not stop the ones after it', async () => {
@@ -134,7 +134,7 @@ describe('executeRemoval', () => {
       plan([
         item({ kind: 'secret', id: 'a/one' }),
         item({ target: null, kind: 'workspace-key', id: 'default_profile' }),
-        item({ target: null, kind: 'config', id: '/ws/profiles/personal.yaml' }),
+        item({ target: null, kind: 'config', id: '/ws/profiles/personal/profile.yaml' }),
       ]),
       d,
     );

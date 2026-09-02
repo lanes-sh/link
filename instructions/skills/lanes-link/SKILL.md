@@ -107,7 +107,7 @@ when Y", that is a skill they should write, not a memory entry describing it.
 
 ## Reach for memory before answering from nothing
 
-`memory.search` before concluding you do not know something about this person or
+`lanes_memory.search` before concluding you do not know something about this person or
 their work. It is a substring search over their own notes, not a ranked index —
 try more than one wording before deciding it is not there.
 
@@ -118,7 +118,7 @@ entries with `lanes link memory list --profile <name> --workspace <name>` and a 
 
 ## Tasks have a status, so finish them rather than deleting them
 
-`tasks.list` answers what is outstanding. It shows `in_progress`, `open` and
+`lanes_tasks.list` answers what is outstanding. It shows `in_progress`, `open` and
 `blocked` and hides the rest, so a listing is what is left to do rather than
 everything that ever was — name a status to see more.
 
@@ -133,7 +133,7 @@ Six of them, and the two that are easy to confuse are worth learning:
 | `done` | finished |
 | `dropped` | decided against, which is not the same as finished |
 
-**Closing a task is `tasks.update` with a status, never `tasks.remove`.** The
+**Closing a task is `lanes_tasks.update` with a status, never `lanes_tasks.remove`.** The
 record of having done it is the useful half, and it is what stops the same thing
 being suggested again next week. Remove is for something recorded by mistake.
 
@@ -180,7 +180,7 @@ value has been printed by accident, say so.
 ## Who you are writing as is declared, not inferred
 
 A profile may declare the names, addresses and handles its owner wants used when
-something is written as them. Call `identity_list` for the profile in play
+something is written as them. Call `lanes_identity_list` for the profile in play
 before signing a message, choosing an address to send from, or attributing work
 to a handle — **do not** read a name off the conversation, off a previous
 message's signature, or off the account label on a connection. That label is the
@@ -200,7 +200,7 @@ Nothing you can call writes here, deliberately.
 
 ## Who you are writing *to* is declared as well
 
-`entities_find` holds the people, companies and projects this owner deals with,
+`lanes_entities_find` holds the people, companies and projects this owner deals with,
 with the addresses and handles to reach each of them. Call it before using
 anyone's address — do not recall one from earlier in the conversation, and do
 not lift one off a message you happen to have read.
@@ -218,9 +218,9 @@ Where an entity holds two of a kind — a work address and a personal one — th
 first is the default and the notes say when to prefer the other, exactly as
 identity works.
 
-Writing is a separate grant. Where you have it, `entities_write` declares one
-and `entities_link` relates two; a field you do not send is left as it is.
-`entities_forget` does not clean up edges pointing at what it removed, and says
+Writing is a separate grant. Where you have it, `lanes_entities_write` declares one
+and `lanes_entities_link` relates two; a field you do not send is left as it is.
+`lanes_entities_forget` does not clean up edges pointing at what it removed, and says
 which ones will dangle.
 
 ## Attachments are named, not carried
@@ -279,9 +279,9 @@ shows what was attempted, refusals included.
 
 ## Setting something up
 
-Call `setup_overview` before answering any question about what you can reach, and
+Call `lanes_setup_overview` before answering any question about what you can reach, and
 before suggesting that anything be connected. It names the accounts reachable in a
-profile and the providers that are not connected yet. `setup_provider` then gives
+profile and the providers that are not connected yet. `lanes_setup_provider` then gives
 one provider's console steps, the values it will ask for, and the exact command.
 
 **Memory, tasks, assets, skills and the vault need no setup at all.** They hold
@@ -306,7 +306,7 @@ lanes link policy allow gmail.users.messages.list --connection gmail.<id> --prof
 profiles that grant it, which is the answer when an owner says an account they
 connected is not showing up somewhere.
 
-**Take the command from `setup_provider`; never compose one yourself.** It carries
+**Take the command from `lanes_setup_provider`; never compose one yourself.** It carries
 the right profile and, where the provider stores a credential per account, the
 `--id` it needs. A command you assembled is one the owner pastes and watches fail.
 
@@ -326,7 +326,7 @@ it needs, print the scopes and let the owner add the flag. Deciding that is thei
 
 **A new connection is served at once; the tools you were handed are not.**
 Connecting publishes the config to wherever that workspace's endpoint reads it and
-asks the endpoint to re-read it, so a `setup_overview` straight after connecting
+asks the endpoint to re-read it, so a `lanes_setup_overview` straight after connecting
 *does* show the account. What has not changed is the set of tools this session
 was given when it connected — the endpoint does not announce that its tools
 changed, so a capability for a freshly connected account is not callable until

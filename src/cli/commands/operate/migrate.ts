@@ -71,7 +71,7 @@ export async function migratedRenamedProviders(
   // Throws when it is malformed beyond a rename, which is a better sentence
   // than the referential one it would otherwise be reported under.
   const config = shapeOf(await ConfigDocument.open(root, selection.profile));
-  const credentials = await openSecretStoreFor(config, root, target);
+  const credentials = await openSecretStoreFor(root, target);
 
   const migration = await migrateRenamedProviders(document, profiles, credentials, {
     apply: flags.fix === true,
@@ -158,7 +158,10 @@ export async function migratedContract(flags: RenameFlags, refusal: unknown): Pr
   // only about contract 1 — so a contract-2 bucket, the exact thing this
   // function exists to rescue, returned false here and fell through to the
   // refusal it was supposed to fix. With `--fix` absent this writes nothing.
-  const migration = await migrateToCurrentContract(where, { apply: flags.fix === true });
+  const migration = await migrateToCurrentContract(where, {
+    apply: flags.fix === true,
+    target,
+  });
   if (migration.alreadyCurrent) return false;
 
   const applied = flags.fix === true;

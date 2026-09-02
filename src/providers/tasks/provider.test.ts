@@ -75,7 +75,7 @@ describe('a task carries a status, which is why this is not memory', () => {
     await add(harness, 'Started', { status: 'in_progress' });
 
     const order = linksOf(await harness.invoke('list')).map((uri) =>
-      uri.replace('tasks://task/', ''),
+      uri.replace('lanes-tasks://task/', ''),
     );
 
     expect(order).toEqual(['started', 'open-soon', 'open-late', 'open-undated']);
@@ -96,7 +96,7 @@ describe('storing and retrieving a task', () => {
     const harness = tasks();
     await add(harness, 'Chase the invoice', { notes: 'Third reminder.' });
 
-    const read = await harness.invoke('task', { uri: 'tasks://task/chase-the-invoice' });
+    const read = await harness.invoke('task', { uri: 'lanes-tasks://task/chase-the-invoice' });
 
     expect(isResourceResult(read)).toBe(true);
     expect(textOf(read)).toContain('Third reminder.');
@@ -107,10 +107,10 @@ describe('storing and retrieving a task', () => {
     await add(harness, 'A Long: Title!');
     await add(harness, 'Anything', { id: 'chosen' });
 
-    expect(isResourceResult(await harness.invoke('task', { uri: 'tasks://task/a-long-title' }))).toBe(
+    expect(isResourceResult(await harness.invoke('task', { uri: 'lanes-tasks://task/a-long-title' }))).toBe(
       true,
     );
-    expect(isResourceResult(await harness.invoke('task', { uri: 'tasks://task/chosen' }))).toBe(true);
+    expect(isResourceResult(await harness.invoke('task', { uri: 'lanes-tasks://task/chosen' }))).toBe(true);
   });
 
   test('adding the same id again replaces it but keeps when it was first recorded', async () => {

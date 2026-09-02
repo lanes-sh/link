@@ -48,7 +48,7 @@ describe('storing a file names a source rather than carrying it', () => {
     const stored = await harness.invoke('store', { source: { path } });
 
     expect(isToolResult(stored) && stored.isError).toBeFalsy();
-    expect(linksOf(stored)).toEqual(['assets://file/notes.txt']);
+    expect(linksOf(stored)).toEqual(['lanes-assets://file/notes.txt']);
     expect((await harness.context.storage.list()).map((blob) => blob.key)).toEqual(['notes.txt']);
   });
 
@@ -116,7 +116,7 @@ describe('reading returns text, or a description — never base64', () => {
     await harness.invoke('store', { source: { path: await fileWith('notes.txt', 'hello') } });
 
     expect(textOf(await harness.invoke('get', { name: 'notes.txt' }))).toBe('hello');
-    expect(textOf(await harness.invoke('file', { uri: 'assets://file/notes.txt' }))).toBe('hello');
+    expect(textOf(await harness.invoke('file', { uri: 'lanes-assets://file/notes.txt' }))).toBe('hello');
   });
 
   test('a binary file is described, with its digest, and its bytes are not returned', async () => {
@@ -176,7 +176,7 @@ describe('the key is the filename, so the listing is the whole index', () => {
 
     const listed = await harness.invoke('file');
     expect(isResourceListResult(listed) && listed.resources).toHaveLength(1);
-    expect(isResourceResult(await harness.invoke('file', { uri: 'assets://file/notes.txt' }))).toBe(
+    expect(isResourceResult(await harness.invoke('file', { uri: 'lanes-assets://file/notes.txt' }))).toBe(
       true,
     );
   });

@@ -202,7 +202,8 @@ export async function run(argv: readonly string[]): Promise<void> {
         case 'remove':
           if (!rest[0]) {
             throw new Error(
-              `Usage: ${PROGRAM} profile remove <name> [--workspace <name>] [--dry-run] [--yes]`,
+              `Usage: ${PROGRAM} profile remove <name> [--workspace <name>] [--dry-run] [--yes] ` +
+                '[--delete-data | --migrate-to <profile>]',
             );
           }
           return profileRemove(rest[0], {
@@ -210,6 +211,10 @@ export async function run(argv: readonly string[]): Promise<void> {
             json,
             dryRun: flags['dry-run'] === true,
             yes: flags['yes'] === true,
+            deleteData: flags['delete-data'] === true,
+            ...(typeof flags['migrate-to'] === 'string'
+              ? { migrateTo: flags['migrate-to'] }
+              : {}),
           });
         default:
           throw new Error(`Unknown: ${PROGRAM} profile ${second}`);

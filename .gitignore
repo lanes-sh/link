@@ -6,12 +6,15 @@
 # first. Assume the repo could become public at any moment.
 # ---------------------------------------------------------------------------
 
-# Real profile configs. Only *.example.yaml is ever committed.
-profiles/*.yaml
-!profiles/*.example.yaml
+# A workspace, when the repo root is one during local dev. A profile is a
+# directory holding everything it owns (ADR-067), so the whole of `profiles/`
+# goes rather than a glob over its files.
+workspaces.yaml
+lanes-link.yaml
+connections.yaml
+profiles/
 config/*.yaml
 !config/*.example.yaml
-lanes-link.yaml
 
 # Custom provider manifests. `WORKSPACE_PROVIDER_DIR` is 'providers', and the
 # console writes one here from a browser form, so a workspace rooted at the
@@ -19,8 +22,13 @@ lanes-link.yaml
 providers/*.yaml
 !providers/*.example.yaml
 
-# Local state: sqlite databases, encrypted credential stores, blobs.
+# Local state: encrypted credential stores, the log, runtime state, blobs.
+# `data/` was the one directory holding all of it; the root is flat now.
 data/
+credentials.enc
+providers.d/
+audit.log/
+state.kv/
 
 # Encryption keys and anything credential-shaped.
 *.key

@@ -211,7 +211,7 @@ describe('vendored specs yield registrable tools', () => {
    * It is not a hypothetical spelling worry. The generator renames an argument
    * whenever a path or query parameter collides with a body field, prefixing it
    * with where it came from: Gmail's `drafts.update` takes `pathId` and
-   * `bodyId` rather than `id`, and Tasks' `tasks.insert` takes `queryParent`
+   * `bodyId` rather than `id`, and Tasks' `lanes_tasks.insert` takes `queryParent`
    * beside the body's `parent`. Both are plausible to write as the plain name,
    * both would fail closed and quietly, and three separate comments in this
    * repository warn about it because nothing could catch it.
