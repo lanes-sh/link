@@ -104,35 +104,42 @@ selecting it (ADR-043). Everything acting on one account still names both. The t
 `src/cli/selection.ts` is the whole rule, and `selection.test.ts` reads the dispatch files to
 check a new command cannot be added without appearing in it.
 
-## The owner layer is eight ids, and `tasks` is not Google's
+## The owner layer is eight `lanes_` ids, and the prefix reaches the wire
 
-`RESERVED_PROVIDER_IDS` is `memory`, `tasks`, `assets`, `skills`, `vault`, `setup`, `identity`,
-`entities`. Three things an agent gets wrong here:
+`RESERVED_PROVIDER_IDS` is `lanes_memory`, `lanes_tasks`, `lanes_assets`, `lanes_skills`,
+`lanes_vault`, `lanes_setup`, `lanes_identity`, `lanes_entities`. The `lanes_` is part of the id,
+not a display prefix, and `toolNameFor` only swaps `.` for `_` — so the capability
+`lanes_setup.overview` is the tool `lanes_setup_overview`, and renaming these ids in 0.9.0 renamed
+every tool the owner layer advertises. ADR-066 records what that cost a client that had already
+fetched the old list. Three things an agent gets wrong here:
 
-- **`tasks` is the built-in task list; Google Tasks is `google_tasks`.** The rename was forced —
-  `buildRegistry` registers the owner layer before `PROVIDERS`, so a manifest holding a reserved id
-  throws rather than being shadowed (ADR-051). Its redaction keys carry Google's whole operationId
+- **`lanes_tasks` is the built-in task list; Google Tasks is `google_tasks`; plain `tasks` is
+  nobody's.** The rename was forced while the built-in still held the bare id, and it stands:
+  `Registry.register` refuses a reserved id outright unless the registry was built with
+  `allowReserved`, so a manifest can neither claim one nor shadow one
+  (`src/registry/registry.ts:79`, ADR-051). Google Tasks' redaction keys carry its whole operationId
   (`tasks.tasks.patch`) because `shortenName` strips the *provider id* and the API namespaces under
   its own name. A key that misses does not error; it withholds every argument and reads exactly like
   working redaction.
-- **A profile arrives with all of them granted except `identity`** (ADR-050). So there is no
-  `lanes link connect memory` step to suggest, and a surface that is missing was denied on purpose.
+- **A profile arrives with all of them granted except `lanes_identity`** (ADR-050). So there is no
+  `lanes link connect lanes_memory` step to suggest, and a surface that is missing was denied on
+  purpose.
   `ensureOwnerLayer` in `src/cli/config-repair.ts` repairs an older profile from `start`, `connect`
   and `deploy`; the template in `config-edit.ts` and that repair must write a row in **one**
   spelling, which `config-edit.test.ts` checks by asserting a fresh profile needs no repair.
-- **`identity` and `entities` differ on writability and on the default grant, and the reason is one
-  test.** It is not "is it empty" — memory arrives empty and is granted. It is *can it be filled in
-  from here*: identity is configuration and changed in the CLI (ADR-007), so an agent able to edit
-  it could edit the one fact that stops it signing as the wrong person. Everyone else's details
-  accumulate on the same surface that reads them, so `entities` is agent-writable and granted like
-  memory (ADR-056). Do not "fix" the asymmetry.
+- **`lanes_identity` and `lanes_entities` differ on writability and on the default grant, and the
+  reason is one test.** It is not "is it empty" — memory arrives empty and is granted. It is *can it
+  be filled in from here*: identity is configuration and changed in the CLI (ADR-007), so an agent
+  able to edit it could edit the one fact that stops it signing as the wrong person. Everyone else's
+  details accumulate on the same surface that reads them, so `lanes_entities` is agent-writable and
+  granted like memory (ADR-056). Do not "fix" the asymmetry.
 
-`entities.find` returns **every** match and sets no error on more than one, deliberately. If you
-change how it ranks, the rule to keep is that ordering is not selection: there is no scoring inside
-a rank, because a tiebreak that promoted one of two exact alias matches would turn a question for
-the owner into a silent pick. Its derived `_index.json` is a cache stamped with a `key:size`
-fingerprint of the entity files — not `key:size:mtime`, because the GitHub adapter reports the
-branch tip for every file and the stamp would never match twice.
+`lanes_entities.find` returns **every** match and sets no error on more than one, deliberately. If
+you change how it ranks, the rule to keep is that ordering is not selection: there is no scoring
+inside a rank, because a tiebreak that promoted one of two exact alias matches would turn a
+question for the owner into a silent pick. Its derived `_index.json` is a cache stamped with a
+`key:size` fingerprint of the entity files — not `key:size:mtime`, because the GitHub adapter
+reports the branch tip for every file and the stamp would never match twice.
 
 `src/architecture.test.ts` asserts the four rules the layout expresses: dependency
 direction between components, no vendor name in the code a request passes through, a
