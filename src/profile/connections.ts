@@ -153,7 +153,19 @@ export function soleGrantFor(config: Config, provider: string): string | undefin
  * under one name has to keep opening it.
  */
 export function vaultRef(declared: TargetConfig | undefined, config: Config): string {
-  return declared?.vault?.ref ?? `vault/${soleGrantFor(config, 'lanes_vault') ?? 'main'}`;
+  // **The profile, then the connection.** This was `vault/<connection>`, which
+  // was distinct per profile only while each profile had its own vault
+  // instance. ADR-066 merges the owner layer to one row per surface, so every
+  // profile grants `lanes_vault.lan5` and every profile opened one sealed
+  // document — `vault_put` from `personal` overwriting `work`'s item of the
+  // same id, and `vault_get` reading the other profile's credential. The `file`
+  // and `blob` adapters take the profile from `layout`; this is the same fact
+  // for the adapter every deployment uses.
+  //
+  // A `ref` the target states outright still wins: a deployment already sealing
+  // under one name has to keep opening it.
+  const connection = soleGrantFor(config, 'lanes_vault') ?? 'main';
+  return declared?.vault?.ref ?? `vault/${config.instance.profile}/${connection}`;
 }
 
 /**

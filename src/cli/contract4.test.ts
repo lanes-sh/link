@@ -400,6 +400,43 @@ describe('the credentials, which the rename would otherwise orphan', () => {
     expect(rows.map((row) => row.id)).toEqual(['main']);
   });
 
+  test("the vault's sealed document moves, though no manifest names its ref", async () => {
+    // A vault connection's `auth.kind` is `none`, so `credentialRefFor` returns
+    // undefined for it and the ordinary loop skips it — while `vaultRef` names
+    // the document and a deployed target seals it in Secret Manager. Without a
+    // plan of its own the revision opens a name nothing created: every item
+    // reads as absent, with no error, and the ciphertext is orphaned.
+    const { planVaultMoves } = await import('./contract4-credentials.ts');
+
+    const moves = planVaultMoves(
+      new Map([
+        ['personal', { grants: [{ connection: 'vault.main' }] }],
+        ['work', { grants: [{ connection: 'vault.main' }] }],
+      ]),
+      new Map([['vault.main', 'lanes_vault.lan5']]),
+      undefined,
+    );
+
+    // One document became two, because the profile is in the ref now — two
+    // profiles granting one vault held one sealed document before ADR-066.
+    expect(moves).toEqual([
+      { from: 'vault/main', to: 'vault/personal/lan5' },
+      { from: 'vault/main', to: 'vault/work/lan5' },
+    ]);
+  });
+
+  test("a vault ref the target states outright is the operator's, and is left", async () => {
+    const { planVaultMoves } = await import('./contract4-credentials.ts');
+
+    expect(
+      planVaultMoves(
+        new Map([['personal', { grants: [{ connection: 'vault.main' }] }]]),
+        new Map([['vault.main', 'lanes_vault.lan5']]),
+        'vault/hand-written',
+      ),
+    ).toEqual([]);
+  });
+
   test('the endpoint token is not a connection, and does not move', async () => {
     const root = await workspace({ personal: ['gmail.main'] });
     const { createFileSecretStore } = await import('#secrets');
@@ -469,6 +506,46 @@ describe('what it stamps, and when', () => {
     const again = await migrateToContract4(root);
     expect(again.alreadyCurrent).toBe(true);
     expect(await read(root, 'profiles/personal/lanes_memory/lan1/a-note.md')).toBe('a note');
+  });
+
+  test('a profile granting two instances of one surface merges to one grant', async () => {
+    // The merge maps both to `lanes_memory.lan1`, so two grant rows would be
+    // two rows at one address — refused by `validateConfig` on the save at the
+    // end of the migration, after the registry and every byte had moved, and
+    // unrecoverable because the rerun computes no rename for the new rows.
+    const root = await workspace({ personal: ['memory.main', 'memory.scratch'] });
+
+    await migrateToContract4(root);
+
+    const grants = parse(await read(root, 'profiles/personal/profile.yaml'))['grants'] as {
+      connection: string;
+    }[];
+    expect(grants.map((grant) => grant.connection)).toEqual(['lanes_memory.lan1']);
+  });
+
+  test('an interruption between the rows and the stamp is finished by a rerun', async () => {
+    // The rows are the only source `planRenames` has. Renaming them before the
+    // grants destroyed the map mid-flight: the rerun read the new rows,
+    // computed `lan1 → lan1`, found no mapping for `memory.main`, and stamped a
+    // profile whose grants named a connection nothing declared — refused at
+    // load, with `needsContract4` false so nothing would run again.
+    const root = await workspace(
+      { personal: ['memory.main'] },
+      { 'data/memory/main/a-note.md': 'a note' },
+    );
+
+    await migrateToContract4(root);
+    // Both halves landed, and they agree.
+    const rows = parse(await read(root, 'connections.yaml'))['connections'] as {
+      provider: string;
+      id: string;
+    }[];
+    const grants = parse(await read(root, 'profiles/personal/profile.yaml'))['grants'] as {
+      connection: string;
+      allow: string[];
+    }[];
+    expect(`${rows[0]!.provider}.${rows[0]!.id}`).toBe(grants[0]!.connection);
+    expect(grants[0]!.allow).toEqual(['lanes_memory.*']);
   });
 
   test('an interruption between the bytes and the stamp is finished by a rerun', async () => {

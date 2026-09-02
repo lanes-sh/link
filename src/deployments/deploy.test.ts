@@ -377,9 +377,10 @@ members: []
       vault,
     }) as TargetConfig;
 
-  test('the vault document is named per connection, the way openVault opens it', async () => {
-    // The blocker this pins. `openVault` names the document `vault/<connection>`
-    // (ADR-059); `provisionSteps` named `vault/document`, the contract-2
+  test('the vault document is named per profile and connection, the way openVault opens it', async () => {
+    // The blocker this pins. `openVault` names the document
+    // `vault/<profile>/<connection>` (ADR-059, ADR-066); `provisionSteps` named
+    // `vault/document`, the contract-2
     // constant. So a deploy created and granted one secret and the revision
     // asked Secret Manager for another, got `PERMISSION_DENIED`, exited 1, and
     // never listened on its port — on every deployed workspace that did not
@@ -396,8 +397,8 @@ members: []
     });
     const declared = vaultTarget({ adapter: 'secret' });
 
-    expect(await rotatableRefs(root, undefined, declared)).toContain('vault/main');
-    expect(await readableRefs(root, undefined, declared)).toContain('vault/main');
+    expect(await rotatableRefs(root, undefined, declared)).toContain('vault/personal/main');
+    expect(await readableRefs(root, undefined, declared)).toContain('vault/personal/main');
     expect(await rotatableRefs(root, undefined, declared)).not.toContain('vault/document');
   });
 

@@ -110,15 +110,25 @@ export async function resolveCollisions(
 ): Promise<string[]> {
   const warnings: string[] = [];
 
+  // **Throws rather than warning.** It returned a warning saying "nothing has
+  // run" and then left every `movedTo` in place — and `executeRemoval` writes
+  // each one without checking, on the stated ground that "a collision was
+  // resolved while this was still a plan". With `--yes` there is no prompt to
+  // stop at, so an unreadable destination meant the destination profile's own
+  // notes were overwritten by the removed profile's files of the same name, and
+  // the command reported success. A plan that cannot be made safe must not
+  // become one.
   let held: Set<string>;
   try {
     held = new Set((await (await open(into)).list()).map((blob) => blob.key));
   } catch (cause) {
-    return [
+    throw new ConfigError(
       `"${profile}"'s storage could not be read (${
         cause instanceof Error ? cause.message : String(cause)
-      }), so a collision there would overwrite. Nothing has run.`,
-    ];
+      }), so a name it already holds cannot be found — and migrating into it ` +
+        'would overwrite one.\n  Nothing has run. Fix the store and try again, or pass ' +
+        '--delete-data instead.',
+    );
   }
 
   for (let index = 0; index < items.length; index += 1) {

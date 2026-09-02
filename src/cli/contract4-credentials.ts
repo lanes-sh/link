@@ -98,6 +98,7 @@ export async function applyCredentialMoves(
   moves: readonly CredentialMove[],
 ): Promise<string[]> {
   const applied: string[] = [];
+  const skipped: string[] = [];
 
   // Grouped by source, because one credential may feed several destinations
   // and the source may only go once every one of them is written. Deleting
@@ -113,8 +114,31 @@ export async function applyCredentialMoves(
     const value = await store.get(from);
     if (value === null) continue;
 
+    // **The source goes only once every destination holds this value.** The
+    // delete used to sit outside this loop while the loop skipped an occupied
+    // destination — so a ref already holding something (a stale credential a
+    // `disconnect --keep-credential` left behind, or an unrelated account's)
+    // meant nothing was written and the source was destroyed anyway, reported
+    // as a successful move. `migrate-move.ts` guards the same hazard with
+    // `sameBytes`, and this is that guard.
+    let carried = true;
+
     for (const to of destinations) {
-      if (await store.has(to)) continue;
+      const held = await store.get(to);
+
+      if (held !== null) {
+        // Our own earlier work, so this destination is done. Anything else is
+        // somebody's credential and is not ours to overwrite or to delete the
+        // source out from under.
+        if (held !== value) {
+          carried = false;
+          skipped.push(
+            `${from} → ${to}: ${to} already holds a different value, so nothing was moved or ` +
+              'deleted. Remove or rename it and run this again.',
+          );
+        }
+        continue;
+      }
 
       await store.set(to, value);
       if ((await store.get(to)) === null) {
@@ -125,9 +149,59 @@ export async function applyCredentialMoves(
       }
     }
 
+    if (!carried) continue;
+
     await store.delete(from);
     applied.push(`${from} → ${destinations.join(', ')}`);
   }
 
-  return applied;
+  return [...applied, ...skipped];
+}
+
+/**
+ * The sealed vault document, which `credentialRefFor` cannot see.
+ *
+ * A vault connection's `auth.kind` is `none`, so `credentialRefForConnection`
+ * returns `undefined` for it and the loop above skips it entirely — while
+ * `vaultRef` names the document `vault/<profile>/<connection>` and a deployed
+ * target seals it in Secret Manager. Contract 4 renames the connection and
+ * gives the ref a profile, so without this the revision opens a name nothing
+ * created: every vault item reads as absent, with no error, and the ciphertext
+ * sits orphaned under the old ref.
+ *
+ * Invisible in a local rehearsal, because the `file` and `blob` adapters take
+ * their path from `layout` and were already correct. `secret` is the adapter
+ * every deployment uses.
+ *
+ * A `ref` the target states outright is left alone: it names a document the
+ * operator chose, and a deployment already sealing under it has to keep
+ * opening it.
+ */
+export function planVaultMoves(
+  profiles: ReadonlyMap<string, { grants?: { connection?: unknown }[] }>,
+  renames: Renames,
+  declaredRef: string | undefined,
+): CredentialMove[] {
+  if (declaredRef !== undefined) return [];
+
+  const moves: CredentialMove[] = [];
+
+  for (const [profile, config] of profiles) {
+    const granted = (config.grants ?? [])
+      .map((grant) => grant.connection)
+      .find((ref): ref is string => typeof ref === 'string' && ref.startsWith('vault.'));
+
+    // `main` where the profile grants none, which is what `vaultRef` falls back
+    // to — so a profile that denied the vault still finds its own document
+    // rather than another profile's.
+    const was = granted === undefined ? 'main' : granted.slice('vault.'.length);
+    const to = granted === undefined ? undefined : renames.get(granted);
+    const now = to === undefined ? was : to.slice(to.indexOf('.') + 1);
+
+    const from = `vault/${was}`;
+    const into = `vault/${profile}/${now}`;
+    if (from !== into) moves.push({ from, to: into });
+  }
+
+  return moves;
 }

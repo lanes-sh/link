@@ -63,9 +63,21 @@ export interface RunDeps {
 
 const reason = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause));
 
-/** The items that only make sense once everything else is actually gone. */
+/**
+ * The items that only make sense once everything else is actually gone.
+ *
+ * **`file` is in here, and that is the whole of its reason.** It is
+ * `rm -rf profiles/<profile>`, and it carries a target rather than `null`, so
+ * the original `target === null` test let it run after a failed object — taking
+ * the bytes a `--migrate-to` had not managed to copy, and `profile.yaml`, which
+ * the sweep deliberately leaves for last. `renderOutcome` then printed "the
+ * profile's config was kept, so nothing is stranded" about a directory that no
+ * longer existed. Same shape as the defect this file records having shipped
+ * once already.
+ */
 const isRecordOfWhereThingsAre = (item: RemovalItem): boolean =>
-  item.target === null && (item.kind === 'config' || item.kind === 'workspace-key');
+  item.kind === 'file' ||
+  (item.target === null && (item.kind === 'config' || item.kind === 'workspace-key'));
 
 export async function executeRemoval(
   plan: RemovalPlan,

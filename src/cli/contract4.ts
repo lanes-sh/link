@@ -7,14 +7,20 @@ import {
   writeWorkspaceFile,
   WORKSPACE_FILE,
   CONNECTIONS_FILE,
+  openTarget,
 } from '#profile';
 import { parseDocument } from 'yaml';
 import { ConfigDocument } from './config-edit.ts';
 import { C3 } from './contract3-layout.ts';
 import { grantingProfiles, planMoves, type DataPlan, type Renames } from './contract4-data.ts';
 import { planRenames } from './contract4-rename.ts';
+import { readConnectionRows, renameConnections, rewriteGrants } from './contract4-yaml.ts';
 import { applyMoves, assertOneObjectPerDestination } from './migrate-move.ts';
-import { applyCredentialMoves, planCredentialMoves } from './contract4-credentials.ts';
+import {
+  applyCredentialMoves,
+  planCredentialMoves,
+  planVaultMoves,
+} from './contract4-credentials.ts';
 import { openSecretStoreFor } from './runtime/select.ts';
 import { buildRegistryWithWorkspace } from './runtime/registry.ts';
 
@@ -142,52 +148,28 @@ export async function migrateToContract4(
   await renameRegistry(workspaceRoot);
   await applyMoves(files, plan.moves);
 
-  // **Credentials before the rows.** A ref is derived from the id, so moving
-  // the secret while the config still names the old id means either order
-  // leaves a window — but this one leaves it on the side where a rerun
-  // recovers: the rows still say `gmail.main_2`, `planCredentialMoves` computes
-  // the same pair again, and the destination-occupied branch finishes the job.
-  // Rows first would leave a workspace whose config names an id whose old
-  // secret nothing can now derive the ref for.
-  const credentials = await moveCredentials(workspaceRoot, target, rows, renames);
+  // Credentials before the rows: a ref is derived from the id, so the rows must
+  // still name the old one for `planCredentialMoves` to compute the same pair
+  // on a rerun.
+  const credentials = await moveCredentials(workspaceRoot, target, rows, renames, configs);
+
+  // **The rows are renamed after the grants and before the stamp**, and every
+  // window that leaves is one a rerun closes. `connections.yaml` is the only
+  // source `planRenames` has, so renaming it before the grants destroyed the
+  // map mid-flight: the rerun read the new rows, computed `lan1 → lan1`, found
+  // no mapping for `memory.main`, and stamped a profile whose grants named a
+  // connection nothing declared — refused at load, and `needsContract4` false,
+  // so no migration would ever run again.
+  //
+  // Both rewrites are idempotent, which is what makes the order safe rather
+  // than merely better: a grant already naming the new ref is not in the map
+  // and is left alone, and so is a row.
+  await rewriteGrants(workspaceRoot, profiles, renames);
   await renameConnections(workspaceRoot, renames);
 
   // Last. The stamp is the record that the migration finished.
   for (const profile of profiles) {
     const document = await ConfigDocument.openKey(workspaceRoot, layout.profileConfig(profile));
-
-    // The grants are rewritten in the same pass that stamps, so a profile is
-    // never on disk claiming contract 4 with grants naming ids nothing holds.
-    const held = document.toJSON() as { grants?: unknown };
-    const grants = held.grants;
-    if (Array.isArray(grants)) {
-      document.setIn(
-        ['grants'],
-        grants.map((grant) => {
-          const held = grant as { connection?: unknown; allow?: unknown; deny?: unknown };
-          const ref = typeof held.connection === 'string' ? held.connection : undefined;
-          if (ref === undefined) return grant;
-
-          const to = renames.get(ref) ?? ref;
-          const was = ref.slice(0, ref.indexOf('.'));
-          const now = to.slice(0, to.indexOf('.'));
-
-          // **The rules move with the row.** A rule governs the connection it
-          // sits under and may only name that provider (ADR-058), so renaming
-          // `memory` to `lanes_memory` on the row and leaving `memory.*` in its
-          // `allow` is a profile the loader refuses — which is how this was
-          // found, on the save at the end of the migration that wrote it.
-          return {
-            ...held,
-            connection: to,
-            ...(was === now
-              ? {}
-              : { allow: retitle(held.allow, was, now), deny: retitle(held.deny, was, now) }),
-          };
-        }),
-      );
-    }
-
     document.setIn(['contract'], 4);
     await document.save();
   }
@@ -221,6 +203,7 @@ async function moveCredentials(
   target: string,
   rows: readonly { id: string; provider: string }[],
   renames: Renames,
+  profiles: ReadonlyMap<string, { grants?: { connection?: unknown }[] }>,
 ): Promise<string[]> {
   if (rows.length === 0) return [];
 
@@ -234,118 +217,17 @@ async function moveCredentials(
   // holding one is exactly the workspace being migrated, so reading through the
   // guard makes the refusal block its own fix. ADR-051's rule, met twice now: a
   // refusal has to name a command, and the command has to be able to run.
-  return await applyCredentialMoves(
-    store,
-    planCredentialMoves(await readConnectionRows(root, true), registry, renames),
-  );
-}
+  // The vault's document is planned separately because `credentialRefFor`
+  // cannot name it — see `planVaultMoves`. One apply for both, so a source
+  // feeding several destinations is deleted once rather than per plan.
+  const declared = (await openTarget(root, target)).declared;
 
-/**
- * `memory.*` becomes `lanes_memory.*`, in either spelling a rule may take.
- *
- * A rule is a bare pattern string or `{ capability, expires_at }`, and an
- * expiry has to survive: dropping it would turn a lapsing grant into a
- * permanent one, which is the direction that fails unsafely.
- */
-function retitle(rules: unknown, was: string, now: string): unknown {
-  if (!Array.isArray(rules)) return rules;
-
-  const moved = (pattern: string): string =>
-    pattern === was || pattern.startsWith(`${was}.`) ? `${now}${pattern.slice(was.length)}` : pattern;
-
-  return rules.map((rule) => {
-    if (typeof rule === 'string') return moved(rule);
-    const held = rule as { capability?: unknown };
-    return typeof held.capability === 'string'
-      ? { ...held, capability: moved(held.capability) }
-      : rule;
-  });
-}
-
-/** Every connection row, however far through the migration this workspace is. */
-async function readConnectionRows(
-  root: string,
-  full = false,
-): Promise<{ id: string; provider: string; account: string; credential_ref?: string }[]> {
-  const text = await readWorkspaceFile(workspaceFiles(root), CONNECTIONS_FILE);
-  if (text === null) return [];
-
-  const held = parseDocument(text).toJSON() as { connections?: unknown };
-  if (!Array.isArray(held.connections)) return [];
-
-  return held.connections.flatMap((row) => {
-    const one = row as { id?: unknown; provider?: unknown; account?: unknown };
-    if (typeof one.id !== 'string' || typeof one.provider !== 'string') return [];
-
-    // `account` matters only to `credentialRefFor`, which reads a row's own
-    // `credential_ref` off it; the id and provider are all the rest wants.
-    return [
-      {
-        ...(full ? (row as object) : {}),
-        id: one.id,
-        provider: one.provider,
-        account: typeof one.account === 'string' ? one.account : '',
-      },
-    ];
-  });
-}
-
-/**
- * The ids, in `connections.yaml` and in the credential store's refs.
- *
- * A `credential_ref` defaults to `<provider>/<connection>` and is derived
- * rather than written, so the rows carry no ref to update — but a connection
- * that *declares* one, and every `oauth_apps` entry, is a string naming an id
- * and has to move with it.
- */
-async function renameConnections(root: string, renames: Renames): Promise<void> {
-  const document = await ConfigDocument.openKey(root, CONNECTIONS_FILE);
-
-  // `toJSON()`, not `getIn`: `getIn` hands back YAML nodes rather than plain
-  // JS, so an `Array.isArray` on the result is false and the rewrite silently
-  // does nothing — which is exactly what it did, and the migration reported
-  // success with every id unchanged.
-  const held = document.toJSON() as { connections?: unknown };
-  if (!Array.isArray(held.connections)) return;
-
-  // **Deduplicated, because the owner layer merges.** Three profiles' own
-  // `memory` rows all rename to `lanes_memory.lan1` (ADR-066), and keeping
-  // three of them would be three rows at one address — which
-  // `assertConnectionsUnique` refuses, on the save at the end of this. The
-  // first row wins and the rest are dropped; the *bytes* are not merged, they
-  // land under each profile's own directory.
-  const seen = new Set<string>();
-  const rows = held.connections.flatMap((row) => {
-    const one = row as { id?: unknown; provider?: unknown };
-    if (typeof one.id !== 'string' || typeof one.provider !== 'string') return [row];
-
-    const to = renames.get(`${one.provider}.${one.id}`);
-    if (to === undefined) return [row];
-    if (seen.has(to)) return [];
-    seen.add(to);
-
-    // Both halves. The provider moved for the owner layer (`memory` became
-    // `lanes_memory`) and the id moved for everything unallocated, and a row
-    // that took one without the other names a connection nothing resolves.
-    const dot = to.indexOf('.');
-    return [{ ...one, provider: to.slice(0, dot), id: to.slice(dot + 1) }];
-  });
-
-  // **Lanes' own rows last, and the accounts in file order.** Nothing reads the
-  // order, but somebody does: interleaved, `con17` landed between `lan14` and
-  // `lan15` and the file read as though the numbering had gone wrong.
-  const owned = (row: unknown): boolean =>
-    typeof (row as { provider?: unknown }).provider === 'string' &&
-    (row as { provider: string }).provider.startsWith('lanes_');
-
-  document.setIn(['connections'], [...rows.filter((r) => !owned(r)), ...rows.filter(owned)]);
-
-  // The stamp this file was missing. Nothing reads it — every contract check is
-  // on a profile — which is exactly why it went stale, and a marker that lies
-  // is worse than no marker for whoever writes the next migration.
-  document.setIn(['contract'], 4);
-
-  await document.save();
+  return await applyCredentialMoves(store, [
+    ...planCredentialMoves(await readConnectionRows(root, true), registry, renames),
+    ...(declared.vault?.adapter === 'secret'
+      ? planVaultMoves(profiles, renames, declared.vault.ref)
+      : []),
+  ]);
 }
 
 /**

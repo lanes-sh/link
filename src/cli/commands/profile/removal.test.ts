@@ -84,7 +84,7 @@ describe('declaredRefs', () => {
     expect(declaredRefs(config(), target())).not.toContain('vault/document');
   });
 
-  test('a secret adapter with no ref names the vault connection, not a constant', () => {
+  test('a secret adapter with no ref names the profile and connection, not a constant', () => {
     // This asserted `vault/document`, the contract-2 constant, and so pinned the
     // defect rather than the behaviour: `openVault` seals under
     // `vault/<connection>` (ADR-059), so removal queued a ref nothing had
@@ -93,7 +93,7 @@ describe('declaredRefs', () => {
     // material belonging to a profile the operator asked to be gone.
     const sealed = target({ vault: { adapter: 'secret' } } as never);
 
-    expect(declaredRefs(config(), sealed)).toContain('vault/main');
+    expect(declaredRefs(config(), sealed)).toContain('vault/personal/main');
     expect(declaredRefs(config(), sealed)).not.toContain('vault/document');
   });
 
