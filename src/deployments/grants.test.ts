@@ -303,6 +303,39 @@ describe('what the revision is granted, against what it writes', () => {
       expect({ what, permitted: permits(condition, key) }).toEqual({ what, permitted: false });
     }
   });
+
+  test('another profile is outside it too, and so is a name the revision invents', async () => {
+    // The grant was `objectsUnder('profiles/')` with the *served* declarations
+    // carved out, so a deploy naming one profile handed the revision `create`
+    // and `delete` on every other profile's `profile.yaml` — the configuration
+    // of a profile the same endpoint serves — and on any directory it made up,
+    // which `listProfiles` would then pick up on the next boot. Before ADR-067
+    // no declaration was writable at all, because `profiles/` sat outside
+    // `data/`. It is one granted prefix per served profile now.
+    const condition = await writeCondition();
+
+    for (const key of [
+      'profiles/work/profile.yaml',
+      'profiles/work/lanes_memory/lan1/note.md',
+      'profiles/attacker/profile.yaml',
+    ]) {
+      expect({ key, permitted: permits(condition, key) }).toEqual({ key, permitted: false });
+    }
+
+    // And the served profile's own data is still writable, or the endpoint
+    // cannot store a memory entry.
+    expect(permits(condition, `profiles/${PROFILE}/lanes_memory/lan1/note.md`)).toBe(true);
+  });
+
+  test('the exclusion is bracketed, because ! binds tighter than == in CEL', async () => {
+    // `!resource.name == "…"` negates the *name* and compares that: not a type
+    // error, not what it reads as, and it excludes nothing. The bug was written
+    // and caught here, so the shape is pinned rather than the behaviour alone.
+    const condition = await writeCondition();
+
+    expect(condition).not.toMatch(/!resource\.name ==/);
+    expect(condition).toContain('!(resource.name ==');
+  });
 });
 
 describe('the vault, which is the one thing a revision writes back to its store', () => {
