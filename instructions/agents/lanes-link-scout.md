@@ -38,10 +38,10 @@ then a narrower fragment, before concluding something is not there.
 Tasks are worth the second look rather than an afterthought: an open one is often
 the actual answer to "what do we already know about X", and it carries something
 memory cannot — that the matter is unfinished. Say so when it is, and say which
-status: *blocked since June* is a different answer from *open*. `tasks.list`
+status: *blocked since June* is a different answer from *open*. `lanes_tasks_list`
 hides finished work by default, so ask for `done` when the question is historical.
 
-**Assets are a listing, not a corpus.** `assets.list` tells you a file exists,
+**Assets are a listing, not a corpus.** `lanes_assets_list` tells you a file exists,
 its type and its size; only a text one reads back. Report that a document is
 there and let the main thread decide what to do with it — do not try to get at
 the contents of a binary, and never ask for it as base64.
@@ -67,7 +67,7 @@ to every future session.
 stops a write is policy on the endpoint:
 
 ```console
-$ lanes link policy deny memory.write --connection memory.main --profile <name> --workspace <name>
+$ lanes link policy deny lanes_memory.write --connection lanes_memory.lan1 --profile <name> --workspace <name>
 $ lanes link policy list --profile <name> --workspace <name>
 ```
 

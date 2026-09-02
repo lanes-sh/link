@@ -45,6 +45,41 @@ export interface McpAddOptions extends GlobalFlags {
   readonly headless?: boolean | undefined;
 }
 
+/**
+ * What to say about the token, which depends on whether one was actually stored.
+ *
+ * **`token`, not `harness.storesToken`.** The harness property says the client
+ * *can* hold a token; whether one was passed is a different question, and only
+ * the headless path passes one — the ordinary path registers the bare URL and
+ * lets the client discover the protected-resource document and run the
+ * authorization itself. Keyed on the property, this told an operator who had
+ * just registered against a deployed endpoint that "the token was stored" and
+ * that a rotate meant re-registering, when nothing had been stored and a rotate
+ * would not touch that entry at all.
+ *
+ * A separate function so the decision can be tested without spawning a client
+ * binary, which is the only reason the branch above it cannot be.
+ */
+export function tokenNote(
+  harness: { readonly storesToken: boolean; readonly label: string },
+  token: string | undefined,
+): readonly string[] {
+  if (!harness.storesToken) return [];
+
+  if (token) {
+    return [
+      'The token was stored as a value, not a command, so "lanes link token rotate"',
+      'means running this again with --force.',
+    ];
+  }
+
+  return [
+    `No token was stored: ${harness.label} reads the endpoint's own`,
+    'protected-resource document and signs you in. A "lanes link token rotate"',
+    'does not affect this registration.',
+  ];
+}
+
 export async function mcpAdd(target: string | undefined, options: McpAddOptions): Promise<void> {
   // No harness named: every one that is actually installed. Registering with
   // whatever is present is what someone means by "add my mcp", and naming one
@@ -174,14 +209,7 @@ async function register(
 
   if (!options.noSkill) await installFor(harness, input.scope, {});
 
-  if (harness.storesToken) {
-    print(
-      style.dim(
-        '      The token was stored as a value, not a command, so "lanes link token rotate"\n' +
-          '      means running this again with --force.',
-      ),
-    );
-  }
+  for (const line of tokenNote(harness, input.token)) print(style.dim(`      ${line}`));
 
   const after = harness.afterAdd?.(input);
   if (after) {

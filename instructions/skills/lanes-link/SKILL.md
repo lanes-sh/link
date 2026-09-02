@@ -43,6 +43,12 @@ workspace*. A profile lives in exactly one, so `personal` on `local` and
 `personal` on `cloud` are two profiles that share a name rather than one profile
 in two places.
 
+**A profile owns its data.** Two profiles granting the same connection — every
+profile grants `lanes_memory.lan1` — still read and write different notes,
+tasks, files and entities, because the profile is part of where they are kept.
+So there is nothing to be found in one by asking another, and a note taken under
+`work` is not available under `personal`.
+
 **What a command must be told is never inferred from a profile — but the
 workspace may have a default.** `lanes set-workspace <name>` writes one, every
 command that uses it echoes the name it resolved, and the commands where being
@@ -74,12 +80,19 @@ disagree with it.
 When you write a command out for the owner, fill in what that command needs or
 leave it as `<name>` for them to complete — never drop a required one.
 
-A `connection` names an account the profile grants. One profile may grant
-several of the same kind and govern each differently, so `gmail.work` may be
-readable where `gmail.personal` is writable. Naming a connection the profile does
-not grant is refused rather than guessed at, and a connection it does not grant
-is absent from the enum entirely: if you cannot see it there, it was not
-withheld by accident.
+A `connection` names an account the profile grants, and it is a **fully
+qualified** `<provider>.<id>` — `lanes_memory.lan1`, not `lan1`. The bare id is
+refused, so take the value out of the enum rather than assembling one.
+
+Ids are opaque: `con1`, `con2` for accounts and `lan1`, `lan2` for Lanes' own
+surfaces. They carry no meaning and are not worth guessing at — the enum prints
+each one's account and label beside it, and that is what tells `con1` from
+`con2`. One profile may grant several of the same kind and govern each
+differently, so `gmail.con1` may be readable where `gmail.con2` is writable.
+
+Naming a connection the profile does not grant is refused rather than guessed
+at, and one it does not grant is absent from the enum entirely: if you cannot
+see it there, it was not withheld by accident.
 
 ## Which store a thing goes in
 
@@ -107,7 +120,7 @@ when Y", that is a skill they should write, not a memory entry describing it.
 
 ## Reach for memory before answering from nothing
 
-`lanes_memory.search` before concluding you do not know something about this person or
+`lanes_memory_search` before concluding you do not know something about this person or
 their work. It is a substring search over their own notes, not a ranked index —
 try more than one wording before deciding it is not there.
 
@@ -118,7 +131,7 @@ entries with `lanes link memory list --profile <name> --workspace <name>` and a 
 
 ## Tasks have a status, so finish them rather than deleting them
 
-`lanes_tasks.list` answers what is outstanding. It shows `in_progress`, `open` and
+`lanes_tasks_list` answers what is outstanding. It shows `in_progress`, `open` and
 `blocked` and hides the rest, so a listing is what is left to do rather than
 everything that ever was — name a status to see more.
 
@@ -133,7 +146,7 @@ Six of them, and the two that are easy to confuse are worth learning:
 | `done` | finished |
 | `dropped` | decided against, which is not the same as finished |
 
-**Closing a task is `lanes_tasks.update` with a status, never `lanes_tasks.remove`.** The
+**Closing a task is `lanes_tasks_update` with a status, never `lanes_tasks_remove`.** The
 record of having done it is the useful half, and it is what stops the same thing
 being suggested again next week. Remove is for something recorded by mistake.
 
