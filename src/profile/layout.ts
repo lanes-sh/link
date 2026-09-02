@@ -1,63 +1,75 @@
 /**
- * Where a workspace's data lives, in one place.
+ * Where a workspace's files live, in one place.
  *
  * ```
  * ~/.lanes-link/
- * ├── lanes-link.yaml           the workspaces this machine knows, and the default
+ * ├── workspaces.yaml           the workspaces this machine knows, and the default
  * ├── connections.yaml          every account authorised in this workspace
- * ├── profiles/<name>.yaml      which of them a profile selects, and who may use it
- * └── data/
- *     ├── state.kv/             state, connections, cursors
- *     ├── audit.log/            one object per event, one chain
- *     ├── credentials.enc       system credentials, and its .key
- *     ├── vault.d/<id>.enc      one sealed document per vault connection
- *     ├── skills.d/<id>/        procedures, one <name>/SKILL.md each
- *     ├── providers.d/          the operator's own provider manifests
- *     └── <provider>/<connection>/…   whatever that provider stores
+ * ├── credentials.enc           system credentials, and its .key
+ * ├── providers.d/              the operator's own provider manifests
+ * ├── audit.log/                one object per event, one chain
+ * ├── state.kv/                 connections, discovery, the endpoint's own OAuth server
+ * └── profiles/
+ *     └── <profile>/            everything one profile is
+ *         ├── profile.yaml      what it selects, and who may use it
+ *         ├── state.kv/         cursors, and each provider's own keys
+ *         ├── vault.d/<id>.enc  one sealed document per vault connection
+ *         ├── skills.d/<id>/    procedures, one <name>/SKILL.md each
+ *         └── <provider>/<connection>/…   whatever that provider stores
  * ```
  *
- * **Nothing here takes a profile.** It used to take one for everything: a
- * profile owned a directory, and `rm -r data/work` was the whole answer to
- * "remove the work profile's data". A connection belongs to the workspace now
- * (ADR-057) and so do the stores behind the owner layer (ADR-059), so a profile
- * owns no bytes at all — it owns a selection, and the thing a selection points
- * at outlives it. `profile remove` prints what survives rather than letting the
- * difference go unnoticed.
+ * **A profile is one directory, and it owns its bytes.** Both halves reverse
+ * something recent. ADR-059 put the owner layer's bytes beside the *connection*,
+ * so a profile owned nothing and two profiles granting `memory.lan1` read one
+ * note; ADR-066 makes the profile the container again, so they read two. And the
+ * declaration used to sit at `profiles/<name>.yaml` while the data sat under
+ * `data/<name>/` — the same structure in two places, for no reason anybody could
+ * state (ADR-067).
  *
- * **The dot is load-bearing, and it is the only thing keeping these apart from
- * a provider.** The blob root is `data/` and a provider is namespaced
- * `<provider>/<connection>` under it; a provider id is `[a-z][a-z0-9_]*`, so a
- * name carrying a dot is one no provider can be scoped into. That is not
- * hypothetical for three of the five names below — `skills`, `vault` and
- * `audit` are all real provider ids, and without the dot each would be handed a
- * store rooted inside the thing it is meant to be walled off from, which is a
- * hole in ADR-007's wall rather than an untidy filename.
+ * **There is no `data/` any more.** It meant "what a deployed revision writes,
+ * as against the config it reads", which was worth a directory. `profile.yaml`
+ * lives beside the bytes now, so that line has to be drawn inside it regardless
+ * — and a directory holding everything names nothing. The IAM grant says which
+ * prefixes are writable instead of saying which one is not.
  *
- * `vault.d/<id>.enc` rather than `vault/<id>.enc` for exactly that reason. The
- * sealed document is not a blob the vault provider serves, and a `vault/`
- * prefix shared between the two would put the ciphertext inside the namespace
- * the provider is given.
+ * **The dot is load-bearing one level down, not here.** The root is not a
+ * provider blob root; a *profile's* directory is. A provider is namespaced
+ * `<provider>/<connection>` under it and a provider id is `[a-z][a-z0-9_]*`, so
+ * a name carrying a dot is one no provider can be scoped into. That is not
+ * hypothetical for three of the four names there — `skills`, `vault` and `state`
+ * would each otherwise be handed a store rooted inside the thing it is meant to
+ * be walled off from, which is a hole in ADR-007's wall rather than an untidy
+ * filename. `profile.yaml` carries one for the same reason.
+ *
+ * `vault.d/<id>.enc` rather than `vault/<id>.enc` on the same grounds: the
+ * sealed document is not a blob the vault provider serves, and a shared `vault/`
+ * prefix would put the ciphertext inside the namespace the provider is given.
+ *
+ * `audit.log/` and `state.kv/` stay at the workspace. One endpoint serves every
+ * profile and every event already records the profile it acted in, so one chain
+ * is both sufficient and better evidence than several; and a connection's
+ * reconcile status is a fact about an account, which a `connect` in one profile
+ * must not have to repeat in the next. What follows the profile is what a
+ * profile's use of an account produces — cursors, and the provider's own keys.
  *
  * These are **defaults**. A workspace that declares its own paths keeps them.
  */
 
-/** The directory under the workspace root that holds everything the workspace owns. */
-export const DATA_DIR = 'data';
+/** The directory holding one subdirectory per profile. */
+export const PROFILES_DIR = 'profiles';
 
 /**
  * No leading `./` on any of these.
  *
  * It used to carry one, which `path.resolve` discards and an object key does
- * not: a bucket read `./data/state.kv/x` as a directory literally named `.`, so
+ * not: a bucket read `./state.kv/x` as a directory literally named `.`, so
  * every deployed key landed one level away from where the config said it did.
  * The visible cost was that the conditioned IAM binding
- * `deployments/gcp/provision.ts` writes — which grants writes under
- * `objects/data/` — matched nothing, and the first revision 403'd on its boot
- * reconcile. A relative path is relative without being spelled that way.
+ * `deployments/gcp/provision.ts` writes matched nothing, and the first revision
+ * 403'd on its boot reconcile. A relative path is relative without being
+ * spelled that way.
  */
 export const layout = {
-  /** Connections, provider state, and cursors: one object per key. */
-  state: (): string => `${DATA_DIR}/state.kv`,
   /**
    * System credentials — OAuth refresh tokens, the CI token. Never reachable
    * from MCP.
@@ -69,45 +81,16 @@ export const layout = {
    * "silent until one profile is reading the other's account" (ADR-043,
    * ADR-057).
    */
-  credentials: (): string => `${DATA_DIR}/credentials.enc`,
-  /** Every vault connection's sealed document lives under here. */
-  vaultRoot: (): string => `${DATA_DIR}/vault.d`,
-  /** One sealed document per vault connection, each under its own key. */
-  vault: (connection: string): string => `${DATA_DIR}/vault.d/${connection}.enc`,
-  /**
-   * The same document, keyed relative to the blob store.
-   *
-   * `blobs()` is already rooted at `data/`, so a blob adapter handed the path
-   * above would write `data/data/vault.d/...`. Two spellings of one location is
-   * exactly what this file exists to prevent, so the second one lives here
-   * beside the first rather than being assembled at the call site.
-   */
-  vaultKey: (connection: string): string => `vault.d/${connection}.enc`,
-  /**
-   * Every skills connection's procedures live under here.
-   *
-   * The root is exported beside the per-connection path because `deploy` needs
-   * to recognise the *area* without knowing which connections exist — and
-   * `upload.ts` composes its allowlist back out of these rather than comparing
-   * against literals, so a renamed directory moves the store and the thing that
-   * sends it together, or neither.
-   */
-  skillsRoot: (): string => `${DATA_DIR}/skills.d`,
-  /** One skills connection's procedures — `<name>.md` or `<name>/SKILL.md`, either layout. */
-  skills: (connection: string): string => `${DATA_DIR}/skills.d/${connection}`,
+  credentials: (): string => 'credentials.enc',
   /**
    * The provider manifests this workspace declares.
    *
    * Workspace-level, where ADR-030 put them in the profile. A manifest names a
    * host, an OpenAPI document, and the credential refs that reach them — which
    * is to say it *defines a connection*, and connections do not live in a
-   * profile any more. ADR-030's argument was about a procedure being as private
-   * as the knowledge it operates on; that argument is answered by ADR-059's
-   * instances, not by where a manifest sits.
+   * profile any more (ADR-057).
    */
-  providers: (): string => `${DATA_DIR}/providers.d`,
-  /** The blob root every provider is namespaced under. */
-  blobs: (): string => DATA_DIR,
+  providers: (): string => 'providers.d',
   /**
    * The audit log: one object per event, one chain for the workspace.
    *
@@ -116,5 +99,74 @@ export const layout = {
    * also what lets `audit tail` filter where it used to select, and what gives
    * the dashboard a single log to read.
    */
-  audit: (): string => `${DATA_DIR}/audit.log`,
+  audit: (): string => 'audit.log',
+  /**
+   * What the workspace knows about its accounts, and about itself.
+   *
+   * Connection records and the discovery cache, because both are facts about an
+   * account or a provider rather than about anybody's selection of it — a
+   * `connect` run once must read as connected from every profile. And the
+   * endpoint's own OAuth authorization-server state, which is not about a
+   * connection at all: it is the clients that have signed in *to* this endpoint,
+   * and there is one endpoint.
+   */
+  state: (): string => 'state.kv',
+
+  /** Every profile's directory sits under here. */
+  profilesRoot: (): string => PROFILES_DIR,
+  /** Everything one profile is. Also the blob root its providers are scoped under. */
+  profileDir: (profile: string): string => `${PROFILES_DIR}/${profile}`,
+  /**
+   * What this profile selects, and who may use it.
+   *
+   * Inside the profile's own directory, which is the whole of ADR-067 — but it
+   * is therefore inside the tree a running endpoint writes, so the IAM condition
+   * carves it back out. ADR-007 says a deployed revision never mutates its own
+   * configuration, and that rule is older than where the file sits.
+   */
+  profileConfig: (profile: string): string => `${PROFILES_DIR}/${profile}/profile.yaml`,
+  /** Cursors, and each provider's own keys, for this profile's use of an account. */
+  profileState: (profile: string): string => `${PROFILES_DIR}/${profile}/state.kv`,
+  /** Every vault connection's sealed document, for this profile. */
+  vaultRoot: (profile: string): string => `${PROFILES_DIR}/${profile}/vault.d`,
+  /** One sealed document per vault connection, each under its own key. */
+  vault: (profile: string, connection: string): string =>
+    `${PROFILES_DIR}/${profile}/vault.d/${connection}.enc`,
+  /**
+   * The same document, keyed relative to the blob store.
+   *
+   * `blobs()` is already rooted at the profile's directory, so a blob adapter
+   * handed the path above would write `profiles/p/profiles/p/vault.d/...`. Two
+   * spellings of one location is exactly what this file exists to prevent, so
+   * the second one lives here beside the first rather than being assembled at
+   * the call site.
+   */
+  vaultKey: (connection: string): string => `vault.d/${connection}.enc`,
+  /**
+   * Every skills connection's procedures, for this profile.
+   *
+   * The root is exported beside the per-connection path because `deploy` needs
+   * to recognise the *area* without knowing which connections exist — and
+   * `upload.ts` composes its allowlist back out of these rather than comparing
+   * against literals, so a renamed directory moves the store and the thing that
+   * sends it together, or neither.
+   */
+  skillsRoot: (profile: string): string => `${PROFILES_DIR}/${profile}/skills.d`,
+  /** One skills connection's procedures — `<name>.md` or `<name>/SKILL.md`, either layout. */
+  skills: (profile: string, connection: string): string =>
+    `${PROFILES_DIR}/${profile}/skills.d/${connection}`,
+  /** The blob root this profile's providers are namespaced under. */
+  blobs: (profile: string): string => `${PROFILES_DIR}/${profile}`,
 } as const;
+
+/**
+ * `data/`, which no longer exists — kept for the migrations that address it.
+ *
+ * Contracts 1 through 3 put everything a profile owned under `data/<profile>/`,
+ * and contract 4 moves it out (ADR-067). A migration reads the layout it is
+ * migrating *from*, and that layout is frozen: asking `layout` above would
+ * compare a contract-3 path against a contract-4 default and match nothing.
+ * `migrate-plan.ts` already spells the contract-1 defaults out for the same
+ * reason. Nothing outside a migration should import this.
+ */
+export const LEGACY_DATA_DIR = 'data';

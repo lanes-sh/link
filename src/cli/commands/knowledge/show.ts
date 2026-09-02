@@ -41,11 +41,12 @@ export async function knowledgeShow(flags: KnowledgeFlags): Promise<void> {
     heading('Knowledge');
     table([
       // The memory *directory*, not the blob root it sits in. `layout.blobs`
-      // is `data/`, which is where every provider's namespace lives —
-      // printing it here would name a directory that is mostly not memory.
+      // is the profile's own directory, which is where every provider's
+      // namespace lives — printing it here would name a directory that is
+      // mostly not memory.
       [
         '  memory',
-        where ? `${where}/${KNOWLEDGE_LAYOUT.memory}` : `${layout.blobs()}/${KNOWLEDGE_LAYOUT.memory}`,
+        where ? `${where}/${KNOWLEDGE_LAYOUT.memory}` : `${layout.blobs(profile)}/${KNOWLEDGE_LAYOUT.memory}`,
         style.dim(`${memory} file${memory === 1 ? '' : 's'}`),
       ],
       [
@@ -53,7 +54,7 @@ export async function knowledgeShow(flags: KnowledgeFlags): Promise<void> {
         where
           ? `${where}/${KNOWLEDGE_LAYOUT.skills}`
           : skillsConnection
-            ? layout.skills(skillsConnection)
+            ? layout.skills(profile, skillsConnection)
             : style.dim('not granted'),
         style.dim(`${skills} file${skills === 1 ? '' : 's'}`),
       ],
@@ -64,7 +65,7 @@ export async function knowledgeShow(flags: KnowledgeFlags): Promise<void> {
         '  entities',
         where
           ? `${where}/${KNOWLEDGE_LAYOUT.entities}`
-          : `${layout.blobs()}/${KNOWLEDGE_LAYOUT.entities}`,
+          : `${layout.blobs(profile)}/${KNOWLEDGE_LAYOUT.entities}`,
         style.dim(`${entities} file${entities === 1 ? '' : 's'}`),
       ],
     ]);

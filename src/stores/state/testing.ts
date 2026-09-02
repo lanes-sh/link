@@ -15,7 +15,11 @@ import { createMemoryBlobStore } from '../blobs/testing.ts';
 import { createRuntimeState, type RuntimeState } from './index.ts';
 
 export function createMemoryState(now: () => Date = () => new Date()): RuntimeState {
-  return createRuntimeState(createMemoryBlobStore(), now);
+  // The same store twice: this harness is for callers that are not exercising
+  // the workspace/profile split, and saying so explicitly is the point of
+  // `createRuntimeState` having no default.
+  const blobs = createMemoryBlobStore();
+  return createRuntimeState(blobs, blobs, now);
 }
 
 /** An in-memory credential store, for the same reason. */

@@ -1,6 +1,23 @@
-import { ConfigError, DATA_DIR, layout } from '#profile';
+import { ConfigError, LEGACY_DATA_DIR } from '#profile';
 import type { BlobStore } from '#stores/blobs';
 import { CONNECTIONS_NAMESPACE, decodeSegment, objectKey } from '#stores/state';
+
+/**
+ * Where contract 3 put things, frozen.
+ *
+ * This module migrates *to* contract 3, so its destinations are contract-3
+ * paths and must stay contract-3 paths however the live layout moves. Asking
+ * `#profile`'s `layout` would hand back contract-4 defaults (ADR-067) and this
+ * migration would write a shape the next one expects to find already moved.
+ * `migrate-plan.ts` spells the contract-1 defaults out for the same reason.
+ */
+const C3 = {
+  state: (): string => `${LEGACY_DATA_DIR}/state.kv`,
+  providers: (): string => `${LEGACY_DATA_DIR}/providers.d`,
+  vault: (connection: string): string => `${LEGACY_DATA_DIR}/vault.d/${connection}.enc`,
+  skills: (connection: string): string => `${LEGACY_DATA_DIR}/skills.d/${connection}`,
+} as const;
+
 
 /**
  * The half of the contract-3 migration that moves bytes rather than YAML.
@@ -68,7 +85,7 @@ export async function planMoves(
 
   for (const profile of profiles) {
     const mapping = perProfile.get(profile) ?? new Map<string, string>();
-    const prefix = `${DATA_DIR}/${profile}/`;
+    const prefix = `${LEGACY_DATA_DIR}/${profile}/`;
 
     for (const blob of await files.list(prefix)) {
       const rest = blob.key.slice(prefix.length);
@@ -86,17 +103,17 @@ export async function planMoves(
       // which is the worst of the collisions because the wrong answer is a
       // credential (ADR-059).
       if (head === 'vault.enc') {
-        moves.push({ from: blob.key, to: layout.vault(instanceOf(mapping, 'vault')) });
+        moves.push({ from: blob.key, to: C3.vault(instanceOf(mapping, 'vault')) });
         continue;
       }
       if (head === 'vault.enc.key') {
-        moves.push({ from: blob.key, to: `${layout.vault(instanceOf(mapping, 'vault'))}.key` });
+        moves.push({ from: blob.key, to: `${C3.vault(instanceOf(mapping, 'vault'))}.key` });
         continue;
       }
       if (head === 'skills.d') {
         moves.push({
           from: blob.key,
-          to: `${layout.skills(instanceOf(mapping, 'skills'))}/${tail.join('/')}`,
+          to: `${C3.skills(instanceOf(mapping, 'skills'))}/${tail.join('/')}`,
         });
         continue;
       }
@@ -107,7 +124,7 @@ export async function planMoves(
       if (head === 'providers.d') {
         const move = claim(claimed, {
           from: blob.key,
-          to: `${layout.providers()}/${tail.join('/')}`,
+          to: `${C3.providers()}/${tail.join('/')}`,
         });
         if (move !== null) moves.push(move);
         continue;
@@ -115,7 +132,7 @@ export async function planMoves(
       // One object per event under a key already carrying the timestamp, so
       // concatenating three profiles' logs is exactly moving them across.
       if (head === 'audit.log') {
-        moves.push({ from: blob.key, to: `${DATA_DIR}/audit.log/${tail.join('/')}` });
+        moves.push({ from: blob.key, to: `${LEGACY_DATA_DIR}/audit.log/${tail.join('/')}` });
         continue;
       }
       if (head === 'state.kv') {
@@ -132,7 +149,7 @@ export async function planMoves(
       // This profile's old key, through this profile's mapping.
       const settled = mapping.get(`${head}.${connection}`);
       const id = settled === undefined ? connection : (settled.split('.')[1] ?? connection);
-      moves.push({ from: blob.key, to: `${DATA_DIR}/${head}/${id}/${tail.slice(1).join('/')}` });
+      moves.push({ from: blob.key, to: `${LEGACY_DATA_DIR}/${head}/${id}/${tail.slice(1).join('/')}` });
     }
   }
 
@@ -190,7 +207,7 @@ function stateMove(
   mapping: ReadonlyMap<string, string>,
   claimed: Set<string>,
 ): Move | null {
-  const here = `${layout.state()}/${tail.join('/')}`;
+  const here = `${C3.state()}/${tail.join('/')}`;
   const leaf = tail[tail.length - 1];
 
   // Not an object this module wrote: moved as it is, and still held to the
@@ -231,7 +248,7 @@ function stateMove(
     if (settled === undefined) return { from, to: here };
 
     const id = settled.slice(settled.indexOf('.') + 1);
-    return claim(claimed, { from, to: `${layout.state()}/${objectKey(`${provider}/${id}`, key)}` });
+    return claim(claimed, { from, to: `${C3.state()}/${objectKey(`${provider}/${id}`, key)}` });
   }
 
   if (namespace !== CONNECTIONS_NAMESPACE) return { from, to: here };
@@ -245,7 +262,7 @@ function stateMove(
   // key can collide with a rename that is real.
   if (settled === undefined) return null;
 
-  const to = `${layout.state()}/${objectKey(CONNECTIONS_NAMESPACE, settled)}`;
+  const to = `${C3.state()}/${objectKey(CONNECTIONS_NAMESPACE, settled)}`;
 
   // Two profiles on one account merge into one row, so both hold a record for
   // it. One connection; the second differs only in when it was written.

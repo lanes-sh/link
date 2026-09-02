@@ -45,7 +45,7 @@ export function openVault(
   switch (vault.adapter) {
     case 'file':
       return createFileVaultStore({
-        path: workspacePath(root, vault.path ?? layout.vault(connection)),
+        path: workspacePath(root, vault.path ?? layout.vault(config.instance.profile, connection)),
       });
 
     case 'secret':

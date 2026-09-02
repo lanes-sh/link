@@ -10,7 +10,7 @@ import { parseDocument } from 'yaml';
 import {
   CONNECTIONS_FILE,
   ConfigError,
-  DATA_DIR,
+  LEGACY_DATA_DIR,
   isRemoteWorkspace,
   WORKSPACE_FILE,
   layout,

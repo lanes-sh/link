@@ -135,6 +135,6 @@ export {
 } from './workspace.ts';
 
 export {
-  DATA_DIR,
+  LEGACY_DATA_DIR,
   layout,
 } from './layout.ts';

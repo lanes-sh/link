@@ -270,12 +270,13 @@ async function openLocalStores(
     },
     runtime.credentials,
   );
-  // The *granted* connection, not the profile name. `layout.skills` changed
-  // meaning without changing arity at ADR-059, so the compiler was silent.
+  // The *granted* connection, beside the profile. `layout.skills` changed
+  // meaning without changing arity at ADR-059, so the compiler was silent;
+  // ADR-066 put the profile back in front of it, and it is an argument now.
   const skillsConnection = soleGrantFor(runtime.config, 'skills');
   return {
     storage: factory(),
-    skills: skillsConnection === undefined ? null : factory(layout.skills(skillsConnection)),
+    skills: skillsConnection === undefined ? null : factory(layout.skills(runtime.config.instance.profile, skillsConnection)),
   };
 }
 

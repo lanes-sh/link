@@ -1,4 +1,4 @@
-import { ConfigError, DATA_DIR, isRemoteWorkspace, layout } from '#profile';
+import { ConfigError, LEGACY_DATA_DIR, isRemoteWorkspace, layout } from '#profile';
 import { createFileSecretStore } from '#secrets';
 
 /**
@@ -123,7 +123,7 @@ async function readMerged(
 
   for (const plan of plans) {
     const store = createFileSecretStore({
-      path: `${root}/${DATA_DIR}/${plan.profile}/credentials.enc`,
+      path: `${root}/${LEGACY_DATA_DIR}/${plan.profile}/credentials.enc`,
     });
 
     let refs: string[];

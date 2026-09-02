@@ -1,5 +1,5 @@
 import {
-  DATA_DIR, ConfigError, layout, isRemoteWorkspace, type LegacyTarget, type WorkspaceTarget } from '#profile';
+  LEGACY_DATA_DIR, ConfigError, layout, isRemoteWorkspace, type LegacyTarget, type WorkspaceTarget } from '#profile';
 import { deployedWorkspace } from '#deployments/upload.ts';
 
 /**
@@ -111,8 +111,8 @@ export function toEntry(
   // and `layout` describes where things live *now* — workspace-level since
   // ADR-057. Asking it would compare a contract-1 path against a contract-3
   // default and refuse every profile that had written the ordinary one.
-  const defaultStorage = `./${DATA_DIR}/${profile}`;
-  const defaultCredentials = `./${DATA_DIR}/${profile}/credentials.enc`;
+  const defaultStorage = `./${LEGACY_DATA_DIR}/${profile}`;
+  const defaultCredentials = `./${LEGACY_DATA_DIR}/${profile}/credentials.enc`;
 
   refuseCustomPath(name, profile, workspaceRoot, 'storage.path', storagePath, defaultStorage);
   refuseCustomPath(
