@@ -6,11 +6,18 @@ import {
   workspaceFiles,
   writeWorkspaceFile,
   WORKSPACE_FILE,
+  CONNECTIONS_FILE,
 } from '#profile';
 import { parseDocument } from 'yaml';
 import { ConfigDocument } from './config-edit.ts';
 import { C3 } from './contract3-layout.ts';
-import { grantingProfiles, planMoves, type DataPlan } from './contract4-data.ts';
+import {
+  grantingProfiles,
+  planMoves,
+  planRenames,
+  type DataPlan,
+  type Renames,
+} from './contract4-data.ts';
 import { applyMoves, assertOneObjectPerDestination } from './migrate-move.ts';
 
 /**
@@ -106,7 +113,15 @@ export async function migrateToContract4(
 
   const profiles = [...configs.keys()];
   const files = workspaceFiles(workspaceRoot);
-  const plan = await planMoves(files, grantingProfiles(configs), profiles);
+
+  // Every connection the workspace holds, and the id each ends up with. Built
+  // once and read by every rewrite below — the contract-3 mover's own bug was a
+  // map keyed one way and queried the other, which made the resolution a silent
+  // no-op and sent two profiles' blobs into one namespace.
+  const rows = await readConnectionRows(workspaceRoot);
+  const renames = planRenames(rows);
+
+  const plan = await planMoves(files, grantingProfiles(configs), profiles, renames);
 
   // Everything that can refuse, before the first byte moves. A `keep` move is
   // exempt: two profiles granting one store are *meant* to write one source to
@@ -127,10 +142,27 @@ export async function migrateToContract4(
 
   await renameRegistry(workspaceRoot);
   await applyMoves(files, plan.moves);
+  await renameConnections(workspaceRoot, renames);
 
   // Last. The stamp is the record that the migration finished.
   for (const profile of profiles) {
     const document = await ConfigDocument.openKey(workspaceRoot, layout.profileConfig(profile));
+
+    // The grants are rewritten in the same pass that stamps, so a profile is
+    // never on disk claiming contract 4 with grants naming ids nothing holds.
+    const held = document.toJSON() as { grants?: unknown };
+    const grants = held.grants;
+    if (Array.isArray(grants)) {
+      document.setIn(
+        ['grants'],
+        grants.map((grant) => {
+          const held = grant as { connection?: unknown };
+          const ref = typeof held.connection === 'string' ? held.connection : undefined;
+          return ref === undefined ? grant : { ...held, connection: renames.get(ref) ?? ref };
+        }),
+      );
+    }
+
     document.setIn(['contract'], 4);
     await document.save();
   }
@@ -143,6 +175,56 @@ export async function migrateToContract4(
     orphaned: plan.orphaned,
     alreadyCurrent: false,
   };
+}
+
+/** Every connection row, however far through the migration this workspace is. */
+async function readConnectionRows(
+  root: string,
+): Promise<{ id: string; provider: string }[]> {
+  const text = await readWorkspaceFile(workspaceFiles(root), CONNECTIONS_FILE);
+  if (text === null) return [];
+
+  const held = parseDocument(text).toJSON() as { connections?: unknown };
+  if (!Array.isArray(held.connections)) return [];
+
+  return held.connections.flatMap((row) => {
+    const one = row as { id?: unknown; provider?: unknown };
+    return typeof one.id === 'string' && typeof one.provider === 'string'
+      ? [{ id: one.id, provider: one.provider }]
+      : [];
+  });
+}
+
+/**
+ * The ids, in `connections.yaml` and in the credential store's refs.
+ *
+ * A `credential_ref` defaults to `<provider>/<connection>` and is derived
+ * rather than written, so the rows carry no ref to update — but a connection
+ * that *declares* one, and every `oauth_apps` entry, is a string naming an id
+ * and has to move with it.
+ */
+async function renameConnections(root: string, renames: Renames): Promise<void> {
+  const document = await ConfigDocument.openKey(root, CONNECTIONS_FILE);
+
+  // `toJSON()`, not `getIn`: `getIn` hands back YAML nodes rather than plain
+  // JS, so an `Array.isArray` on the result is false and the rewrite silently
+  // does nothing — which is exactly what it did, and the migration reported
+  // success with every id unchanged.
+  const held = document.toJSON() as { connections?: unknown };
+  if (!Array.isArray(held.connections)) return;
+
+  document.setIn(
+    ['connections'],
+    held.connections.map((row) => {
+      const one = row as { id?: unknown; provider?: unknown };
+      if (typeof one.id !== 'string' || typeof one.provider !== 'string') return row;
+
+      const to = renames.get(`${one.provider}.${one.id}`);
+      return to === undefined ? row : { ...one, id: to.slice(to.indexOf('.') + 1) };
+    }),
+  );
+
+  await document.save();
 }
 
 /**

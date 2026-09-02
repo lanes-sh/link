@@ -1,6 +1,8 @@
 import { layout } from '#profile';
+import { RESERVED_PROVIDER_IDS } from '#connectivity';
+import { nextConnectionId } from './identity.ts';
 import type { BlobStore } from '#stores/blobs';
-import { decodeSegment, isWorkspaceNamespace } from '#stores/state';
+import { decodeSegment, encodeSegment, isWorkspaceNamespace } from '#stores/state';
 import { C3 } from './contract3-layout.ts';
 import { claim, type Move } from './migrate-move.ts';
 
@@ -25,6 +27,44 @@ import { claim, type Move } from './migrate-move.ts';
 
 /** Which profiles grant a connection, by `<provider>.<id>`. */
 export type Granting = ReadonlyMap<string, readonly string[]>;
+
+/** Old `<provider>.<id>` to new, for every connection this workspace holds. */
+export type Renames = ReadonlyMap<string, string>;
+
+/**
+ * The new id for every connection, allocated in file order.
+ *
+ * File order rather than anything derived, so a rerun produces the same map and
+ * a preview matches the apply. A row that already carries an allocated id keeps
+ * it — this migration is not a renumbering, and running it twice must not walk
+ * `con1` to `con2`.
+ *
+ * The reserved ids are the owner layer's, and they are what the `lan` prefix is
+ * for: a reader can tell a surface built into Lanes from somebody's account
+ * without resolving anything.
+ */
+export function planRenames(
+  connections: readonly { id: string; provider: string }[],
+): Renames {
+  const renames = new Map<string, string>();
+  const taken = connections
+    .map((row) => row.id)
+    .filter((id) => /^(lan|con)[0-9]+$/.test(id));
+
+  for (const row of connections) {
+    const from = `${row.provider}.${row.id}`;
+    if (/^(lan|con)[0-9]+$/.test(row.id)) {
+      renames.set(from, from);
+      continue;
+    }
+
+    const id = nextConnectionId(taken, RESERVED_PROVIDER_IDS.includes(row.provider));
+    taken.push(id);
+    renames.set(from, `${row.provider}.${id}`);
+  }
+
+  return renames;
+}
 
 export interface DataPlan {
   readonly moves: readonly Move[];
@@ -51,7 +91,14 @@ export async function planMoves(
   files: BlobStore,
   granting: Granting,
   profiles: readonly string[],
+  renames: Renames = new Map(),
 ): Promise<DataPlan> {
+  /** The id a connection ends up with — itself, where nothing renamed it. */
+  const renamed = (provider: string, id: string): string => {
+    const to = renames.get(`${provider}.${id}`);
+    return to === undefined ? id : to.slice(to.indexOf('.') + 1);
+  };
+
   const moves: Move[] = [];
   const shared: { key: string; profiles: readonly string[] }[] = [];
   const orphaned: string[] = [];
@@ -77,7 +124,7 @@ export async function planMoves(
       continue;
     }
     if (head === 'state.kv') {
-      for (const move of stateMoves(blob.key, tail, granting, claimed)) moves.push(move);
+      for (const move of stateMoves(blob.key, tail, granting, claimed, renames)) moves.push(move);
       continue;
     }
 
@@ -93,10 +140,11 @@ export async function planMoves(
       const id = provider === 'vault' ? connection.replace(/\.enc(\.key)?$/, '') : connection;
       const owners = granting.get(`${provider}.${id}`) ?? [];
 
+      const to = renamed(provider, id);
       const into = (profile: string): string =>
         provider === 'vault'
-          ? `${layout.vaultRoot(profile)}/${connection}`
-          : `${layout.skills(profile, id)}/${tail.slice(1).join('/')}`;
+          ? `${layout.vaultRoot(profile)}/${connection.replace(id, to)}`
+          : `${layout.skills(profile, to)}/${tail.slice(1).join('/')}`;
 
       record(blob.key, owners, into, moves, shared, orphaned);
       continue;
@@ -111,7 +159,8 @@ export async function planMoves(
     record(
       blob.key,
       owners,
-      (profile) => `${layout.blobs(profile)}/${head}/${connection}/${tail.slice(1).join('/')}`,
+      (profile) =>
+        `${layout.blobs(profile)}/${head}/${renamed(head, connection)}/${tail.slice(1).join('/')}`,
       moves,
       shared,
       orphaned,
@@ -176,29 +225,75 @@ function stateMoves(
   tail: readonly string[],
   granting: Granting,
   claimed: Set<string>,
+  renames: Renames = new Map(),
 ): Move[] {
   const namespace = tail.slice(0, -1).map(decodeSegment).join('/');
   const leaf = tail[tail.length - 1];
   if (leaf === undefined) return [];
 
+  const key = decodeSegment(leaf.replace(/\.json$/, ''));
+
   if (isWorkspaceNamespace(namespace)) {
+    // A connection record is keyed on the ref *and* carries it in the body:
+    // `ConnectionRepository.list` reads `provider` and `id` out of the record,
+    // not out of the key. A renamed connection whose bytes moved verbatim would
+    // sit at `connections.v1/gmail.con1` still calling itself `gmail.main`, and
+    // the next reconcile would write a second record beside it.
+    const settled = namespace === 'connections.v1' ? renames.get(key) : undefined;
+    const to = `${layout.state()}/${
+      settled === undefined ? tail.join('/') : `${tail[0]!}/${encodeSegment(settled)}.json`
+    }`;
+
     // Two profiles both hold a record for a connection they share, and the
     // second differs only in when it was written.
-    const move = claim(claimed, { from, to: `${layout.state()}/${tail.join('/')}` });
+    const move = claim(claimed, {
+      from,
+      to,
+      ...(settled === undefined
+        ? {}
+        : { rewrite: (data: Uint8Array) => retarget(data, settled) }),
+    });
     return move === null ? [] : [move];
   }
 
-  const key = decodeSegment(leaf.replace(/\.json$/, ''));
   // A cursor's namespace is `cursors.v1` and its *key* is the connection;
   // a provider's own store is namespaced `<provider>/<connection>` instead.
-  const ref = namespace === 'cursors.v1' ? key : namespace;
+  const cursor = namespace === 'cursors.v1';
+  const ref = cursor ? key : namespace;
   const owners = granting.get(ref) ?? [];
+  const settled = renames.get(ref) ?? ref;
+
+  // The rename reaches whichever half carries the ref, and only that half.
+  const moved = cursor
+    ? `${tail[0]!}/${encodeSegment(settled)}.json`
+    : [...settled.split('.').map(encodeSegment), ...tail.slice(2)].join('/');
 
   return owners.map((profile) => ({
     from,
-    to: `${layout.profileState(profile)}/${tail.join('/')}`,
+    to: `${layout.profileState(profile)}/${moved}`,
     keep: owners.length > 1,
   }));
+}
+
+/**
+ * A connection record, told what it is now called.
+ *
+ * Spread rather than assigned field by field, so key order and anything a later
+ * version added survive. Bytes that are not a JSON object come back untouched:
+ * refusing to move what will not parse strands it where nothing reads it.
+ */
+function retarget(data: Uint8Array, ref: string): Uint8Array {
+  try {
+    const held = JSON.parse(new TextDecoder().decode(data)) as Record<string, unknown>;
+    if (held === null || typeof held !== 'object' || Array.isArray(held)) return data;
+
+    const dot = ref.indexOf('.');
+    return new TextEncoder().encode(
+      JSON.stringify({ ...held, provider: ref.slice(0, dot), id: ref.slice(dot + 1) }),
+    );
+  } catch {
+    return data;
+  }
 }
 
 /**

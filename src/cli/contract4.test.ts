@@ -39,9 +39,17 @@ async function workspace(
     join(root, 'lanes-link.yaml'),
     'contract: 3\nworkspaces:\n  local:\n    credentials: { adapter: file }\n    storage: { adapter: filesystem }\n',
   );
+  // Declared from the grants, so the fixture is a workspace that actually
+  // loads: a grant naming a connection the workspace does not hold is refused
+  // by `assertGrantsResolve` (ADR-057), and a fixture that could not load would
+  // be testing the migration against a state no operator can be in.
+  const declared = [...new Set(Object.values(profiles).flat())].map((ref) => {
+    const [provider, id] = ref.split('.');
+    return `  - { id: ${id}, provider: ${provider}, account: ${provider} }`;
+  });
   await writeFile(
     join(root, 'connections.yaml'),
-    'contract: 3\nconnections:\n  - { id: main, provider: memory, account: Memory }\noauth_apps: {}\n',
+    `contract: 3\nconnections:\n${declared.join('\n')}\noauth_apps: {}\n`,
   );
 
   await mkdir(join(root, 'profiles'), { recursive: true });
@@ -73,7 +81,7 @@ describe('what contract 4 moves', () => {
         'data/credentials.enc.key': 'the key',
         'data/providers.d/acme.yaml': 'id: acme\n',
         'data/audit.log/2026/08/24/x.json': '{}',
-        'data/state.kv/connections%2Ev1/memory%2Emain.json': '{}',
+        'data/state.kv/connections%2Ev1/memory%2Elan1.json': '{}',
       },
     );
 
@@ -83,7 +91,7 @@ describe('what contract 4 moves', () => {
     expect(await read(root, 'credentials.enc.key')).toBe('the key');
     expect(await read(root, 'providers.d/acme.yaml')).toBe('id: acme\n');
     expect(has(root, 'audit.log/2026/08/24/x.json')).toBe(true);
-    expect(has(root, 'state.kv/connections%2Ev1/memory%2Emain.json')).toBe(true);
+    expect(has(root, 'state.kv/connections%2Ev1/memory%2Elan1.json')).toBe(true);
 
     // Not left behind as well as copied: these are moves.
     expect(has(root, 'data/credentials.enc')).toBe(false);
@@ -100,8 +108,8 @@ describe('what contract 4 moves', () => {
 
     await migrateToContract4(root);
 
-    expect(await read(root, 'profiles/personal/memory/main/a-note.md')).toBe('personal');
-    expect(await read(root, 'profiles/work/memory/other/b-note.md')).toBe('work');
+    expect(await read(root, 'profiles/personal/memory/lan1/a-note.md')).toBe('personal');
+    expect(await read(root, 'profiles/work/memory/lan2/b-note.md')).toBe('work');
     expect(has(root, 'data/memory/main/a-note.md')).toBe(false);
   });
 
@@ -117,8 +125,8 @@ describe('what contract 4 moves', () => {
 
     const migration = await migrateToContract4(root);
 
-    expect(await read(root, 'profiles/personal/memory/main/shared.md')).toBe('a note');
-    expect(await read(root, 'profiles/work/memory/main/shared.md')).toBe('a note');
+    expect(await read(root, 'profiles/personal/memory/lan1/shared.md')).toBe('a note');
+    expect(await read(root, 'profiles/work/memory/lan1/shared.md')).toBe('a note');
     expect(has(root, 'data/memory/main/shared.md')).toBe(true);
 
     expect(migration.shared).toEqual([
@@ -152,9 +160,9 @@ describe('what contract 4 moves', () => {
 
     await migrateToContract4(root);
 
-    expect(await read(root, 'profiles/personal/vault.d/main.enc')).toBe('sealed');
-    expect(await read(root, 'profiles/personal/vault.d/main.enc.key')).toBe('its key');
-    expect(has(root, 'profiles/personal/skills.d/main/triage/SKILL.md')).toBe(true);
+    expect(await read(root, 'profiles/personal/vault.d/lan1.enc')).toBe('sealed');
+    expect(await read(root, 'profiles/personal/vault.d/lan1.enc.key')).toBe('its key');
+    expect(has(root, 'profiles/personal/skills.d/lan2/triage/SKILL.md')).toBe(true);
   });
 
   test('state splits by what a key is about, not by who reads it', async () => {
@@ -162,7 +170,7 @@ describe('what contract 4 moves', () => {
       { personal: ['memory.main'] },
       {
         // The workspace's: a connection record and this endpoint's OAuth server.
-        'data/state.kv/connections%2Ev1/memory%2Emain.json': '{}',
+        'data/state.kv/connections%2Ev1/memory%2Elan1.json': '{}',
         'data/state.kv/oauth%2Ev1/clients/abc.json': '{}',
         // The profile's: a cursor, keyed by the connection it belongs to.
         'data/state.kv/cursors%2Ev1/memory%2Emain.json': '"a cursor"',
@@ -171,9 +179,76 @@ describe('what contract 4 moves', () => {
 
     await migrateToContract4(root);
 
-    expect(has(root, 'state.kv/connections%2Ev1/memory%2Emain.json')).toBe(true);
+    expect(has(root, 'state.kv/connections%2Ev1/memory%2Elan1.json')).toBe(true);
     expect(has(root, 'state.kv/oauth%2Ev1/clients/abc.json')).toBe(true);
-    expect(has(root, 'profiles/personal/state.kv/cursors%2Ev1/memory%2Emain.json')).toBe(true);
+    expect(has(root, 'profiles/personal/state.kv/cursors%2Ev1/memory%2Elan1.json')).toBe(true);
+  });
+});
+
+describe('the ids it rewrites on the way', () => {
+  test('a derived id becomes an allocated one, in the rows and in the grants', async () => {
+    const root = await workspace({ personal: ['gmail.ada_lovelace', 'memory.main'] });
+
+    await migrateToContract4(root);
+
+    const rows = parse(await read(root, 'connections.yaml'))['connections'] as {
+      id: string;
+      provider: string;
+    }[];
+    // `con` for the account, `lan` for the built-in — the prefix is the one
+    // thing an opaque id says, and it says whether a vendor is behind the row.
+    expect(rows.find((row) => row.provider === 'gmail')?.id).toBe('con1');
+    expect(rows.find((row) => row.provider === 'memory')?.id).toBe('lan1');
+
+    const grants = parse(await read(root, 'profiles/personal/profile.yaml'))['grants'] as {
+      connection: string;
+    }[];
+    expect(grants.map((grant) => grant.connection).sort()).toEqual(['gmail.con1', 'memory.lan1']);
+  });
+
+  test('a connection record is renamed in its key and in its body', async () => {
+    // `ConnectionRepository.list` reads `provider` and `id` out of the record,
+    // not out of the key it was stored under — so bytes copied verbatim would
+    // sit at the new key still calling themselves the old name, and the next
+    // reconcile would write a second record beside them.
+    const root = await workspace(
+      { personal: ['memory.main'] },
+      {
+        'data/state.kv/connections%2Ev1/memory%2Emain.json':
+          '{"provider":"memory","id":"main","status":"active"}',
+      },
+    );
+
+    await migrateToContract4(root);
+
+    const record = JSON.parse(await read(root, 'state.kv/connections%2Ev1/memory%2Elan1.json')) as {
+      provider: string;
+      id: string;
+      status: string;
+    };
+    expect(record).toEqual({ provider: 'memory', id: 'lan1', status: 'active' });
+  });
+
+  test('an id that is already allocated is left exactly alone', async () => {
+    // This is not a renumbering. Running it twice must not walk `con1` to
+    // `con2`, and an operator who wrote `con4` by hand keeps it.
+    const root = await workspace({ personal: ['gmail.con4', 'memory.lan1'] });
+
+    await migrateToContract4(root);
+
+    const rows = parse(await read(root, 'connections.yaml'))['connections'] as { id: string }[];
+    expect(rows.map((row) => row.id).sort()).toEqual(['con4', 'lan1']);
+  });
+
+  test('an id from before this scheme keeps working until it is migrated', async () => {
+    // `main` is a legal id — opaque means opaque — so the numbering skips it
+    // rather than colliding with it.
+    const root = await workspace({ personal: ['gmail.main', 'gmail.con2'] });
+
+    await migrateToContract4(root);
+
+    const rows = parse(await read(root, 'connections.yaml'))['connections'] as { id: string }[];
+    expect(rows.map((row) => row.id).sort()).toEqual(['con2', 'con3']);
   });
 });
 
@@ -228,7 +303,7 @@ describe('what it stamps, and when', () => {
 
     const again = await migrateToContract4(root);
     expect(again.alreadyCurrent).toBe(true);
-    expect(await read(root, 'profiles/personal/memory/main/a-note.md')).toBe('a note');
+    expect(await read(root, 'profiles/personal/memory/lan1/a-note.md')).toBe('a note');
   });
 
   test('an interruption between the bytes and the stamp is finished by a rerun', async () => {
@@ -254,6 +329,6 @@ describe('what it stamps, and when', () => {
 
     await migrateToContract4(root);
     expect(await needsContract4(root)).toBe(false);
-    expect(await read(root, 'profiles/personal/memory/main/a-note.md')).toBe('a note');
+    expect(await read(root, 'profiles/personal/memory/lan1/a-note.md')).toBe('a note');
   });
 });
