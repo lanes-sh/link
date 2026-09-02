@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { idFromAccount, pluck, resolveAccount } from '../identity.ts';
+import { nextConnectionId, pluck, resolveAccount } from '../identity.ts';
 import { reuseStoredCredential } from './connect/setup.ts';
 import type { ProviderManifest } from '#connectivity';
 
@@ -49,32 +49,43 @@ describe('reuseStoredCredential', () => {
   });
 });
 
-describe('idFromAccount', () => {
-  test('an email becomes its local part', () => {
-    expect(idFromAccount('ada.lovelace@example.com')).toBe('ada_lovelace');
-    expect(idFromAccount('r.shaw@example.com')).toBe('r_shaw');
+describe('nextConnectionId', () => {
+  test('an account gets con, a built-in surface gets lan', () => {
+    // The prefix is the only thing the id says, and it says the one thing that
+    // stays true: whether there is a vendor behind the row.
+    expect(nextConnectionId([], false)).toBe('con1');
+    expect(nextConnectionId([], true)).toBe('lan1');
   });
 
-  test('a workspace name becomes a slug', () => {
-    expect(idFromAccount('Lanes')).toBe('lanes');
-    expect(idFromAccount('Acme Corp — EU')).toBe('acme_corp_eu');
+  test('the two sequences are independent, and both are workspace-wide', () => {
+    const taken = ['lan1', 'lan2', 'con1'];
+    expect(nextConnectionId(taken, true)).toBe('lan3');
+    expect(nextConnectionId(taken, false)).toBe('con2');
+  });
+
+  test('a number is never reused, so an old audit row still means what it meant', () => {
+    // Highest taken plus one, not the first gap. `con2` deleted and reissued
+    // would make two different accounts share an id across the log's history.
+    expect(nextConnectionId(['con1', 'con3'], false)).toBe('con4');
+  });
+
+  test('an id nobody allocated is ignored rather than parsed', () => {
+    // Every id from before this scheme, and any the operator wrote by hand.
+    // They stay valid — an id is opaque, so `main` is as legal as `con1` — and
+    // they simply do not participate in the numbering.
+    expect(nextConnectionId(['ada_lovelace', 'main', 'con1'], false)).toBe('con2');
   });
 
   test('the result is always a legal connection id', () => {
-    for (const account of ['UPPER@X.EXAMPLE', '  spaces  ', '···', 'a@b', '💥@x.com']) {
-      expect(idFromAccount(account)).toMatch(/^[a-z0-9][a-z0-9_]*$/);
+    for (const taken of [[], ['con1'], ['con99']]) {
+      expect(nextConnectionId(taken, false)).toMatch(/^[a-z0-9][a-z0-9_]*$/);
     }
   });
 
-  test('two accounts sharing a local part do not collide', () => {
-    // Same name at two domains is the realistic case, and silently reusing the
-    // id would point the second connection at the first one's credential.
-    expect(idFromAccount('sam@work.example', ['sam'])).toBe('sam2');
-    expect(idFromAccount('sam@other.example', ['sam', 'sam2'])).toBe('sam3');
-  });
-
-  test('an unusable account still yields something', () => {
-    expect(idFromAccount('···')).toBe('main');
+  test('it never starts with a digit, which YAML would read as a number', () => {
+    // `id: 001` parses as the integer 1, so `gmail.001` in a grant would match
+    // nothing and every id would need quoting forever.
+    expect(nextConnectionId([], false)).not.toMatch(/^[0-9]/);
   });
 });
 
@@ -235,11 +246,17 @@ describe('resolveAccount', () => {
     );
   });
 
-  test('the qualified label slugifies whole, so the id names the workspace too', async () => {
-    // No `@` in it, so `idFromAccount` keeps both halves — `alice_acme` rather
-    // than two connections called `alice` and `alice2`.
-    expect(idFromAccount('alice (Acme)')).toBe('alice_acme');
-    expect(idFromAccount('alice (Beta)', ['alice_acme'])).toBe('alice_beta');
+  test('the qualifier is what makes two workspaces two rows, not one overwritten twice', async () => {
+    // It used to matter because the id was slugified from the account, so the
+    // bracketed half landed in `alice_acme`. Ids are allocated now, and the
+    // qualifier matters more rather than less: the *reconnect* match is on the
+    // account, so without it both workspaces resolve to `alice` and the second
+    // connect repairs the first row instead of adding one.
+    const identity = { field: 'user', qualifier: 'team' };
+
+    expect(await slackish({ user: 'alice', team: 'Acme' }, identity)).not.toBe(
+      await slackish({ user: 'alice', team: 'Beta' }, identity),
+    );
   });
 
   test('a missing qualifier degrades to the bare field rather than failing', async () => {

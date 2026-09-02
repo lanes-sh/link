@@ -48,7 +48,7 @@ async function brokenWorkspace(options: { keepBuiltIn?: boolean } = {}): Promise
   // profile's (ADR-057) — so a pre-rename workspace is broken in two files.
   const connectionsPath = join(root, CONNECTIONS_FILE);
   const held = await Bun.file(connectionsPath).text();
-  const builtIn = '  - { id: main, provider: tasks, account: Tasks }';
+  const builtIn = '  - { id: lan2, provider: tasks, account: Tasks }';
 
   await Bun.write(
     connectionsPath,
@@ -57,7 +57,7 @@ async function brokenWorkspace(options: { keepBuiltIn?: boolean } = {}): Promise
 
   const path = join(root, 'profiles', 'personal', 'profile.yaml');
   const text = await Bun.file(path).text();
-  const grant = '  - { connection: tasks.main, allow: [tasks.*], deny: [] }';
+  const grant = '  - { connection: tasks.lan2, allow: [tasks.*], deny: [] }';
 
   await Bun.write(
     path,
@@ -217,11 +217,11 @@ describe('with a stored credential to prove what the row was', () => {
     expect(migration.blocked).toEqual([]);
 
     expect(await held(root)).toContain('google_tasks.personal');
-    expect(await held(root)).toContain('tasks.main');
+    expect(await held(root)).toContain('tasks.lan2');
 
     const config = await onDisk(root);
     const google = config.grants.find((grant) => grant.connection === 'google_tasks.personal');
-    const builtIn = config.grants.find((grant) => grant.connection === 'tasks.main');
+    const builtIn = config.grants.find((grant) => grant.connection === 'tasks.lan2');
 
     expect(google?.allow.map((rule) => rule.capability)).toEqual(['google_tasks.*']);
     // Untouched, and still valid: its rule names its own provider.

@@ -94,13 +94,13 @@ limits:
 #   deny: [skills.manage.*]     invoke procedures, do not write them
 #   deny: [vault.put, vault.remove]
 grants:
-  - { connection: memory.main, allow: [memory.*], deny: [] }
-  - { connection: tasks.main, allow: [tasks.*], deny: [] }
-  - { connection: assets.main, allow: [assets.*], deny: [] }
-  - { connection: skills.main, allow: [skills.*], deny: [] }
-  - { connection: vault.main, allow: [vault.*], deny: [] }
-  - { connection: setup.main, allow: [setup.*], deny: [] }
-  - { connection: entities.main, allow: [entities.*], deny: [] }
+  - { connection: memory.lan1, allow: [memory.*], deny: [] }
+  - { connection: tasks.lan2, allow: [tasks.*], deny: [] }
+  - { connection: assets.lan3, allow: [assets.*], deny: [] }
+  - { connection: skills.lan4, allow: [skills.*], deny: [] }
+  - { connection: vault.lan5, allow: [vault.*], deny: [] }
+  - { connection: setup.lan6, allow: [setup.*], deny: [] }
+  - { connection: entities.lan7, allow: [entities.*], deny: [] }
 
 # Who may consume this profile (ADR-060).
 #
@@ -183,13 +183,13 @@ export function newConnectionsTemplate(): string {
 contract: 4
 
 connections:
-  - { id: main, provider: memory, account: Memory }
-  - { id: main, provider: tasks, account: Tasks }
-  - { id: main, provider: assets, account: Assets }
-  - { id: main, provider: skills, account: Skills }
-  - { id: main, provider: vault, account: Vault }
-  - { id: main, provider: setup, account: Setup }
-  - { id: main, provider: entities, account: Entities }
+  - { id: lan1, provider: memory, account: Memory }
+  - { id: lan2, provider: tasks, account: Tasks }
+  - { id: lan3, provider: assets, account: Assets }
+  - { id: lan4, provider: skills, account: Skills }
+  - { id: lan5, provider: vault, account: Vault }
+  - { id: lan6, provider: setup, account: Setup }
+  - { id: lan7, provider: entities, account: Entities }
 
 # App registrations, shared by every connection of that vendor.
 oauth_apps: {}

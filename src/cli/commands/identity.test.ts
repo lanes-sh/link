@@ -82,9 +82,13 @@ describe('declaring an identity makes it readable', () => {
 
     const { added } = await addIdentity('name', 'Ada', { ...WHERE, note: 'for papers' });
 
+    // `lan8`: the template writes seven owner-layer rows and `identity` is the
+    // eighth, arriving with the first `identity add` rather than at creation
+    // (ADR-042). Ids are allocated across the workspace, so the number is the
+    // next free one rather than a per-provider count.
     expect(added.provisioned).toEqual([
-      'connections.yaml += identity.main',
-      'grants += identity.main',
+      'connections.yaml += identity.lan8',
+      'grants += identity.lan8',
       'grants[].allow += identity.*',
     ]);
 
@@ -99,7 +103,7 @@ describe('declaring an identity makes it readable', () => {
     expect(
       config.grants.some(
         (grant) =>
-          grant.connection === 'identity.main' &&
+          grant.connection === 'identity.lan8' &&
           grant.allow.some((rule) => rule.capability === 'identity.*'),
       ),
     ).toBe(true);

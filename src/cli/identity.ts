@@ -88,10 +88,10 @@ export async function resolveAccount(
       if (!primary || !identity.qualifier) return primary;
 
       // `alice (Acme)` rather than `alice`. The bracketed half is what makes
-      // two workspaces two accounts instead of one overwritten twice, and it
-      // survives into the connection id because `idFromAccount` slugifies the
-      // whole string when there is no `@` in it — `alice_acme`, which is a row
-      // somebody can read in `status`.
+      // two workspaces two accounts instead of one overwritten twice: the
+      // reconnect match below is on the account, so without it the second
+      // connect repairs the first row rather than adding one. It used to reach
+      // the id as well, back when the id was slugified from this.
       const qualifier = pluck(body, identity.qualifier);
       return qualifier ? `${primary} (${qualifier})` : primary;
     }
@@ -116,29 +116,47 @@ export async function resolveAccount(
 }
 
 /**
- * Turn an account into a connection id.
+ * `lan` for a surface built into Lanes, `con` for somebody's account.
  *
- * `ada.lovelace@example.com` becomes `ada_lovelace`, which is what appears in
- * `credential_ref` and in the agent's `connection` argument. The local part is
- * enough to tell accounts apart in practice, and the full address is still
- * right there in `account` when it is not.
+ * The prefix is the only thing an id says, and it says the one thing that is
+ * true forever: whether there is a vendor behind this row. Everything else a
+ * reader wants — whose mailbox, what the operator calls it — is `account` and
+ * `label`, one field each, both changeable without moving a reference.
  */
-export function idFromAccount(account: string, taken: readonly string[] = []): string {
-  const local = account.includes('@') ? (account.split('@')[0] ?? account) : account;
+export const OWNER_ID_PREFIX = 'lan';
+export const ACCOUNT_ID_PREFIX = 'con';
 
-  const base =
-    local
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '_')
-      .replace(/^_+|_+$/g, '')
-      .slice(0, 40) || 'main';
+/**
+ * The next free connection id.
+ *
+ * **Opaque, where this used to derive the id from the account.**
+ * `ada.lovelace@example.com` became `ada_lovelace`, on the reasoning that the
+ * local part tells accounts apart in practice. It does not: the same name at
+ * two domains produced `ada_lovelace` and `ada_lovelace2`, and an id that half
+ * describes its account is worse than one that does not, because it invites
+ * being trusted. What made that concrete is that the id is the whole of the
+ * `connection` enum a model chooses from.
+ *
+ * So the id is a key and nothing else. `account` carries the identity the
+ * provider reports and `label` the operator's own word, which means a `relabel`
+ * never moves a `credential_ref`, a blob path, or a grant.
+ *
+ * **A leading letter, not a bare number.** `id: 001` parses as the integer `1`
+ * in YAML, so `gmail.001` in a grant would match nothing and every id would need
+ * quoting forever. `con1` is a string unconditionally.
+ *
+ * Numbers are never reused: the highest taken plus one, so an id that appears
+ * in an audit log years later still means the row it meant then.
+ */
+export function nextConnectionId(taken: readonly string[], owner: boolean): string {
+  const prefix = owner ? OWNER_ID_PREFIX : ACCOUNT_ID_PREFIX;
+  const pattern = new RegExp(`^${prefix}([0-9]+)$`);
 
-  if (!taken.includes(base)) return base;
-
-  // A genuine collision — two accounts sharing a local part, e.g. the same
-  // name at two domains. Suffixing beats overwriting someone else's credential.
-  for (let n = 2; ; n++) {
-    const candidate = `${base}${n}`;
-    if (!taken.includes(candidate)) return candidate;
+  let highest = 0;
+  for (const id of taken) {
+    const match = pattern.exec(id);
+    if (match) highest = Math.max(highest, Number(match[1]));
   }
+
+  return `${prefix}${highest + 1}`;
 }

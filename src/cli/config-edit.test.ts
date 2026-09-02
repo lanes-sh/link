@@ -298,14 +298,17 @@ oauth_apps: {}
     const p = await pair(OLD, OLD_CONNECTIONS);
     const added = repairLines(ensureSetup(p));
 
+    // `lan1`, not `main`: an id is opaque and allocated now, and this
+    // workspace's only other row is a vendor account, so the first owner-layer
+    // number is free. The prefix is what says the surface is built in.
     expect(added).toEqual([
-      'connections.yaml += setup.main',
-      'grants += setup.main',
+      'connections.yaml += setup.lan1',
+      'grants += setup.lan1',
       'grants[].allow += setup.*',
     ]);
 
-    expect(rowsOf(p)).toContainEqual({ id: 'main', provider: 'setup', account: 'Setup' });
-    expect(grantsOf(p)).toContainEqual({ connection: 'setup.main', allow: ['setup.*'], deny: [] });
+    expect(rowsOf(p)).toContainEqual({ id: 'lan1', provider: 'setup', account: 'Setup' });
+    expect(grantsOf(p)).toContainEqual({ connection: 'setup.lan1', allow: ['setup.*'], deny: [] });
   });
 
   test("the operator's own connection and grant are left alone", async () => {
@@ -385,8 +388,8 @@ oauth_apps: {}
       const p = await pair(`contract: 4\ninstance:\n  profile: personal\n`, OLD_CONNECTIONS);
 
       expect(repairLines(ensureSetup(p))).toEqual([
-        'connections.yaml += setup.main',
-        'grants += setup.main',
+        'connections.yaml += setup.lan1',
+        'grants += setup.lan1',
         'grants[].allow += setup.*',
       ]);
     });
