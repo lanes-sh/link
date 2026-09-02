@@ -241,11 +241,33 @@ function stateMoves(
   renames: Renames = new Map(),
   orphaned: string[] = [],
 ): Move[] {
-  const namespace = tail.slice(0, -1).map(decodeSegment).join('/');
   const leaf = tail[tail.length - 1];
-  if (leaf === undefined) return [];
 
-  const key = decodeSegment(leaf.replace(/\.json$/, ''));
+  // **Guarded, the way `contract3-data.ts` guards it and for its reason.**
+  // `decodeSegment` is `decodeURIComponent`, which throws `URIError` on a stray
+  // `%` — and contract 3's catch moves such a key *verbatim*, so the class of
+  // key that survives contract 3 by design is exactly the class this reads. One
+  // of them threw `URI malformed`, naming no file, out of `doctor`,
+  // `doctor --fix`, `deploy` and `update` alike — including the read-only
+  // preview, because `planMoves` runs before the `apply` check.
+  //
+  // A key this cannot parse is carried across unchanged rather than dropped:
+  // whatever wrote it can still find it, and nothing here understands it well
+  // enough to place it.
+  if (leaf === undefined || tail.length < 2 || !leaf.endsWith('.json')) {
+    const move = claim(claimed, { from, to: `${layout.state()}/${tail.join('/')}` });
+    return move === null ? [] : [move];
+  }
+
+  let namespace: string;
+  let key: string;
+  try {
+    namespace = tail.slice(0, -1).map(decodeSegment).join('/');
+    key = decodeSegment(leaf.replace(/\.json$/, ''));
+  } catch {
+    const move = claim(claimed, { from, to: `${layout.state()}/${tail.join('/')}` });
+    return move === null ? [] : [move];
+  }
 
   // The undotted spellings, carried across before anything else looks at them.
   for (const [was, now] of RENAMED_NAMESPACES) {

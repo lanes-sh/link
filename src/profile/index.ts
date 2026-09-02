@@ -139,5 +139,6 @@ export {
   PROFILE_FILE,
   LEGACY_DATA_DIR,
   LEGACY_WORKSPACE_FILE,
+  legacyProfileConfig,
   layout,
 } from './layout.ts';

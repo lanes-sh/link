@@ -7,6 +7,7 @@ import {
   type WorkspaceTarget,
 } from './schema.ts';
 import { WORKSPACE_FILE } from './workspace.ts';
+import { LEGACY_WORKSPACE_FILE } from './layout.ts';
 
 /**
  * Writing the target registry.
@@ -79,8 +80,19 @@ async function editRegistry(
   edit: (targets: Record<string, WorkspaceTarget>) => void,
 ): Promise<void> {
   const files = workspaceFiles(workspaceRoot);
+
+  // **Either name, and the one it read is the one it writes.** Reading only the
+  // new name meant an unmigrated workspace fell through to a bare
+  // `contract: 4` document: `deploy` then wrote a registry holding one target
+  // beside the `lanes-link.yaml` that declared them all, and `readWorkspace`
+  // prefers the new name — so every other target vanished from a command whose
+  // job was to record one.
+  const held = await readWorkspaceFile(files, WORKSPACE_FILE);
+  const key = held === null ? LEGACY_WORKSPACE_FILE : WORKSPACE_FILE;
   const text =
-    (await readWorkspaceFile(files, WORKSPACE_FILE)) ?? `contract: ${SUPPORTED_CONTRACT}\n`;
+    held ??
+    (await readWorkspaceFile(files, LEGACY_WORKSPACE_FILE)) ??
+    `contract: ${SUPPORTED_CONTRACT}\n`;
 
   const document = parseDocument(text);
   const raw = (document.toJSON() ?? {}) as {
@@ -126,7 +138,7 @@ async function editRegistry(
   if (legacy) for (const entry of Object.values(targets)) workspaceTargetSchema.parse(entry);
   else workspaceSchema.parse(document.toJSON());
 
-  await writeWorkspaceFile(files, WORKSPACE_FILE, String(document));
+  await writeWorkspaceFile(files, key, String(document));
 }
 
 function sorted<T>(targets: Record<string, T>): Record<string, T> {

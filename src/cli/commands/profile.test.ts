@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { workspaceYaml } from '#profile/testing.ts';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -94,6 +94,44 @@ describe('emit', () => {
     }
     return captured;
   }
+});
+
+describe('an unmigrated workspace is refused, not shadowed', () => {
+  /**
+   * `resolveWorkspaceRoot` and `listProfiles` both accept the contract-3 shape,
+   * deliberately — a workspace that needs migrating has to be findable by the
+   * command that migrates it. `createProfile` tested only the new names, so it
+   * wrote files that hid the operator's real ones: a registry beside
+   * `lanes-link.yaml`, which `readWorkspace` then preferred, taking every
+   * declared target and deployment record with it and leaving no route back,
+   * because `renameRegistry` returns early once the new file exists.
+   */
+  test('a registry under the old name stops it writing a second one', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'lanes-link-c3-'));
+    roots.push(root);
+    process.env['LANES_LINK_HOME'] = root;
+    await writeFile(join(root, 'lanes-link.yaml'), workspaceYaml(['local', 'cloud']));
+
+    await expect(createProfile('work', { targets: ['local'] })).rejects.toThrow(
+      /contract 3[\s\S]*doctor --fix/,
+    );
+    expect(existsSync(join(root, 'workspaces.yaml'))).toBe(false);
+  });
+
+  test('a profile under the old name is not written over', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'lanes-link-c3-'));
+    roots.push(root);
+    process.env['LANES_LINK_HOME'] = root;
+    await writeFile(join(root, 'workspaces.yaml'), workspaceYaml(['local']));
+    await mkdir(join(root, 'profiles'), { recursive: true });
+    await writeFile(join(root, 'profiles', 'personal.yaml'), 'contract: 3\n');
+
+    // `listProfiles` already sees it, so a fresh template beside it is one name
+    // with two files — and the empty one is what opens.
+    await expect(createProfile('personal', { targets: ['local'] })).rejects.toThrow(
+      /already exists/,
+    );
+  });
 });
 
 describe('createProfile', () => {
