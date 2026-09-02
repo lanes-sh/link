@@ -21,6 +21,38 @@ export function connectionRefOf(connection: ConnectionConfig): string {
 }
 
 /**
+ * What to call a connection nobody has named.
+ *
+ * `label` is the operator's own word for a row and is usually unset: `connect`
+ * offers a default and does not write one that only repeats a line above it, so
+ * most rows are an id, a provider and an account and nothing else. Every reader
+ * then has to decide what to show, and each of them picked the id — which is the
+ * one field that says nothing. It is opaque on purpose (`nextConnectionId`), so
+ * `con8` tells a reader strictly less about a row than any other line of it.
+ *
+ * The provider is what somebody is asking about, and the account is what tells
+ * two rows of the same provider apart, so the name is both: `Gmail (ada)`. The
+ * local part only — every address a person holds at one domain repeats it, and
+ * the account itself is on the line beside this everywhere this is shown.
+ *
+ * A connection with no account behind it is its provider and nothing else. That
+ * is the owner layer, whose rows carry the proper noun in `account` already, so
+ * composing the two would read `Memory (Memory)`.
+ */
+export function defaultConnectionLabel(
+  providerName: string,
+  account: string | null | undefined,
+): string {
+  if (!account || account === providerName) return providerName;
+
+  // Split on `@` and nothing else. A handle, an IBAN or a workspace name has no
+  // "first part" that is safe to guess at: `Lanes HQ` cut at the space is
+  // `Lanes`, which is a different workspace's name as often as not.
+  const local = account.split('@')[0];
+  return `${providerName} (${local || account})`;
+}
+
+/**
  * One account this profile reaches, with the rules that govern it.
  *
  * The grant travels with the connection deliberately. Every caller that has a

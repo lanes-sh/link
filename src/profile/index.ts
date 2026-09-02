@@ -46,6 +46,7 @@ export {
   assertGrantsResolve,
   assertNoRenamedProviders,
   connectionRefOf,
+  defaultConnectionLabel,
   selectConnections,
   soleGrantFor,
   vaultRef,

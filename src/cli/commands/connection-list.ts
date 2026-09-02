@@ -1,12 +1,15 @@
 import { RESERVED_PROVIDER_IDS } from '#connectivity';
+import { PROVIDER_MANIFESTS } from '#providers/index.ts';
 import {
   connectionRefOf,
+  defaultConnectionLabel,
   listProfiles,
   loadProfileConfig,
   readConnections,
   resolveTargetWorkspace,
   resolveWorkspaceRoot,
 } from '#profile';
+import { RESERVED_SURFACES } from '../config-repair.ts';
 import { emit, heading, print, style, table } from '../output.ts';
 import type { GlobalFlags } from '../runtime.ts';
 
@@ -104,6 +107,20 @@ export async function connectionList(flags: GlobalFlags & { json?: boolean }): P
   });
 }
 
+/**
+ * What each provider is called, by id.
+ *
+ * The catalogue's manifests plus the owner layer, which is registered separately
+ * and is deliberately absent from `PROVIDERS`. A workspace-local manifest is not
+ * here: this command reads files rather than building a registry, and one custom
+ * provider falling back to its account is a smaller price than a registry build
+ * on a listing.
+ */
+const PROVIDER_NAMES = new Map<string, string>([
+  ...PROVIDER_MANIFESTS.map((manifest): [string, string] => [manifest.id, manifest.name]),
+  ...Object.entries(RESERVED_SURFACES),
+]);
+
 function row(one: ConnectionSummary): string[] {
   // "granted to nobody" is said rather than left blank, because a blank column
   // reads as "not loaded yet" and this is a fact about the config.
@@ -112,5 +129,12 @@ function row(one: ConnectionSummary): string[] {
       ? style.dim('no profile grants it')
       : one.grantedTo.join(', ');
 
-  return [`  ${style.bold(one.key)}`, one.label ?? one.account, reach];
+  // The account was this column's fallback, which meant an unlabelled row read
+  // as its address and said nothing about which service the address is at. The
+  // derived name says both, and is the one the dashboard and the connect prompt
+  // show for the same row.
+  const named = PROVIDER_NAMES.get(one.provider);
+  const label = one.label ?? (named ? defaultConnectionLabel(named, one.account) : one.account);
+
+  return [`  ${style.bold(one.key)}`, label, reach];
 }

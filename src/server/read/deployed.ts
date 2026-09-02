@@ -40,6 +40,10 @@ export function deployedReadDeps(input: {
     audit: primary.audit,
     connections: async () =>
       (await readConnections(primary.resolution.workspaceRoot)).connections,
+    // The names the dashboard shows for a row nobody has labelled. From the
+    // registry rather than a catalogue, so the owner layer, the vendors and a
+    // workspace's own manifests are all named the same way.
+    providerName: (id) => primary.registry.manifest(id)?.name,
     // Cached, unlike loopback's. `GcpSecretManagerStore` holds nothing between
     // calls, so a dashboard polling `/state` would be one network round trip per
     // poll and a stranger sending a wrong token one per request — which is the

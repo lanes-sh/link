@@ -1,6 +1,7 @@
 import { createMcpConnector } from '#connectivity/transports';
 import { bearerTokenAsStored } from '#connectivity/auth/index.ts';
 import type { SecretStore } from '#secrets';
+import { defaultConnectionLabel } from '#profile';
 import type { ConnectionConfig, Config } from '#profile';
 import type { AnyConnector, ProviderManifest } from '#connectivity';
 import { nextConnectionId, resolveAccount } from '../../identity.ts';
@@ -46,7 +47,21 @@ export async function settleIdentity(input: {
     authorizeRequest(providerId: string, connectionId: string, request: Request): Promise<Request>;
   };
   prompter?: Prompter;
-}): Promise<{ connectionId: string; account: string; label: string }> {
+}): Promise<{
+  connectionId: string;
+  account: string;
+  label: string;
+  /**
+   * What this row is called with nobody's word for it, carried to the writer.
+   *
+   * `declareConnection` writes no label equal to it, for the reason it never
+   * wrote one equal to the account: a line saying what the two lines above it
+   * say is a line to read past forever. Returned rather than derived twice, so
+   * the string the operator was offered and the string compared against it
+   * cannot come apart.
+   */
+  defaultLabel: string;
+}> {
   const { manifest, provisionalId, explicitId, runtime } = input;
   const prompter = input.prompter ?? terminalPrompter;
 
@@ -169,17 +184,20 @@ export async function settleIdentity(input: {
           (candidate) => candidate.account.toLowerCase() === account!.toLowerCase(),
         )?.id ?? nextConnectionId(taken, false)));
 
+  const defaultLabel = defaultConnectionLabel(manifest.name, account);
+
   return {
     connectionId,
     account,
+    defaultLabel,
     label: await settleLabel({
       given: input.label,
+      fallback: defaultLabel,
       // What the row this is about to land on is already called. Looked up
       // across the whole vendor account rather than this provider alone, for the
       // reason `accountSiblings` exists: `connect icloud_calendar` adopts iCloud
       // Mail's id, and should adopt the name that goes with it too.
       declared: siblings.find((candidate) => candidate.id === connectionId)?.label,
-      account,
       typed,
       prompter,
     }),
@@ -198,21 +216,29 @@ export async function settleIdentity(input: {
  * The suggestion is in the question and an empty answer takes it, so the cost of
  * always asking is one keystroke. Nothing addresses a connection by its label,
  * so there is no answer here that can break anything.
+ *
+ * **The suggestion is the provider and the account, not the account.** It was
+ * the address alone, which made the label a second copy of the field beside it
+ * — and left every surface that shows a name without one, because a default
+ * that only repeats another line is a default nothing writes down.
+ * `defaultConnectionLabel` is the whole rule and every reader derives the same
+ * string from it.
  */
 async function settleLabel(input: {
   given: string | undefined;
   declared: string | undefined;
-  account: string;
+  /** What this row is called when nobody says otherwise. */
+  fallback: string;
   typed: boolean;
   prompter: Prompter;
 }): Promise<string> {
-  const { given, declared, account, typed, prompter } = input;
+  const { given, declared, fallback, typed, prompter } = input;
 
   if (given) return given;
 
-  // A label already chosen wins over the account, so re-authorising an expired
-  // credential does not quietly undo the operator's own word for the row.
-  const suggestion = declared ?? account;
+  // A label already chosen wins over the derived one, so re-authorising an
+  // expired credential does not quietly undo the operator's own word for the row.
+  const suggestion = declared ?? fallback;
 
   if (typed || !prompter.interactive) return suggestion;
 
