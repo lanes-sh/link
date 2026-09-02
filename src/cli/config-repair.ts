@@ -18,7 +18,7 @@ import { nextConnectionId } from './identity.ts';
  */
 
 /** Lanes' own provider ids, and the label each row carries. */
-const RESERVED_SURFACES = {
+export const RESERVED_SURFACES = {
   lanes_memory: 'Memory',
   lanes_tasks: 'Tasks',
   lanes_assets: 'Assets',

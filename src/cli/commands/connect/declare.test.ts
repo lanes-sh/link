@@ -11,6 +11,11 @@ import { declareConnection } from './declare.ts';
  * and are not: one is a name the operator chose and the other is an identity
  * three things read as one. A row that confused them was renameable exactly
  * once, after which `connect` no longer recognised the account it had renamed.
+ *
+ * A label equal to `defaultLabel` is not written. Every reader derives that
+ * string for itself, so recording it would be a line saying what the two lines
+ * above it say — the rule that used to be spelled against the account, back
+ * when the account was what an unnamed row was called.
  */
 
 const EMPTY = `contract: 4
@@ -29,7 +34,10 @@ function declaring(connections: readonly ConnectionConfig[], over: Record<string
     providerId: 'gmail',
     connectionId: 'ada',
     account: 'ada@example.com',
-    label: 'ada@example.com',
+    // What `settleIdentity` settles on when the operator presses Enter, and
+    // what it hands the writer to compare against.
+    label: 'Gmail (ada)',
+    defaultLabel: 'Gmail (ada)',
     method: undefined,
     config: {},
     ...over,
@@ -43,7 +51,7 @@ function declaring(connections: readonly ConnectionConfig[], over: Record<string
 }
 
 describe('declaring a new connection', () => {
-  test('writes no label when the label is only the account again', () => {
+  test('writes no label when it is the one every reader derives anyway', () => {
     const { written } = declaring([]);
 
     expect(written.connections[0]).toEqual({
@@ -53,7 +61,7 @@ describe('declaring a new connection', () => {
     });
   });
 
-  test('writes one when the operator said something the account does not', () => {
+  test('writes one when the operator said something the derived name does not', () => {
     const { written } = declaring([], { label: 'Work mail' });
 
     expect(written.connections[0]).toEqual({

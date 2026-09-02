@@ -22,6 +22,14 @@ export function declareConnection(input: {
   readonly connectionId: string;
   readonly account: string;
   readonly label: string;
+  /**
+   * What the row is called with nobody's word for it, from `settleIdentity`.
+   *
+   * The provider's name and the account composed by `defaultConnectionLabel`,
+   * which is what every reader falls back to. A label equal to it is a line
+   * saying what the two lines above it already say, so it is not written.
+   */
+  readonly defaultLabel: string;
   /** Which route in, where the provider offered a choice. */
   readonly method: string | undefined;
   /**
@@ -34,6 +42,7 @@ export function declareConnection(input: {
   readonly config: Readonly<Record<string, string>>;
 }): readonly string[] {
   const { document, connections, providerId, connectionId, account, label, method } = input;
+  const derived = input.defaultLabel;
   const config = input.config;
 
   const key = `${providerId}.${connectionId}`;
@@ -45,14 +54,14 @@ export function declareConnection(input: {
     // where the OAuth provider already looks. Writing it would add a line per
     // connection that can only ever agree or be a bug.
     //
-    // No `label` either, when it is the account. Pressing Enter at the prompt is
-    // the common answer, and a line repeating the address above it is a line to
-    // read past forever.
+    // No `label` either, when it is the one every reader derives anyway.
+    // Pressing Enter at the prompt is the common answer, and a line repeating
+    // the provider and the address above it is a line to read past forever.
     document.addTo(['connections'], {
       id: connectionId,
       provider: providerId,
       account,
-      ...(label === account ? {} : { label }),
+      ...(label === derived ? {} : { label }),
       ...(Object.keys(config).length > 0 ? { config } : {}),
     });
     changes.push(`connections += ${key} (${account})`);
@@ -69,10 +78,10 @@ export function declareConnection(input: {
     changes.push(`connections.${key}.account = ${account}`);
   }
 
-  // Compared against what the row is *called*, which is the account until
+  // Compared against what the row is *called*, which is the derived name until
   // somebody names it otherwise. Without the fallback, every reconnect of an
-  // unlabelled connection writes a label that says what the line above it says.
-  if ((declared?.label ?? declared?.account) !== label) {
+  // unlabelled connection writes a label that says what the lines above it say.
+  if ((declared?.label ?? derived) !== label) {
     document.setIn(['connections', index, 'label'], label);
     changes.push(`connections.${key}.label = ${label}`);
   }

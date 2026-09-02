@@ -237,7 +237,7 @@ export async function runConnect(
     //    adding a new one. Without it, a retried connect appends a second row
     //    rather than repairing the first — which is how `main2` and `main3`
     //    ended up in a config describing two mailboxes.
-    const { connectionId, account, label } = await settleIdentity({
+    const settled = await settleIdentity({
       manifest,
       provisionalId,
       explicitId: named,
@@ -246,6 +246,7 @@ export async function runConnect(
       runtime: { ...runtime, connectorFor: address.connectorFor },
       prompter,
     });
+    const { connectionId, account, label } = settled;
 
     const connectionKey = `${providerId}.${connectionId}`;
 
@@ -277,9 +278,8 @@ export async function runConnect(
         document: connectionsDocument,
         connections: runtime.workspaceConnections,
         providerId,
-        connectionId,
-        account,
-        label,
+        // The settled identity as one value: the row, the account, the name.
+        ...settled,
         method: method.id,
         config: address.values,
       }),

@@ -62,6 +62,10 @@ export async function openReadListener(
       audit: primary.audit,
       connections: async () =>
         (await readConnections(primary.resolution.workspaceRoot)).connections,
+      // The names the dashboard shows for a row nobody has labelled. From the
+      // registry rather than a catalogue, so the owner layer, the vendors and a
+      // workspace's own manifests are all named the same way.
+      providerName: (id) => primary.registry.manifest(id)?.name,
       // Read on every presentation, so `pair --rotate` takes effect on a
       // running endpoint. Affordable here because the store is a local file;
       // the deployed bind caches for exactly this reason. `refresh()` drops the

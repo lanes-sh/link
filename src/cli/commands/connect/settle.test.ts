@@ -118,16 +118,19 @@ const settle = (over: Partial<Parameters<typeof settleIdentity>[0]> = {}) =>
   });
 
 describe('the label a connection is given at connect time', () => {
-  test('is asked for every time, offering the account that was just resolved', async () => {
+  test('is asked for every time, offering the provider and the account', async () => {
     const asking = prompter('');
 
     const settled = await settle({ prompter: asking });
 
     expect(asking.asked).toHaveLength(1);
-    // The account is in the question, so pressing Enter is an informed answer
-    // rather than a blank one.
-    expect(asking.asked[0]).toContain('ada@example.com');
-    expect(settled.label).toBe('ada@example.com');
+    // The suggestion is in the question, so pressing Enter is an informed
+    // answer rather than a blank one. It names the provider as well as the
+    // account, because the account alone was a second copy of the line beside
+    // it and left every reader of an unlabelled row with nothing to show.
+    expect(asking.asked[0]).toContain('Acme Mail (ada)');
+    expect(settled.label).toBe('Acme Mail (ada)');
+    expect(settled.defaultLabel).toBe('Acme Mail (ada)');
   });
 
   test('takes the operator words, and leaves the account they replace alone', async () => {
@@ -156,10 +159,10 @@ describe('the label a connection is given at connect time', () => {
     expect(settled.connectionId).toBe('ada');
   });
 
-  test('falls back to the account where there is nobody to ask', async () => {
+  test('falls back to the derived name where there is nobody to ask', async () => {
     const settled = await settle({ prompter: silent });
 
-    expect(settled.label).toBe('ada@example.com');
+    expect(settled.label).toBe('Acme Mail (ada)');
   });
 
   test('is not asked for when it was given', async () => {
@@ -171,7 +174,7 @@ describe('the label a connection is given at connect time', () => {
     expect(settled.label).toBe('Work mail');
   });
 
-  test('takes the account when the terminal it was promised turns out not to exist', async () => {
+  test('takes the derived name when the terminal it was promised turns out not to exist', async () => {
     // `terminalPrompter` says `interactive: true` and discovers otherwise only
     // when asked. By then the browser has opened and the credential is stored,
     // so throwing over a display name fails a connect that has already happened.
@@ -186,7 +189,7 @@ describe('the label a connection is given at connect time', () => {
 
     const settled = await settle({ prompter: noTerminal });
 
-    expect(settled.label).toBe('ada@example.com');
+    expect(settled.label).toBe('Acme Mail (ada)');
   });
 
   test('lets Ctrl-C stop the command rather than answering for it', async () => {
@@ -215,6 +218,6 @@ describe('the label a connection is given at connect time', () => {
     // confirm it against itself is the second half of a question they answered.
     expect(asking.asked).toHaveLength(1);
     expect(settled.account).toBe('Ada at Acme');
-    expect(settled.label).toBe('Ada at Acme');
+    expect(settled.label).toBe('Acme Mail (Ada at Acme)');
   });
 });

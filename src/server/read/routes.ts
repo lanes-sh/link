@@ -1,7 +1,12 @@
 import type { Logger } from '#connectivity';
 import type { ProfileRuntime } from '../mcp/visibility.ts';
 import type { PairingCredential } from './credential.ts';
-import { readState, type ConnectionRow, type ReadEndpoint } from './state.ts';
+import {
+  readState,
+  type ConnectionRow,
+  type ProviderNames,
+  type ReadEndpoint,
+} from './state.ts';
 
 /**
  * The two routes a browser origin may read, and everything that guards them.
@@ -100,6 +105,14 @@ export interface ReadDeps {
    */
   readonly connections: () => Promise<readonly ConnectionRow[]>;
   readonly credential: PairingCredential;
+  /**
+   * What each provider is called, for the row nobody has labelled.
+   *
+   * Optional so a harness can omit it: absent, an unlabelled row reports a null
+   * label and its reader falls back to the id, which is what every reader did
+   * before. Both real binds pass their runtime's registry.
+   */
+  readonly providerName?: ProviderNames | undefined;
   /** What this endpoint says about itself. Fixed for the life of the bind. */
   readonly endpoint: ReadEndpoint;
   readonly allowedOrigins?: readonly string[] | undefined;
@@ -166,7 +179,7 @@ export async function readRoutes(request: Request, deps: ReadDeps): Promise<Resp
   if (url.pathname === STATE_PATH) {
     const rows = await deps.connections().catch(() => []);
     return json(
-      readState(deps.workspace, deps.profiles(), rows, deps.endpoint),
+      readState(deps.workspace, deps.profiles(), rows, deps.endpoint, deps.providerName),
       200,
       cors(origin, allowed),
     );
