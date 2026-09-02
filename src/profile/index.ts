@@ -84,7 +84,6 @@ export {
 
 export {
   WORKSPACE_FILE,
-  LEGACY_WORKSPACE_FILE,
   installRoot,
   listProfiles,
   loadProfileConfig,
@@ -137,5 +136,6 @@ export {
 
 export {
   LEGACY_DATA_DIR,
+  LEGACY_WORKSPACE_FILE,
   layout,
 } from './layout.ts';

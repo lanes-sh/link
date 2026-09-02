@@ -180,3 +180,17 @@ export const layout = {
  * reason. Nothing outside a migration should import this.
  */
 export const LEGACY_DATA_DIR = 'data';
+
+/**
+ * The registry's name, and a profile's path, through contract 3.
+ *
+ * Recognised, never written. Two live functions answer to these — the ancestor
+ * walk and `listProfiles` — for one reason: a workspace that needs migrating
+ * has to be findable by the command that migrates it, or `doctor --fix` reports
+ * no workspace here and the operator has a wall with no door.
+ */
+export const LEGACY_WORKSPACE_FILE = 'lanes-link.yaml';
+
+export function legacyProfileConfig(profile: string): string {
+  return `${PROFILES_DIR}/${profile}.yaml`;
+}

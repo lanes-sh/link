@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { layout, PROFILE_FILE } from './layout.ts';
+import { layout, legacyProfileConfig, LEGACY_WORKSPACE_FILE, PROFILE_FILE } from './layout.ts';
 import { isRemoteWorkspace, readWorkspaceFile, workspaceFiles } from './files.ts';
 import { parseConfig, type LoadedConfig } from './load.ts';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
@@ -20,13 +20,8 @@ import { findSecrets, formatSecretFindings } from './secret-detection.ts';
 /**
  * Workspace and profile resolution.
  *
- * A workspace is a directory holding one or more profiles:
- *
- *   lanes-link.yaml      workspace settings: contract, default_profile
- *   profiles/
- *     personal.yaml
- *     work.yaml
- *   data/               local state per profile, gitignored
+ * A workspace holds its registry, its accounts, and one directory per profile.
+ * `layout.ts` has the tree.
  *
  * **A command says which profile it means, or it does not run** (ADR-037).
  * `--profile` is the only thing that selects one. `LANES_LINK_PROFILE` and
@@ -34,30 +29,23 @@ import { findSecrets, formatSecretFindings } from './secret-detection.ts';
  *
  * The argument this replaces was that persisted selection is how operators act
  * on the wrong thing, and that a *visible* fallback — an exported variable, a
- * key in a file the operator reads, and a line printed before every command —
- * was therefore safe. The first half stands and is why this rule exists at all.
+ * key in a file the operator reads, a line printed before every command — was
+ * therefore safe. The first half stands and is why this rule exists at all.
  * What did not survive is the conclusion: the printed line is a dim grey one,
  * and a fallback made an ignored flag survivable, so `profile add --target
  * cloud` dropping its flag surfaced on the *next* command, from a different
- * source, detached from its cause. A resolver with nothing to fall back to
- * cannot do that.
+ * source, detached from its cause. A resolver with nothing to fall back to cannot.
  *
  * The workspace root is deliberately not part of this and keeps its chain —
  * `LANES_LINK_HOME`, then an ancestor holding `workspaces.yaml` (or the
- * `lanes-link.yaml` it was called before contract 4), then
- * `~/.lanes-link`. Getting it wrong yields "no profiles here" rather than an
+ * `lanes-link.yaml` it was called before contract 4), then `~/.lanes-link`.
+ * Getting it wrong yields "no profiles here" rather than an
  * action against the wrong account, it is the only channel a container has for
  * its bucket (ADR-023), and the ancestor walk is what makes a per-repository
  * workspace work at all.
  */
 
 export const WORKSPACE_FILE = 'workspaces.yaml';
-
-/**
- * What the registry was called through contract 3. Recognised, never written: a
- * workspace has to stay findable by the migration that renames it.
- */
-export const LEGACY_WORKSPACE_FILE = 'lanes-link.yaml';
 
 /** A profile, found. Everything a command needs before it has read the config. */
 export interface ProfileSelection {
@@ -124,7 +112,7 @@ export function resolveWorkspaceRoot(options: ResolveOptions = {}): string {
 }
 
 /**
- * Where Lanes Link itself is installed — the directory holding `package.json`,
+ * Where Lanes Link itself is installed — the directory with `package.json`,
  * and with it `skills/` and `docs/`.
  *
  * Not the workspace: this is the code, not the operator's data. Found by
@@ -218,8 +206,8 @@ export async function readConnections(workspaceRoot: string): Promise<Connection
 }
 
 export async function readWorkspace(workspaceRoot: string): Promise<WorkspaceConfig | null> {
-  // Either name, new one first: a workspace mid-migration still has the old
-  // file, and preferring it would undo the rename on the next write.
+  // New name first: a workspace mid-migration still has the old file, and
+  // preferring it would undo the rename on the next write.
   const files = workspaceFiles(workspaceRoot);
   const current = await readWorkspaceFile(files, WORKSPACE_FILE);
   const text = current ?? (await readWorkspaceFile(files, LEGACY_WORKSPACE_FILE));
@@ -287,8 +275,23 @@ export async function resolveSelection(options: ResolveOptions = {}): Promise<Pr
   if (!profile) throw noProfileNamed(workspaceRoot, await listProfiles(workspaceRoot), env);
 
   const path = profilePath(workspaceRoot, profile);
-  if (!(await workspaceFiles(workspaceRoot).has(layout.profileConfig(profile)))) {
+  const files = workspaceFiles(workspaceRoot);
+
+  if (!(await files.has(layout.profileConfig(profile)))) {
     const available = await listProfiles(workspaceRoot);
+
+    // **It exists, at the path contract 3 kept it.** Without this the refusal
+    // reads "profile personal does not exist. Available: personal" — what a
+    // listing that understands both layouts and a lookup that understands one
+    // produce together — and names no way forward (ADR-051).
+    if (await files.has(legacyProfileConfig(profile))) {
+      throw new ConfigError(
+        `Profile "${profile}" is still laid out the way contract 3 kept it, and nothing reads ` +
+          `that any more.\n  Migrate it with: lanes link doctor --fix --profile ${profile} ` +
+          '--workspace <name>',
+      );
+    }
+
     throw new ConfigError(
       `Profile "${profile}" does not exist (looked for ${path}).\n` +
         (available.length > 0 ? `Available: ${available.join(', ')}` : 'No profiles exist yet.'),

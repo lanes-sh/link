@@ -103,6 +103,41 @@ describe('naming a profile', () => {
   });
 });
 
+describe('a workspace that has not been migrated yet', () => {
+  /**
+   * `listProfiles` understands both layouts and the lookup understands one,
+   * which is deliberate — a workspace needing migration has to be findable by
+   * the command that migrates it. What it produced together was a refusal
+   * reading "profile personal does not exist. Available: personal", naming no
+   * way forward. ADR-051 is the standing rule: a refusal has to name a command,
+   * and the command has to exist.
+   */
+  async function contract3(name: string): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), 'lanes-link-c3-'));
+    roots.push(root);
+    await writeFile(join(root, 'workspaces.yaml'), workspaceYaml(['local']));
+    await mkdir(join(root, 'profiles'), { recursive: true });
+    await writeFile(join(root, 'profiles', `${name}.yaml`), 'contract: 3\n');
+    return root;
+  }
+
+  test('a profile at the old path is told how to move, not told it is absent', async () => {
+    const root = await contract3('personal');
+
+    await expect(
+      resolveSelection({ env: { LANES_LINK_HOME: root }, profileFlag: 'personal' }),
+    ).rejects.toThrow(/contract 3[\s\S]*lanes link doctor --fix/);
+  });
+
+  test('a profile that really is absent still says so', async () => {
+    const root = await contract3('personal');
+
+    await expect(
+      resolveSelection({ env: { LANES_LINK_HOME: root }, profileFlag: 'work' }),
+    ).rejects.toThrow(/does not exist/);
+  });
+});
+
 describe('profile listing', () => {
   test('lists profiles and ignores example files', async () => {
     const root = await workspace(['personal', 'work'], 'personal');
