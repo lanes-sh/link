@@ -150,3 +150,71 @@ describe('audit-blob: the keys it writes', () => {
     expect(report.runs).toBe(1);
   });
 });
+
+/**
+ * What the operating system leaves in the directory, which is not an event.
+ *
+ * `verify` enumerates the whole prefix and fed every non-marker key to the
+ * chain, so a `.DS_Store` that Finder dropped in the audit directory came back
+ * as `malformed run ? at seq -1` and the whole log as **BROKEN** — on a real
+ * workspace, where the file had ridden through two contract migrations. The one
+ * command whose job is to say whether the log was tampered with, crying wolf
+ * because somebody opened the folder.
+ */
+describe('audit-blob: a dotfile in the audit directory', () => {
+  const draft = {
+    profile: 'personal',
+    principal: 'personal:owner',
+    provider: 'gmail',
+    connection: 'gmail.con1',
+    capability: 'gmail.users_messages_list',
+    arguments: {},
+    authorization: 'allowed',
+    status: 'ok',
+    durationMs: 1,
+  } as const;
+
+  const seeded = async (): Promise<ReturnType<typeof createMemoryBlobStore>> => {
+    const storage = createMemoryBlobStore();
+    const sink = createBlobAuditStore({
+      storage,
+      now: () => new Date(Date.UTC(2026, 7, 12, 10, 4, 31, 221)),
+    });
+    await sink.append(draft);
+    await sink.append(draft);
+    return storage;
+  };
+
+  test('does not break the chain', async () => {
+    const storage = await seeded();
+    await storage.put('.DS_Store', new Uint8Array([0, 1, 2, 3]));
+    await storage.put('2026/.DS_Store', new Uint8Array([0, 1, 2, 3]));
+    await storage.put('2026/08/.DS_Store', new Uint8Array([0, 1, 2, 3]));
+
+    const verified = await createBlobAuditStore({ storage }).verify();
+
+    expect(verified.ok).toBe(true);
+    expect(verified.events).toBe(2);
+  });
+
+  test('and is not returned as an event by tail', async () => {
+    const storage = await seeded();
+    await storage.put('2026/.DS_Store', new Uint8Array([0, 1, 2, 3]));
+
+    const tailed = await createBlobAuditStore({
+      storage,
+      now: () => new Date(Date.UTC(2026, 7, 12, 10, 4, 31, 221)),
+    }).tail({ limit: 10 });
+
+    expect(tailed).toHaveLength(2);
+  });
+
+  test('but a real event that will not decode still fails, loudly', async () => {
+    // The rule is "not ours", not "does not look like an event". Reporting ok
+    // for a record it could not read is the one thing verify must never do.
+    const storage = await seeded();
+    await storage.put('2026/08/12/20260812T100431999Z-broken.json', new Uint8Array([9, 9, 9]));
+
+    expect((await createBlobAuditStore({ storage }).verify()).ok).toBe(false);
+  });
+});

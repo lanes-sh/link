@@ -3,6 +3,7 @@ import type { Flags } from './argv.ts';
 import { ASSETS, readAsset } from './commands/mcp/assets.ts';
 import { assertKnownFlags, requirementFor, selectionKey } from './selection.ts';
 import { PROGRAM, USAGE } from './usage.ts';
+import { RESERVED_PROVIDER_IDS } from '#connectivity/manifest/provider.ts';
 
 /**
  * The documents we install into someone's agent must describe this CLI.
@@ -288,3 +289,75 @@ describe('the skill covers the lifecycle, not only the calls', () => {
     expect(wanted.filter((command) => !named.has(command))).toEqual([]);
   });
 });
+
+/**
+ * The values in an example, not just the command and its flags.
+ *
+ * The tests above check that a document names a real command and passes it
+ * flags it accepts. They passed while the scout agent told an agent to run
+ * `policy deny memory.write --connection memory.main` — a real command, real
+ * flags, and two arguments naming a provider that had been renamed to
+ * `lanes_memory` and an id scheme that had become `lan1`. Copy-pasteable and
+ * guaranteed to fail.
+ *
+ * So the refs get checked too: whatever appears after `--connection`, and
+ * whatever is written as an owner-layer capability, has to name a provider that
+ * exists. The next rename fails here rather than shipping.
+ */
+describe.each(ASSETS.map((asset) => [asset.label, asset] as const))(
+  'the refs the bundled %s writes out',
+  (_label, asset) => {
+    const owners = new Set<string>(RESERVED_PROVIDER_IDS);
+
+    test('every --connection value names a provider that exists', async () => {
+      const text = await readAsset(asset);
+      const refs = [...text.matchAll(/--connection\s+<?([a-z_]+)>?\.<?([a-z0-9_]+)>?/g)];
+      const bare = new Set([...RESERVED_PROVIDER_IDS].map((id) => id.replace('lanes_', '')));
+
+      // A placeholder is fine — `<provider>.<id>` is how a document tells the
+      // owner to fill one in. Anything named has to be nameable: an owner
+      // surface without its prefix is a provider that no longer exists, and
+      // `main` is the id scheme 0.9.0 replaced with `con1` and `lan1`.
+      const wrong = refs
+        .map((match) => ({ provider: match[1]!, id: match[2]! }))
+        .filter(({ provider }) => provider !== 'provider')
+        .filter(
+          ({ provider, id }) =>
+            bare.has(provider) ||
+            (provider.startsWith('lanes_') && !owners.has(provider)) ||
+            id === 'main',
+        );
+
+      expect(wrong).toEqual([]);
+    });
+
+    test('no owner surface is named without its lanes_ prefix', async () => {
+      const text = await readAsset(asset);
+      const bare = [...RESERVED_PROVIDER_IDS].map((id) => id.replace('lanes_', ''));
+
+      // Backticked only. Unquoted prose ends sentences with these words, and
+      // "then tasks.**" in bold is not a reference to anything — matching it
+      // made this fail on a document that was right.
+      const found = bare.flatMap((surface) => [
+        ...text.matchAll(new RegExp(`\`${surface}\\.[a-z_*]+\``, 'g')),
+      ]);
+
+      expect(found.map((match) => match[0])).toEqual([]);
+    });
+
+    test('an owner tool is named with underscores, not as a capability id', async () => {
+      const text = await readAsset(asset);
+
+      // `lanes_memory.search` is the capability id a policy rule grants; the
+      // tool an agent calls is `lanes_memory_search`. Both are real, and a
+      // document saying "call `lanes_memory.search`" is telling an agent to
+      // call something that is not in its tool list.
+      const verbs = 'search|list|get|write|add|update|remove|store|forget|find|link|overview|provider|put';
+      const dotted = [
+        ...text.matchAll(new RegExp(`\`(${[...owners].join('|')})\\.(${verbs})\``, 'g')),
+      ];
+
+      expect(dotted.map((match) => match[0])).toEqual([]);
+    });
+  },
+);
