@@ -65,8 +65,8 @@ export interface DataPlan {
   /**
    * Per-profile credential stores contract 3 merged but did not delete.
    *
-   * Named separately because they are a decryptable credential document and its
-   * key, and "no profile grants it" is the wrong sentence about one.
+   * Named separately: they are a decryptable document and its key, and "no
+   * profile grants it" is the wrong sentence about one.
    */
   readonly leftover: readonly string[];
 }
@@ -143,14 +143,11 @@ export async function planMoves(
       continue;
     }
 
-    // **A contract-2 leftover is a credential, not an ungranted store.** The
-    // contract-3 migration deliberately leaves `data/<profile>/credentials.enc`
-    // and its `.key` behind — read back and merged, never deleted — so a
-    // workspace that came through it still holds them. Classified as
-    // `<provider>/<connection>` they were reported as "no profile grants it, so
-    // it stays where it is", which is true and is the wrong sentence about a
-    // decryptable credential document: the operator reads it as tidy-up and
-    // leaves it.
+    // **A contract-2 leftover is a credential, not an ungranted store.**
+    // Contract 3 merges `data/<profile>/credentials.enc` and never deletes it,
+    // so a workspace that came through it still holds one per profile — and
+    // "no profile grants it" is true and is the wrong sentence about a
+    // decryptable document: the operator reads it as tidy-up and leaves it.
     if (tail[0] === 'credentials.enc' || tail[0] === 'credentials.enc.key') {
       leftover.push(blob.key);
       continue;
@@ -164,8 +161,7 @@ export async function planMoves(
     const ref = `${head}.${connection}`;
     const owners = granting.get(ref) ?? [];
 
-    // Both segments, from the one rename: a path that took one without the
-    // other is a namespace nothing reads.
+    // Both segments from the one rename: one without the other reads nothing.
     const settled = renames.get(ref) ?? ref;
     const dot = settled.indexOf('.');
     const into = `${settled.slice(0, dot)}/${settled.slice(dot + 1)}`;
@@ -265,16 +261,11 @@ function stateMoves(
   const leaf = tail[tail.length - 1];
 
   // **Guarded, the way `contract3-data.ts` guards it and for its reason.**
-  // `decodeSegment` is `decodeURIComponent`, which throws `URIError` on a stray
-  // `%` — and contract 3's catch moves such a key *verbatim*, so the class of
-  // key that survives contract 3 by design is exactly the class this reads. One
-  // of them threw `URI malformed`, naming no file, out of `doctor`,
-  // `doctor --fix`, `deploy` and `update` alike — including the read-only
-  // preview, because `planMoves` runs before the `apply` check.
-  //
-  // A key this cannot parse is carried across unchanged rather than dropped:
-  // whatever wrote it can still find it, and nothing here understands it well
-  // enough to place it.
+  // `decodeSegment` throws `URIError` on a stray `%`, and contract 3's catch
+  // moves such a key *verbatim* — so the class of key that survives contract 3
+  // by design is exactly the class this read unguarded, and one of them threw
+  // `URI malformed` naming no file out of every command including the preview.
+  // A key this cannot parse is carried across unchanged rather than dropped.
   if (leaf === undefined || tail.length < 2 || !leaf.endsWith('.json')) {
     const move = claim(claimed, { from, to: `${layout.state()}/${tail.join('/')}` });
     return move === null ? [] : [move];
