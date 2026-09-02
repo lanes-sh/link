@@ -16,11 +16,12 @@
  *   hardcoded `#0d1117` that read as a black rectangle on a light machine. The
  *   system names a background per mode, so the fix is now to paint the right
  *   one. `color-scheme` stays, for form controls and scrollbars.
- * - **The success mark is gold, not green.** It was lucide's `check` at
- *   `#059669`, chosen to match the tick the Lanes app puts against a connected
- *   integration. The design system is explicit that gold is the only accent and
- *   "gold for positive, neutral tokens otherwise", so the green was the odd one
- *   out rather than the match it was meant to be.
+ * - **The success mark carries the accent.** It is lucide's `check` at
+ *   `--accent-brand`, which matches the tick the Lanes app puts against a
+ *   connected integration. This went the long way round: the mark was `#059669`,
+ *   was changed to gold because the design system allowed one accent and gold
+ *   was it, and is emerald again now that emerald is that one accent. The rule
+ *   never moved, only the colour it points at.
  *
  * What has not changed is that colour is reserved for status and spent nowhere
  * else — not on emphasis, and not on the heading.
@@ -49,14 +50,14 @@ body { display: flex; align-items: center; justify-content: center;
 .label { margin: 0 0 6px; font-size: 15px; font-weight: 500; color: var(--muted-foreground); }
 h1 { margin: 0 0 18px; }
 .detail { margin: 0; font-size: 15px; line-height: 1.6; color: var(--muted-foreground); }
-.icon { display: block; margin: 0 auto 18px; color: var(--accent-gold); }
+.icon { display: block; margin: 0 auto 18px; color: var(--accent-brand); }
 .err h1 { color: var(--destructive); }
 `.trim();
 
 /**
  * The success mark, above the label.
  *
- * lucide's `check`, in `--accent-gold` — which is what "gold for positive"
+ * lucide's `check`, in `--accent-brand` - which is what "accent for positive"
  * means when the positive thing is a connection that now works. It carries no
  * colour of its own; `.icon` sets it, so it follows the token if the token moves.
  *
