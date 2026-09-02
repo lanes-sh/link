@@ -54,9 +54,8 @@ import { findSecrets, formatSecretFindings } from './secret-detection.ts';
 export const WORKSPACE_FILE = 'workspaces.yaml';
 
 /**
- * What the registry was called through contract 3. Recognised, never written:
- * a workspace holding only the old name has to stay findable, or the migration
- * that renames it cannot be run against it.
+ * What the registry was called through contract 3. Recognised, never written: a
+ * workspace has to stay findable by the migration that renames it.
  */
 export const LEGACY_WORKSPACE_FILE = 'lanes-link.yaml';
 
@@ -113,14 +112,9 @@ export function resolveWorkspaceRoot(options: ResolveOptions = {}): string {
     // `existsSync`, not `Bun.file(path).size`: a missing file reports size 0,
     // so a `>= 0` check would call every candidate a workspace and stop at the
     // first directory it looked at.
-    // Either name. A contract-3 workspace has only the old one, and a root
-    // that cannot be found is a root whose migration cannot be run.
-    if (
-      existsSync(join(directory, WORKSPACE_FILE)) ||
-      existsSync(join(directory, LEGACY_WORKSPACE_FILE))
-    ) {
-      return directory;
-    }
+    // Either name: a root that cannot be found cannot be migrated.
+    const marker = (name: string): boolean => existsSync(join(directory, name));
+    if (marker(WORKSPACE_FILE) || marker(LEGACY_WORKSPACE_FILE)) return directory;
     const parent = dirname(directory);
     if (parent === directory) break;
     directory = parent;
@@ -224,9 +218,13 @@ export async function readConnections(workspaceRoot: string): Promise<Connection
 }
 
 export async function readWorkspace(workspaceRoot: string): Promise<WorkspaceConfig | null> {
-  const path = join(workspaceRoot, WORKSPACE_FILE);
-  const text = await readWorkspaceFile(workspaceFiles(workspaceRoot), WORKSPACE_FILE);
+  // Either name, new one first: a workspace mid-migration still has the old
+  // file, and preferring it would undo the rename on the next write.
+  const files = workspaceFiles(workspaceRoot);
+  const current = await readWorkspaceFile(files, WORKSPACE_FILE);
+  const text = current ?? (await readWorkspaceFile(files, LEGACY_WORKSPACE_FILE));
   if (text === null) return null;
+  const path = join(workspaceRoot, current === null ? LEGACY_WORKSPACE_FILE : WORKSPACE_FILE);
 
   const parsed = workspaceSchema.safeParse(parseYaml(text));
   if (!parsed.success) {

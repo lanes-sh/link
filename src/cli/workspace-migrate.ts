@@ -18,6 +18,7 @@ import {
 } from '#profile';
 import { ConfigDocument } from './config-edit.ts';
 import { hoist, summarise } from './migrate-plan.ts';
+import { C3 } from './contract3-layout.ts';
 
 /**
  * Contract 1 → 2: the target moves out of the profile and into the workspace.
@@ -64,7 +65,7 @@ export interface WorkspaceMigration {
 /** Whether this workspace still holds anything at contract 1. */
 export async function needsMigration(workspaceRoot: string): Promise<boolean> {
   for (const profile of await listProfiles(workspaceRoot)) {
-    const text = await readWorkspaceFile(workspaceFiles(workspaceRoot), `profiles/${profile}.yaml`);
+    const text = await readWorkspaceFile(workspaceFiles(workspaceRoot), C3.profile(profile));
     if (text === null) continue;
     try {
       if (isLegacyProfile(parseDocument(text).toJSON())) return true;
@@ -93,7 +94,10 @@ export async function migrateWorkspace(
     [];
 
   for (const profile of names) {
-    const document = await ConfigDocument.open(workspaceRoot, profile);
+    // The contract-1 path, frozen. `open` resolves the live layout, which is
+    // contract 4's — so this read a profile that does not exist yet and the
+    // migration refused a workspace it was supposed to move.
+    const document = await ConfigDocument.openKey(workspaceRoot, C3.profile(profile));
     const raw = document.toJSON();
     if (!isLegacyProfile(raw)) continue;
 
@@ -126,10 +130,10 @@ export async function migrateWorkspace(
     changes.push(
       entry.at !== undefined
         ? `workspaces.${name}: pointer to ${entry.at}`
-        : `targets.${name}: declared in ${WORKSPACE_FILE}`,
+        : `targets.${name}: declared in ${C3.workspace}`,
     );
   }
-  for (const { profile } of legacy) changes.push(`profiles/${profile}.yaml: targets: removed, contract: 2`);
+  for (const { profile } of legacy) changes.push(`${C3.profile(profile)}: targets: removed, contract: 2`);
 
   if (!options.apply) {
     return {
@@ -170,7 +174,7 @@ export async function migrateWorkspace(
     // wrote, and `check` refuses anything either step leaves broken.
     await writeWorkspaceFile(
       workspaceFiles(workspaceRoot),
-      `profiles/${profile}.yaml`,
+      C3.profile(profile),
       document.toString(),
     );
   }
@@ -274,7 +278,7 @@ async function writeRegistry(
   registry: Record<string, WorkspaceTarget>,
 ): Promise<void> {
   const files = workspaceFiles(workspaceRoot);
-  const text = (await readWorkspaceFile(files, WORKSPACE_FILE)) ?? `contract: ${SUPPORTED_CONTRACT}\n`;
+  const text = (await readWorkspaceFile(files, C3.workspace)) ?? `contract: ${SUPPORTED_CONTRACT}\n`;
   const document = parseDocument(text);
   const current = (document.toJSON() ?? {}) as {
     workspaces?: Record<string, WorkspaceTarget>;
@@ -318,7 +322,7 @@ async function writeRegistry(
   document.deleteIn(['deployments']);
   document.deleteIn(['default_target']);
 
-  await writeWorkspaceFile(files, WORKSPACE_FILE, String(document));
+  await writeWorkspaceFile(files, C3.workspace, String(document));
 }
 
 function describe(
