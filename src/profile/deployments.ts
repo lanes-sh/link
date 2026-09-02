@@ -1,6 +1,11 @@
 import { parseDocument } from 'yaml';
 import { readWorkspaceFile, workspaceFiles, writeWorkspaceFile } from './files.ts';
-import { SUPPORTED_CONTRACT, workspaceSchema, type WorkspaceTarget } from './schema.ts';
+import {
+  SUPPORTED_CONTRACT,
+  workspaceSchema,
+  workspaceTargetSchema,
+  type WorkspaceTarget,
+} from './schema.ts';
 import { WORKSPACE_FILE } from './workspace.ts';
 
 /**
@@ -78,20 +83,81 @@ async function editRegistry(
     (await readWorkspaceFile(files, WORKSPACE_FILE)) ?? `contract: ${SUPPORTED_CONTRACT}\n`;
 
   const document = parseDocument(text);
-  const targets = (document.toJSON()?.workspaces ?? {}) as Record<string, WorkspaceTarget>;
+  const raw = (document.toJSON() ?? {}) as {
+    workspaces?: Record<string, WorkspaceTarget>;
+    targets?: Record<string, LegacyTargetEntry>;
+  };
+
+  // **Whichever block this file already keeps its registry in.**
+  //
+  // This read and wrote `workspaces:` unconditionally. A contract-2 file keeps
+  // it under `targets:`, so recording a deploy into one found no registry,
+  // added the entry to an empty object, and wrote a *second* block beside the
+  // first. `workspaceSchema` has no `targets` key and zod strips what it does
+  // not declare, so the hybrid validated and landed.
+  //
+  // That is reachable from an ordinary command: `deploy` migrates the target
+  // workspace, never the local one, so deploying to a bucket from a laptop that
+  // has not run `update` yet does exactly this. The result is a file whose two
+  // registries disagree — and `rewriteRegistry` then rebuilds `workspaces:`
+  // from the stale `targets:`, discarding the newer record without a word.
+  //
+  // Writing into the block the file already has keeps it coherent at whatever
+  // contract it is, and leaves converting the two to the migration that owns
+  // that job.
+  const legacy = raw.workspaces === undefined && raw.targets !== undefined;
+  const block = legacy ? 'targets' : 'workspaces';
+  const targets = legacy ? current(raw.targets ?? {}) : (raw.workspaces ?? {});
 
   edit(targets);
 
-  if (Object.keys(targets).length === 0) document.deleteIn(['workspaces']);
-  else document.setIn(['workspaces'], sorted(targets));
+  if (Object.keys(targets).length === 0) document.deleteIn([block]);
+  else document.setIn([block], sorted(legacy ? asLegacy(targets) : targets));
 
   // Validated before it lands, on the rendered tree rather than the input, so
   // what is checked is what would be read back.
-  workspaceSchema.parse(document.toJSON());
+  //
+  // `workspaceSchema` declares no `targets` key and zod strips what it does not
+  // declare, so on the legacy branch parsing the whole document checks nothing
+  // at all — an entry that is neither pointer nor declaration, or one trying to
+  // be both, landed silently and only surfaced weeks later when the migration
+  // converted it and refused. The entries are checked directly there, in the
+  // contract-3 shape `current` normalised them to.
+  if (legacy) for (const entry of Object.values(targets)) workspaceTargetSchema.parse(entry);
+  else workspaceSchema.parse(document.toJSON());
 
   await writeWorkspaceFile(files, WORKSPACE_FILE, String(document));
 }
 
-function sorted(targets: Record<string, WorkspaceTarget>): Record<string, WorkspaceTarget> {
+function sorted<T>(targets: Record<string, T>): Record<string, T> {
   return Object.fromEntries(Object.entries(targets).sort(([a], [b]) => a.localeCompare(b)));
+}
+
+/**
+ * A contract-2 entry spelled a pointer `workspace:`; contract 3 spells it `at:`.
+ *
+ * Normalised on the way in and back on the way out, so `edit` and `pick` see one
+ * shape and never have to ask which contract they are looking at — and so a
+ * legacy file keeps the spelling its own schema expects.
+ */
+interface LegacyTargetEntry extends Omit<WorkspaceTarget, 'at'> {
+  workspace?: string;
+}
+
+function current(targets: Record<string, LegacyTargetEntry>): Record<string, WorkspaceTarget> {
+  return Object.fromEntries(
+    Object.entries(targets).map(([name, entry]) => {
+      const { workspace, ...rest } = entry;
+      return [name, workspace === undefined ? rest : { at: workspace, ...rest }];
+    }),
+  );
+}
+
+function asLegacy(targets: Record<string, WorkspaceTarget>): Record<string, LegacyTargetEntry> {
+  return Object.fromEntries(
+    Object.entries(targets).map(([name, entry]) => {
+      const { at, ...rest } = entry;
+      return [name, at === undefined ? rest : { workspace: at, ...rest }];
+    }),
+  );
 }

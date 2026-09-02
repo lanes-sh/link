@@ -26,6 +26,11 @@
 import type { BlobStore } from '../blobs/index.ts';
 import { keyFromEntry, namespacePrefix, objectKey } from './keys.ts';
 
+// Re-exported because the contract-3 migration has to address objects this
+// module wrote, and deriving `connections%2Ev1/gmail%2Emain.json` by hand at the
+// call site is the second spelling of an encoding that must not have two.
+export { decodeSegment, encodeSegment, objectKey } from './keys.ts';
+
 export type ConnectionStatus =
   | 'active'
   /** Declared, but its credential is missing or rejected. Does not block startup. */
@@ -94,7 +99,7 @@ export interface RuntimeState {
  * contain. The same rule keeps `audit.log` and `state.kv` out of reach in
  * `#profile`'s layout.
  */
-const CONNECTIONS = 'connections.v1';
+export const CONNECTIONS_NAMESPACE = 'connections.v1';
 const CURSORS = 'cursors.v1';
 
 export function createRuntimeState(
@@ -104,7 +109,7 @@ export function createRuntimeState(
   const kv = createKeyValue(blobs);
 
   const readConnection = async (provider: string, id: string): Promise<ConnectionRecord | null> =>
-    decodeConnection(await kv.get(CONNECTIONS, connectionKey(provider, id)));
+    decodeConnection(await kv.get(CONNECTIONS_NAMESPACE, connectionKey(provider, id)));
 
   const connections: ConnectionRepository = {
     async upsert(record) {
@@ -116,7 +121,7 @@ export function createRuntimeState(
         createdAt: existing?.createdAt ?? now(),
         updatedAt: now(),
       };
-      await kv.set(CONNECTIONS, connectionKey(record.provider, record.id), encodeConnection(stored));
+      await kv.set(CONNECTIONS_NAMESPACE, connectionKey(record.provider, record.id), encodeConnection(stored));
       return stored;
     },
 
@@ -124,8 +129,8 @@ export function createRuntimeState(
 
     async list() {
       const records: ConnectionRecord[] = [];
-      for (const key of await kv.keys(CONNECTIONS)) {
-        const record = decodeConnection(await kv.get(CONNECTIONS, key));
+      for (const key of await kv.keys(CONNECTIONS_NAMESPACE)) {
+        const record = decodeConnection(await kv.get(CONNECTIONS_NAMESPACE, key));
         if (record) records.push(record);
       }
       return records.sort(
@@ -137,7 +142,7 @@ export function createRuntimeState(
       const existing = await readConnection(provider, id);
       if (!existing) return;
       await kv.set(
-        CONNECTIONS,
+        CONNECTIONS_NAMESPACE,
         connectionKey(provider, id),
         encodeConnection({ ...existing, status, updatedAt: now() }),
       );

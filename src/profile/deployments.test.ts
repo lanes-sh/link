@@ -142,3 +142,62 @@ describe('recording where a target lives', () => {
     await expect(recordTarget(root, 'brand_new', { primary: 'personal' })).rejects.toThrow();
   });
 });
+
+describe('a registry that is still at contract 2', () => {
+  const contract2 = [
+    'contract: 2',
+    'default_profile: personal',
+    'targets:',
+    '  cloud:',
+    '    workspace: gs://your-bucket',
+    '    primary: personal',
+    '    last_deploy_version: 0.7.2',
+    '  local:',
+    '    credentials: { adapter: file }',
+    '    storage: { adapter: filesystem }',
+    '',
+  ].join('\n');
+
+  test('is updated in place, rather than growing a second registry beside it', async () => {
+    // `deploy` migrates the *target* workspace, never the local one — so
+    // deploying to a bucket from a laptop that has not run `update` yet lands
+    // here with a contract-2 file. This read and wrote `workspaces:`
+    // unconditionally, found no registry under it, and wrote a second block
+    // beside the first. `workspaceSchema` has no `targets` key and zod strips
+    // what it does not declare, so the hybrid validated and landed.
+    const root = await workspace(contract2);
+
+    await recordTarget(root, 'cloud', {
+      at: 'gs://your-bucket',
+      primary: 'personal',
+      last_deploy_version: '0.8.0',
+    });
+
+    const text = await readFile(join(root, 'lanes-link.yaml'), 'utf8');
+    expect(text).not.toContain('workspaces:');
+    expect(text).toContain('last_deploy_version: 0.8.0');
+    expect(text).not.toContain('0.7.2');
+  });
+
+  test('keeps the spelling its own contract uses for a pointer', async () => {
+    // Contract 2 spells it `workspace:`; `at:` arrived with contract 3. Writing
+    // the new spelling into the old block would leave a pointer that contract's
+    // own schema does not recognise.
+    const root = await workspace(contract2);
+
+    await recordTarget(root, 'cloud', { at: 'gs://your-bucket', primary: 'personal' });
+
+    const text = await readFile(join(root, 'lanes-link.yaml'), 'utf8');
+    expect(text).toContain('workspace: gs://your-bucket');
+    expect(text).not.toContain('at: gs://your-bucket');
+  });
+
+  test('carries forward a field the caller did not mention', async () => {
+    // The merge `recordTarget` promises, on the legacy path too.
+    const root = await workspace(contract2);
+
+    await recordTarget(root, 'cloud', { at: 'gs://your-bucket', last_deploy: 'now' });
+
+    expect(await readFile(join(root, 'lanes-link.yaml'), 'utf8')).toContain('primary: personal');
+  });
+});

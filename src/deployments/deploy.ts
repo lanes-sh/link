@@ -14,7 +14,7 @@ import { recordDeployment, type DeploymentRecord } from './record.ts';
 import { printSteps, runSteps } from './steps.ts';
 import { driverFor } from './drivers.ts';
 import { prepareSecrets, readableRefs, rotatableRefs } from './prepare.ts';
-import { repairOwnerLayer } from '#cli/config-repair.ts';
+import { repairOwnerLayer } from '#cli/config-repair-sweep.ts';
 import { migrateToCurrentContract } from '#cli/workspace-migrate.ts';
 import { deployedWorkspace, uploadWorkspace } from './upload.ts';
 import { servingProfiles } from './serving.ts';

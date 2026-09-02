@@ -1,5 +1,5 @@
 import { rename, writeFile } from 'node:fs/promises';
-import { Document, parseDocument, type Node } from 'yaml';
+import { Document, parseDocument, YAMLSeq, type Node } from 'yaml';
 import {
   CONNECTIONS_FILE,
   ConfigError,
@@ -199,7 +199,20 @@ export class ConfigDocument {
     // difference decided whether a command explained itself or crashed.
     const existing = this.#document.getIn(path as (string | number)[]);
     if (existing === undefined || existing === null) {
-      this.#document.setIn(path as (string | number)[], [node]);
+      // A `YAMLSeq` rather than the plain `[node]` this used to set. The array
+      // is not a collection the document API will traverse — the same hazard
+      // `setIn` above documents — so the *first* append landed and the second
+      // found a value with no `.add` and threw `existing.add is not a
+      // function`. `#expand` below reads `.items` and was silently a no-op for
+      // the same reason, leaving the sequence in flow style.
+      //
+      // Latent until contract 3: every path this was called with
+      // (`connections`, `policy.allow`) already existed, so the branch ran at
+      // most once per document. `grants:` is genuinely absent on a profile
+      // being repaired, which is what made the second append reachable.
+      const created = new YAMLSeq();
+      created.add(node);
+      this.#document.setIn(path as (string | number)[], created);
     } else {
       (existing as { add(item: unknown): void }).add(node);
     }
