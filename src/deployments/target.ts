@@ -61,8 +61,21 @@ export interface TargetInput {
  */
 export type StorageFactory = (area?: string) => BlobStore;
 
-export async function openSecrets(input: TargetInput): Promise<SecretStore> {
-  const { declared, config, root, target } = input;
+/**
+ * The workspace's credential store.
+ *
+ * Takes the adapters and the root, not a `TargetInput` — it never read the
+ * profile, and since contract 3 there is nothing in one for it to read: the
+ * store is the workspace's. Narrowing the parameter is what lets a *migration*
+ * open it, which it must be able to do while the profiles on disk still
+ * declare the contract being migrated away from and therefore will not parse.
+ */
+export async function openSecrets(input: {
+  readonly declared: TargetConfig;
+  readonly root: string;
+  readonly target: string;
+}): Promise<SecretStore> {
+  const { declared, root, target } = input;
 
   switch (declared.credentials.adapter) {
     case 'file':

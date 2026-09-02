@@ -7,6 +7,7 @@ import {
   writeWorkspaceFile,
   WORKSPACE_FILE,
   CONNECTIONS_FILE,
+  readConnections,
 } from '#profile';
 import { parseDocument } from 'yaml';
 import { ConfigDocument } from './config-edit.ts';
@@ -19,6 +20,9 @@ import {
   type Renames,
 } from './contract4-data.ts';
 import { applyMoves, assertOneObjectPerDestination } from './migrate-move.ts';
+import { applyCredentialMoves, planCredentialMoves } from './contract4-credentials.ts';
+import { openSecretStoreFor } from './runtime/select.ts';
+import { buildRegistryWithWorkspace } from './runtime/registry.ts';
 
 /**
  * Contract 3 to contract 4: a profile owns its data again.
@@ -90,8 +94,9 @@ async function readProfile(
 
 export async function migrateToContract4(
   workspaceRoot: string,
-  options: { apply: boolean } = { apply: true },
+  options: { apply: boolean; target?: string } = { apply: true },
 ): Promise<Contract4Migration> {
+  const target = options.target ?? 'local';
   const names = await listProfiles(workspaceRoot);
   const configs = new Map<string, { grants?: { connection?: unknown }[] }>();
 
@@ -142,6 +147,15 @@ export async function migrateToContract4(
 
   await renameRegistry(workspaceRoot);
   await applyMoves(files, plan.moves);
+
+  // **Credentials before the rows.** A ref is derived from the id, so moving
+  // the secret while the config still names the old id means either order
+  // leaves a window — but this one leaves it on the side where a rerun
+  // recovers: the rows still say `gmail.main_2`, `planCredentialMoves` computes
+  // the same pair again, and the destination-occupied branch finishes the job.
+  // Rows first would leave a workspace whose config names an id whose old
+  // secret nothing can now derive the ref for.
+  const credentials = await moveCredentials(workspaceRoot, target, rows, renames);
   await renameConnections(workspaceRoot, renames);
 
   // Last. The stamp is the record that the migration finished.
@@ -170,11 +184,47 @@ export async function migrateToContract4(
   return {
     workspaceRoot,
     profiles,
-    changes,
+    changes: [...changes, ...credentials],
     shared: plan.shared,
     orphaned: plan.orphaned,
     alreadyCurrent: false,
   };
+}
+
+/**
+ * Move each stored credential to the ref its renamed connection now derives.
+ *
+ * A store that will not open is a warning rather than a throw for the same
+ * reason the rest of this is ordered the way it is: the rows have not been
+ * rewritten yet, so a workspace that stops here still resolves every credential
+ * it did before, and the rerun does the whole job.
+ */
+async function moveCredentials(
+  root: string,
+  target: string,
+  rows: readonly { id: string; provider: string }[],
+  renames: Renames,
+): Promise<string[]> {
+  if (rows.length === 0) return [];
+
+  try {
+    const [store, registry] = await Promise.all([
+      openSecretStoreFor(root, target),
+      buildRegistryWithWorkspace(root),
+    ]);
+
+    const connections = await readConnections(root);
+    return await applyCredentialMoves(
+      store,
+      planCredentialMoves(connections.connections, registry, renames),
+    );
+  } catch (cause) {
+    return [
+      `credentials could not be moved (${
+        cause instanceof Error ? cause.message : String(cause)
+      }) — nothing was renamed, so run this again`,
+    ];
+  }
 }
 
 /** Every connection row, however far through the migration this workspace is. */

@@ -223,7 +223,7 @@ describe('refusals', () => {
     const { config } = await resolveProfile({ profile: 'personal', target: 'local' });
     // The listing is the registry's, one target per line with where each lives —
     // it used to be one profile's `targets:` keys joined by commas (ADR-052).
-    await expect(openSecretStoreFor(config, root, 'staging')).rejects.toThrow(
+    await expect(openSecretStoreFor(root, 'staging')).rejects.toThrow(
       /Target "staging" is not declared.*local.*s3/s,
     );
   });
@@ -237,8 +237,8 @@ describe('one credential store, two targets', () => {
     // `s3` names a bucket this machine cannot reach; its credential store still
     // opens, which is what lets `secrets push --to cloud` work before the cloud
     // target has ever been deployed.
-    const from = await openSecretStoreFor(config, root, 'local');
-    const to = await openSecretStoreFor(config, root, 's3');
+    const from = await openSecretStoreFor(root, 'local');
+    const to = await openSecretStoreFor(root, 's3');
 
     await from.set('gmail/main', 'refresh-token');
     expect(await to.get('gmail/main')).toBe('refresh-token');

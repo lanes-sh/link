@@ -252,6 +252,64 @@ describe('the ids it rewrites on the way', () => {
   });
 });
 
+describe('the credentials, which the rename would otherwise orphan', () => {
+  /**
+   * The defect this covers was found by rehearsing against a real workspace,
+   * not by the suite: six live credentials became six re-authorisations, and
+   * every other check passed. A `credential_ref` is almost never written down —
+   * `credentialRefFor` derives it as `<provider>/<connection>` — so renaming a
+   * connection silently repoints the lookup at a key nothing holds.
+   */
+  async function withCredential(id: string, value: string): Promise<string> {
+    const root = await workspace({ personal: [`gmail.${id}`] });
+    const { createFileSecretStore } = await import('#secrets');
+    await mkdir(join(root, 'data'), { recursive: true });
+    await createFileSecretStore({ path: join(root, 'data', 'credentials.enc') }).set(
+      `gmail/${id}`,
+      value,
+    );
+    return root;
+  }
+
+  const storedAt = async (root: string, ref: string): Promise<string | null> => {
+    const { createFileSecretStore } = await import('#secrets');
+    return createFileSecretStore({ path: join(root, 'credentials.enc') }).get(ref);
+  };
+
+  test('a renamed connection takes its credential with it', async () => {
+    const root = await withCredential('main_2', 'the refresh token');
+
+    await migrateToContract4(root);
+
+    expect(await storedAt(root, 'gmail/con1')).toBe('the refresh token');
+    expect(await storedAt(root, 'gmail/main_2')).toBeNull();
+  });
+
+  test('a credential whose connection keeps its id is left alone', async () => {
+    const root = await withCredential('con4', 'unchanged');
+
+    await migrateToContract4(root);
+
+    expect(await storedAt(root, 'gmail/con4')).toBe('unchanged');
+  });
+
+  test('the endpoint token is not a connection, and does not move', async () => {
+    const root = await workspace({ personal: ['gmail.main'] });
+    const { createFileSecretStore } = await import('#secrets');
+    await mkdir(join(root, 'data'), { recursive: true });
+    await createFileSecretStore({ path: join(root, 'data', 'credentials.enc') }).set(
+      'profile/token',
+      'the endpoint token',
+    );
+
+    await migrateToContract4(root);
+
+    // `profile/token` looks like `<something>/<id>` and is not one. Moving it
+    // would take the endpoint's own token away from every profile at once.
+    expect(await storedAt(root, 'profile/token')).toBe('the endpoint token');
+  });
+});
+
 describe('what it stamps, and when', () => {
   test('the declaration moves into the directory it names, and is stamped last', async () => {
     const root = await workspace({ personal: ['memory.main'] });

@@ -82,7 +82,7 @@ async function open(root: string): Promise<{
   return {
     document,
     profiles,
-    credentials: await openSecretStoreFor(shapeOf(profiles[0]!), root, 'local'),
+    credentials: await openSecretStoreFor(root, 'local'),
   };
 }
 

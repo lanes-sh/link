@@ -242,7 +242,7 @@ export interface ContractMigration {
  */
 export async function migrateToCurrentContract(
   workspaceRoot: string,
-  options: { apply: boolean; subject?: string } = { apply: true },
+  options: { apply: boolean; subject?: string; target?: string } = { apply: true },
 ): Promise<ContractMigration> {
   const legacy = (await needsMigration(workspaceRoot))
     ? await migrateWorkspace(workspaceRoot, { apply: options.apply })
@@ -259,7 +259,10 @@ export async function migrateToCurrentContract(
   // it has to run against the tree the previous step left. With `apply: false`
   // it sees the unmigrated shape and reports only what it can see from here —
   // which is the honest preview, and why the count is not promised.
-  const contract4 = await migrateToContract4(workspaceRoot, { apply: options.apply });
+  const contract4 = await migrateToContract4(workspaceRoot, {
+    apply: options.apply,
+    ...(options.target === undefined ? {} : { target: options.target }),
+  });
 
   return {
     workspaceRoot,

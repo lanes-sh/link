@@ -102,11 +102,7 @@ export async function publishProfileEdit(input: {
   /** Every profile the edit touched, where it reached more than the one named. */
   readonly touched?: readonly string[] | undefined;
 }): Promise<PublishOutcome> {
-  const credentials = await openSecretStoreFor(
-    input.config,
-    input.resolution.workspaceRoot,
-    input.target,
-  );
+  const credentials = await openSecretStoreFor(input.resolution.workspaceRoot, input.target);
 
   return publishAndNotify({
     config: input.config,

@@ -126,21 +126,12 @@ export async function resolveProfileOnly(
  * inside Google's network. Opening a full runtime for either would fail on the
  * part that is not needed.
  */
-export async function openSecretStoreFor(
-  config: Config,
-  root: string,
-  target: string,
-): Promise<SecretStore> {
+export async function openSecretStoreFor(root: string, target: string): Promise<SecretStore> {
   // Resolved here rather than taken from the caller, so `secrets push --from
   // local --to cloud` can hold two targets that live in two different workspaces
   // without the caller having to follow either pointer itself.
   const resolved = await openTarget(root, target);
-  return openSecrets({
-    declared: resolved.declared,
-    config,
-    root: resolved.workspaceRoot,
-    target,
-  });
+  return openSecrets({ declared: resolved.declared, root: resolved.workspaceRoot, target });
 }
 
 /**

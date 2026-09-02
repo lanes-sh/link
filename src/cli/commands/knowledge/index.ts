@@ -115,11 +115,7 @@ async function useGithub(flags: KnowledgeFlags): Promise<void> {
 
     // Nothing is written until this returns: the token is asked for, the
     // repository is probed, and either can refuse while the profile is intact.
-    const secrets = await openSecretStoreFor(
-      runtime.config,
-      runtime.resolution.workspaceRoot,
-      runtime.target,
-    );
+    const secrets = await openSecretStoreFor(runtime.resolution.workspaceRoot, runtime.target);
     const token = await resolveToken(secrets, knowledge.token_ref, knowledge.repo, selection, {
       replace: flags.replace,
     });
@@ -205,11 +201,7 @@ async function useLocal(flags: KnowledgeFlags): Promise<void> {
 
     // Built here rather than taken from `runtime.knowledge`, so both directions
     // of this command reach the repository through one constructor.
-    const secrets = await openSecretStoreFor(
-      runtime.config,
-      runtime.resolution.workspaceRoot,
-      runtime.target,
-    );
+    const secrets = await openSecretStoreFor(runtime.resolution.workspaceRoot, runtime.target);
     const token = await resolveToken(secrets, knowledge.token_ref, knowledge.repo, selection);
     const repository = repositoryFor(knowledge, token, flags.fetch);
 

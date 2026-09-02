@@ -78,7 +78,7 @@ async function workspace(seed = true): Promise<string> {
   // from the target's own credential store, exactly as it would after a first
   // interactive run.
   const { resolution, config } = await resolveProfile(SELECT);
-  const secrets = await openSecretStoreFor(config, resolution.workspaceRoot, 'local');
+  const secrets = await openSecretStoreFor(resolution.workspaceRoot, 'local');
   await secrets.set('knowledge/token', 'github_pat_stub');
 
   return root;

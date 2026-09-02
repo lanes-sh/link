@@ -229,7 +229,7 @@ export async function deploy(flags: DeployFlags): Promise<void> {
     await runSteps(driver, provision);
   }
 
-  const credentials = await openSecretStoreFor(config, resolution.workspaceRoot, target);
+  const credentials = await openSecretStoreFor(resolution.workspaceRoot, target);
   const prepared = await prepareSecrets({
     config,
     declared,

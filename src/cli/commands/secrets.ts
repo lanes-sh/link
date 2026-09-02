@@ -44,8 +44,8 @@ export async function secretsPush(flags: SecretsFlags): Promise<void> {
   const { selection, config } = await resolveProfileOnly(flags);
   announceProfile(selection);
 
-  const source = await openSecretStoreFor(config, selection.workspaceRoot, flags.from);
-  const destination = await openSecretStoreFor(config, selection.workspaceRoot, flags.to);
+  const source = await openSecretStoreFor(selection.workspaceRoot, flags.from);
+  const destination = await openSecretStoreFor(selection.workspaceRoot, flags.to);
 
   const refs = await source.list();
   if (refs.length === 0) {
@@ -143,7 +143,7 @@ export async function secretsSet(ref: string | undefined, flags: GlobalFlags): P
     );
   }
 
-  const credentials = await openSecretStoreFor(config, resolution.workspaceRoot, target);
+  const credentials = await openSecretStoreFor(resolution.workspaceRoot, target);
   const replacing = await credentials.has(ref);
   await credentials.set(ref, value);
 
@@ -165,7 +165,7 @@ export async function secretsList(flags: GlobalFlags): Promise<void> {
   });
   announceWorkspace(resolution);
 
-  const credentials = await openSecretStoreFor(config, resolution.workspaceRoot, target);
+  const credentials = await openSecretStoreFor(resolution.workspaceRoot, target);
   const refs = await credentials.list();
 
   heading(`Credential references in workspace ${target} (${refs.length})`);

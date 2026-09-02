@@ -313,7 +313,7 @@ export async function removeProfile(name: string, flags: RemoveFlags): Promise<v
     target,
     declared,
     disposition,
-    openSecrets: (target) => openSecretStoreFor(config, root, target),
+    openSecrets: (target) => openSecretStoreFor(root, target),
     openBlobs: (target, area) => openBlobStoreFor(config, root, target, area),
     readDefaultProfile: async () => (await readWorkspace(root))?.default_profile,
     // What the workspace keeps. The credential store is one file for all of
@@ -334,7 +334,7 @@ export async function removeProfile(name: string, flags: RemoveFlags): Promise<v
   if (!(await confirmedByName(name, { yes: flags.yes, prompter: flags.prompter }))) return;
 
   const outcome = await executeRemoval(plan, {
-    openSecrets: (target) => openSecretStoreFor(config, root, target),
+    openSecrets: (target) => openSecretStoreFor(root, target),
     openBlobs: (target, area) => openBlobStoreFor(config, root, target, area),
     removeConfig: async (path) => await files.delete(relativeToRoot(root, path)),
     removeDirectory: async (path) => await rm(workspacePath(root, path), { recursive: true, force: true }),
