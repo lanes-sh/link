@@ -4,6 +4,7 @@ import { installRoot, resolveWorkspaceRoot } from '#profile';
 import { repairOwnerLayer } from '../config-repair-sweep.ts';
 import { migrateToCurrentContract, needsMigration, type ContractMigration } from '../workspace-migrate.ts';
 import { needsContract3, type Contract3Migration } from '../contract3.ts';
+import { needsContract4 } from '../contract4.ts';
 import { emit, fail, ok, print, printErr, progress, style, warn } from '../output.ts';
 import { PACKAGE, release, type ReleaseState } from '../release.ts';
 import { version } from '../version.ts';
@@ -372,7 +373,7 @@ async function migrateLocal(root: string, say: (line: string) => void): Promise<
 /** Anything still below the current contract. Unreadable counts as behind. */
 function stillBehind(root: string): Promise<boolean> {
   return needsMigration(root)
-    .then(async (one) => one || (await needsContract3(root)))
+    .then(async (one) => one || (await needsContract3(root)) || (await needsContract4(root)))
     .catch(() => true);
 }
 

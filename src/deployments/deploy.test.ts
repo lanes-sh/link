@@ -164,7 +164,7 @@ describe('what a deploy sends up', () => {
  */
 describe('what a deploy repairs before sending it', () => {
   /** An old profile: a real connection, its grant, and no setup surface. */
-  const OLD = (name: string) => `contract: 3
+  const OLD = (name: string) => `contract: 4
 instance:
   profile: ${name}
   port: 7337
@@ -174,7 +174,7 @@ members: []
 `;
 
   /** The workspace it lives in, with the account and no owner-layer row. */
-  const OLD_CONNECTIONS = `contract: 3
+  const OLD_CONNECTIONS = `contract: 4
 connections:
   - { id: a, provider: example, account: someone@example.test }
 oauth_apps: {}
@@ -320,7 +320,7 @@ oauth_apps: {}
 describe('which credentials a deploy asks provision to bind', () => {
   // The rows are the workspace's now, so a "profile" in these fixtures is the
   // set of connections it grants and the file that grants them (ADR-057).
-  const PROFILE = (name: string, connections: string) => `contract: 3
+  const PROFILE = (name: string, connections: string) => `contract: 4
 instance:
   profile: ${name}
 grants:
@@ -349,7 +349,7 @@ members: []
 
     await writeFile(
       join(root, CONNECTIONS_FILE),
-      `contract: 3\nconnections:\n${rows.join('\n')}\noauth_apps: {}\n`,
+      `contract: 4\nconnections:\n${rows.join('\n')}\noauth_apps: {}\n`,
     );
     return root;
   }
@@ -466,7 +466,7 @@ members: []
  */
 describe('publishing a config edit', () => {
   const targets = (extra: string): string => `
-contract: 3
+contract: 4
 instance:
   profile: personal
   port: 7337
@@ -541,13 +541,13 @@ describe('the allowlist against a real workspace listing', () => {
     roots.push(source, destination);
 
     const profile = (name: string): string =>
-      `contract: 3\ninstance:\n  profile: ${name}\ngrants: []\nmembers: []\n`;
+      `contract: 4\ninstance:\n  profile: ${name}\ngrants: []\nmembers: []\n`;
 
     const files: Record<string, string> = {
       'workspaces.yaml': workspaceYaml(['local', 'cloud'], { defaultProfile: 'personal' }),
       'profiles/personal/profile.yaml': profile('personal'),
       'profiles/work/profile.yaml': profile('work'),
-      'connections.yaml': `contract: 3\nconnections: []\noauth_apps: {}\n`,
+      'connections.yaml': `contract: 4\nconnections: []\noauth_apps: {}\n`,
       [`${layout.skills('personal', 'main')}/review-diff/SKILL.md`]: '---\ndescription: d\n---\nb\n',
       [`${layout.skills('work', 'main')}/triage.md`]: '---\ndescription: d\n---\nb\n',
       ['providers.d/acme.yaml']: 'id: acme\n',

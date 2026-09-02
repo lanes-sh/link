@@ -44,7 +44,7 @@ function validateDocument(
   raw: unknown,
   path: string,
   key: string | undefined,
-  options: { shapeOnly?: boolean },
+  options: { shapeOnly?: boolean; contract?: number },
 ): void {
   // Either name. The contract-3 migration rewrites the registry under the name
   // it still has, and a document checked against the wrong schema fails with
@@ -80,8 +80,10 @@ function validateDocument(
     return;
   }
 
-  if (options.shapeOnly === true) validateConfigShape(raw, path);
-  else validateConfig(raw, path);
+  // `contract` is the one a migration is *producing*, and it is only ever
+  // passed by one: every other caller writes the newest.
+  if (options.shapeOnly === true) validateConfigShape(raw, path, options.contract);
+  else validateConfig(raw, path, options.contract);
 }
 
 export class ConfigDocument {
@@ -281,7 +283,7 @@ export class ConfigDocument {
    * The half it keeps is the half that matters for a write: the schema, and the
    * scan that stops a credential value being written into config.
    */
-  async save(options: { shapeOnly?: boolean } = {}): Promise<void> {
+  async save(options: { shapeOnly?: boolean; contract?: number } = {}): Promise<void> {
     const rendered = this.toString();
 
     // Throws on any validation failure, including a credential value that has

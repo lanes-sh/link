@@ -69,7 +69,7 @@ function skillsFixture(): { store: BlobStore; refresh: (registry: ProviderRegist
 
 function config(profile: string, port: number, policy: string) {
   return parseConfig(`
-contract: 3
+contract: 4
 instance:
   profile: ${profile}
   port: ${port}

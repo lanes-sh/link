@@ -38,6 +38,16 @@ export interface Move {
    * interruption during them forces exactly that rerun.
    */
   readonly whenAbsent?: boolean;
+  /**
+   * Copy, and leave the source where it is.
+   *
+   * For the one thing contract 4 cannot decide: a store two profiles both grant
+   * has to land in both, and neither copy may delete what the other still needs
+   * to read. The original is reported rather than removed — merging two sets of
+   * notes is not reversible, and picking one profile's would take the other's
+   * away silently.
+   */
+  readonly keep?: boolean;
 }
 
 /**
@@ -130,7 +140,7 @@ async function applyMove(files: BlobStore, move: Move): Promise<void> {
       }
 
       // Already copied, by a run that did not get to the delete.
-      await files.delete(move.from);
+      if (move.keep !== true) await files.delete(move.from);
       return;
     }
   }
@@ -143,7 +153,7 @@ async function applyMove(files: BlobStore, move: Move): Promise<void> {
     );
   }
 
-  await files.delete(move.from);
+  if (move.keep !== true) await files.delete(move.from);
 }
 
 function sameBytes(left: Uint8Array, right: Uint8Array): boolean {

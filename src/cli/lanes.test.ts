@@ -96,7 +96,7 @@ describe('the fallback token invocation', () => {
     await writeFile(join(root, 'workspaces.yaml'), workspaceYaml(['local'], {defaultProfile: 'scratch'}));
     await writeFile(
       join(root, 'profiles', 'scratch', 'profile.yaml'),
-      `contract: 3
+      `contract: 4
 
 instance:
   profile: scratch

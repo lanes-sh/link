@@ -119,7 +119,7 @@ describe('createProfile', () => {
     const text = await readFile(created.path, 'utf8');
 
     expect(created.targets).toEqual(['local']);
-    expect(text).toContain('contract: 3');
+    expect(text).toContain('contract: 4');
     expect(text).not.toContain('targets:');
     expect(text).not.toContain('credentials:');
   });

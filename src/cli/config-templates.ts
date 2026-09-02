@@ -27,7 +27,7 @@ export function newProfileTemplate(profile: string, port: number, subject?: stri
 #
 # Edit it by hand or through the CLI; both are supported, and CLI edits preserve
 # your comments and ordering.
-contract: 3
+contract: 4
 
 instance:
   profile: ${profile}
@@ -146,7 +146,7 @@ export function newWorkspaceTemplate(): string {
 # uses it prints which one it got. Commands that publish or destroy — deploy,
 # sync, secrets push, profile remove, disconnect, token rotate — refuse it and
 # make you type the name (ADR-061).
-contract: 3
+contract: 4
 default_workspace: local
 workspaces:
   local:
@@ -180,7 +180,7 @@ export function newConnectionsTemplate(): string {
 # anybody's API, so there was never anything for a connect step to authorise
 # (ADR-050). Make a second one — "lanes link connect memory --id work" — when you
 # want two profiles to share nothing.
-contract: 3
+contract: 4
 
 connections:
   - { id: main, provider: memory, account: Memory }

@@ -36,7 +36,7 @@ import { openRuntime, type Runtime } from '../runtime.ts';
 const roots: string[] = [];
 const previousHome = process.env['LANES_LINK_HOME'];
 
-const profileConfig = (name: string, skills = name): string => `contract: 3
+const profileConfig = (name: string, skills = name): string => `contract: 4
 
 instance:
   profile: ${name}
@@ -48,7 +48,7 @@ members: []
 `;
 
 /** The workspace's rows: one skills instance per profile, plus the owner layer. */
-const CONNECTIONS = `contract: 3
+const CONNECTIONS = `contract: 4
 connections:
   - { id: personal, provider: skills, account: Skills }
   - { id: work, provider: skills, account: Skills }

@@ -302,7 +302,7 @@ async function rewriteProfiles(
     document.removeIn(['policy']);
     document.removeIn(['oauth_apps']);
 
-    await document.save();
+    await document.save({ contract: 3 });
   }
 }
 

@@ -104,7 +104,7 @@ const testProvider = defineLocalProvider({
 });
 
 const CONFIG = parseConfig(`
-contract: 3
+contract: 4
 instance:
   profile: personal
 limits:

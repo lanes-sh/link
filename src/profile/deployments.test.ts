@@ -34,7 +34,7 @@ afterAll(async () => {
 
 describe('recording where a target lives', () => {
   test('a workspace with no registry reports none, rather than failing', async () => {
-    const root = await workspace('contract: 3\n');
+    const root = await workspace('contract: 4\n');
     expect(await readRegistry(root)).toEqual({});
   });
 
@@ -73,7 +73,7 @@ describe('recording where a target lives', () => {
     // `deploy` writes the bucket's own registry after the upload. Merging there
     // left this machine's `at:` on the entry — and a bucket pointing at
     // itself is a loop `openTarget` refuses, on the target just deployed.
-    const root = await workspace('contract: 3\n');
+    const root = await workspace('contract: 4\n');
     await recordTarget(root, 'cloud', { at: 'gs://your-bucket', primary: 'personal' });
     await recordTarget(root, 'cloud', {
       credentials: { adapter: 'gcp-secret-manager', project: 'p' },
@@ -109,7 +109,7 @@ describe('recording where a target lives', () => {
   });
 
   test('two targets are two entries', async () => {
-    const root = await workspace('contract: 3\n');
+    const root = await workspace('contract: 4\n');
     await recordTarget(root, 'cloud', { at: 'gs://one-bucket' });
     await recordTarget(root, 'staging', { at: 'gs://two-bucket' });
 
@@ -124,7 +124,7 @@ describe('recording where a target lives', () => {
   });
 
   test('the operator’s comments survive being written to', async () => {
-    const root = await workspace('# why this workspace exists\ncontract: 3\n');
+    const root = await workspace('# why this workspace exists\ncontract: 4\n');
     await recordTarget(root, 'cloud', { at: 'gs://your-bucket' });
 
     expect(await readFile(join(root, 'workspaces.yaml'), 'utf8')).toContain(

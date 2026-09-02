@@ -1,3 +1,4 @@
+import { migrateToContract4, type Contract4Migration } from './contract4.ts';
 import { migrateToContract3, needsContract3, type Contract3Migration } from './contract3.ts';
 import { readSession } from '#auth/lanes/session.ts';
 import { parseDocument } from 'yaml';
@@ -194,6 +195,7 @@ export interface ContractMigration {
   readonly legacy: WorkspaceMigration | null;
   /** The contract 2 → 3 half, when this workspace needed one. */
   readonly contract3: Contract3Migration | null;
+  readonly contract4: Contract4Migration | null;
   /** Every profile either half rewrote, deduplicated. */
   readonly profiles: readonly string[];
   /** Targets written into the registry by the contract 1 → 2 half. */
@@ -253,14 +255,26 @@ export async function migrateToCurrentContract(
     ...(subject === undefined ? {} : { subject }),
   });
 
+  // In sequence, not in parallel: contract 4 moves what contract 3 produced, so
+  // it has to run against the tree the previous step left. With `apply: false`
+  // it sees the unmigrated shape and reports only what it can see from here —
+  // which is the honest preview, and why the count is not promised.
+  const contract4 = await migrateToContract4(workspaceRoot, { apply: options.apply });
+
   return {
     workspaceRoot,
     legacy: legacy !== null && !legacy.alreadyCurrent ? legacy : null,
     contract3: contract3.alreadyCurrent ? null : contract3,
-    profiles: [...new Set([...(legacy?.profiles ?? []), ...contract3.profiles])],
+    contract4: contract4.alreadyCurrent ? null : contract4,
+    profiles: [
+      ...new Set([...(legacy?.profiles ?? []), ...contract3.profiles, ...contract4.profiles]),
+    ],
     targets: legacy?.targets ?? [],
-    changes: [...(legacy?.changes ?? []), ...contract3.changes],
-    alreadyCurrent: (legacy === null || legacy.alreadyCurrent) && contract3.alreadyCurrent,
+    changes: [...(legacy?.changes ?? []), ...contract3.changes, ...contract4.changes],
+    alreadyCurrent:
+      (legacy === null || legacy.alreadyCurrent) &&
+      contract3.alreadyCurrent &&
+      contract4.alreadyCurrent,
   };
 }
 

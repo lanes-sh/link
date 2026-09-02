@@ -1,3 +1,4 @@
+import { SUPPORTED_CONTRACT } from '#profile';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -287,7 +288,7 @@ describe('reaching the current contract, the way deploy does', () => {
    * came up healthy reading an empty `data/`, and an empty audit chain verifies
    * as intact. Nothing anywhere said a word.
    */
-  test('a contract-2 workspace arrives at contract 3', async () => {
+  test('a contract-2 workspace arrives at the current contract, not the next one along', async () => {
     const root = await workspace({ personal: legacy({ profile: 'personal' }) });
 
     const migration = await migrateToCurrentContract(root, {
@@ -297,12 +298,17 @@ describe('reaching the current contract, the way deploy does', () => {
 
     expect(migration.alreadyCurrent).toBe(false);
     expect(migration.contract3).not.toBeNull();
+    expect(migration.contract4).not.toBeNull();
     expect(migration.profiles).toEqual(['personal']);
 
-    expect((await readYaml(root, 'profiles/personal.yaml'))['contract']).toBe(3);
+    // Every step, in one call: the profile is inside its own directory
+    // (ADR-067) and stamped with the newest contract, not the intermediate one
+    // the first half of the chain produced.
+    expect((await readYaml(root, 'profiles/personal/profile.yaml'))['contract']).toBe(
+      SUPPORTED_CONTRACT,
+    );
 
-    const registry = await readYaml(root, 'lanes-link.yaml');
-    expect(registry['contract']).toBe(3);
+    const registry = await readYaml(root, 'workspaces.yaml');
     expect(registry['workspaces']).toBeDefined();
     expect(registry['targets']).toBeUndefined();
   });

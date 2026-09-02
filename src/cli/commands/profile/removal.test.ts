@@ -31,7 +31,7 @@ const target = (over: Partial<TargetConfig> = {}): TargetConfig =>
 
 const config = (over: Partial<Config> = {}): Config =>
   ({
-    contract: 3,
+    contract: 4,
     instance: { profile: 'personal' },
     auth: { mode: 'bearer', token_ref: 'profile/token' },
     grants: [{ connection: 'gmail.someone', allow: [], deny: [] }],

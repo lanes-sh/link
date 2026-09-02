@@ -93,7 +93,7 @@ describe('a target the workspace already answers', () => {
     roots.push(root);
     await writeFile(
       join(root, 'workspaces.yaml'),
-      'contract: 3\nworkspaces:\n  cloud:\n' +
+      'contract: 4\nworkspaces:\n  cloud:\n' +
         '    credentials: { adapter: gcp-secret-manager, project: p }\n' +
         '    storage: { adapter: gcs, bucket: b }\n' +
         '    deploy:\n      platform: cloudrun\n      project: p\n' +

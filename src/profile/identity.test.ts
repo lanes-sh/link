@@ -14,7 +14,7 @@ import { parseConfig } from './load.ts';
  * directions: prose passes, and a credential pasted into a value does not.
  */
 
-const PROFILE = `contract: 3
+const PROFILE = `contract: 4
 instance:
   profile: personal
 grants: []
