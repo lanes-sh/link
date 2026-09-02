@@ -1,6 +1,6 @@
 import { newConnectionsTemplate } from './config-templates.ts';
 import { planMoves } from './contract3-data.ts';
-import { applyMoves, type Move } from './migrate-move.ts';
+import { applyMoves } from './migrate-move.ts';
 import {
   mergeCredentials,
   planCredentials,
@@ -22,7 +22,6 @@ import { RESERVED_PROVIDER_IDS } from '#connectivity';
 import { ConfigDocument } from './config-edit.ts';
 import { grantsFor, hoistConnections } from './contract3-shape.ts';
 import { C3 } from './contract3-layout.ts';
-
 /**
  * Contract 2 to contract 3: connections move out of the profile.
  *
@@ -44,8 +43,8 @@ import { C3 } from './contract3-layout.ts';
  *      the old flat policy, which is exactly what contract 2 meant.
  *   4. Bytes move to their connection-keyed homes.
  *
- * The registry rename rides along at the end, because it is the one step that
- * cannot half-apply: it is a single document.
+ * The registry rename rides along at the end: it is one document and cannot
+ * half-apply.
  */
 
 /** What a divergent id was renamed to, and why. */
