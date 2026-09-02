@@ -7,6 +7,7 @@ import { defineProvider, type DiscoveredCapability } from '#connectivity';
 import { PROVIDER_MANIFESTS } from '#providers/index.ts';
 import { openRuntime } from '../runtime.ts';
 import { capabilityDiff, discoveryProbe, isEmptyDiff } from './discovery.ts';
+import { DISCOVERY_NAMESPACE } from '#stores/state';
 
 /**
  * The cache is not the authority for a document we ship.
@@ -74,7 +75,7 @@ describe('a committed spec outranks the cache', () => {
 
     let runtime = await openRuntime({ profile: 'personal', target: 'local' });
     try {
-      await runtime.state.kv.set('discovery', 'drive', JSON.stringify(stale));
+      await runtime.state.kv.set(DISCOVERY_NAMESPACE, 'drive', JSON.stringify(stale));
     } finally {
       await runtime.close();
     }
@@ -100,7 +101,7 @@ describe('a committed spec outranks the cache', () => {
     let runtime = await openRuntime({ profile: 'personal', target: 'local' });
     try {
       await runtime.state.kv.set(
-        'discovery',
+        DISCOVERY_NAMESPACE,
         'gmail',
         JSON.stringify([capability('users.drafts.create'), capability('users.messages.list')]),
       );

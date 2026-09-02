@@ -32,6 +32,15 @@ const CODES = `${OAUTH_NAMESPACE}/codes`;
 const TOKENS = `${OAUTH_NAMESPACE}/tokens`;
 const PENDING = `${OAUTH_NAMESPACE}/pending`;
 
+/**
+ * The four, for the test that holds them to `isWorkspaceNamespace`.
+ *
+ * Exported rather than retyped there: the pairing between what this module
+ * writes and where state routing sends it is the thing that broke, so the test
+ * reads the names off the module that owns them.
+ */
+export const OAUTH_SUBSPACES: readonly string[] = [CLIENTS, CODES, TOKENS, PENDING];
+
 /** Far above any real number of connectors, and far below a problem. */
 const MAX_CLIENTS = 200;
 
