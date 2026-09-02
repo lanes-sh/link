@@ -141,12 +141,12 @@ describe('routing a resource URI', () => {
   });
 
   test('works for a variable that is not called key', () => {
-    expect(scopeResourceUri('memory://entry/{id}', scope)).toBe('memory://entry/personal/a/{id}');
+    expect(scopeResourceUri('lanes-memory://entry/{id}', scope)).toBe('lanes-memory://entry/personal/a/{id}');
   });
 
   test('works for a concrete URI, which is what a listing returns', () => {
-    expect(scopeResourceUri('memory://entry/standup', scope)).toBe(
-      'memory://entry/personal/a/standup',
+    expect(scopeResourceUri('lanes-memory://entry/standup', scope)).toBe(
+      'lanes-memory://entry/personal/a/standup',
     );
   });
 
@@ -155,8 +155,8 @@ describe('routing a resource URI', () => {
   });
 
   test('two connections never share an address', () => {
-    expect(scopeResourceUri('memory://entry/{id}', { profile: 'personal', connectionId: 'a' })).not.toBe(
-      scopeResourceUri('memory://entry/{id}', { profile: 'personal', connectionId: 'b' }),
+    expect(scopeResourceUri('lanes-memory://entry/{id}', { profile: 'personal', connectionId: 'a' })).not.toBe(
+      scopeResourceUri('lanes-memory://entry/{id}', { profile: 'personal', connectionId: 'b' }),
     );
   });
 

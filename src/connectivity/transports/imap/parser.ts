@@ -16,6 +16,30 @@
 const CR = 0x0d;
 const LF = 0x0a;
 
+/**
+ * The most this will accumulate before refusing a response.
+ *
+ * A literal's length is a number the *server* writes — `{1234}` — and the
+ * reader's job is to wait until that many bytes have arrived. With no ceiling
+ * that is an allocation an upstream decides the size of, and the upstream is
+ * not always one this endpoint chose: a connector names its own host, so a
+ * connection pointed at a hostile or compromised server could announce a
+ * literal of any size and be believed.
+ *
+ * Sixty-four mebibytes because that is already the ceiling on the other side of
+ * the same journey — `MAX_UPLOAD_BYTES` in `server/attachments.ts` — and a
+ * message larger than the largest attachment this endpoint will accept is not
+ * one it can do anything useful with. Every mail host's own limit is well below
+ * it, so this is never what refuses a legitimate read.
+ *
+ * Applied twice, and both are needed. The announced length is refused up front,
+ * so an absurd number costs nothing rather than being discovered after the
+ * bytes arrive. The accumulated buffer is refused too, because one response may
+ * announce several literals and a server that never completes a response would
+ * otherwise grow this without ever announcing anything unreasonable.
+ */
+export const MAX_RESPONSE_BYTES = 64 * 1024 * 1024;
+
 /** A parsed element of a response. */
 export type ImapToken =
   | { readonly kind: 'atom'; readonly value: string }
@@ -32,27 +56,56 @@ export type ImapToken =
  */
 export class ResponseAssembler {
   #buffer = new Uint8Array(0);
+  /** Bytes in use. The buffer is grown ahead of this and is not a length. */
+  #length = 0;
 
+  /**
+   * Take a chunk off the socket.
+   *
+   * Capacity doubles rather than growing to fit. It used to allocate exactly
+   * `held + chunk` and copy everything across on every chunk, which is
+   * quadratic in the size of a response — a thirty-megabyte message arriving in
+   * sixty-four-kilobyte pieces copied several gigabytes to assemble, and that
+   * was the *legitimate* case. Doubling makes each byte move a constant number
+   * of times.
+   */
   push(chunk: Uint8Array): void {
-    const merged = new Uint8Array(this.#buffer.length + chunk.length);
-    merged.set(this.#buffer);
-    merged.set(chunk, this.#buffer.length);
-    this.#buffer = merged;
+    const needed = this.#length + chunk.length;
+    if (needed > MAX_RESPONSE_BYTES) {
+      throw new Error(
+        `The server sent more than ${MAX_RESPONSE_BYTES} bytes without completing a response.`,
+      );
+    }
+
+    if (needed > this.#buffer.length) {
+      let capacity = Math.max(this.#buffer.length, 8192);
+      while (capacity < needed) capacity *= 2;
+
+      const grown = new Uint8Array(Math.min(capacity, MAX_RESPONSE_BYTES));
+      grown.set(this.#buffer.subarray(0, this.#length));
+      this.#buffer = grown;
+    }
+
+    this.#buffer.set(chunk, this.#length);
+    this.#length = needed;
   }
 
   /** The next complete response, or undefined while more bytes are needed. */
   next(): Uint8Array | undefined {
-    const end = completeResponseEnd(this.#buffer);
+    const end = completeResponseEnd(this.#buffer.subarray(0, this.#length));
     if (end === undefined) return undefined;
 
-    const response = this.#buffer.subarray(0, end);
-    this.#buffer = this.#buffer.slice(end);
+    // A copy, not a view: the remainder is shifted down in place below, which
+    // would otherwise rewrite the bytes underneath the response just returned.
+    const response = this.#buffer.slice(0, end);
+    this.#buffer.copyWithin(0, end, this.#length);
+    this.#length -= end;
     return response;
   }
 
   /** Whatever has arrived but does not yet form a response. For diagnostics. */
   get pending(): number {
-    return this.#buffer.length;
+    return this.#length;
   }
 }
 
@@ -66,6 +119,14 @@ function completeResponseEnd(buffer: Uint8Array): number | undefined {
 
     const announced = literalLength(buffer, cursor, crlf);
     if (announced === undefined) return crlf + 2;
+
+    // Refused on the announcement rather than after the bytes turn up: the
+    // number is the server's, and believing an absurd one means waiting for it.
+    if (announced > MAX_RESPONSE_BYTES) {
+      throw new Error(
+        `The server announced a ${announced}-byte literal, over the ${MAX_RESPONSE_BYTES}-byte limit.`,
+      );
+    }
 
     const afterLiteral = crlf + 2 + announced;
     if (buffer.length < afterLiteral) return undefined;

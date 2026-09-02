@@ -163,7 +163,7 @@ describe('no registered capability maps to a control-plane operation', () => {
    * The patterns are unanchored, which is easy to forget and expensive to
    * rediscover.
    *
-   * `setup.overview` and `setup.provider` are clean; the names somebody would
+   * `lanes_setup.overview` and `lanes_setup.provider` are clean; the names somebody would
    * reach for first are not. `.connect` matches inside `.connection_steps`, so a
    * capability describing how to connect trips the rule against *creating* a
    * connection. That is the rule being blunt rather than wrong — it cannot read
@@ -172,20 +172,20 @@ describe('no registered capability maps to a control-plane operation', () => {
    */
   test('the near misses a setup surface would reach for are all refused', () => {
     const nearMisses = [
-      'setup.connection_steps',
-      'setup.credentials_needed',
-      'setup.config_path',
-      'setup.policy_rules',
-      'setup.allowed',
-      'setup.token_hint',
-      'setup.oauth_steps',
+      'lanes_setup.connection_steps',
+      'lanes_setup.credentials_needed',
+      'lanes_setup.config_path',
+      'lanes_setup.policy_rules',
+      'lanes_setup.allowed',
+      'lanes_setup.token_hint',
+      'lanes_setup.oauth_steps',
     ];
 
     for (const id of nearMisses) {
       expect(FORBIDDEN_CAPABILITY_PATTERNS.some(({ pattern }) => pattern.test(id))).toBe(true);
     }
 
-    for (const id of ['setup.overview', 'setup.provider']) {
+    for (const id of ['lanes_setup.overview', 'lanes_setup.provider']) {
       expect(FORBIDDEN_CAPABILITY_PATTERNS.some(({ pattern }) => pattern.test(id))).toBe(false);
     }
   });
@@ -288,7 +288,7 @@ describe('the owner-layer namespaces stay reserved', () => {
     // means, and that is as true today as it was in M1.
     const registry = new ProviderRegistry();
 
-    for (const id of ['memory', 'skills', 'vault']) {
+    for (const id of ['lanes_memory', 'lanes_skills', 'lanes_vault']) {
       expect(() => registry.register(squatter(id))).toThrow(/reserved for the owner layer/);
     }
   });
@@ -300,7 +300,7 @@ describe('the owner-layer namespaces stay reserved', () => {
     const registry = new ProviderRegistry({ allowReserved: true });
     registry.register(memoryProvider);
 
-    expect(() => registry.register(squatter('memory'))).toThrow(/already registered/);
+    expect(() => registry.register(squatter('lanes_memory'))).toThrow(/already registered/);
   });
 });
 

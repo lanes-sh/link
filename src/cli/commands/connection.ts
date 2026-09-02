@@ -7,6 +7,7 @@ import {
   readConnections,
   type ConnectionConfig,
   type Resolution,
+  layout,
 } from '#profile';
 import { ConfigDocument } from '../config-edit.ts';
 import { announce, announceWorkspace, emit, ok, print, style, warn } from '../output.ts';
@@ -230,7 +231,7 @@ export async function removeConnection(
     // refused at load, while a connection nothing grants is merely unused. So if
     // the process dies between the two writes, the workspace still opens.
     for (const profile of affected) {
-      const document = await ConfigDocument.openKey(root, `profiles/${profile}.yaml`);
+      const document = await ConfigDocument.openKey(root, layout.profileConfig(profile));
       if (dropGrantRow(document, key)) await document.save();
     }
 

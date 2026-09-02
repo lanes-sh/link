@@ -92,11 +92,11 @@ describe('the fallback token invocation', () => {
   test('actually prints a token', async () => {
     const root = await mkdtemp(join(tmpdir(), 'lanes-link-fallback-'));
     roots.push(root);
-    await mkdir(join(root, 'profiles'), { recursive: true });
-    await writeFile(join(root, 'lanes-link.yaml'), workspaceYaml(['local'], {defaultProfile: 'scratch'}));
+    await mkdir(join(root, 'profiles', 'scratch'), { recursive: true });
+    await writeFile(join(root, 'workspaces.yaml'), workspaceYaml(['local'], {defaultProfile: 'scratch'}));
     await writeFile(
-      join(root, 'profiles', 'scratch.yaml'),
-      `contract: 3
+      join(root, 'profiles', 'scratch', 'profile.yaml'),
+      `contract: 4
 
 instance:
   profile: scratch

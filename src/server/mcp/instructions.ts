@@ -102,12 +102,12 @@ quote it back, summarise it, or write it anywhere.`;
  * Asked to connect a second mailbox, a client with no setup surface and no
  * skill answered that it could not and then invented the procedure — edit the
  * profile YAML, run "the auth command" — neither of which is a thing. It had
- * no way to know `setup_overview` answers exactly that, so the instruction has
+ * no way to know `lanes_setup_overview` answers exactly that, so the instruction has
  * to arrive here: this is the only channel that reaches a client which has
  * merely been pointed at the URL.
  */
 const SETUP = `**What is set up is answerable.** Before saying something cannot be reached, or
-that an account must be added, call \`setup_overview\` — then \`setup_provider\`
+that an account must be added, call \`lanes_setup_overview\` — then \`lanes_setup_provider\`
 for the exact command. Running it is the owner's to do; inventing it is not.`;
 
 /**
@@ -117,14 +117,14 @@ for the exact command. Running it is the owner's to do; inventing it is not.`;
  * declaration would put a per-profile list into a string with a fixed ceiling —
  * so the workspace with the most identities to keep straight is exactly the one
  * whose list would be summarised away first. A pointer costs the same for one
- * profile as for twenty, and `identity_list` has room to say when each applies,
+ * profile as for twenty, and `lanes_identity_list` has room to say when each applies,
  * which is the half that actually prevents the mistake.
  *
  * Conditional like the rest: a profile that declares nothing has no `identity`
  * connection, so the capability is unreachable and this paragraph is unspent.
  */
 const IDENTITY = `**Identity is declared, not inferred.** Where a name, address or handle of the
-owner's is needed, call \`identity_list\`: a profile may hold several, each with a
+owner's is needed, call \`lanes_identity_list\`: a profile may hold several, each with a
 note on when it applies.`;
 
 /**
@@ -136,7 +136,7 @@ note on when it applies.`;
  * message sent to the wrong Jan has left.
  *
  * It carries two rules rather than one, because dropping the refusal made the
- * second necessary. `entities_find` returns every match and sets no error, so a
+ * second necessary. `lanes_entities_find` returns every match and sets no error, so a
  * client is not stopped by anything: nothing but this sentence stands between
  * "two candidates" and an agent using the first. The count and the wording of
  * the tool result say it too, and this says it before the first call rather
@@ -166,7 +166,7 @@ which is meant, not take the first.`;
  * form and this one arrives only once the owner has declared themselves.
  */
 const IDENTITY_AND_ENTITIES = `**Who someone is, is declared rather than inferred.** For the owner's own name,
-address or handle, call \`identity_list\`. For anyone else — a person, a company,
+address or handle, call \`lanes_identity_list\`. For anyone else — a person, a company,
 a project — call \`entities_find\`, which returns every match and never chooses:
 more than one means ask which is meant, not take the first.`;
 
@@ -201,14 +201,14 @@ not land, do not redo what already succeeded, and offer to retry.`;
 
 /** Which paragraph each owner-layer provider brings, when it is reachable alone. */
 const OWNER_HABITS: Record<string, string> = {
-  memory: MEMORY,
-  tasks: TASKS,
-  assets: ASSETS,
-  skills: SKILLS,
-  vault: VAULT,
-  setup: SETUP,
-  identity: IDENTITY,
-  entities: ENTITIES,
+  lanes_memory: MEMORY,
+  lanes_tasks: TASKS,
+  lanes_assets: ASSETS,
+  lanes_skills: SKILLS,
+  lanes_vault: VAULT,
+  lanes_setup: SETUP,
+  lanes_identity: IDENTITY,
+  lanes_entities: ENTITIES,
 };
 
 /**
@@ -228,14 +228,14 @@ const OWNER_HABITS: Record<string, string> = {
  */
 function habitsFor(reachable: readonly string[]): string[] {
   const present = new Set(reachable);
-  const stores = present.has('memory') && present.has('tasks');
-  const people = present.has('identity') && present.has('entities');
+  const stores = present.has('lanes_memory') && present.has('lanes_tasks');
+  const people = present.has('lanes_identity') && present.has('lanes_entities');
 
   return reachable.flatMap((id) => {
-    if (stores && id === 'memory') return [MEMORY_AND_TASKS];
-    if (stores && id === 'tasks') return [];
-    if (people && id === 'identity') return [IDENTITY_AND_ENTITIES];
-    if (people && id === 'entities') return [];
+    if (stores && id === 'lanes_memory') return [MEMORY_AND_TASKS];
+    if (stores && id === 'lanes_tasks') return [];
+    if (people && id === 'lanes_identity') return [IDENTITY_AND_ENTITIES];
+    if (people && id === 'lanes_entities') return [];
     return OWNER_HABITS[id] ? [OWNER_HABITS[id]!] : [];
   });
 }
@@ -270,7 +270,7 @@ function habitsFor(reachable: readonly string[]): string[] {
  * the wrong address has already sent the message; the mistake happens at the
  * instant of the send, before a skill would have been loaded, and the client
  * most in need of the rule is again the one holding no skills directory. The
- * paragraph also carries a rule nothing else can enforce: `entities_find` sets
+ * paragraph also carries a rule nothing else can enforce: `lanes_entities_find` sets
  * no error on an ambiguous result, so between "two candidates" and an agent
  * using the first there is only prose.
  *

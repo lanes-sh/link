@@ -39,7 +39,7 @@ import { renameConnection } from './relabel.ts';
 const WHERE = { profile: 'personal', target: 'local' } as const;
 
 // Only the accounts. The owner layer is not declared here: a fresh workspace
-// arrives with `memory.main` and its siblings already in `connections.yaml`
+// arrives with `lanes_memory.lan1` and its siblings already in `connections.yaml`
 // (ADR-050, ADR-059), and declaring one of them a second time is a duplicate the
 // parser refuses — which would fail every test in this file for a reason none of
 // them is about.
@@ -70,7 +70,7 @@ async function workspace(): Promise<string> {
   const held = await Bun.file(connections).text();
   await Bun.write(connections, held.replace('connections:', `connections:${CONNECTIONS}`));
 
-  const path = join(root, 'profiles', 'personal.yaml');
+  const path = join(root, 'profiles', 'personal', 'profile.yaml');
   const text = await Bun.file(path).text();
   await Bun.write(path, text.replace('grants:', `grants:${GRANTS}`));
   return root;
@@ -83,7 +83,7 @@ afterAll(async () => {
 });
 
 async function onDisk(root: string): Promise<Config> {
-  const text = await Bun.file(join(root, 'profiles', 'personal.yaml')).text();
+  const text = await Bun.file(join(root, 'profiles', 'personal', 'profile.yaml')).text();
   return parseConfig(text).config;
 }
 
@@ -108,7 +108,7 @@ describe('disconnect', () => {
     expect(outcome!.disconnected.account).toBe('second@example.com');
     expect(await held(root)).not.toContain('gmail.side');
     expect(await held(root)).toContain('gmail.main');
-    expect(await held(root)).toContain('memory.main');
+    expect(await held(root)).toContain('lanes_memory.lan1');
     // And the grant that named it goes with it.
     expect(keys(await onDisk(root))).not.toContain('gmail.side');
   });
@@ -117,7 +117,7 @@ describe('disconnect', () => {
     const root = await workspace();
     await removeConnection('gmail.side', { ...WHERE, yes: true });
 
-    const text = await Bun.file(join(root, 'profiles', 'personal.yaml')).text();
+    const text = await Bun.file(join(root, 'profiles', 'personal', 'profile.yaml')).text();
     // The template's own commentary, which a reformatting writer would drop.
     expect(text).toContain('# One row per connection this profile may reach');
   });
@@ -170,11 +170,11 @@ describe('disconnect', () => {
     // refusal.
     const root = await workspace();
 
-    await expect(removeConnection('memory.main', { ...WHERE, yes: true })).rejects.toThrow(
-      /only memory connection[\s\S]*policy deny/,
+    await expect(removeConnection('lanes_memory.lan1', { ...WHERE, yes: true })).rejects.toThrow(
+      /only lanes_memory connection[\s\S]*policy deny/,
     );
     // And refuses before writing anything.
-    expect(await held(root)).toContain('memory.main');
+    expect(await held(root)).toContain('lanes_memory.lan1');
   });
 
   test('a second instance of a built-in disconnects normally', async () => {
@@ -183,14 +183,14 @@ describe('disconnect', () => {
     const text = await Bun.file(connections).text();
     await Bun.write(
       connections,
-      text.replace('connections:', 'connections:\n  - { id: work, provider: memory, account: Memory }'),
+      text.replace('connections:', 'connections:\n  - { id: work, provider: lanes_memory, account: Memory }'),
     );
 
-    const outcome = await removeConnection('memory.work', { ...WHERE, yes: true });
+    const outcome = await removeConnection('lanes_memory.work', { ...WHERE, yes: true });
 
-    expect(outcome!.disconnected.key).toBe('memory.work');
-    expect(await held(root)).not.toContain('memory.work');
-    expect(await held(root)).toContain('memory.main');
+    expect(outcome!.disconnected.key).toBe('lanes_memory.work');
+    expect(await held(root)).not.toContain('lanes_memory.work');
+    expect(await held(root)).toContain('lanes_memory.lan1');
   });
 
   // Every reserved id, so one added to `RESERVED_PROVIDER_IDS` is covered here
@@ -205,11 +205,18 @@ describe('disconnect', () => {
     if (!text.includes(`provider: ${provider}`)) {
       await Bun.write(
         connections,
-        text.replace('connections:', `connections:\n  - { id: main, provider: ${provider}, account: X }`),
+        text.replace('connections:', `connections:\n  - { id: lan99, provider: ${provider}, account: X }`),
       );
     }
 
-    await expect(removeConnection(`${provider}.main`, { ...WHERE, yes: true })).rejects.toThrow(
+    // Read the id off the file rather than assuming one. An id is opaque and
+    // allocated, so the template's are `lan1`..`lan7` in declaration order and
+    // hardcoding any of them here would pin this test to that order.
+    const held = await Bun.file(connections).text();
+    const id = new RegExp(`id: (\\S+), provider: ${provider},`).exec(held)?.[1];
+    expect(id).toBeDefined();
+
+    await expect(removeConnection(`${provider}.${id}`, { ...WHERE, yes: true })).rejects.toThrow(
       /is the only .* connection in this workspace/,
     );
   });
@@ -326,10 +333,10 @@ describe('relabel', () => {
     // Unlike disconnect: a display name is harmless to change, and "Memory" is
     // the operator's word for their own store.
     const root = await workspace();
-    await renameConnection('memory.main', 'My notes', WHERE);
+    await renameConnection('lanes_memory.lan1', 'My notes', WHERE);
 
     const rows = (await readConnections(root)).connections;
-    expect(rows.find((one) => one.provider === 'memory')?.label).toBe('My notes');
+    expect(rows.find((one) => one.provider === 'lanes_memory')?.label).toBe('My notes');
   });
 
   test('refuses a key the workspace does not hold', async () => {

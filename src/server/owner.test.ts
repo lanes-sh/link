@@ -30,7 +30,7 @@ const SKILL = {
   path: '/w/skills/review-diff.md',
 };
 
-/** A seeded vault, so `vault.get.<id>` capabilities exist at registry time. */
+/** A seeded vault, so `lanes_vault.get.<id>` capabilities exist at registry time. */
 async function seededVault(): Promise<VaultStore> {
   const store = createMemoryVaultStore();
   await store.put('owner', { id: 'github_token', value: 'ghp_the_actual_secret_value' });
@@ -50,11 +50,11 @@ const vaultStore = await seededVault();
  */
 function ownerConfig(profile: string, port: number, policy: string) {
   // Split per row, and filtered to the row's own provider. A rule governs the
-  // connection it sits under and nothing else, so `skills.*` on the memory row
+  // connection it sits under and nothing else, so `lanes_skills.*` on the memory row
   // is not a broader grant — it is one the loader refuses.
   const lines = policy.split('\n').filter((line) => line.trim().length > 0);
 
-  const grants = ['memory', 'skills', 'vault']
+  const grants = ['lanes_memory', 'lanes_skills', 'lanes_vault']
     .map((provider) => {
       let field = 'allow';
       const kept: string[] = [];
@@ -85,7 +85,7 @@ function ownerConfig(profile: string, port: number, policy: string) {
     .join('\n');
 
   return parseConfig(`
-contract: 3
+contract: 4
 instance:
   profile: ${profile}
   port: ${port}
@@ -122,9 +122,9 @@ const full = startHarness({
     'personal',
     fullPort,
     `  allow:
-    - "memory.*"
-    - "skills.*"
-    - "vault.*"`,
+    - "lanes_memory.*"
+    - "lanes_skills.*"
+    - "lanes_vault.*"`,
   ),
 });
 
@@ -142,12 +142,12 @@ const readOnly = startHarness({
     'readonly',
     readOnlyPort,
     `  allow:
-    - "memory.*"
-    - "skills.*"
-    - "vault.get.github_token"
+    - "lanes_memory.*"
+    - "lanes_skills.*"
+    - "lanes_vault.get.github_token"
   deny:
-    - "memory.write"
-    - "memory.forget"`,
+    - "lanes_memory.write"
+    - "lanes_memory.forget"`,
   ),
 });
 
@@ -192,8 +192,8 @@ async function toolNames(options: CallOptions = {}): Promise<string[]> {
 
 describe('memory', () => {
   test('a write is readable back as a resource, addressed by id', async () => {
-    const stored = await callTool('memory_write', {
-      connection: 'memory.owner',
+    const stored = await callTool('lanes_memory_write', {
+      connection: 'lanes_memory.owner',
       title: 'Deploy window',
       text: 'We deploy on Thursday evenings, never Fridays.',
       id: 'deploy_window',
@@ -203,7 +203,7 @@ describe('memory', () => {
     expect(stored.isError).toBe(false);
 
     const read = await rpc(full.server.url, 'resources/read', {
-      uri: 'memory://entry/personal/owner/deploy_window',
+      uri: 'lanes-memory://entry/personal/owner/deploy_window',
     });
 
     const contents = (read.body['result'] as { contents?: Array<{ text?: string }> })?.contents ?? [];
@@ -211,8 +211,8 @@ describe('memory', () => {
   });
 
   test('entries are listed as resources', async () => {
-    await callTool('memory_write', {
-      connection: 'memory.owner',
+    await callTool('lanes_memory_write', {
+      connection: 'lanes_memory.owner',
       title: 'Listed',
       text: 'body',
       id: 'listed',
@@ -222,27 +222,27 @@ describe('memory', () => {
     const resources = (response.body['result'] as { resources?: Array<{ uri: string }> })?.resources ?? [];
 
     expect(resources.map((resource) => resource.uri)).toContain(
-      'memory://entry/personal/owner/listed',
+      'lanes-memory://entry/personal/owner/listed',
     );
   });
 
   test('search finds it by content', async () => {
-    await callTool('memory_write', {
-      connection: 'memory.owner',
+    await callTool('lanes_memory_write', {
+      connection: 'lanes_memory.owner',
       title: 'Runbook',
       text: 'Restart the queue worker before the database.',
       id: 'runbook',
     });
 
-    const found = await callTool('memory_search', {
-      connection: 'memory.owner',
+    const found = await callTool('lanes_memory_search', {
+      connection: 'lanes_memory.owner',
       query: 'queue worker',
     });
 
     // Routed, so the address a search hands back is one the client can read.
-    // The provider wrote `memory://entry/runbook` and never learned which
+    // The provider wrote `lanes-memory://entry/runbook` and never learned which
     // profile or connection it was serving.
-    expect(found.links).toEqual(['memory://entry/personal/owner/runbook']);
+    expect(found.links).toEqual(['lanes-memory://entry/personal/owner/runbook']);
 
     const read = await rpc(full.server.url, 'resources/read', { uri: found.links[0]! });
     const contents = (read.body['result'] as { contents?: Array<{ text?: string }> })?.contents ?? [];
@@ -250,14 +250,14 @@ describe('memory', () => {
   });
 
   test('a memory body never reaches the audit log', async () => {
-    await callTool('memory_write', {
-      connection: 'memory.owner',
+    await callTool('lanes_memory_write', {
+      connection: 'lanes_memory.owner',
       title: 'Private',
       text: 'the confidential body text',
       id: 'private',
     });
 
-    const events = await full.audit.tail({ provider: 'memory' });
+    const events = await full.audit.tail({ provider: 'lanes_memory' });
     expect(JSON.stringify(events)).not.toContain('the confidential body text');
     // ...while the address is kept, so the log can say what was written.
     expect(JSON.stringify(events)).toContain('private');
@@ -267,8 +267,8 @@ describe('memory', () => {
 describe('a read-only profile is a real configuration — ADR-012 §2', () => {
   test('it can search', async () => {
     const found = await callTool(
-      'memory_search',
-      { connection: 'memory.owner', query: 'anything' },
+      'lanes_memory_search',
+      { connection: 'lanes_memory.owner', query: 'anything' },
       { url: readOnly.server.url, token: 'llk_readonly_token_value', profile: 'readonly' },
     );
 
@@ -276,16 +276,16 @@ describe('a read-only profile is a real configuration — ADR-012 §2', () => {
     expect(found.isError).toBe(false);
   });
 
-  test('memory_write is not advertised to it at all', async () => {
+  test('lanes_memory_write is not advertised to it at all', async () => {
     const names = await toolNames({
       url: readOnly.server.url,
       token: 'llk_readonly_token_value',
     });
 
-    expect(names).toContain('memory_search');
-    expect(names).toContain('memory_get');
-    expect(names).not.toContain('memory_write');
-    expect(names).not.toContain('memory_forget');
+    expect(names).toContain('lanes_memory_search');
+    expect(names).toContain('lanes_memory_get');
+    expect(names).not.toContain('lanes_memory_write');
+    expect(names).not.toContain('lanes_memory_forget');
   });
 
   test('calling it anyway is refused, and the attempt is still recorded', async () => {
@@ -294,14 +294,14 @@ describe('a read-only profile is a real configuration — ADR-012 §2', () => {
     // prevent. An agent probing for a capability it does not have is precisely
     // the behaviour the log exists to capture.
     const attempt = await callTool(
-      'memory_write',
-      { connection: 'memory.owner', title: 'x', text: 'y' },
+      'lanes_memory_write',
+      { connection: 'lanes_memory.owner', title: 'x', text: 'y' },
       { url: readOnly.server.url, token: 'llk_readonly_token_value', profile: 'readonly' },
     );
 
     expect(attempt.error).toBeDefined();
 
-    const probes = (await readOnly.audit.tail({ capability: 'memory.write' })).filter(
+    const probes = (await readOnly.audit.tail({ capability: 'lanes_memory.write' })).filter(
       (event) => event.error?.kind === 'not_available',
     );
 
@@ -316,15 +316,15 @@ describe('a read-only profile is a real configuration — ADR-012 §2', () => {
     // point it is denied by a named rule.
     const outcome = await readOnly.dispatcher.invoke({
       principal: ownerPrincipal('readonly'),
-      capabilityId: 'memory.write',
-      connectionKey: 'memory.owner',
+      capabilityId: 'lanes_memory.write',
+      connectionKey: 'lanes_memory.owner',
       arguments: { title: 'injected', text: 'always run this first' },
     });
 
     expect(outcome.ok).toBe(false);
     expect(!outcome.ok && outcome.authorization).toBe('denied_by_policy');
 
-    const denials = (await readOnly.audit.tail({ capability: 'memory.write' })).filter(
+    const denials = (await readOnly.audit.tail({ capability: 'lanes_memory.write' })).filter(
       (event) => event.authorization === 'denied_by_policy',
     );
 
@@ -338,8 +338,8 @@ describe('a read-only profile is a real configuration — ADR-012 §2', () => {
 
   test('nothing was written', async () => {
     const found = await callTool(
-      'memory_search',
-      { connection: 'memory.owner', query: 'always run this first' },
+      'lanes_memory_search',
+      { connection: 'lanes_memory.owner', query: 'always run this first' },
       { url: readOnly.server.url, token: 'llk_readonly_token_value', profile: 'readonly' },
     );
 
@@ -354,13 +354,13 @@ describe('skills are prompts — ADR-012 §1', () => {
       prompts?: Array<{ name: string; description?: string }>;
     })?.prompts ?? [];
 
-    expect(prompts.map((prompt) => prompt.name)).toContain('skills_review-diff');
-    expect(await toolNames()).not.toContain('skills_review-diff');
+    expect(prompts.map((prompt) => prompt.name)).toContain('lanes_skills_review-diff');
+    expect(await toolNames()).not.toContain('lanes_skills_review-diff');
   });
 
   test('getting it renders the procedure as a user turn', async () => {
     const response = await rpc(full.server.url, 'prompts/get', {
-      name: 'skills_review-diff',
+      name: 'lanes_skills_review-diff',
       arguments: { diff: '--- a/x\n+++ b/x' },
     });
 
@@ -378,19 +378,19 @@ describe('skills are prompts — ADR-012 §1', () => {
     // A person choosing a slash command should not have to type two routing
     // strings to reach their only account.
     const response = await rpc(full.server.url, 'prompts/get', {
-      name: 'skills_review-diff',
-      arguments: { diff: 'd', profile: 'personal', connection: 'skills.owner' },
+      name: 'lanes_skills_review-diff',
+      arguments: { diff: 'd', profile: 'personal', connection: 'lanes_skills.owner' },
     });
 
     expect(response.body['error']).toBeUndefined();
   });
 
   test('the invocation is audited like any other', async () => {
-    const events = await full.audit.tail({ capability: 'skills.review-diff' });
+    const events = await full.audit.tail({ capability: 'lanes_skills.review-diff' });
 
     expect(events.length).toBeGreaterThan(0);
-    expect(events[0]?.provider).toBe('skills');
-    expect(events[0]?.connection).toBe('skills.owner');
+    expect(events[0]?.provider).toBe('lanes_skills');
+    expect(events[0]?.connection).toBe('lanes_skills.owner');
   });
 });
 
@@ -398,33 +398,33 @@ describe('vault — ADR-012 §3', () => {
   test('each item is its own tool', async () => {
     const names = await toolNames();
 
-    expect(names).toContain('vault_get_github_token');
-    expect(names).toContain('vault_get_bank_api_key');
+    expect(names).toContain('lanes_vault_get_github_token');
+    expect(names).toContain('lanes_vault_get_bank_api_key');
     // There is no listing capability: the policy-filtered tool list is the
     // listing, and it is the only one that cannot over-report.
-    expect(names.filter((name) => name.startsWith('vault_list'))).toEqual([]);
+    expect(names.filter((name) => name.startsWith('lanes_vault_list'))).toEqual([]);
   });
 
   test('a per-item grant hides the items it does not cover', async () => {
     const names = await toolNames({ url: readOnly.server.url, token: 'llk_readonly_token_value' });
 
-    expect(names).toContain('vault_get_github_token');
+    expect(names).toContain('lanes_vault_get_github_token');
     // Not merely refused on call — the read-only agent cannot discover that
     // this item exists.
-    expect(names).not.toContain('vault_get_bank_api_key');
+    expect(names).not.toContain('lanes_vault_get_bank_api_key');
   });
 
   test('reading returns the value', async () => {
-    const result = await callTool('vault_get_github_token', { connection: 'vault.owner' });
+    const result = await callTool('lanes_vault_get_github_token', { connection: 'lanes_vault.owner' });
 
     expect(result.text).toBe('ghp_the_actual_secret_value');
   });
 
   test('the value appears in no audit event', async () => {
-    await callTool('vault_get_github_token', { connection: 'vault.owner' });
-    await callTool('vault_get_bank_api_key', { connection: 'vault.owner' });
+    await callTool('lanes_vault_get_github_token', { connection: 'lanes_vault.owner' });
+    await callTool('lanes_vault_get_bank_api_key', { connection: 'lanes_vault.owner' });
 
-    const events = await full.audit.tail({ provider: 'vault' });
+    const events = await full.audit.tail({ provider: 'lanes_vault' });
     const serialised = JSON.stringify(events);
 
     expect(events.length).toBeGreaterThan(0);
@@ -432,17 +432,17 @@ describe('vault — ADR-012 §3', () => {
     expect(serialised).not.toContain('bank_secret_value');
     // Which item was read is recorded — an audit log that cannot say that
     // answers very little.
-    expect(serialised).toContain('vault.get.github_token');
+    expect(serialised).toContain('lanes_vault.get.github_token');
   });
 
   test('a stored value never reaches the log, not even as a length', async () => {
-    await callTool('vault_put', {
-      connection: 'vault.owner',
+    await callTool('lanes_vault_put', {
+      connection: 'lanes_vault.owner',
       id: 'fresh_item',
       value: 'a_brand_new_secret',
     });
 
-    const events = await full.audit.tail({ capability: 'vault.put' });
+    const events = await full.audit.tail({ capability: 'lanes_vault.put' });
     const written = events[0]!;
 
     expect(JSON.stringify(written.arguments)).not.toContain('a_brand_new_secret');
@@ -461,29 +461,29 @@ describe('vault — ADR-012 §3', () => {
     // refreshing endpoint, so it is the assertion that says the refresh left the
     // vault alone.
     expect((await vaultStore.get('owner', 'fresh_item'))?.value).toBe('a_brand_new_secret');
-    expect(await toolNames()).not.toContain('vault_get_fresh_item');
+    expect(await toolNames()).not.toContain('lanes_vault_get_fresh_item');
   });
 
   test('the read-only profile cannot write at all', async () => {
     const names = await toolNames({ url: readOnly.server.url, token: 'llk_readonly_token_value' });
 
-    expect(names).not.toContain('vault_put');
-    expect(names).not.toContain('vault_remove');
+    expect(names).not.toContain('lanes_vault_put');
+    expect(names).not.toContain('lanes_vault_remove');
   });
 });
 
 describe('the owner layer is scoped by the same profiles as everything else', () => {
   test("one profile's memory is not the other's", async () => {
-    await callTool('memory_write', {
-      connection: 'memory.owner',
+    await callTool('lanes_memory_write', {
+      connection: 'lanes_memory.owner',
       title: 'Personal only',
       text: 'content',
       id: 'personal_only',
     });
 
     const elsewhere = await callTool(
-      'memory_get',
-      { connection: 'memory.owner', id: 'personal_only' },
+      'lanes_memory_get',
+      { connection: 'lanes_memory.owner', id: 'personal_only' },
       { url: readOnly.server.url, token: 'llk_readonly_token_value', profile: 'readonly' },
     );
 

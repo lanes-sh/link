@@ -121,7 +121,7 @@ export async function pair(flags: PairFlags, deps: PairDeps = {}): Promise<void>
 
   const chosen = named ?? profiles[0]!;
   const host = chosen.config.instance.host;
-  const credentials = await openSecretStoreFor(chosen.config, root, target);
+  const credentials = await openSecretStoreFor(root, target);
 
   // A workspace that declares a deployment is paired over the address the
   // platform gave it, not over loopback — which is what `declared.deploy`

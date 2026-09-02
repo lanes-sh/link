@@ -1,4 +1,4 @@
-import { workspaceYaml } from '#profile/testing.ts';
+import { workspaceYaml, writeProfileFixture } from '#profile/testing.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -29,7 +29,7 @@ import { openCatalogue } from '#providers/entities/catalogue.ts';
 const roots: string[] = [];
 const previousHome = process.env['LANES_LINK_HOME'];
 
-const PROFILE = `contract: 3
+const PROFILE = `contract: 4
 
 instance:
   profile: personal
@@ -37,26 +37,26 @@ instance:
 # The ids stay "owner", since what these tests are about is that --connection
 # resolves — and a grant names the connection, so the id is visible here too.
 grants:
-  - { connection: memory.owner, allow: ['memory.*'], deny: [] }
-  - { connection: tasks.owner, allow: ['tasks.*'], deny: [] }
-  - { connection: assets.owner, allow: ['assets.*'], deny: [] }
-  - { connection: skills.owner, allow: ['skills.*'], deny: [] }
-  - { connection: vault.owner, allow: ['vault.*'], deny: [] }
-  - { connection: entities.owner, allow: ['entities.*'], deny: [] }
+  - { connection: lanes_memory.owner, allow: ['lanes_memory.*'], deny: [] }
+  - { connection: lanes_tasks.owner, allow: ['lanes_tasks.*'], deny: [] }
+  - { connection: lanes_assets.owner, allow: ['lanes_assets.*'], deny: [] }
+  - { connection: lanes_skills.owner, allow: ['lanes_skills.*'], deny: [] }
+  - { connection: lanes_vault.owner, allow: ['lanes_vault.*'], deny: [] }
+  - { connection: lanes_entities.owner, allow: ['lanes_entities.*'], deny: [] }
 members: []
 `;
 
 // Labelled the way the CLI writes them: the provider's own name. A tasks row
 // under any other label is refused, because that is the only signal a config
 // carries that it used to be Google Tasks (ADR-051).
-const CONNECTIONS = `contract: 3
+const CONNECTIONS = `contract: 4
 connections:
-  - { id: owner, provider: memory, account: Memory }
-  - { id: owner, provider: tasks,  account: Tasks }
-  - { id: owner, provider: assets, account: Assets }
-  - { id: owner, provider: skills, account: Skills }
-  - { id: owner, provider: vault,  account: Vault }
-  - { id: owner, provider: entities, account: Entities }
+  - { id: owner, provider: lanes_memory, account: Memory }
+  - { id: owner, provider: lanes_tasks,  account: Tasks }
+  - { id: owner, provider: lanes_assets, account: Assets }
+  - { id: owner, provider: lanes_skills, account: Skills }
+  - { id: owner, provider: lanes_vault,  account: Vault }
+  - { id: owner, provider: lanes_entities, account: Entities }
 oauth_apps: {}
 `;
 
@@ -65,8 +65,8 @@ async function workspace(): Promise<string> {
   roots.push(root);
 
   await mkdir(join(root, 'profiles'), { recursive: true });
-  await writeFile(join(root, 'lanes-link.yaml'), workspaceYaml(['local'], {defaultProfile: 'personal'}));
-  await writeFile(join(root, 'profiles', 'personal.yaml'), PROFILE);
+  await writeFile(join(root, 'workspaces.yaml'), workspaceYaml(['local'], {defaultProfile: 'personal'}));
+  await writeProfileFixture(root, 'personal', PROFILE);
   await writeFile(join(root, CONNECTIONS_FILE), CONNECTIONS);
 
   process.env['LANES_LINK_HOME'] = root;
@@ -101,8 +101,8 @@ describe('the CLI and the provider address the same bytes', () => {
 
       const outcome = await runtime.dispatcher.invoke({
         principal: ownerPrincipal('personal'),
-        capabilityId: 'entities.find',
-        connectionKey: 'entities.owner',
+        capabilityId: 'lanes_entities.find',
+        connectionKey: 'lanes_entities.owner',
         arguments: { query: 'Jan' },
       });
 
@@ -113,15 +113,15 @@ describe('the CLI and the provider address the same bytes', () => {
     }
   });
 
-  test('an entity written by entities.write is what the CLI reads, index and all', async () => {
+  test('an entity written by lanes_entities.write is what the CLI reads, index and all', async () => {
     await workspace();
     const runtime = await openRuntime({ profile: 'personal', target: 'local' });
 
     try {
       await runtime.dispatcher.invoke({
         principal: ownerPrincipal('personal'),
-        capabilityId: 'entities.write',
-        connectionKey: 'entities.owner',
+        capabilityId: 'lanes_entities.write',
+        connectionKey: 'lanes_entities.owner',
         arguments: {
           name: 'Acme B.V.',
           id: 'acme-bv',
@@ -168,8 +168,8 @@ describe('the CLI and the provider address the same bytes', () => {
       // policy evaluated, context built by core, namespace scoped by core.
       const outcome = await runtime.dispatcher.invoke({
         principal: ownerPrincipal('personal'),
-        capabilityId: 'memory.get',
-        connectionKey: 'memory.owner',
+        capabilityId: 'lanes_memory.get',
+        connectionKey: 'lanes_memory.owner',
         arguments: { id: 'deploy-window' },
       });
 
@@ -180,15 +180,15 @@ describe('the CLI and the provider address the same bytes', () => {
     }
   });
 
-  test('an entry written by memory.write is what the CLI lists', async () => {
+  test('an entry written by lanes_memory.write is what the CLI lists', async () => {
     await workspace();
     const runtime = await openRuntime({ profile: 'personal', target: 'local' });
 
     try {
       await runtime.dispatcher.invoke({
         principal: ownerPrincipal('personal'),
-        capabilityId: 'memory.write',
-        connectionKey: 'memory.owner',
+        capabilityId: 'lanes_memory.write',
+        connectionKey: 'lanes_memory.owner',
         arguments: { id: 'standup', title: 'Standup', text: 'We ship on Friday.', tags: ['team'] },
       });
 
@@ -221,8 +221,8 @@ describe('the CLI and the provider address the same bytes', () => {
 
       const outcome = await runtime.dispatcher.invoke({
         principal: ownerPrincipal('personal'),
-        capabilityId: 'tasks.get',
-        connectionKey: 'tasks.owner',
+        capabilityId: 'lanes_tasks.get',
+        connectionKey: 'lanes_tasks.owner',
         arguments: { id: 'chase-the-invoice' },
       });
 
@@ -234,15 +234,15 @@ describe('the CLI and the provider address the same bytes', () => {
     }
   });
 
-  test('a task added by tasks.add is what the CLI lists, status included', async () => {
+  test('a task added by lanes_tasks.add is what the CLI lists, status included', async () => {
     await workspace();
     const runtime = await openRuntime({ profile: 'personal', target: 'local' });
 
     try {
       await runtime.dispatcher.invoke({
         principal: ownerPrincipal('personal'),
-        capabilityId: 'tasks.add',
-        connectionKey: 'tasks.owner',
+        capabilityId: 'lanes_tasks.add',
+        connectionKey: 'lanes_tasks.owner',
         arguments: { id: 'ship', title: 'Ship it', status: 'blocked', tags: ['release'] },
       });
 
@@ -266,8 +266,8 @@ describe('the CLI and the provider address the same bytes', () => {
 
       const outcome = await runtime.dispatcher.invoke({
         principal: ownerPrincipal('personal'),
-        capabilityId: 'assets.list',
-        connectionKey: 'assets.owner',
+        capabilityId: 'lanes_assets.list',
+        connectionKey: 'lanes_assets.owner',
         arguments: {},
       });
 
@@ -290,8 +290,8 @@ describe('the CLI and the provider address the same bytes', () => {
     try {
       const outcome = await runtime.dispatcher.invoke({
         principal: ownerPrincipal('personal'),
-        capabilityId: 'assets.store',
-        connectionKey: 'assets.owner',
+        capabilityId: 'lanes_assets.store',
+        connectionKey: 'lanes_assets.owner',
         arguments: { source: { path: source } },
       });
       expect(outcome.ok).toBe(true);
@@ -330,7 +330,7 @@ describe('the CLI and the provider address the same bytes', () => {
     try {
       await first.vault.put('owner', { id: 'github_token', value: 'ghp_secret' });
       expect(first.registry.capabilities().map((entry) => entry.id)).not.toContain(
-        'vault.get.github_token',
+        'lanes_vault.get.github_token',
       );
     } finally {
       await first.close();
@@ -339,7 +339,7 @@ describe('the CLI and the provider address the same bytes', () => {
     const second = await openRuntime({ profile: 'personal', target: 'local' });
     try {
       expect(second.registry.capabilities().map((entry) => entry.id)).toContain(
-        'vault.get.github_token',
+        'lanes_vault.get.github_token',
       );
     } finally {
       await second.close();
@@ -353,34 +353,34 @@ describe('which connection a command acts on', () => {
   test('the only one, without having to name it', () => {
     // Typing --connection to reach your only memory is pure ceremony — the same
     // trade ADR-012 §1 made for prompt routing.
-    expect(ownerConnection(config, 'memory', {})).toBe('owner');
+    expect(ownerConnection(config, 'lanes_memory', {})).toBe('owner');
   });
 
   test('a named one, when it exists', () => {
-    expect(ownerConnection(config, 'vault', { connection: 'owner' })).toBe('owner');
+    expect(ownerConnection(config, 'lanes_vault', { connection: 'owner' })).toBe('owner');
   });
 
   test('a named one that does not exist lists what does', () => {
-    expect(() => ownerConnection(config, 'vault', { connection: 'nope' })).toThrow(
-      /No vault connection "nope".*have: owner/s,
+    expect(() => ownerConnection(config, 'lanes_vault', { connection: 'nope' })).toThrow(
+      /No lanes_vault connection "nope".*have: owner/s,
     );
   });
 
   test('none at all says how to make one', () => {
     const bare = parseConfig(PROFILE.replace(/grants:[\s\S]*?\nmembers:/, 'grants: []\nmembers:')).config;
 
-    expect(() => ownerConnection(bare, 'memory', {})).toThrow(/lanes link connect memory/);
+    expect(() => ownerConnection(bare, 'lanes_memory', {})).toThrow(/lanes link connect lanes_memory/);
   });
 
   test('two is ambiguous, and refuses rather than picking', () => {
     const two = parseConfig(
       PROFILE.replace(
-        "  - { connection: memory.owner, allow: ['memory.*'], deny: [] }",
-        "  - { connection: memory.owner, allow: ['memory.*'], deny: [] }\n" +
-          "  - { connection: memory.work, allow: ['memory.*'], deny: [] }",
+        "  - { connection: lanes_memory.owner, allow: ['lanes_memory.*'], deny: [] }",
+        "  - { connection: lanes_memory.owner, allow: ['lanes_memory.*'], deny: [] }\n" +
+          "  - { connection: lanes_memory.work, allow: ['lanes_memory.*'], deny: [] }",
       ),
     ).config;
 
-    expect(() => ownerConnection(two, 'memory', {})).toThrow(/owner, work.*--connection/s);
+    expect(() => ownerConnection(two, 'lanes_memory', {})).toThrow(/owner, work.*--connection/s);
   });
 });

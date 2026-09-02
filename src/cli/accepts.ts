@@ -39,11 +39,12 @@ export const ACCEPTS: Record<string, readonly string[]> = {
   ],
   setup: ['id'],
   'profile add': ['workspace', 'non-interactive'],
-  // `--target` decommissions one target's stores and leaves the profile file in
-  // place (`removal.ts`). It is documented in `usage.ts` and read by
-  // `removalPlan`, and was refused here — the flag existed everywhere except in
-  // the list that decides whether it may be typed.
-  'profile remove': ['dry-run', 'yes', 'workspace'],
+  // `--delete-data` and `--migrate-to` say what becomes of the bytes the
+  // profile owns (ADR-066). Neither is optional in effect: `--yes` skips
+  // confirmations of things the command was told to do, and this is a question
+  // it has not been asked, so a run with no terminal is refused rather than
+  // guessing.
+  'profile remove': ['dry-run', 'yes', 'workspace', 'delete-data', 'migrate-to'],
   'profile members': ['me', 'role'],
   disconnect: ['yes', 'keep-credential'],
   // The one repair `doctor` can apply rather than only name. Narrow on purpose:

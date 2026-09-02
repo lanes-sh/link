@@ -61,8 +61,21 @@ export interface TargetInput {
  */
 export type StorageFactory = (area?: string) => BlobStore;
 
-export async function openSecrets(input: TargetInput): Promise<SecretStore> {
-  const { declared, config, root, target } = input;
+/**
+ * The workspace's credential store.
+ *
+ * Takes the adapters and the root, not a `TargetInput` — it never read the
+ * profile, and since contract 3 there is nothing in one for it to read: the
+ * store is the workspace's. Narrowing the parameter is what lets a *migration*
+ * open it, which it must be able to do while the profiles on disk still
+ * declare the contract being migrated away from and therefore will not parse.
+ */
+export async function openSecrets(input: {
+  readonly declared: TargetConfig;
+  readonly root: string;
+  readonly target: string;
+}): Promise<SecretStore> {
+  const { declared, root, target } = input;
 
   switch (declared.credentials.adapter) {
     case 'file':
@@ -96,9 +109,17 @@ export async function openSecrets(input: TargetInput): Promise<SecretStore> {
  *
  * Its own root, `layout.state`, so it is not addressable from a provider's
  * blob namespace — the same containment `openAudit` relies on.
+ *
+ * Two roots, because state divides by what a key is *about*. Connection
+ * records, the discovery cache and the endpoint's own OAuth server belong to
+ * the workspace: a `connect` run once must read as connected from every
+ * profile. Cursors and each provider's own keys belong to the profile, because
+ * two agents reading one mailbox at different rates must not consume each
+ * other's cursor. `isWorkspaceNamespace` in `#stores/state` is the whole rule,
+ * and it is closed — a namespace it does not name is the profile's.
  */
-export function openState(storage: StorageFactory): RuntimeState {
-  return createRuntimeState(storage(layout.state()));
+export function openState(storage: StorageFactory, profile: string): RuntimeState {
+  return createRuntimeState(storage(layout.state()), storage(layout.profileState(profile)));
 }
 
 /**
@@ -201,7 +222,7 @@ export async function openStorage(
   switch (declared.storage.adapter) {
     case 'filesystem': {
       const { createFilesystemBlobStore } = await import('./adapters/filesystem.ts');
-      const base = declared.storage.path ?? layout.blobs();
+      const base = declared.storage.path ?? layout.blobs(config.instance.profile);
       return (area) =>
         createFilesystemBlobStore({ root: workspacePath(root, area === undefined ? base : area) });
     }
@@ -219,7 +240,7 @@ export async function openStorage(
 
       const { createGcsBlobStore } = await import('./adapters/gcs.ts');
       const base = prefix ?? '';
-      const root = layout.blobs();
+      const root = layout.blobs(config.instance.profile);
 
       return (area) =>
         createGcsBlobStore({
@@ -249,7 +270,7 @@ export async function openStorage(
 
       const { createS3BlobStore } = await import('./adapters/s3.ts');
       const base = prefix ?? '';
-      const root = layout.blobs();
+      const root = layout.blobs(config.instance.profile);
 
       return (area) =>
         createS3BlobStore({

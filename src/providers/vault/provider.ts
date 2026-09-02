@@ -92,7 +92,7 @@ export function createVaultProvider(options: VaultProviderOptions): ProviderDefi
   }));
 
   return defineLocalProvider({
-    id: 'vault',
+    id: 'lanes_vault',
     name: 'Vault',
     version: '1.0.0',
     description:

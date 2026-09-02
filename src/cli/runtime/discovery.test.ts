@@ -1,4 +1,4 @@
-import { workspaceYaml } from '#profile/testing.ts';
+import { workspaceYaml, writeProfileFixture } from '#profile/testing.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -7,6 +7,7 @@ import { defineProvider, type DiscoveredCapability } from '#connectivity';
 import { PROVIDER_MANIFESTS } from '#providers/index.ts';
 import { openRuntime } from '../runtime.ts';
 import { capabilityDiff, discoveryProbe, isEmptyDiff } from './discovery.ts';
+import { DISCOVERY_NAMESPACE } from '#stores/state';
 
 /**
  * The cache is not the authority for a document we ship.
@@ -26,7 +27,7 @@ import { capabilityDiff, discoveryProbe, isEmptyDiff } from './discovery.ts';
 const roots: string[] = [];
 const previousHome = process.env['LANES_LINK_HOME'];
 
-const PROFILE = `contract: 3
+const PROFILE = `contract: 4
 
 instance:
   profile: personal
@@ -39,8 +40,8 @@ async function workspace(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'lanes-link-discovery-'));
   roots.push(root);
   await mkdir(join(root, 'profiles'), { recursive: true });
-  await writeFile(join(root, 'lanes-link.yaml'), workspaceYaml(['local'], {defaultProfile: 'personal'}));
-  await writeFile(join(root, 'profiles', 'personal.yaml'), PROFILE);
+  await writeFile(join(root, 'workspaces.yaml'), workspaceYaml(['local'], {defaultProfile: 'personal'}));
+  await writeProfileFixture(root, 'personal', PROFILE);
   process.env['LANES_LINK_HOME'] = root;
   return root;
 }
@@ -74,7 +75,7 @@ describe('a committed spec outranks the cache', () => {
 
     let runtime = await openRuntime({ profile: 'personal', target: 'local' });
     try {
-      await runtime.state.kv.set('discovery', 'drive', JSON.stringify(stale));
+      await runtime.state.kv.set(DISCOVERY_NAMESPACE, 'drive', JSON.stringify(stale));
     } finally {
       await runtime.close();
     }
@@ -100,7 +101,7 @@ describe('a committed spec outranks the cache', () => {
     let runtime = await openRuntime({ profile: 'personal', target: 'local' });
     try {
       await runtime.state.kv.set(
-        'discovery',
+        DISCOVERY_NAMESPACE,
         'gmail',
         JSON.stringify([capability('users.drafts.create'), capability('users.messages.list')]),
       );

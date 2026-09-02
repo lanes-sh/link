@@ -7,7 +7,7 @@ import { assertNoRenamedProviders } from './connections.ts';
 
 /** A minimal valid config; each test overrides the part it is about. */
 const VALID = `
-contract: 3
+contract: 4
 instance:
   profile: personal
 grants:
@@ -37,13 +37,13 @@ describe('a valid config', () => {
 
 describe('contract major fails closed', () => {
   test('rejects a newer major outright', () => {
-    expect(() => parseConfig(VALID.replace('contract: 3', 'contract: 4'))).toThrow(
-      /contract 4 is newer than.*Upgrade lanes-link/s,
+    expect(() => parseConfig(VALID.replace('contract: 4', 'contract: 5'))).toThrow(
+      /contract 5 is newer than.*Upgrade lanes-link/s,
     );
   });
 
   test('rejects an older major outright', () => {
-    expect(() => parseConfig(VALID.replace('contract: 3', 'contract: 0'))).toThrow(/older than/);
+    expect(() => parseConfig(VALID.replace('contract: 4', 'contract: 0'))).toThrow(/older than/);
   });
 
   // Contract 1 is the shape this release replaced, and it is refused here rather
@@ -51,14 +51,14 @@ describe('contract major fails closed', () => {
   // that, so a profile still carrying `targets:` fails at the boundary with a
   // sentence naming the migration (ADR-052).
   test('rejects contract 2, which the migration handles instead', () => {
-    expect(() => parseConfig(VALID.replace('contract: 3', 'contract: 2'))).toThrow(
+    expect(() => parseConfig(VALID.replace('contract: 4', 'contract: 2'))).toThrow(
       /contract 2 is older than/,
     );
   });
 
   test('rejects a missing or non-integer contract', () => {
-    expect(() => parseConfig(VALID.replace('contract: 3\n', ''))).toThrow(/"contract" is required/);
-    expect(() => parseConfig(VALID.replace('contract: 3', 'contract: "2"'))).toThrow(
+    expect(() => parseConfig(VALID.replace('contract: 4\n', ''))).toThrow(/"contract" is required/);
+    expect(() => parseConfig(VALID.replace('contract: 4', 'contract: "2"'))).toThrow(
       /must be an integer/,
     );
   });
@@ -66,7 +66,7 @@ describe('contract major fails closed', () => {
   test('the contract check runs before anything else', () => {
     // A config that is wrong in several ways must report the contract, because
     // under an unknown major we cannot claim to know what the rest means.
-    const broken = VALID.replace('contract: 3', 'contract: 99').replace(
+    const broken = VALID.replace('contract: 4', 'contract: 99').replace(
       'profile: personal',
       'profile: "not an identifier"',
     );
@@ -246,17 +246,17 @@ describe('referential integrity', () => {
     // Not a limit of the store — a limit of the surface. A skill is a prompt,
     // selected by flat name with nothing to route on, so two instances would be
     // one name for two procedures (ADR-059).
-    const one = VALID.replace('example.a', 'skills.main').replace('example.*', 'skills.*');
+    const one = VALID.replace('example.a', 'lanes_skills.main').replace('example.*', 'lanes_skills.*');
     expect(() => parseConfig(one)).not.toThrow();
 
-    const two = `${one}  - connection: skills.work\n    allow:\n      - "skills.*"\n`;
-    expect(() => parseConfig(two)).toThrow(/may grant one "skills" connection/);
+    const two = `${one}  - connection: lanes_skills.work\n    allow:\n      - "lanes_skills.*"\n`;
+    expect(() => parseConfig(two)).toThrow(/may grant one "lanes_skills" connection/);
   });
 
   test('two memory grants are fine, because its tools route on a connection', () => {
     const yaml =
-      VALID.replace('example.a', 'memory.main').replace('example.*', 'memory.*') +
-      '  - connection: memory.work\n    allow:\n      - "memory.*"\n';
+      VALID.replace('example.a', 'lanes_memory.main').replace('example.*', 'lanes_memory.*') +
+      '  - connection: lanes_memory.work\n    allow:\n      - "lanes_memory.*"\n';
     expect(() => parseConfig(yaml)).not.toThrow();
   });
 
@@ -302,12 +302,18 @@ describe('a provider whose id has been renamed', () => {
     expect(() => withTasks('work', 'Work')).toThrow(/google_tasks/);
   });
 
-  test('the built-in keeps its own label and passes', () => {
-    expect(() => withTasks('main', 'Tasks')).not.toThrow();
+  test('no label exempts it any more, because nothing claims the id', () => {
+    // `Tasks` used to mean "this row is the built-in, leave it" — the built-in
+    // claimed `tasks`, so the label was the only thing separating it from a
+    // stale Google Tasks row. The built-in is `lanes_tasks` since contract 4,
+    // so a `tasks` row is stale whatever it is called.
+    expect(() => withTasks('main', 'Tasks')).toThrow(/google_tasks/);
   });
 
-  test('the refusal offers the other fix too, for a hand-edited built-in row', () => {
-    expect(() => withTasks('ada', 'ada.lovelace@example.com')).toThrow(/set account to Tasks/);
+  test('the refusal names both readings, and where the built-in went', () => {
+    expect(() => withTasks('ada', 'ada.lovelace@example.com')).toThrow(
+      /it is lanes_tasks now/,
+    );
   });
 
   test('the refusal names the command that applies it, with the selection it needs', () => {
@@ -327,7 +333,7 @@ describe('where a target deploys', () => {
   const withTarget = (block: string) =>
     workspaceSchema.parse(
       parseYaml(
-        'contract: 3\nworkspaces:\n  cloud:\n' +
+        'contract: 4\nworkspaces:\n  cloud:\n' +
           '    credentials: { adapter: gcp-secret-manager, project: my-project }\n' +
           '    storage: { adapter: s3, bucket: link-blobs }\n' +
           block,
@@ -465,7 +471,7 @@ describe('malformed input', () => {
   });
 
   test('reports unparseable YAML as such', () => {
-    expect(() => parseConfig('contract: 3\n  bad: [indent')).toThrow(/could not parse YAML/);
+    expect(() => parseConfig('contract: 4\n  bad: [indent')).toThrow(/could not parse YAML/);
   });
 
   test('rejects an out-of-range port', () => {

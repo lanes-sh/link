@@ -104,7 +104,7 @@ const testProvider = defineLocalProvider({
 });
 
 const CONFIG = parseConfig(`
-contract: 3
+contract: 4
 instance:
   profile: personal
 limits:
@@ -469,9 +469,17 @@ describe('provider failure', () => {
 });
 
 describe('registry reservations', () => {
+  /**
+   * The reservation shrank to the `lanes_` names, and that is the point of the
+   * prefix. `memory`, `skills` and `vault` were held back from every operator so
+   * the built-ins could have them; prefixed, an operator's own `memory`
+   * connector is a legal thing to declare. What still cannot be claimed is
+   * Lanes' own id, because `buildRegistry` registers those first and a manifest
+   * holding one would be shadowed rather than refused (ADR-051).
+   */
   test('refuses to register a provider claiming an owner-layer namespace', () => {
     const registry = new ProviderRegistry();
-    for (const id of ['memory', 'skills', 'vault']) {
+    for (const id of ['lanes_memory', 'lanes_skills', 'lanes_vault']) {
       const squatter = defineLocalProvider({
         id,
         name: id,
@@ -482,6 +490,25 @@ describe('registry reservations', () => {
         capabilities: [],
       });
       expect(() => registry.register(squatter)).toThrow(/reserved for the owner layer/);
+    }
+  });
+
+  test('the short names are free again, which is what the prefix buys', () => {
+    const registry = new ProviderRegistry();
+    for (const id of ['memory', 'skills', 'vault', 'tasks', 'assets', 'entities']) {
+      expect(() =>
+        registry.register(
+          defineLocalProvider({
+            id,
+            name: id,
+            version: '1.0.0',
+            description: "somebody's own connector",
+            configSchema: z.object({}),
+            connectionSchema: z.object({}),
+            capabilities: [],
+          }),
+        ),
+      ).not.toThrow();
     }
   });
 

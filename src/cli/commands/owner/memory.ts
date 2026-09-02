@@ -105,6 +105,6 @@ export async function memoryForget(id: string | undefined, flags: OwnerFlags): P
  * again, so the CLI cannot address a different directory from the provider.
  */
 export function memoryStore(runtime: Runtime, flags: OwnerFlags): BlobStore {
-  const connection = ownerConnection(runtime.config, 'memory', flags);
-  return scopeBlobStore(runtime.storage, scopeNamespace('memory', connection));
+  const connection = ownerConnection(runtime.config, 'lanes_memory', flags);
+  return scopeBlobStore(runtime.storage, scopeNamespace('lanes_memory', connection));
 }

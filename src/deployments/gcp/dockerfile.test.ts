@@ -93,7 +93,7 @@ describe('the deployed image', () => {
     // failure reads as "you meant not to do this".
     const sources = copySources(await readFile(DOCKERFILE, 'utf8'));
 
-    expect(sources).not.toContain('lanes-link.yaml');
+    expect(sources).not.toContain('workspaces.yaml');
     expect(sources).not.toContain('profiles/');
     expect(sources).not.toContain('providers/');
   });

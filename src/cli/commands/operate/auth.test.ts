@@ -141,7 +141,7 @@ describe('probeConnections, before the resolver', () => {
 
     const [result] = await probeConnections(
       runtime,
-      [{ provider: 'memory', id: 'main' } as never],
+      [{ provider: 'lanes_memory', id: 'main' } as never],
       forSelection,
     );
 

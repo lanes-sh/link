@@ -27,7 +27,7 @@ export function newProfileTemplate(profile: string, port: number, subject?: stri
 #
 # Edit it by hand or through the CLI; both are supported, and CLI edits preserve
 # your comments and ordering.
-contract: 3
+contract: 4
 
 instance:
   profile: ${profile}
@@ -90,17 +90,17 @@ limits:
 # works, because the next connect or deploy puts it back. The three narrowings
 # worth knowing:
 #
-#   deny: [memory.write]        remember nothing new
-#   deny: [skills.manage.*]     invoke procedures, do not write them
-#   deny: [vault.put, vault.remove]
+#   deny: [lanes_memory.write]     remember nothing new
+#   deny: [lanes_skills.manage.*]  invoke procedures, do not write them
+#   deny: [lanes_vault.put, lanes_vault.remove]
 grants:
-  - { connection: memory.main, allow: [memory.*], deny: [] }
-  - { connection: tasks.main, allow: [tasks.*], deny: [] }
-  - { connection: assets.main, allow: [assets.*], deny: [] }
-  - { connection: skills.main, allow: [skills.*], deny: [] }
-  - { connection: vault.main, allow: [vault.*], deny: [] }
-  - { connection: setup.main, allow: [setup.*], deny: [] }
-  - { connection: entities.main, allow: [entities.*], deny: [] }
+  - { connection: lanes_memory.lan1, allow: [lanes_memory.*], deny: [] }
+  - { connection: lanes_tasks.lan2, allow: [lanes_tasks.*], deny: [] }
+  - { connection: lanes_assets.lan3, allow: [lanes_assets.*], deny: [] }
+  - { connection: lanes_skills.lan4, allow: [lanes_skills.*], deny: [] }
+  - { connection: lanes_vault.lan5, allow: [lanes_vault.*], deny: [] }
+  - { connection: lanes_setup.lan6, allow: [lanes_setup.*], deny: [] }
+  - { connection: lanes_entities.lan7, allow: [lanes_entities.*], deny: [] }
 
 # Who may consume this profile (ADR-060).
 #
@@ -146,7 +146,7 @@ export function newWorkspaceTemplate(): string {
 # uses it prints which one it got. Commands that publish or destroy — deploy,
 # sync, secrets push, profile remove, disconnect, token rotate — refuse it and
 # make you type the name (ADR-061).
-contract: 3
+contract: 4
 default_workspace: local
 workspaces:
   local:
@@ -176,20 +176,22 @@ export function newConnectionsTemplate(): string {
 # this list says whose data is reachable without having to look anything up.
 # "label" is your own word for the same row, and only ever displayed.
 #
-# The seven below hold no account: they reach your own material rather than
-# anybody's API, so there was never anything for a connect step to authorise
-# (ADR-050). Make a second one — "lanes link connect memory --id work" — when you
-# want two profiles to share nothing.
-contract: 3
+# The "lanes_" rows are Lanes' own surfaces and hold no account: they reach your
+# own material rather than anybody's API, so there was never anything for a
+# connect step to authorise (ADR-050). Every profile grants the same ones and
+# still keeps its own bytes — what you write through one profile is absent in
+# another (ADR-066). A second instance is for holding two of something in one
+# profile: "lanes link connect lanes_memory --id lan9".
+contract: 4
 
 connections:
-  - { id: main, provider: memory, account: Memory }
-  - { id: main, provider: tasks, account: Tasks }
-  - { id: main, provider: assets, account: Assets }
-  - { id: main, provider: skills, account: Skills }
-  - { id: main, provider: vault, account: Vault }
-  - { id: main, provider: setup, account: Setup }
-  - { id: main, provider: entities, account: Entities }
+  - { id: lan1, provider: lanes_memory, account: Memory }
+  - { id: lan2, provider: lanes_tasks, account: Tasks }
+  - { id: lan3, provider: lanes_assets, account: Assets }
+  - { id: lan4, provider: lanes_skills, account: Skills }
+  - { id: lan5, provider: lanes_vault, account: Vault }
+  - { id: lan6, provider: lanes_setup, account: Setup }
+  - { id: lan7, provider: lanes_entities, account: Entities }
 
 # App registrations, shared by every connection of that vendor.
 oauth_apps: {}

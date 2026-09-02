@@ -72,7 +72,7 @@ const MAX_ASSET_BYTES = 25 * 1024 * 1024;
 const MAX_TEXT_BYTES = 256 * 1024;
 
 export const assetsProvider: ProviderDefinition = defineLocalProvider({
-  id: 'assets',
+  id: 'lanes_assets',
   name: 'Assets',
   version: '1.0.0',
   description:
@@ -104,12 +104,12 @@ export const assetsProvider: ProviderDefinition = defineLocalProvider({
       title: 'Stored file',
       description:
         'One stored file, addressed by its name. Text comes back as text; anything else is described rather than encoded.',
-      uriTemplate: 'assets://file/{name}',
+      uriTemplate: 'lanes-assets://file/{name}',
       redact: keepKeys('uri'),
 
       async list(context) {
         return (await allAssets(context.storage)).map((asset) => ({
-          uri: `assets://file/${encodeURIComponent(asset.name)}`,
+          uri: `lanes-assets://file/${encodeURIComponent(asset.name)}`,
           name: asset.name,
         }));
       },
@@ -171,7 +171,7 @@ export const assetsProvider: ProviderDefinition = defineLocalProvider({
             ...shown.flatMap((asset) => [
               {
                 type: 'resource_link' as const,
-                uri: `assets://file/${encodeURIComponent(asset.name)}`,
+                uri: `lanes-assets://file/${encodeURIComponent(asset.name)}`,
                 name: asset.name,
               },
               { type: 'text' as const, text: describeAsset(asset) },
@@ -194,7 +194,7 @@ export const assetsProvider: ProviderDefinition = defineLocalProvider({
       name: 'get',
       title: 'Read a stored file',
       description:
-        'Return a text file\'s contents. A binary file is described instead — name, type, size, digest — because encoding it here is the cost this provider exists to avoid. The resource assets://file/{name} is the same content.',
+        'Return a text file\'s contents. A binary file is described instead — name, type, size, digest — because encoding it here is the cost this provider exists to avoid. The resource lanes-assets://file/{name} is the same content.',
       inputSchema: z.object({ name: z.string().min(1).describe('The file name') }),
       redact: keepKeys('name'),
       async handler({ name }, context) {
@@ -271,7 +271,7 @@ export const assetsProvider: ProviderDefinition = defineLocalProvider({
             },
             {
               type: 'resource_link',
-              uri: `assets://file/${encodeURIComponent(assetName)}`,
+              uri: `lanes-assets://file/${encodeURIComponent(assetName)}`,
               name: assetName,
             },
           ],

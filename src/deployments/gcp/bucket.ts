@@ -51,6 +51,11 @@ export function bucketGrants(bucket: string, profiles: readonly string[]): Condi
     `resource.name.startsWith("projects/_/buckets/${bucket}/objects/${path}")`;
   const objectIs = (path: string): string =>
     `resource.name == "projects/_/buckets/${bucket}/objects/${path}"`;
+  // Parenthesised, because `!` binds tighter than `==` in CEL: `!resource.name
+  // == "…"` negates the *name* and compares that, which is not a type error and
+  // not what it reads as. Bracketing is the whole difference between excluding
+  // one object and excluding nothing.
+  const objectIsNot = (path: string): string => `!(${objectIs(path)})`;
   /**
    * The bucket itself, which is a different resource from anything in it.
    *
@@ -80,10 +85,41 @@ export function bucketGrants(bucket: string, profiles: readonly string[]): Condi
   // One prefix, not one per profile. Manifests are the workspace's since
   // ADR-057 — a manifest defines a connection, and connections do not live in a
   // profile — so the carve-out no longer varies with the profile set.
-  const manifestPrefixes = [objectsUnder(`${layout.providers()}/`)];
-  // No profiles leaves the carve-out off rather than guessing at one: the
-  // revision keeps write on its own data, as it did before this existed.
-  const manifests = manifestPrefixes.length > 0 ? `(${manifestPrefixes.join(' || ')})` : null;
+  const manifests = `(${objectsUnder(`${layout.providers()}/`)})`;
+
+  /**
+   * What a running revision writes, named rather than carved out of `data/`.
+   *
+   * It used to be `objectsUnder('data/') && !manifests` — everything under one
+   * prefix, minus the exception. There is no `data/` any more (ADR-067), and
+   * naming the writable prefixes is the better shape regardless: an allowlist
+   * says what a compromised revision can reach, where a denylist says only what
+   * it cannot and grows silently every time something new lands under the
+   * prefix.
+   *
+   * `credentials.enc` is in it because `connect --from-endpoint` and a token
+   * refresh both write there (ADR-025), and its `.key` sits beside it.
+   */
+  // **Per profile, not `profiles/` wholesale.** Granting the whole tree and
+  // carving the served declarations back out left the revision `create` and
+  // `delete` on every *other* profile's `profile.yaml` — the configuration of a
+  // profile the same endpoint serves — and on any name it invented, which
+  // `listProfiles` would then pick up on the next boot. Before ADR-067 no
+  // declaration was writable at all, because `profiles/` sat outside `data/`;
+  // this restores that, one prefix per profile.
+  //
+  // `!==` on a whole object rather than a pattern, because Cloud Storage IAM
+  // conditions have no `matches` — see the note on the read binding below.
+  const writable = [
+    objectsUnder(`${layout.audit()}/`),
+    objectsUnder(`${layout.state()}/`),
+    objectsUnder(layout.credentials()),
+    ...profiles.map(
+      (profile) =>
+        `(${objectsUnder(`${layout.profileDir(profile)}/`)} && ` +
+        `${objectIsNot(layout.profileConfig(profile))})`,
+    ),
+  ].join(' || ');
 
   return [
     {
@@ -91,7 +127,7 @@ export function bucketGrants(bucket: string, profiles: readonly string[]): Condi
       // skills are all written by the running endpoint.
       role: 'roles/storage.objectAdmin',
       title: 'owns-its-data',
-      expression: `${objectsUnder('data/')}${manifests ? ` && !${manifests}` : ''}`,
+      expression: `(${writable})`,
     },
     {
       // `expression=true` was here, which is every object in the bucket — the
@@ -110,7 +146,7 @@ export function bucketGrants(bucket: string, profiles: readonly string[]): Condi
       // saw a passing build and Cloud Run saw a container that never started.
       role: 'roles/storage.objectViewer',
       title: 'reads-its-config',
-      expression: `${theBucket} || ${objectsUnder('profiles/')} || ${objectIs(WORKSPACE_FILE)} || ${objectIs(CONNECTIONS_FILE)}${manifests ? ` || ${manifests}` : ''}`,
+      expression: `${theBucket} || ${objectsUnder(`${layout.profilesRoot()}/`)} || ${objectIs(WORKSPACE_FILE)} || ${objectIs(CONNECTIONS_FILE)} || ${manifests}`,
     },
   ];
 }

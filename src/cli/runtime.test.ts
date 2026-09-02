@@ -1,4 +1,4 @@
-import { connectionsYaml, workspaceYaml } from '#profile/testing.ts';
+import { connectionsYaml, workspaceYaml, writeProfileFixture } from '#profile/testing.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -19,15 +19,15 @@ import { openSecretStoreFor, openRuntime, resolveProfile } from './runtime.ts';
 const roots: string[] = [];
 const previousHome = process.env['LANES_LINK_HOME'];
 
-const PROFILE = `contract: 3
+const PROFILE = `contract: 4
 
 instance:
   profile: personal
 
 grants:
-  - { connection: memory.main, allow: ['memory.*'], deny: [] }
-  - { connection: skills.main, allow: ['skills.*'], deny: [] }
-  - { connection: vault.main, allow: ['vault.*'], deny: [] }
+  - { connection: lanes_memory.lan1, allow: ['lanes_memory.*'], deny: [] }
+  - { connection: lanes_skills.lan4, allow: ['lanes_skills.*'], deny: [] }
+  - { connection: lanes_vault.lan5, allow: ['lanes_vault.*'], deny: [] }
 members: []
 `;
 
@@ -39,7 +39,7 @@ members: []
  * by the workspace that is them — which is exactly the shape this file is here
  * to exercise.
  */
-const TARGETS = `contract: 3
+const TARGETS = `contract: 4
 default_profile: personal
 
 workspaces:
@@ -74,8 +74,8 @@ async function workspace(): Promise<string> {
   roots.push(root);
 
   await mkdir(join(root, 'profiles'), { recursive: true });
-  await writeFile(join(root, 'lanes-link.yaml'), TARGETS);
-  await writeFile(join(root, 'profiles', 'personal.yaml'), PROFILE);
+  await writeFile(join(root, 'workspaces.yaml'), TARGETS);
+  await writeProfileFixture(root, 'personal', PROFILE);
   await writeFile(join(root, CONNECTIONS_FILE), connectionsYaml());
 
   process.env['LANES_LINK_HOME'] = root;
@@ -106,15 +106,15 @@ describe('the local target', () => {
 });
 
 describe('the owner layer follows the target — ADR-014', () => {
-  test("skills load from the granted connection's directory — ADR-059", async () => {
+  test("skills load from the profile's own granted connection — ADR-066", async () => {
     const root = await workspace();
     // Not `<root>/skills/`, which is where they lived while every profile
-    // shared them, and not `data/<profile>/skills.d/` either — they follow the
-    // skills *connection* a profile grants now (ADR-059). A skill left at
-    // either old path loads for nobody, deliberately.
-    await mkdir(join(root, layout.skills('main')), { recursive: true });
+    // shared them, and not `data/<profile>/skills.d/` either — they are back
+    // inside the profile and under the skills connection it grants (ADR-066).
+    // A skill left at any old path loads for nobody, deliberately.
+    await mkdir(join(root, layout.skills('personal', 'lan4')), { recursive: true });
     await writeFile(
-      join(root, layout.skills('main'), 'review-diff.md'),
+      join(root, layout.skills('personal', 'lan4'), 'review-diff.md'),
       '---\ndescription: Review a diff\n---\nReview it.\n',
     );
     await mkdir(join(root, 'skills'), { recursive: true });
@@ -126,13 +126,13 @@ describe('the owner layer follows the target — ADR-014', () => {
     const runtime = await openRuntime({ profile: 'personal', target: 'local' });
     try {
       expect(runtime.registry.capabilities().map((entry) => entry.id)).toContain(
-        'skills.review-diff',
+        'lanes_skills.review-diff',
       );
       // The same store the provider reads, exposed so `lanes link skills` cannot drift
       // into a second spelling of the same layout.
       expect((await runtime.skills?.list())?.map((blob) => blob.key)).toEqual(['review-diff.md']);
       expect(runtime.registry.capabilities().map((entry) => entry.id)).not.toContain(
-        'skills.stale',
+        'lanes_skills.stale',
       );
     } finally {
       await runtime.close();
@@ -145,12 +145,17 @@ describe('the owner layer follows the target — ADR-014', () => {
 
     try {
       await runtime.vault.put('owner', { id: 'token', value: 'secret' });
-      // Under the vault connection this profile grants (ADR-059), not under the
-      // profile — a profile owns no bytes now, and two profiles granting the
-      // same vault reach the same sealed document.
-      expect(await Bun.file(join(root, 'data', 'vault.d', 'main.enc')).exists()).toBe(true);
+      // Inside the profile, under the vault connection it grants — both
+      // segments (ADR-066). Two profiles granting one vault hold two sealed
+      // documents, which is the whole reversal: the wrong answer here is a
+      // credential read by the wrong profile.
+      expect(
+        await Bun.file(join(root, layout.vault('personal', 'lan5'))).exists(),
+      ).toBe(true);
       // Its own key, never the credential store's.
-      expect(await Bun.file(join(root, 'data', 'vault.d', 'main.enc.key')).exists()).toBe(true);
+      expect(
+        await Bun.file(join(root, `${layout.vault('personal', 'lan5')}.key`)).exists(),
+      ).toBe(true);
     } finally {
       await runtime.close();
     }
@@ -172,7 +177,7 @@ describe('the owner layer follows the target — ADR-014', () => {
       // vault connection in the workspace, which is the collision whose wrong
       // answer is a credential.
       expect(
-        await Bun.file(join(root, 'data', 'files', 'vault.d', 'main.enc')).exists(),
+        await Bun.file(join(root, 'data', 'files', 'vault.d', 'lan5.enc')).exists(),
       ).toBe(true);
       expect(await Bun.file(join(root, 'data', 'personal.vault.enc')).exists()).toBe(false);
     } finally {
@@ -218,7 +223,7 @@ describe('refusals', () => {
     const { config } = await resolveProfile({ profile: 'personal', target: 'local' });
     // The listing is the registry's, one target per line with where each lives —
     // it used to be one profile's `targets:` keys joined by commas (ADR-052).
-    await expect(openSecretStoreFor(config, root, 'staging')).rejects.toThrow(
+    await expect(openSecretStoreFor(root, 'staging')).rejects.toThrow(
       /Target "staging" is not declared.*local.*s3/s,
     );
   });
@@ -232,8 +237,8 @@ describe('one credential store, two targets', () => {
     // `s3` names a bucket this machine cannot reach; its credential store still
     // opens, which is what lets `secrets push --to cloud` work before the cloud
     // target has ever been deployed.
-    const from = await openSecretStoreFor(config, root, 'local');
-    const to = await openSecretStoreFor(config, root, 's3');
+    const from = await openSecretStoreFor(root, 'local');
+    const to = await openSecretStoreFor(root, 's3');
 
     await from.set('gmail/main', 'refresh-token');
     expect(await to.get('gmail/main')).toBe('refresh-token');

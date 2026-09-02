@@ -26,6 +26,11 @@
 import type { BlobStore } from '../blobs/index.ts';
 import { keyFromEntry, namespacePrefix, objectKey } from './keys.ts';
 
+// Re-exported because the contract-3 migration has to address objects this
+// module wrote, and deriving `connections%2Ev1/gmail%2Emain.json` by hand at the
+// call site is the second spelling of an encoding that must not have two.
+export { decodeSegment, encodeSegment, objectKey } from './keys.ts';
+
 export type ConnectionStatus =
   | 'active'
   /** Declared, but its credential is missing or rejected. Does not block startup. */
@@ -94,17 +99,78 @@ export interface RuntimeState {
  * contain. The same rule keeps `audit.log` and `state.kv` out of reach in
  * `#profile`'s layout.
  */
-const CONNECTIONS = 'connections.v1';
+export const CONNECTIONS_NAMESPACE = 'connections.v1';
 const CURSORS = 'cursors.v1';
 
+/**
+ * The discovery cache, and what the endpoint's own OAuth server remembers.
+ *
+ * Both carry a `.v1` for the reason `connections.v1` and `cursors.v1` do, and
+ * here it is doing more than versioning. A provider's own keys are namespaced
+ * `<provider>/<connection>` in this same store, a provider id is
+ * `[a-z][a-z0-9_]*`, and only `custom` is refused by grammar — so while these
+ * were spelled `discovery` and `oauth/clients`, a manifest with id `discovery`
+ * or `oauth` landed inside them. That was a collision when everything shared
+ * one store; with the workspace/profile split below it would be a silent
+ * cross-profile leak, because these two route to the workspace. A dotted name
+ * is one no provider can reach.
+ */
+export const DISCOVERY_NAMESPACE = 'discovery.v1';
+export const OAUTH_NAMESPACE = 'oauth.v1';
+
+/**
+ * Whether a namespace belongs to the workspace rather than to one profile.
+ *
+ * Connection records and the discovery cache are facts about an account or a
+ * provider — a `connect` run once must read as connected from every profile —
+ * and the OAuth server is the endpoint's, not a profile's. Everything else is
+ * this profile's use of an account: its cursors, and each provider's own keys.
+ *
+ * Every name here carries a dot, so the list cannot be entered by a provider.
+ */
+export function isWorkspaceNamespace(namespace: string): boolean {
+  return (
+    namespace === CONNECTIONS_NAMESPACE ||
+    namespace === DISCOVERY_NAMESPACE ||
+    namespace === OAUTH_NAMESPACE ||
+    namespace.startsWith(`${OAUTH_NAMESPACE}/`)
+  );
+}
+
+/**
+ * Runtime state over two stores: the workspace's, and one profile's.
+ *
+ * `kv` routes on the namespace rather than being two stores the caller picks
+ * between, because the callers are providers and they do not know which of
+ * their keys are shared — nor should they. `isWorkspaceNamespace` is the whole
+ * rule, and it is closed: a namespace it does not name is the profile's.
+ *
+ * Both are required, with no default that falls back to one. A default would
+ * mean forgetting the second argument shares every profile's cursors and
+ * provider keys silently — which is the failure this split exists to remove.
+ * Passing the same store twice is still how a test that is not exercising the
+ * split says so, and it says it out loud.
+ */
 export function createRuntimeState(
   blobs: BlobStore,
+  profileBlobs: BlobStore,
   now: () => Date = () => new Date(),
 ): RuntimeState {
-  const kv = createKeyValue(blobs);
+  const workspaceKv = createKeyValue(blobs);
+  const profileKv = createKeyValue(profileBlobs);
+  const forNamespace = (namespace: string): KeyValueStore =>
+    isWorkspaceNamespace(namespace) ? workspaceKv : profileKv;
+
+  const kv: KeyValueStore = {
+    get: (namespace, key) => forNamespace(namespace).get(namespace, key),
+    set: (namespace, key, value) => forNamespace(namespace).set(namespace, key, value),
+    delete: (namespace, key) => forNamespace(namespace).delete(namespace, key),
+    keys: (namespace) => forNamespace(namespace).keys(namespace),
+    clearNamespace: (namespace) => forNamespace(namespace).clearNamespace(namespace),
+  };
 
   const readConnection = async (provider: string, id: string): Promise<ConnectionRecord | null> =>
-    decodeConnection(await kv.get(CONNECTIONS, connectionKey(provider, id)));
+    decodeConnection(await workspaceKv.get(CONNECTIONS_NAMESPACE, connectionKey(provider, id)));
 
   const connections: ConnectionRepository = {
     async upsert(record) {
@@ -116,7 +182,7 @@ export function createRuntimeState(
         createdAt: existing?.createdAt ?? now(),
         updatedAt: now(),
       };
-      await kv.set(CONNECTIONS, connectionKey(record.provider, record.id), encodeConnection(stored));
+      await workspaceKv.set(CONNECTIONS_NAMESPACE, connectionKey(record.provider, record.id), encodeConnection(stored));
       return stored;
     },
 
@@ -124,8 +190,8 @@ export function createRuntimeState(
 
     async list() {
       const records: ConnectionRecord[] = [];
-      for (const key of await kv.keys(CONNECTIONS)) {
-        const record = decodeConnection(await kv.get(CONNECTIONS, key));
+      for (const key of await workspaceKv.keys(CONNECTIONS_NAMESPACE)) {
+        const record = decodeConnection(await workspaceKv.get(CONNECTIONS_NAMESPACE, key));
         if (record) records.push(record);
       }
       return records.sort(
@@ -136,8 +202,8 @@ export function createRuntimeState(
     async setStatus(provider, id, status) {
       const existing = await readConnection(provider, id);
       if (!existing) return;
-      await kv.set(
-        CONNECTIONS,
+      await workspaceKv.set(
+        CONNECTIONS_NAMESPACE,
         connectionKey(provider, id),
         encodeConnection({ ...existing, status, updatedAt: now() }),
       );
@@ -145,8 +211,8 @@ export function createRuntimeState(
   };
 
   const cursors: CursorRepository = {
-    get: (namespace) => kv.get(CURSORS, namespace),
-    set: (namespace, cursor) => kv.set(CURSORS, namespace, cursor),
+    get: (namespace) => profileKv.get(CURSORS, namespace),
+    set: (namespace, cursor) => profileKv.set(CURSORS, namespace, cursor),
   };
 
   return { connections, kv, cursors };

@@ -24,7 +24,7 @@ const roots: string[] = [];
 async function workspace(contents = workspaceYaml(['local', 'cloud', 'staging'])): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'lanes-link-idx-'));
   roots.push(root);
-  await writeFile(join(root, 'lanes-link.yaml'), contents);
+  await writeFile(join(root, 'workspaces.yaml'), contents);
   return root;
 }
 
@@ -34,7 +34,7 @@ afterAll(async () => {
 
 describe('recording where a target lives', () => {
   test('a workspace with no registry reports none, rather than failing', async () => {
-    const root = await workspace('contract: 3\n');
+    const root = await workspace('contract: 4\n');
     expect(await readRegistry(root)).toEqual({});
   });
 
@@ -73,7 +73,7 @@ describe('recording where a target lives', () => {
     // `deploy` writes the bucket's own registry after the upload. Merging there
     // left this machine's `at:` on the entry — and a bucket pointing at
     // itself is a loop `openTarget` refuses, on the target just deployed.
-    const root = await workspace('contract: 3\n');
+    const root = await workspace('contract: 4\n');
     await recordTarget(root, 'cloud', { at: 'gs://your-bucket', primary: 'personal' });
     await recordTarget(root, 'cloud', {
       credentials: { adapter: 'gcp-secret-manager', project: 'p' },
@@ -109,7 +109,7 @@ describe('recording where a target lives', () => {
   });
 
   test('two targets are two entries', async () => {
-    const root = await workspace('contract: 3\n');
+    const root = await workspace('contract: 4\n');
     await recordTarget(root, 'cloud', { at: 'gs://one-bucket' });
     await recordTarget(root, 'staging', { at: 'gs://two-bucket' });
 
@@ -124,10 +124,10 @@ describe('recording where a target lives', () => {
   });
 
   test('the operator’s comments survive being written to', async () => {
-    const root = await workspace('# why this workspace exists\ncontract: 3\n');
+    const root = await workspace('# why this workspace exists\ncontract: 4\n');
     await recordTarget(root, 'cloud', { at: 'gs://your-bucket' });
 
-    expect(await readFile(join(root, 'lanes-link.yaml'), 'utf8')).toContain(
+    expect(await readFile(join(root, 'workspaces.yaml'), 'utf8')).toContain(
       '# why this workspace exists',
     );
   });
@@ -140,5 +140,64 @@ describe('recording where a target lives', () => {
     const root = await workspace();
 
     await expect(recordTarget(root, 'brand_new', { primary: 'personal' })).rejects.toThrow();
+  });
+});
+
+describe('a registry that is still at contract 2', () => {
+  const contract2 = [
+    'contract: 2',
+    'default_profile: personal',
+    'targets:',
+    '  cloud:',
+    '    workspace: gs://your-bucket',
+    '    primary: personal',
+    '    last_deploy_version: 0.7.2',
+    '  local:',
+    '    credentials: { adapter: file }',
+    '    storage: { adapter: filesystem }',
+    '',
+  ].join('\n');
+
+  test('is updated in place, rather than growing a second registry beside it', async () => {
+    // `deploy` migrates the *target* workspace, never the local one — so
+    // deploying to a bucket from a laptop that has not run `update` yet lands
+    // here with a contract-2 file. This read and wrote `workspaces:`
+    // unconditionally, found no registry under it, and wrote a second block
+    // beside the first. `workspaceSchema` has no `targets` key and zod strips
+    // what it does not declare, so the hybrid validated and landed.
+    const root = await workspace(contract2);
+
+    await recordTarget(root, 'cloud', {
+      at: 'gs://your-bucket',
+      primary: 'personal',
+      last_deploy_version: '0.8.0',
+    });
+
+    const text = await readFile(join(root, 'workspaces.yaml'), 'utf8');
+    expect(text).not.toContain('workspaces:');
+    expect(text).toContain('last_deploy_version: 0.8.0');
+    expect(text).not.toContain('0.7.2');
+  });
+
+  test('keeps the spelling its own contract uses for a pointer', async () => {
+    // Contract 2 spells it `workspace:`; `at:` arrived with contract 3. Writing
+    // the new spelling into the old block would leave a pointer that contract's
+    // own schema does not recognise.
+    const root = await workspace(contract2);
+
+    await recordTarget(root, 'cloud', { at: 'gs://your-bucket', primary: 'personal' });
+
+    const text = await readFile(join(root, 'workspaces.yaml'), 'utf8');
+    expect(text).toContain('workspace: gs://your-bucket');
+    expect(text).not.toContain('at: gs://your-bucket');
+  });
+
+  test('carries forward a field the caller did not mention', async () => {
+    // The merge `recordTarget` promises, on the legacy path too.
+    const root = await workspace(contract2);
+
+    await recordTarget(root, 'cloud', { at: 'gs://your-bucket', last_deploy: 'now' });
+
+    expect(await readFile(join(root, 'workspaces.yaml'), 'utf8')).toContain('primary: personal');
   });
 });

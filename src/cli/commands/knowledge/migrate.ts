@@ -1,6 +1,7 @@
 import {
   ConfigError,
   KNOWLEDGE_LAYOUT,
+  KNOWLEDGE_PREFIX,
   knowledgeRoot,
   type KnowledgeArea,
   type KnowledgeConfig,
@@ -81,10 +82,14 @@ function localAreas(
     // personal's repository and then deleted them locally, leaving `work`
     // reading an empty store with no knowledge block of its own. `skills` was
     // already connection-scoped, which is why it alone was correct.
+    // `scope` reads the *local* store and `prefix` names the repository
+    // directory, and since contract 4 those are different strings:
+    // `lanes_memory/lan1/` on disk becomes `memory/lan1/` in the repository.
+    // Reading one where the other belongs finds nothing and reports success.
     memory: {
       store: storage,
-      scope: `${KNOWLEDGE_LAYOUT.memory}/${instances.memory}/`,
-      prefix: `${KNOWLEDGE_LAYOUT.memory}/`,
+      scope: `${KNOWLEDGE_PREFIX.memory}/${instances.memory}/`,
+      prefix: `${KNOWLEDGE_PREFIX.memory}/`,
     },
     // Null becomes an empty area rather than a refusal: a profile granting no
     // skills connection has none to move, and `knowledge use` should still move
@@ -93,8 +98,8 @@ function localAreas(
     skills: { store: skills ?? EMPTY_AREA, scope: '', prefix: '' },
     entities: {
       store: storage,
-      scope: `${KNOWLEDGE_LAYOUT.entities}/${instances.entities}/`,
-      prefix: `${KNOWLEDGE_LAYOUT.entities}/`,
+      scope: `${KNOWLEDGE_PREFIX.entities}/${instances.entities}/`,
+      prefix: `${KNOWLEDGE_PREFIX.entities}/`,
     },
   };
 }

@@ -14,7 +14,7 @@ import { recordDeployment, type DeploymentRecord } from './record.ts';
 import { printSteps, runSteps } from './steps.ts';
 import { driverFor } from './drivers.ts';
 import { prepareSecrets, readableRefs, rotatableRefs } from './prepare.ts';
-import { repairOwnerLayer } from '#cli/config-repair.ts';
+import { repairOwnerLayer } from '#cli/config-repair-sweep.ts';
 import { migrateToCurrentContract } from '#cli/workspace-migrate.ts';
 import { deployedWorkspace, uploadWorkspace } from './upload.ts';
 import { servingProfiles } from './serving.ts';
@@ -229,7 +229,7 @@ export async function deploy(flags: DeployFlags): Promise<void> {
     await runSteps(driver, provision);
   }
 
-  const credentials = await openSecretStoreFor(config, resolution.workspaceRoot, target);
+  const credentials = await openSecretStoreFor(resolution.workspaceRoot, target);
   const prepared = await prepareSecrets({
     config,
     declared,
@@ -288,7 +288,7 @@ export async function deploy(flags: DeployFlags): Promise<void> {
     // bucket at contract 2 — and running it after the upload is the same as not
     // running it, because the upload writes contract-3 profiles and
     // `needsContract3` reads the profiles.
-    await migrateToCurrentContract(workspace, { apply: true });
+    await migrateToCurrentContract(workspace, { apply: true, target });
 
     // Before the rollout, so the revision that comes up finds a config to read.
     // Uploading after would leave a window where the service is serving and the
@@ -308,7 +308,7 @@ export async function deploy(flags: DeployFlags): Promise<void> {
 
     // Again for what the upload put there: a newly created bucket gets its
     // profiles written here for the first time. Idempotent — one listing.
-    await migrateToCurrentContract(workspace, { apply: true });
+    await migrateToCurrentContract(workspace, { apply: true, target });
 
     // Where this deployment lives, in both registries — see `record.ts`. The
     // declaration has to land before the revision boots, so it goes here rather
@@ -374,7 +374,7 @@ async function migrateTargetWorkspace(target: string, apply: boolean): Promise<b
   const workspace = await resolveTargetWorkspace(root, target).catch(() => null);
   if (workspace === null || workspace === root) return true;
 
-  const migrated = await migrateToCurrentContract(workspace, { apply });
+  const migrated = await migrateToCurrentContract(workspace, { apply, target });
   if (migrated.alreadyCurrent) return true;
 
   heading(apply ? 'Migrated' : 'Would migrate');

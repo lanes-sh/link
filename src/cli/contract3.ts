@@ -1,11 +1,17 @@
 import { newConnectionsTemplate } from './config-templates.ts';
-import { applyMoves, mergeCredentials, planCredentials, planMoves, type Move } from './contract3-data.ts';
+import { planMoves } from './contract3-data.ts';
+import { applyMoves } from './migrate-move.ts';
+import {
+  mergeCredentials,
+  planCredentials,
+  connectionRefs,
+  type CredentialPlan,
+} from './contract3-credentials.ts';
 import { parseDocument } from 'yaml';
 import {
   CONNECTIONS_FILE,
   ConfigError,
-  DATA_DIR,
-  WORKSPACE_FILE,
+  isRemoteWorkspace,
   layout,
   listProfiles,
   readWorkspaceFile,
@@ -15,7 +21,7 @@ import {
 import { RESERVED_PROVIDER_IDS } from '#connectivity';
 import { ConfigDocument } from './config-edit.ts';
 import { grantsFor, hoistConnections } from './contract3-shape.ts';
-
+import { C3 } from './contract3-layout.ts';
 /**
  * Contract 2 to contract 3: connections move out of the profile.
  *
@@ -37,8 +43,8 @@ import { grantsFor, hoistConnections } from './contract3-shape.ts';
  *      the old flat policy, which is exactly what contract 2 meant.
  *   4. Bytes move to their connection-keyed homes.
  *
- * The registry rename rides along at the end, because it is the one step that
- * cannot half-apply: it is a single document.
+ * The registry rename rides along at the end: it is one document and cannot
+ * half-apply.
  */
 
 /** What a divergent id was renamed to, and why. */
@@ -73,7 +79,17 @@ export interface LegacyProfile {
   readonly connections?: LegacyConnection[];
   readonly policy?: { allow?: unknown[]; deny?: unknown[] };
   readonly oauth_apps?: Record<string, unknown>;
+  /**
+   * Read for `token_ref` alone, and read raw rather than through `authSchema`:
+   * this walks profiles that have not been validated, and a profile that fails
+   * validation for an unrelated reason still has an endpoint token to leave
+   * behind.
+   */
+  readonly auth?: { token_ref?: string };
 }
+
+/** The schema default, and what every profile written by the CLI carries. */
+const DEFAULT_TOKEN_REF = 'profile/token';
 
 /** Whether this workspace still holds anything at contract 2. */
 export async function needsContract3(workspaceRoot: string): Promise<boolean> {
@@ -85,7 +101,7 @@ export async function needsContract3(workspaceRoot: string): Promise<boolean> {
 }
 
 async function readProfile(root: string, profile: string): Promise<LegacyProfile | null> {
-  const text = await readWorkspaceFile(workspaceFiles(root), `profiles/${profile}.yaml`);
+  const text = await readWorkspaceFile(workspaceFiles(root), C3.profile(profile));
   if (text === null) return null;
   try {
     return parseDocument(text).toJSON() as LegacyProfile;
@@ -129,7 +145,14 @@ export async function migrateToContract3(
 
   // Everything that can be computed is computed before the first write, so a
   // refusal leaves the workspace exactly as it was.
-  const credentials = await planCredentials(workspaceRoot, [...legacy.keys()]);
+  const plans: CredentialPlan[] = [...legacy].map(([profile, config]) => ({
+    profile,
+    renames: connectionRefs(perProfile.get(profile) ?? new Map()),
+    tokenRef:
+      typeof config.auth?.token_ref === 'string' ? config.auth.token_ref : DEFAULT_TOKEN_REF,
+  }));
+
+  const credentials = await planCredentials(workspaceRoot, plans);
   const moves = await planMoves(files, [...legacy.keys()], perProfile);
 
   const changes: string[] = [
@@ -137,8 +160,14 @@ export async function migrateToContract3(
     ...renames.map((rename) => `renamed ${rename.from} to ${rename.to} (${rename.reason})`),
     ...[...legacy.keys()].map((profile) => `profiles/${profile}.yaml: contract 3, grants`),
   ];
-  if (credentials.length > 0) {
-    changes.push(`${layout.credentials()}: ${credentials.length} credential(s) merged`);
+  if (credentials.refs.length > 0) {
+    changes.push(`${C3.credentials()}: ${credentials.refs.length} credential(s) merged`);
+  }
+  if (credentials.tokens.length > 0) {
+    changes.push(
+      `${credentials.tokens.join(', ')}: left behind — one endpoint token per workspace now, ` +
+        'and a fresh one is minted on the next command',
+    );
   }
   if (moves.length > 0) changes.push(`${moves.length} object(s) moved to their connection`);
 
@@ -147,7 +176,7 @@ export async function migrateToContract3(
     profiles: [...legacy.keys()],
     connections: rows.map(keyOf),
     renames,
-    credentials,
+    credentials: credentials.refs,
     moved: moves.map((move) => move.to),
     changes,
     alreadyCurrent: false,
@@ -170,7 +199,7 @@ export async function migrateToContract3(
   // workspace" and there was no way back.
   await rewriteRegistry(workspaceRoot);
   await writeConnections(workspaceRoot, rows, legacy);
-  await mergeCredentials(workspaceRoot, [...legacy.keys()]);
+  await mergeCredentials(workspaceRoot, plans);
 
   // **The bytes move before the profile says they have.**
   //
@@ -192,7 +221,25 @@ export async function migrateToContract3(
   return result;
 }
 
-/** The hoisted rows, plus every profile's `oauth_apps` merged into one block. */
+/**
+ * The hoisted rows, plus every profile's `oauth_apps` merged into one block.
+ *
+ * **Anything already in the file survives**, which is the rule `writeRegistry`
+ * states for the same reason: a workspace part way through this has entries that
+ * are already right, and re-deriving them from what is left would undo a
+ * correction.
+ *
+ * Not a tidiness argument here. `rewriteProfiles` stamps profiles one at a time
+ * and `legacy` holds only those still at contract 2, so an interruption part way
+ * through it left a rerun hoisting a *subset* — and this overwrote the file with
+ * it, deleting the already-migrated profiles' rows. Their grants named those
+ * connections still. In the shape that actually bites, two profiles held
+ * `gmail.main` for different mailboxes and were hoisted to `gmail.main` and
+ * `gmail.main_2`; the rerun rebuilt the file from the second profile alone, so
+ * `gmail.main` came back naming the *other* person's mailbox and the first
+ * profile's surviving grant pointed at it. Nothing errored, and
+ * `loadProfileConfig` returned ok.
+ */
 async function writeConnections(
   root: string,
   rows: readonly LegacyConnection[],
@@ -201,9 +248,25 @@ async function writeConnections(
   const apps: Record<string, unknown> = {};
   for (const config of legacy.values()) Object.assign(apps, config.oauth_apps ?? {});
 
+  const held = await readWorkspaceFile(workspaceFiles(root), CONNECTIONS_FILE);
+  const current = held === null ? null : ConfigDocument.fromText(held, CONNECTIONS_FILE);
+  const previous = ((current?.toJSON() as { connections?: unknown } | null)?.connections ??
+    []) as LegacyConnection[];
+
+  const merged = new Map<string, LegacyConnection>();
+  for (const row of rows) merged.set(keyOf(row), row);
+  // Second, so a row this run re-derived does not displace the one already
+  // written for it.
+  for (const row of previous) {
+    if (typeof row?.provider === 'string' && typeof row?.id === 'string') merged.set(keyOf(row), row);
+  }
+
   const document = ConfigDocument.fromText(newConnectionsTemplate(), CONNECTIONS_FILE);
-  document.setIn(['connections'], rows);
-  document.setIn(['oauth_apps'], apps);
+  document.setIn(['connections'], [...merged.values()]);
+  document.setIn(['oauth_apps'], {
+    ...((current?.toJSON() as { oauth_apps?: Record<string, unknown> } | null)?.oauth_apps ?? {}),
+    ...apps,
+  });
 
   await writeWorkspaceFile(workspaceFiles(root), CONNECTIONS_FILE, document.toString());
 }
@@ -216,7 +279,9 @@ async function rewriteProfiles(
   subject: string | undefined,
 ): Promise<void> {
   for (const [profile, config] of legacy) {
-    const document = await ConfigDocument.open(root, profile);
+    // `openKey` at the contract-3 path, not `open`, which resolves the live
+    // layout: this produces contract 3, and contract 4 moves what it produced.
+    const document = await ConfigDocument.openKey(root, C3.profile(profile));
 
     document.setIn(['contract'], 3);
     document.setIn(['grants'], grantsFor(config, perProfile.get(profile) ?? new Map()));
@@ -237,16 +302,17 @@ async function rewriteProfiles(
     document.removeIn(['policy']);
     document.removeIn(['oauth_apps']);
 
-    await document.save();
+    await document.save({ contract: 3 });
   }
 }
 
 /** `targets:` becomes `workspaces:`, and a pointer's `workspace:` becomes `at:`. */
 async function rewriteRegistry(root: string): Promise<void> {
-  const document = await ConfigDocument.openKey(root, WORKSPACE_FILE);
+  const document = await ConfigDocument.openKey(root, C3.workspace);
   const registry = document.toJSON() as {
     contract?: number;
     targets?: Record<string, { workspace?: string }>;
+    workspaces?: Record<string, unknown>;
   } | null;
 
   const targets = registry?.targets;
@@ -262,7 +328,33 @@ async function rewriteRegistry(root: string): Promise<void> {
       workspaces[name] = workspace === undefined ? rest : { at: workspace, ...rest };
     }
 
-    document.setIn(['workspaces'], workspaces);
+    // **Anything already under `workspaces:` wins over what `targets:` says**,
+    // which is the same rule the 1-to-2 migration states for the same reason: a
+    // workspace part way through this has entries that are already right, and
+    // re-deriving them from a stale block would undo a correction.
+    //
+    // It is not hypothetical here. `editRegistry` used to write `workspaces:`
+    // into a contract-2 file without touching its `targets:`, so a deploy from
+    // an unmigrated laptop left two registries disagreeing — and this
+    // overwrote the newer one with the older, silently reverting a recorded
+    // deployment to whatever the last contract-2 command had written. That
+    // write is fixed at source, and this is what repairs a file already
+    // carrying both.
+    const merged: Record<string, unknown> = { ...workspaces };
+    for (const [name, entry] of Object.entries(registry?.workspaces ?? {})) {
+      const derived = merged[name];
+      // Per field, not per entry. The newer block is what `editRegistry` wrote
+      // when it could not see `targets:`, and `sync` writes only `{ at }` — so
+      // replacing the entry wholesale discarded `primary` (which schema.ts calls
+      // the one question about a deployment that must not be guessed at),
+      // `last_deploy`, and the whole `deploy:` block carrying project and
+      // region. Preserving the record was the entire point of the merge.
+      merged[name] =
+        derived !== null && typeof derived === 'object' && entry !== null && typeof entry === 'object'
+          ? { ...(derived as Record<string, unknown>), ...(entry as Record<string, unknown>) }
+          : entry;
+    }
+    document.setIn(['workspaces'], merged);
     document.removeIn(['targets']);
   }
 
@@ -270,12 +362,37 @@ async function rewriteRegistry(root: string): Promise<void> {
   const workspaces = (document.toJSON() as { workspaces?: Record<string, unknown> } | null)
     ?.workspaces ?? {};
 
-  // The first workspace in the registry, which for every workspace this
-  // migration will ever see is `local`. Written rather than left absent so the
-  // sticky default is on from the first command after upgrading (ADR-061).
+  // The workspace on this machine, and only the *first* one when there is no
+  // such thing. Written rather than left absent so the sticky default is on
+  // from the first command after upgrading (ADR-061).
+  //
+  // This used to take the first key outright, on the stated grounds that "for
+  // every workspace this migration will ever see" that is `local`. It is not:
+  // the registry is written sorted, so a workspace that had ever deployed came
+  // out of the 1-to-2 migration with `cloud` ahead of `local`. Upgrading then
+  // pointed every subsequent command at a bucket — which is the one kind of
+  // workspace that can be unreachable, and was: the next `status` answered with
+  // a 403 from GCS rather than with the profiles sitting on the disk.
+  //
+  // A pointer carries `at:`; a workspace declaring its own adapters does not.
   if (document.getIn(['default_workspace']) === undefined) {
-    const first = Object.keys(workspaces)[0];
-    if (first !== undefined) document.setIn(['default_workspace'], first);
+    const names = Object.keys(workspaces);
+    const here = names.find((name) => {
+      const entry = workspaces[name] as
+        | { at?: unknown; storage?: { adapter?: unknown } }
+        | undefined;
+      // A pointer is here when it points at a path rather than a bucket:
+      // `resolveTargetWorkspace` follows a local one just as happily.
+      if (typeof entry?.at === 'string') return !isRemoteWorkspace(entry.at);
+      // Otherwise it declares its own adapters, and only a filesystem one is on
+      // this machine. Reading "no `at:`" as "local" missed that a cloud target
+      // surveyed by `bootstrap` but never rolled out is a *declaration* — so a
+      // deploy that failed at build or IAM left the same 403 default this was
+      // written to prevent.
+      return entry?.storage?.adapter === 'filesystem';
+    });
+    const chosen = here ?? names[0];
+    if (chosen !== undefined) document.setIn(['default_workspace'], chosen);
   }
 
   await document.save();

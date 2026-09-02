@@ -64,7 +64,7 @@ describe('reading the response frame', () => {
 });
 
 describe('grouping names by provider', () => {
-  const ids = ['example.echo', 'icloud_mail.send_message', 'setup.overview'];
+  const ids = ['example.echo', 'icloud_mail.send_message', 'lanes_setup.overview'];
 
   test('a provider whose id contains an underscore keeps its own group', () => {
     // The whole reason this does not split on the first underscore:
@@ -76,9 +76,9 @@ describe('grouping names by provider', () => {
   });
 
   test('several providers group separately, in name order', () => {
-    const grouped = groupByProvider(['setup_overview', 'example_echo'], ids);
+    const grouped = groupByProvider(['lanes_setup_overview', 'example_echo'], ids);
 
-    expect([...grouped.keys()]).toEqual(['example', 'setup']);
+    expect([...grouped.keys()]).toEqual(['example', 'lanes_setup']);
   });
 
   test('a name matching nothing known is marked unattributed, not guessed', () => {

@@ -72,7 +72,7 @@ const AREAS: Record<string, [string | undefined, string]> = {
   'the audit log': [layout.audit(), '2026/08/13/1755075600000-abc.json'],
   'a memory entry': [undefined, 'memory/main/note.md'],
   'an attachment': [undefined, 'gmail/ada_lovelace/attachments/x.pdf'],
-  'a skill': [layout.skills(PROFILE), 'review-diff/SKILL.md'],
+  'a skill': [layout.skills(PROFILE, 'main'), 'review-diff/SKILL.md'],
 };
 
 const WRITES: Record<string, string> = {};
@@ -127,8 +127,8 @@ afterAll(() => {
 
 /** What ADR-007 says a deployed instance must never rewrite. */
 const READS = {
-  'its own profile': `profiles/${PROFILE}.yaml`,
-  'the workspace file': 'lanes-link.yaml',
+  'its own profile': `profiles/${PROFILE}/profile.yaml`,
+  'the workspace file': 'workspaces.yaml',
   // Inside `data/` since ADR-030, so the write condition has to carve it back
   // out rather than simply not mentioning it.
   'a provider manifest': `${layout.providers()}/acme.yaml`,
@@ -302,6 +302,39 @@ describe('what the revision is granted, against what it writes', () => {
     for (const [what, key] of Object.entries(READS)) {
       expect({ what, permitted: permits(condition, key) }).toEqual({ what, permitted: false });
     }
+  });
+
+  test('another profile is outside it too, and so is a name the revision invents', async () => {
+    // The grant was `objectsUnder('profiles/')` with the *served* declarations
+    // carved out, so a deploy naming one profile handed the revision `create`
+    // and `delete` on every other profile's `profile.yaml` — the configuration
+    // of a profile the same endpoint serves — and on any directory it made up,
+    // which `listProfiles` would then pick up on the next boot. Before ADR-067
+    // no declaration was writable at all, because `profiles/` sat outside
+    // `data/`. It is one granted prefix per served profile now.
+    const condition = await writeCondition();
+
+    for (const key of [
+      'profiles/work/profile.yaml',
+      'profiles/work/lanes_memory/lan1/note.md',
+      'profiles/attacker/profile.yaml',
+    ]) {
+      expect({ key, permitted: permits(condition, key) }).toEqual({ key, permitted: false });
+    }
+
+    // And the served profile's own data is still writable, or the endpoint
+    // cannot store a memory entry.
+    expect(permits(condition, `profiles/${PROFILE}/lanes_memory/lan1/note.md`)).toBe(true);
+  });
+
+  test('the exclusion is bracketed, because ! binds tighter than == in CEL', async () => {
+    // `!resource.name == "…"` negates the *name* and compares that: not a type
+    // error, not what it reads as, and it excludes nothing. The bug was written
+    // and caught here, so the shape is pinned rather than the behaviour alone.
+    const condition = await writeCondition();
+
+    expect(condition).not.toMatch(/!resource\.name ==/);
+    expect(condition).toContain('!(resource.name ==');
   });
 });
 

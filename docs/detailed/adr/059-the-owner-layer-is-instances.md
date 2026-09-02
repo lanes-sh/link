@@ -1,6 +1,6 @@
 # ADR-059: The owner layer is instances, and two profiles may share one
 
-**Status:** accepted · **Amends** [ADR-009](009-one-endpoint-per-workspace.md)'s "profiles share
+**Status:** accepted, storage half reversed by [ADR-066](066-a-profile-owns-its-data-again.md) · **Amends** [ADR-009](009-one-endpoint-per-workspace.md)'s "profiles share
 nothing", [ADR-014](014-owner-layer-is-managed.md), [ADR-030](030-a-profile-owns-its-skills-and-manifests.md),
 [ADR-050](050-the-owner-layer-is-granted-by-default.md) · **Follows from**
 [ADR-057](057-a-connection-belongs-to-the-workspace.md)

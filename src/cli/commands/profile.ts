@@ -6,6 +6,8 @@ import {
   CONNECTIONS_FILE,
   ConfigError,
   WORKSPACE_FILE,
+  LEGACY_WORKSPACE_FILE,
+  legacyProfileConfig,
   listProfiles,
   profilePath,
   readWorkspace,
@@ -14,6 +16,7 @@ import {
   writeWorkspaceFile,
   resolveTargetWorkspace,
   resolveWorkspaceRoot,
+  layout,
 } from '#profile';
 
 import { recordConfigChange } from '../audit-change.ts';
@@ -77,9 +80,26 @@ export async function createProfile(
   // <name> --workspace local` on an empty directory is how a workspace comes into
   // existence, and the target it names is declared *by* that file — so writing
   // it second means resolving a target nothing has declared yet.
-  if (!isRemoteWorkspace(local) && !existsSync(join(local, WORKSPACE_FILE))) {
-    await mkdir(local, { recursive: true });
-    await writeFile(join(local, WORKSPACE_FILE), newWorkspaceTemplate(), { mode: 0o600 });
+  // **Either name, and an unmigrated workspace is refused rather than
+  // shadowed.** `resolveWorkspaceRoot` accepts both markers, so this ran
+  // against a contract-3 workspace, found no `workspaces.yaml`, and wrote a
+  // fresh template beside `lanes-link.yaml` — `readWorkspace` prefers the new
+  // name, so every declared target and deployment record vanished, and
+  // `renameRegistry` returns early once the new file exists, so no migration
+  // could put them back.
+  if (!isRemoteWorkspace(local)) {
+    if (existsSync(join(local, LEGACY_WORKSPACE_FILE)) && !existsSync(join(local, WORKSPACE_FILE))) {
+      throw new ConfigError(
+        `${local} is still laid out the way contract 3 kept it, and adding a profile here would ` +
+          'write a second registry beside the one it already has.\n' +
+          '  Migrate it first: lanes link doctor --fix --profile <name> --workspace <name>',
+      );
+    }
+
+    if (!existsSync(join(local, WORKSPACE_FILE))) {
+      await mkdir(local, { recursive: true });
+      await writeFile(join(local, WORKSPACE_FILE), newWorkspaceTemplate(), { mode: 0o600 });
+    }
   }
 
   const root = await resolveTargetWorkspace(local, target);
@@ -93,8 +113,15 @@ export async function createProfile(
     await writeWorkspaceFile(workspaceFiles(root), CONNECTIONS_FILE, newConnectionsTemplate());
   }
 
-  if (await workspaceFiles(root).has(`profiles/${name}.yaml`)) {
-    throw new Error(`Profile "${name}" already exists at ${path}`);
+  // Both shapes, for the same reason: `listProfiles` sees a contract-3
+  // `profiles/<name>.yaml` and this did not, so `profile add personal` wrote a
+  // fresh template alongside the operator's own — one name, two files, and the
+  // empty one opened. `doctor --fix` then planned a move onto an occupied
+  // destination and threw on every rerun.
+  for (const key of [layout.profileConfig(name), legacyProfileConfig(name)]) {
+    if (await workspaceFiles(root).has(key)) {
+      throw new Error(`Profile "${name}" already exists at ${root}/${key}`);
+    }
   }
 
   // Only a directory needs making. A bucket has no directories, and the write
@@ -127,7 +154,7 @@ export async function createProfile(
 
   await writeWorkspaceFile(
     workspaceFiles(root),
-    `profiles/${name}.yaml`,
+    layout.profileConfig(name),
     newProfileTemplate(name, port, session?.subject),
   );
 

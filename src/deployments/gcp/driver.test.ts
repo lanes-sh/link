@@ -343,17 +343,12 @@ describe('first-run provisioning', () => {
     // only place that reads it back. Named by the constants for that reason: a
     // rename must not be able to pass here and fail in Cloud Run.
     expect(condition).toContain(`/objects/${CONNECTIONS_FILE}`);
-    // It does reach into `data/` now, for the manifests ADR-030 moved in there
-    // — but by the anchored pattern only. A blanket `startsWith(".../data/")`
-    // here would hand the revision read on every credential-adjacent object in
-    // the profile, which is the narrowing this condition exists to make.
-    // One `startsWith` per served profile, not `matches`: Cloud Storage IAM
-    // conditions have no `matches`, and refused the whole expression. The
-    // binding carries `tolerateFailure`, so the narrowing silently did not apply
-    // and the bucket kept whatever condition was already on it.
-    expect(condition).toContain('/objects/data/providers.d/');
+    // The manifests, by their own anchored prefix. Not `matches`: Cloud
+    // Storage IAM conditions have no such function and refused the whole
+    // expression — and the binding carries `tolerateFailure`, so the narrowing
+    // silently did not apply and the bucket kept whatever it already had.
+    expect(condition).toContain('/objects/providers.d/');
     expect(condition).not.toContain('matches(');
-    expect(condition).not.toMatch(/startsWith\("[^"]*\/objects\/data\/"\)/);
   });
 
   test('the revision may write its data but only read its config', async () => {
@@ -366,17 +361,27 @@ describe('first-run provisioning', () => {
       .map((step) => step.argv[step.argv.indexOf('--condition') + 1]!);
 
     const write = conditions.find((condition) => condition.includes('owns-its-data'))!;
-    expect(write).toContain('/objects/data/');
-    // Skills are inside `data/` since ADR-030 rather than beside it, so there
-    // is no second prefix to grant.
-    expect(write).not.toContain('/objects/skills/');
-    // The config paths are conspicuously absent from the writable set — and
-    // that now includes the manifests living inside the tree this grants, which
-    // is why the expression carries a negation at all.
-    expect(write).not.toContain('profiles/');
-    expect(write).not.toContain('lanes-link.yaml');
-    expect(write).toContain('!(resource.name.startsWith(');
-    expect(write).toContain('/objects/data/providers.d/');
+
+    // **An allowlist, not `data/` minus exceptions.** There is no `data/`
+    // (ADR-067), and naming what a revision may write is the better shape
+    // anyway: a denylist grows silently every time something new lands under
+    // the prefix it grants.
+    for (const prefix of ['/objects/audit.log/', '/objects/state.kv/', '/objects/credentials.enc']) {
+      expect(write).toContain(prefix);
+    }
+
+    // The declaration is the one thing inside a writable prefix that a revision
+    // must not write. ADR-067 put it beside the bytes, so the rule ADR-007 used
+    // to get from `profiles/` sitting outside `data/` is now this negation —
+    // anchored to a whole object, never a prefix that would also catch the
+    // profile's skills.
+    expect(write).toContain('&& !(');
+    expect(write).toContain('/objects/profiles/personal/profile.yaml"');
+
+    // The registry and the manifests are read-only for a different reason: the
+    // revision reads them and never authors them.
+    expect(write).not.toContain('workspaces.yaml');
+    expect(write).not.toContain('/objects/providers.d/');
     expect(write).not.toContain('matches(');
 
     expect(conditions.some((condition) => condition.includes('reads-its-config'))).toBe(true);

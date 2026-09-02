@@ -177,6 +177,25 @@ export function describeBlobStoreContract(
       });
     });
 
+    test('allows a name that merely begins with dots', async () => {
+      await use(async (store) => {
+        // Not a traversal — an ordinary name that happens to start with two
+        // dots, which a provider will hand over verbatim because it is a
+        // caller's to choose. One adapter refused these and the rest stored
+        // them, so the same workspace behaved differently depending on which
+        // target it was opened against. That is the divergence this whole
+        // suite exists to catch, and it caught nothing until there was a case
+        // for it.
+        // Distinct names, because a filesystem cannot hold `x` as a file and
+        // `x/y` beneath it at once — a real difference between an object store
+        // and a directory tree, and not the one under test here.
+        for (const key of ['..config', '...rc', '..nested/inner.txt']) {
+          await store.put(key, bytes(key));
+          expect(text(await store.get(key))).toBe(key);
+        }
+      });
+    });
+
     test('allows a traversal that stays inside, normalised', async () => {
       await use(async (store) => {
         // Weaker than `scopeBlobStore`'s rule on purpose: the namespace

@@ -1,4 +1,4 @@
-import { workspaceYaml } from '#profile/testing.ts';
+import { workspaceYaml, writeProfileFixture } from '#profile/testing.ts';
 import { afterAll, afterEach, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -20,7 +20,7 @@ import { connectCustom, type ConnectCustomOptions } from './index.ts';
  * `check`, whose whole job is catching that, does not read the directory at all.
  */
 
-const PROFILE = `contract: 3
+const PROFILE = `contract: 4
 
 instance:
   profile: personal
@@ -37,8 +37,8 @@ async function workspace(): Promise<string> {
   process.env['LANES_LINK_HOME'] = root;
 
   await mkdir(join(root, 'profiles'), { recursive: true });
-  await writeFile(join(root, 'lanes-link.yaml'), workspaceYaml(['local'], {defaultProfile: 'personal'}));
-  await writeFile(join(root, 'profiles', 'personal.yaml'), PROFILE);
+  await writeFile(join(root, 'workspaces.yaml'), workspaceYaml(['local'], {defaultProfile: 'personal'}));
+  await writeProfileFixture(root, 'personal', PROFILE);
   return root;
 }
 
@@ -173,7 +173,7 @@ describe('an id that cannot work', () => {
   const cases: ReadonlyArray<[string, string, RegExp]> = [
     ['custom', 'the second word of this command', /never connected/],
     ['gmail', 'a built-in it would shadow', /already built in/],
-    ['memory', 'reserved for the owner layer', /reserved for what this endpoint provides/],
+    ['lanes_memory', 'reserved for the owner layer', /reserved for what this endpoint provides/],
     ['My-Thing', 'not a legal identifier', /lowercase, start with a letter/],
   ];
 
@@ -183,6 +183,19 @@ describe('an id that cannot work', () => {
 
     await expect(connectCustom(id, declaring({ connectWith }))).rejects.toThrow(message);
     expect(calls).toEqual([]);
+  });
+
+  test('the short names are free again, which is what the lanes_ prefix buys', async () => {
+    // `memory` was refused because the built-in claimed it. It is
+    // `lanes_memory` since contract 4, so an operator's own `memory` connector
+    // is a legal thing to declare — which is most of what the reservation was
+    // holding back.
+    await workspace();
+    const { connectWith } = handOff();
+
+    await expect(
+      connectCustom('memory', declaring({ connectWith })),
+    ).resolves.toBeUndefined();
   });
 
   test('a hyphen is refused with the spelling that would work', async () => {

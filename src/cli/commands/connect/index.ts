@@ -35,6 +35,7 @@ import { settleIdentity } from './settle.ts';
 import { runStrategySetup } from './strategy.ts';
 import { announceConnectTarget } from './target-note.ts';
 import { unknownProvider } from './unknown.ts';
+import { DISCOVERY_NAMESPACE } from '#stores/state';
 
 const PROVISIONAL_ID = 'pending';
 
@@ -265,7 +266,7 @@ export async function runConnect(
       credentials: runtime.credentials,
       connectorFor: address.connectorFor,
       remember: async (found) => {
-        await runtime.state.kv.set('discovery', providerId, JSON.stringify(found));
+        await runtime.state.kv.set(DISCOVERY_NAMESPACE, providerId, JSON.stringify(found));
         registry.setDiscovered(providerId, found);
       },
     });

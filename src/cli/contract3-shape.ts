@@ -1,6 +1,7 @@
 import { RESERVED_PROVIDER_IDS } from '#connectivity';
 import type { ContractRename, LegacyConnection, LegacyProfile } from './contract3.ts';
 import { keyOf } from './contract3.ts';
+import { C3_OWNER_PROVIDERS } from './contract3-layout.ts';
 
 /**
  * Turning contract 2's shape into contract 3's, without touching a file.
@@ -49,7 +50,7 @@ export function hoistConnections(profiles: ReadonlyMap<string, LegacyProfile>): 
       // merge. That is the one outcome ADR-059 forbids: interleaving two sets of
       // notes is not reversible and not reviewable, and for the vault the wrong
       // answer is a credential. Keying on the profile forces a rename instead.
-      const owner = RESERVED_PROVIDER_IDS.includes(connection.provider);
+      const owner = C3_OWNER_PROVIDERS.includes(connection.provider);
       const identity = owner
         ? `${connection.provider} @${profile}`
         : `${connection.provider} ${connection.account}`;
@@ -166,7 +167,20 @@ export function grantsFor(
     return pattern === '*' || pattern.startsWith(`${provider}.`);
   };
 
-  return (config.connections ?? []).map((connection) => {
+  // Keyed on the *settled* connection, because two rows can become one. A
+  // profile could hold `gmail.main` and `gmail.archive` for the same mailbox at
+  // different scopes — which is legal under contract 2, and the reason tokens
+  // are per connection at all — and the hoist keys on provider-plus-account, so
+  // both settle on one row. Emitting a grant per original row then wrote the
+  // same `connection:` twice and `assertGrantsUnique` refused the profile,
+  // failing the migration on a merge it had just performed itself.
+  //
+  // The rules are unioned rather than picked between. Both rows were in force
+  // before, the connection they describe is now one connection, and dropping
+  // either would narrow a policy the operator never narrowed.
+  const rows = new Map<string, { connection: string; allow: Rule[]; deny: Rule[] }>();
+
+  for (const connection of config.connections ?? []) {
     const provider = connection.provider;
     // A bare `*` becomes the provider wildcard rather than being copied
     // through. It would still mean the same thing inside a row, which is
@@ -177,10 +191,22 @@ export function grantsFor(
       return rule.capability === '*' ? { ...rule, capability: `${provider}.*` } : rule;
     };
 
-    return {
-      connection: mapping.get(keyOf(connection)) ?? keyOf(connection),
-      allow: allow.filter((rule) => covers(rule, provider)).map(widen),
-      deny: deny.filter((rule) => covers(rule, provider)).map(widen),
-    };
-  });
+    const key = mapping.get(keyOf(connection)) ?? keyOf(connection);
+    const row = rows.get(key) ?? { connection: key, allow: [], deny: [] };
+
+    row.allow = union(row.allow, allow.filter((rule) => covers(rule, provider)).map(widen));
+    row.deny = union(row.deny, deny.filter((rule) => covers(rule, provider)).map(widen));
+    rows.set(key, row);
+  }
+
+  return [...rows.values()];
+}
+
+/** Rules from two merged rows, keeping the first spelling of each capability. */
+function union(held: readonly Rule[], adding: readonly Rule[]): Rule[] {
+  const merged = [...held];
+  for (const rule of adding) {
+    if (!merged.some((one) => capabilityOf(one) === capabilityOf(rule))) merged.push(rule);
+  }
+  return merged;
 }

@@ -239,6 +239,6 @@ export async function entitiesReindex(flags: OwnerFlags): Promise<void> {
  * `memoryStore` gives: a path spelled out again is a path that can differ.
  */
 export function entitiesStore(runtime: Runtime, flags: OwnerFlags): BlobStore {
-  const connection = ownerConnection(runtime.config, 'entities', flags);
-  return scopeBlobStore(runtime.storage, scopeNamespace('entities', connection));
+  const connection = ownerConnection(runtime.config, 'lanes_entities', flags);
+  return scopeBlobStore(runtime.storage, scopeNamespace('lanes_entities', connection));
 }

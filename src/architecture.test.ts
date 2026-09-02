@@ -130,7 +130,7 @@ describe('dependency direction', () => {
  * A transport may know what CalDAV does and must not know that iCloud exists.
  * Where a vendor genuinely behaves differently, the difference is a declared
  * field on that transport's schema, set by the provider that needs it — see
- * `setup.troubleshooting`, `dav.max_range_days`, and `fs.placeholder`.
+ * `lanes_setup.troubleshooting`, `dav.max_range_days`, and `fs.placeholder`.
  *
  * Comments are exempt, deliberately. "iCloud's contacts host returns a 207
  * whose propstat is 404" is the reason a piece of protocol code is shaped the

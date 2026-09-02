@@ -94,7 +94,7 @@ describe('one match is an answer', () => {
 
     const result = await h.invoke('find', { query: 'Jan' });
 
-    expect(linksOf(result)).toEqual(['entities://entity/jan-bakker']);
+    expect(linksOf(result)).toEqual(['lanes-entities://entity/jan-bakker']);
     const text = textOf(result);
     expect(text).toContain('Jan Bakker — person (jan-bakker)');
     expect(text).toContain('jan@acme.test');
@@ -153,8 +153,8 @@ describe('several matches is a normal answer, not a failure', () => {
 
   test('every candidate carries a link, so none is privileged', async () => {
     expect(linksOf(await (await twoJans()).invoke('find', { query: 'Jan' })).sort()).toEqual([
-      'entities://entity/jan-bakker',
-      'entities://entity/jan-de-vries',
+      'lanes-entities://entity/jan-bakker',
+      'lanes-entities://entity/jan-de-vries',
     ]);
   });
 
@@ -165,14 +165,14 @@ describe('several matches is a normal answer, not a failure', () => {
       related: [{ predicate: 'works_at', entity: 'acme-bv' }],
     });
 
-    expect(linksOf(result)).toEqual(['entities://entity/jan-bakker']);
+    expect(linksOf(result)).toEqual(['lanes-entities://entity/jan-bakker']);
   });
 });
 
 describe('no match', () => {
   test('an empty directory says so, rather than "matches no criteria"', async () => {
     // What a bare `entities_find` returned on a fresh profile. `describe({})`
-    // is "no criteria", so the sentence read "Nothing on entities.main matches
+    // is "no criteria", so the sentence read "Nothing on lanes_entities.main matches
     // no criteria", which tells a caller nothing and reads like a parser error.
     const result = await harness().invoke('find', {});
 

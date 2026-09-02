@@ -1,8 +1,22 @@
-import { layout, profilePath, vaultRef, workspacePath, type Config, type TargetConfig } from '#profile';
+import {
+  layout,
+  PROFILE_FILE,
+  profilePath,
+  vaultRef,
+  workspacePath,
+  type Config,
+  type TargetConfig,
+} from '#profile';
 import type { SecretStore } from '#secrets';
 import type { BlobStore } from '#stores/blobs';
 import { credentialRefFor, ownClientRefsFor, type ProviderRegistry } from '#registry';
 import { print, style, warn } from '../../output.ts';
+import {
+  migratesAcross,
+  refuseSealedVault,
+  resolveCollisions,
+  type Disposition,
+} from './disposition.ts';
 
 /**
  * What a profile's removal is allowed to delete, worked out before any of it
@@ -103,7 +117,20 @@ export interface RemovalItem {
   readonly kind: 'secret' | 'blob' | 'file' | 'config' | 'workspace-key';
   readonly id: string;
   readonly note?: string;
+  /**
+   * The area `id` is a key within, for a blob.
+   *
+   * Carried rather than derived: the two ends of a migration are two areas and
+   * the executor opens both. Derived once, the plan prefixed the profile
+   * directory onto `id` while the executor opened its default area — the copy
+   * found nothing at the doubled path, wrote nothing, and the directory removal
+   * took the bytes. A `--migrate-to` reported success and lost the data.
+   */
+  readonly area?: string;
+  /** Where this object goes instead of being deleted, as `[area, key]`. */
+  readonly movedTo?: readonly [string, string];
 }
+
 
 export interface RemovalPlan {
   readonly profile: string;
@@ -128,6 +155,8 @@ export interface PlanOptions {
   readonly openSecrets: (target: string) => Promise<SecretStore>;
   readonly openBlobs: (target: string, area?: string) => Promise<BlobStore>;
   readonly readDefaultProfile?: (() => Promise<string | undefined>) | undefined;
+  /** What becomes of this profile's own bytes. */
+  readonly disposition: Disposition;
   /**
    * The profiles that are staying.
    *
@@ -139,6 +168,7 @@ export interface PlanOptions {
 }
 
 const reason = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause));
+
 
 /**
  * Everything removing this profile would delete, before any of it is deleted.
@@ -156,6 +186,9 @@ export async function removalPlan(
   options: PlanOptions,
 ): Promise<RemovalPlan> {
   const items: RemovalItem[] = [];
+  const migrateInto =
+    options.disposition.kind === 'migrate' ? options.disposition.into : undefined;
+  const sealed: string[] = [];
   const untouched: { target: string; refs: string[] }[] = [];
   const warnings: string[] = [];
 
@@ -205,16 +238,58 @@ export async function removalPlan(
       );
     }
 
-    // **No blob sweep, and no profile directory.** Both existed because a
-    // profile owned `data/<profile>/`, and `rm -r` on it was exactly "what could
-    // this profile reach". It owns nothing now (ADR-057, ADR-059): the blob root
-    // is the workspace's, and the stores under it belong to connections other
-    // profiles may grant. Listing it here would queue every byte in the
-    // workspace for deletion because one profile is going.
-    //
-    // What replaces it is `lanes link disconnect`, which takes one connection,
-    // its grants, and its credential — after checking whether anything else
-    // still needs them. That check is the whole reason this cannot happen here.
+    // **The sweep is back, bounded by the profile's own directory.** It went
+    // away under ADR-059, when a profile owned no bytes and the blob root was
+    // the whole workspace — listing it then queued every byte in the workspace
+    // for deletion because one profile was going. ADR-066 gives the directory
+    // back, so it means what it used to: what this profile owns, and nothing an
+    // account owns. `lanes link disconnect` is still the command for an
+    // account, and nothing here touches one.
+    try {
+      const blobs = await options.openBlobs(name, layout.profileDir(profile));
+      for (const blob of await blobs.list()) {
+        // **Not the declaration.** It is config rather than data, deleted below
+        // as its own item after everything it is the record of. Swept here it
+        // would be counted twice, and on a `--migrate-to` copied into the
+        // destination as a second `profile.yaml` — one profile's grants and
+        // members landing inside another's directory.
+        if (blob.key === PROFILE_FILE) continue;
+
+        const migratable = migrateInto !== undefined && migratesAcross(blob.key);
+
+        items.push({
+          target: name,
+          kind: 'blob',
+          id: blob.key,
+          area: layout.profileDir(profile),
+          ...(migratable
+            ? { movedTo: [layout.profileDir(migrateInto), blob.key] as const }
+            : {}),
+          ...(migrateInto !== undefined && !migratable
+            ? { note: 'not migrated — deleted with the profile' }
+            : {}),
+        });
+
+        if (migrateInto !== undefined && blob.key.startsWith('vault.d/')) sealed.push(blob.key);
+      }
+    } catch (cause) {
+      warnings.push(
+        `Target "${name}": its storage could not be opened (${reason(cause)}), so nothing in it will be removed.`,
+      );
+    }
+
+    // The store's root is the profile's own directory, and an adapter must never
+    // delete the root it was configured with — so emptying it leaves the
+    // directory, and one left behind is silently reused by a later `profile add`
+    // of the same name.
+    if (declared.storage.adapter === 'filesystem') {
+      items.push({
+        target: name,
+        kind: 'file',
+        id: layout.profileDir(profile),
+        note: 'the profile directory, once emptied',
+      });
+    }
 
     // A deployed revision reads its config from the bucket rather than the
     // image (ADR-023), so that copy is the profile too — and it is outside the
@@ -223,7 +298,7 @@ export async function removalPlan(
       items.push({
         target: name,
         kind: 'config',
-        id: `profiles/${profile}.yaml`,
+        id: layout.profileConfig(profile),
         note: 'the copy a deployed revision reads',
       });
     }
@@ -251,6 +326,16 @@ export async function removalPlan(
       id: 'default_profile',
       note: 'cleared, not repointed at whatever remains',
     });
+  }
+
+  if (sealed.length > 0) refuseSealedVault(profile, migrateInto!);
+
+  if (migrateInto !== undefined) {
+    warnings.push(
+      ...(await resolveCollisions(items, migrateInto, layout.profileDir(migrateInto), (area) =>
+        options.openBlobs(options.target, area),
+      )),
+    );
   }
 
   // Last. It is the only record of where everything else lives, so a failure
@@ -290,7 +375,9 @@ export function renderPlan(plan: RemovalPlan): void {
     print(`  ${style.bold(target ?? 'workspace')}`);
     for (const item of items) {
       const note = item.note ? style.dim(` — ${item.note}`) : '';
-      print(`    ${KIND_LABEL[item.kind].padEnd(10)} ${item.id}${note}`);
+      const shown = item.area === undefined ? item.id : `${item.area}/${item.id}`;
+      const into = item.movedTo ? style.dim(` → ${item.movedTo[0]}/${item.movedTo[1]}`) : '';
+      print(`    ${KIND_LABEL[item.kind].padEnd(10)} ${shown}${into}${note}`);
     }
     print();
   }

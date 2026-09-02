@@ -76,24 +76,43 @@ export const providerManifestSchema = z.object({
 export type ProviderManifest = z.infer<typeof providerManifestSchema>;
 
 /**
- * Provider ids reserved for the owner layer.
+ * The owner layer's provider ids — Lanes' own surfaces.
+ *
+ * **`lanes_` on each, which is what stops them needing to be reserved.** They
+ * were `memory`, `tasks`, `assets`, `skills`, `vault`, `entities` — six of the
+ * most obvious words a vendor manifest might want, held back from every
+ * operator so the built-ins could have them. `buildRegistry` registers these
+ * before `PROVIDERS`, so a manifest claiming one threw at startup rather than
+ * being shadowed (ADR-051); the reservation is what made that a refusal instead
+ * of a collision. Prefixed, there is nothing to reserve: an operator's own
+ * `memory` connector is now a legal thing to declare.
+ *
+ * It is also the shape the vendor-qualified providers already use —
+ * `google_tasks`, `gmail_imap`, `icloud_mail` — and it reads the same way: the
+ * half before the underscore says whose surface this is.
  *
  * The order is read: `#server/mcp`'s instructions emit one paragraph per
  * reachable id in this sequence, so it is the order an agent meets them in.
- * `entities` is appended rather than inserted alphabetically so that it lands
- * beside `identity`: the two answer the same question about different people,
- * and the instructions collapse them into one paragraph when both are reachable.
+ * `lanes_entities` is appended rather than inserted alphabetically so that it
+ * lands beside `lanes_identity`: the two answer the same question about
+ * different people, and the instructions collapse them into one paragraph when
+ * both are reachable.
  */
 export const RESERVED_PROVIDER_IDS: readonly string[] = [
-  'memory',
-  'tasks',
-  'assets',
-  'skills',
-  'vault',
-  'setup',
-  'identity',
-  'entities',
+  'lanes_memory',
+  'lanes_tasks',
+  'lanes_assets',
+  'lanes_skills',
+  'lanes_vault',
+  'lanes_setup',
+  'lanes_identity',
+  'lanes_entities',
 ];
+
+/** Old id to new, for the contract-4 migration and for a refusal that names it. */
+export const RENAMED_OWNER_PROVIDERS: ReadonlyMap<string, string> = new Map(
+  RESERVED_PROVIDER_IDS.map((id) => [id.slice('lanes_'.length), id]),
+);
 
 /**
  * Validate a manifest, with the cross-field rules the schema alone cannot

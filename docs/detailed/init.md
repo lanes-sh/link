@@ -90,7 +90,7 @@ Lanes Link's bet is the opposite: typed capabilities behind a policy layer, so `
 
 **One profile equals one config file equals one instance equals one deployment equals one MCP endpoint.** This is a rule, not a default. Profiles never share a database, a credential store, or a URL. An operator wanting several profiles available to one agent configures several MCP servers in that agent, which costs nothing and keeps a compromise of one profile from reaching another.
 
-Because the mapping is one to one, **profile is the CLI selector**: `--profile work` resolves to `profiles/work.yaml`. The core still attaches no behavior to particular profile names.
+Because the mapping is one to one, **profile is the CLI selector**: `--profile work` resolves to `profiles/work/profile.yaml`. The core still attaches no behavior to particular profile names.
 
 **ProviderDefinition** describes a provider type: `id`, `name`, `version`, capabilities, configuration schema, connection schema, authentication requirements.
 
@@ -146,7 +146,7 @@ Credentials follow the target, because each target has its own credential store.
 ### Example (`config/personal.example.yaml`)
 
 ```yaml
-contract: 3
+contract: 4
 
 instance:
   profile: personal
@@ -197,7 +197,7 @@ auth:
 ### Example (`connections.yaml`)
 
 ```yaml
-contract: 3
+contract: 4
 
 # One entry per authorised account. "account" is the identity the provider
 # reports, resolved at connect time, and the id derives from it — so this list
@@ -558,14 +558,25 @@ The CLI is the control plane and the only path to control-plane operations. It c
 A **workspace** is a directory holding one or more profiles:
 
 ```
-lanes-link.yaml      # workspace settings: contract, default_profile
+workspaces.yaml     # the registry: which workspaces this machine knows
+connections.yaml    # every account authorised here
+credentials.enc     # one credential per account
+providers.d/        # the operator's own provider manifests
+audit.log/          # one hash chain for the workspace
+state.kv/           # connection records, discovery, this endpoint's OAuth server
 profiles/
-  personal.yaml
-  work.yaml
-data/               # local state per profile, gitignored
+  personal/
+    profile.yaml    # what it selects, and who may use it
+    ...             # and everything it owns
+  work/
 ```
 
-Workspace root resolves from `LANES_LINK_HOME`, else the nearest ancestor directory containing `lanes-link.yaml`, else `~/.lanes-link`.
+Workspace root resolves from `LANES_LINK_HOME`, else the nearest ancestor directory containing `workspaces.yaml`, else `~/.lanes-link`.
+
+> **Amended by [ADR-066](adr/066-a-profile-owns-its-data-again.md) and
+> [ADR-067](adr/067-one-directory-per-profile.md).** A profile is one directory holding its
+> declaration and every byte it owns; `data/` is gone, and `lanes-link.yaml` is now
+> `workspaces.yaml`. Contract 4.
 
 > **Amended by [ADR-037](adr/037-a-command-names-what-it-acts-on.md).** The resolution chains in
 > this section, and the `lanes link profile default` / `lanes link target use` commands that write
@@ -579,7 +590,7 @@ Workspace root resolves from `LANES_LINK_HOME`, else the nearest ancestor direct
 > narrows that set rather than selecting it. This is not a resolution chain returning: the set is
 > derived from the config, complete, and printed.
 
-Profile resolves from `--profile <name>`, then `LANES_LINK_PROFILE`, then `default_profile` in the workspace file, then an error listing available profiles. A profile name maps to `profiles/<name>.yaml`.
+Profile resolves from `--profile <name>`, then `LANES_LINK_PROFILE`, then `default_profile` in the workspace file, then an error listing available profiles. A profile name maps to `profiles/<name>/profile.yaml`.
 
 Target resolves from `--target <name>`, then `LANES_LINK_TARGET`, then `instance.default_target`. `lanes link deploy` resolves it differently — the one target declaring a `deploy` block, else `cloud` — and deliberately does not read the environment variable, because it is the one command that may name a target which does not exist yet.
 
@@ -769,7 +780,7 @@ Three owner providers, all local:
   `memory.search`. `memory.write` is a *separate* capability from read, precisely so read-only agents
   are a real configuration.
 - **`skills`** — reusable procedures, on the MCP prompts primitive reserved in M1. Authored as files
-  in `data/<profile>/skills.d/`, the way custom providers are files in the `providers.d/` beside
+  in `profiles/<profile>/skills.d/<connection>/`, the way custom providers are files in the workspace's `providers.d/` beside
   them ([ADR-030](adr/030-a-profile-owns-its-skills-and-manifests.md); both sat at the workspace
   root until then). There is a capability that writes one, in a non-default bundle
   ([ADR-014](adr/014-owner-layer-is-managed.md) §1) — this said there was none, and the reversal is

@@ -50,11 +50,20 @@ import { knowledgeTargetSchema } from './knowledge.ts';
  * `members:`, because a profile worth sharing needs to say who may consume it
  * (ADR-060).
  *
+ * **4 gave a profile its bytes back, and retired `data/`** (ADR-066, ADR-067).
+ * Contract 3 moved the owner layer's stores beside the *connection*, so a
+ * profile owned nothing and two profiles granting one memory read one note. The
+ * profile is the container again — `profiles/<name>/` holds its declaration and
+ * everything it owns — and `data/`, which had been the line between what a
+ * revision reads and what it writes, stopped drawing that line the moment the
+ * declaration moved inside it. No file's *shape* changed: `grants:`,
+ * `members:` and `connections.yaml` are untouched, and only the paths moved.
+ *
  * A hard cut each time, and only the newest is read here. `./legacy.ts`
  * understands the older shapes and only the migration uses it — a runtime that
  * loaded either would be the two-sources-of-truth problem again, one level up.
  */
-export const SUPPORTED_CONTRACT = 3;
+export const SUPPORTED_CONTRACT = 4;
 
 /**
  * There is no `database:` block any more.
@@ -363,7 +372,7 @@ export const policySchema = z.object({
  * So the refusal is at load, where it names both rows, rather than at call time
  * where one would silently win.
  */
-export const SINGLE_INSTANCE_PROVIDERS: readonly string[] = ['skills', 'vault'];
+export const SINGLE_INSTANCE_PROVIDERS: readonly string[] = ['lanes_skills', 'lanes_vault'];
 
 /**
  * One connection, and what may be done with it (ADR-058).

@@ -33,21 +33,26 @@ export const EMPTY_SKILL_STORE: BlobStore = {
 /**
  * Where a connection's skills live, in either workspace.
  *
- * `data/skills.d/<connection>/`, and deployed the same key under the bucket
- * prefix. Going through the store rather than a filesystem path is what gives a
+ * `profiles/<profile>/skills.d/<connection>/`, and deployed the same key under
+ * the bucket prefix. Going through the store rather than a filesystem path is what gives a
  * deployment skills at all — a path is baked into a container image at build
  * time and an object key is not, so before ADR-014 a deployed instance could
  * only ever serve the skills that existed when its image was built.
  *
- * **Per connection**, which is the third answer this question has had. Policy
- * gating `skills.<name>` was the whole isolation story while the bytes were
- * shared (ADR-012 §1), and it is a weak one: it decides who may *run* a
- * procedure, not who may read that it exists or what it says. ADR-030 made the
- * bytes per profile; ADR-059 made them per connection, so two profiles granting
- * one skills connection share a set and two granting different ones share
- * nothing.
+ * **Per profile and per connection**, which is the fourth answer this question
+ * has had. Policy gating `skills.<name>` was the whole isolation story while
+ * the bytes were shared (ADR-012 §1), and it is a weak one: it decides who may
+ * *run* a procedure, not who may read that it exists or what it says. ADR-030
+ * made the bytes per profile; ADR-059 made them per connection instead, so two
+ * profiles granting one skills connection shared a set; ADR-066 puts the
+ * profile back in front of it, so they do not. The connection stays because a
+ * profile may still hold more than one set.
  */
-export function skillStore(storage: StorageFactory, connection: string): BlobStore {
-  return storage(layout.skills(connection));
+export function skillStore(
+  storage: StorageFactory,
+  profile: string,
+  connection: string,
+): BlobStore {
+  return storage(layout.skills(profile, connection));
 }
 

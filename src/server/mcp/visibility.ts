@@ -1,6 +1,6 @@
 import { isTool } from '#connectivity';
 import type { Principal } from '#auth';
-import type { Config } from '#profile';
+import type { Config, SelectedConnection } from '#profile';
 import type { ProviderRegistry } from '#registry';
 import type { Dispatcher } from '#dispatch';
 import type { PolicyDocument, ProfilePolicy } from '#policy';
@@ -24,6 +24,15 @@ import { mayReach } from '#auth';
 /** Everything one profile contributes to the endpoint. */
 export interface ProfileRuntime {
   readonly config: Config;
+  /**
+   * The accounts this profile selects, for the `connection` argument's
+   * description — the id alone cannot say which mailbox it is.
+   *
+   * Optional because a registry built to read manifests has no selection, the
+   * same reason `refreshSkills` is: a harness that omits it gets bare ids, which
+   * is what this listed for everybody before.
+   */
+  readonly connections?: readonly SelectedConnection[];
   readonly registry: ProviderRegistry;
   readonly dispatcher: Dispatcher;
   readonly policy: ProfilePolicy;
@@ -166,13 +175,56 @@ export function visibleToolCount(options: BuildServerOptions): number {
  * Grouped rather than flattened because the two arguments are not independent:
  * `profile: personal` with a connection belonging to `work` is refused, and a
  * flat list would read as though any pairing were valid.
+ *
+ * **The account, not just the id.** This listed bare ids, and the id is the
+ * only thing a model has to choose on — so two accounts of one vendor were
+ * `ada_lovelace` and `ada_lovelace2` and nothing said which mailbox either was.
+ * `idFromAccount` takes only the local part, so that is what two addresses at
+ * different domains actually produce. Picking the wrong one sends mail as the
+ * wrong person, which is the same class of failure ADR-056 rules out for
+ * entities: ordering is not selection, and a caller that cannot tell two
+ * candidates apart must be given what tells them apart.
+ *
+ * The enum stays bare ids, because the id is what the caller passes.
  */
 export function describeWithConnections(
   description: string,
   reachable: ReadonlyMap<string, readonly string[]>,
+  accounts: ReadonlyMap<string, ReadonlyMap<string, string>> = new Map(),
 ): string {
-  const lines = [...reachable].map(
-    ([profile, connections]) => `  ${profile}: ${connections.join(', ')}`,
-  );
+  const lines = [...reachable].flatMap(([profile, connections]) => {
+    const known = accounts.get(profile);
+    return [
+      `  ${profile}:`,
+      ...connections.map((id) => `    ${id}${known?.get(id) === undefined ? '' : ` — ${known.get(id)!}`}`),
+    ];
+  });
   return `${description}\n\nAvailable connections, by profile:\n${lines.join('\n')}`;
+}
+
+/**
+ * How each profile's connections should read to a caller choosing between them.
+ *
+ * `account` always, `label` where the operator set one — the two fields that
+ * exist because the id cannot carry meaning and must not pretend to.
+ */
+export function accountsByProfile(
+  options: BuildServerOptions,
+): Map<string, Map<string, string>> {
+  const accounts = new Map<string, Map<string, string>>();
+
+  for (const [name, runtime] of options.profiles) {
+    const rows = new Map<string, string>();
+    for (const { connection } of runtime.connections ?? []) {
+      rows.set(
+        connection.id,
+        connection.label === undefined
+          ? connection.account
+          : `${connection.account} (${connection.label})`,
+      );
+    }
+    accounts.set(name, rows);
+  }
+
+  return accounts;
 }

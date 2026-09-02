@@ -310,16 +310,16 @@ describe('rendering one entity', () => {
 describe('rendering several candidates', () => {
   test('the count comes first, before any candidate', () => {
     const matches = matchEntities(CATALOGUE, { query: 'Jan' });
-    const text = renderCandidates(matches, { query: 'Jan' }, 'entities.main');
+    const text = renderCandidates(matches, { query: 'Jan' }, 'lanes_entities.main');
 
     // A client that truncates must still have seen that there was more than one.
-    expect(text.split('\n')[0]).toBe('2 entities match "Jan" on `entities.main`.');
+    expect(text.split('\n')[0]).toBe('2 entities match "Jan" on `lanes_entities.main`.');
     expect(text.indexOf('2 entities match')).toBeLessThan(text.indexOf('jan-bakker'));
   });
 
   test('it says to ask, and says the order is not a ranking', () => {
     const matches = matchEntities(CATALOGUE, { query: 'Jan' });
-    const text = renderCandidates(matches, { query: 'Jan' }, 'entities.main');
+    const text = renderCandidates(matches, { query: 'Jan' }, 'lanes_entities.main');
 
     expect(text).toContain('ask before acting');
     expect(text).toContain('the order is not a ranking');
@@ -332,14 +332,14 @@ describe('rendering several candidates', () => {
     ]);
     const matches = matchEntities(catalogue, { query: 'Jan' });
 
-    expect(renderCandidates(matches, { query: 'Jan' }, 'entities.main')).toContain(
+    expect(renderCandidates(matches, { query: 'Jan' }, 'lanes_entities.main')).toContain(
       'duplicate to merge',
     );
   });
 
   test('a truncated list says how to see the rest', () => {
     const matches = matchEntities(CATALOGUE, { query: 'Jan', limit: 1 });
-    expect(renderCandidates(matches, { query: 'Jan' }, 'entities.main')).toContain('raise `limit`');
+    expect(renderCandidates(matches, { query: 'Jan' }, 'lanes_entities.main')).toContain('raise `limit`');
   });
 
   test('criteria are described in the words the caller used', () => {

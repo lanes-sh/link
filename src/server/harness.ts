@@ -75,7 +75,7 @@ export function configFor(profile: string, port: number, policy: string): Config
     `  - connection: example.${id}\n${rules.replace(/^ {4}(allow|deny):/gm, '    $1:')}`;
 
   return parseConfig(`
-contract: 3
+contract: 4
 instance:
   profile: ${profile}
   port: ${port}

@@ -110,7 +110,7 @@ export function createSkillsProvider(options: SkillsProviderOptions): ProviderDe
   const manage = options.store ? managementCapabilities(options.store, options.onChange) : [];
 
   return defineLocalProvider({
-    id: 'skills',
+    id: 'lanes_skills',
     name: 'Skills',
     version: '1.0.0',
     description:
@@ -246,7 +246,7 @@ function managementCapabilities(
           content: [
             {
               type: 'text',
-              text: `Stored skill "${skill.name}" on ${context.connection.key}. It is available as the prompt "skills_${skill.name}" where policy allows it.`,
+              text: `Stored skill "${skill.name}" on ${context.connection.key}. It is available as the prompt "lanes_skills_${skill.name}" where policy allows it.`,
             },
           ],
         };

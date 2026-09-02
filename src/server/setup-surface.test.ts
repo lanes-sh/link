@@ -80,7 +80,7 @@ function grantsFrom(policy: string, connections: readonly string[]): string {
 
 function config(profile: string, port: number, policy: string) {
   return parseConfig(`
-contract: 3
+contract: 4
 instance:
   profile: ${profile}
   port: ${port}
@@ -88,7 +88,7 @@ limits:
   requests_per_minute: 1000
   upstream_calls_per_minute: 1000
 grants:
-${grantsFrom(policy, ['setup.main', 'example.a'])}
+${grantsFrom(policy, ['lanes_setup.main', 'example.a'])}
 members: []
 `).config;
 }
@@ -123,7 +123,7 @@ const granted = startHarness({
   port: grantedPort,
   policy: '',
   providers: providersFor('granted', ['example']),
-  config: config('granted', grantedPort, `  allow:\n    - "setup.*"\n    - "example.*"`),
+  config: config('granted', grantedPort, `  allow:\n    - "lanes_setup.*"\n    - "example.*"`),
 });
 
 /** The example account is configured, and policy hides it. */
@@ -136,7 +136,7 @@ const denied = startHarness({
   config: config(
     'denied',
     deniedPort,
-    `  allow:\n    - "setup.*"\n    - "example.*"\n  deny:\n    - "example.*"`,
+    `  allow:\n    - "lanes_setup.*"\n    - "example.*"\n  deny:\n    - "example.*"`,
   ),
 });
 
@@ -148,7 +148,7 @@ const never = startHarness({
   token: 'llk_never_token_value',
   providers: providersFor('never', []),
   config: parseConfig(`
-contract: 3
+contract: 4
 instance:
   profile: never
   port: ${neverPort}
@@ -156,7 +156,7 @@ limits:
   requests_per_minute: 1000
   upstream_calls_per_minute: 1000
 grants:
-  - { connection: setup.main, allow: ['setup.*'], deny: [] }
+  - { connection: lanes_setup.main, allow: ['lanes_setup.*'], deny: [] }
 members: []
 `).config,
 });
@@ -191,7 +191,7 @@ async function call(
   const response = await rpc(
     url,
     'tools/call',
-    { name, arguments: { profile, connection: 'setup.main', ...args } },
+    { name, arguments: { profile, connection: 'lanes_setup.main', ...args } },
     token ? { token } : {},
   );
   const result = response.body['result'] as
@@ -205,11 +205,11 @@ async function call(
 }
 
 describe('registration follows policy like anything else', () => {
-  test('both capabilities are advertised when setup.* is allowed', async () => {
+  test('both capabilities are advertised when lanes_setup.* is allowed', async () => {
     const names = await listTools(granted.server.url);
 
-    expect(names).toContain('setup_overview');
-    expect(names).toContain('setup_provider');
+    expect(names).toContain('lanes_setup_overview');
+    expect(names).toContain('lanes_setup_provider');
   });
 
   test('neither is advertised when it is not', async () => {
@@ -217,14 +217,14 @@ describe('registration follows policy like anything else', () => {
 
     // Not merely refused on call — absent, which is what default-deny means
     // everywhere else in this codebase.
-    expect(names).not.toContain('setup_overview');
-    expect(names).not.toContain('setup_provider');
+    expect(names).not.toContain('lanes_setup_overview');
+    expect(names).not.toContain('lanes_setup_provider');
   });
 });
 
 describe('what a caller is told about connections', () => {
   test('a reachable account is named, label and all', async () => {
-    const { text } = await call(granted.server.url, 'setup_overview', {}, 'granted');
+    const { text } = await call(granted.server.url, 'lanes_setup_overview', {}, 'granted');
 
     expect(text).toContain('example.a');
     expect(text).toContain('someone@example.test');
@@ -233,14 +233,14 @@ describe('what a caller is told about connections', () => {
   test('a denied connection reads exactly like one that never existed', async () => {
     const hidden = await call(
       denied.server.url,
-      'setup_overview',
+      'lanes_setup_overview',
       {},
       'denied',
       'llk_denied_token_value',
     );
     const absent = await call(
       never.server.url,
-      'setup_overview',
+      'lanes_setup_overview',
       {},
       'never',
       'llk_never_token_value',
@@ -257,7 +257,7 @@ describe('what a caller is told about connections', () => {
   test('the account label never leaks through the provider detail either', async () => {
     const { text } = await call(
       denied.server.url,
-      'setup_provider',
+      'lanes_setup_provider',
       { id: 'example' },
       'denied',
       'llk_denied_token_value',
@@ -270,13 +270,13 @@ describe('what a caller is told about connections', () => {
 
 describe('what a caller is handed to run', () => {
   test('the command names the profile it was asked about', async () => {
-    const { text } = await call(granted.server.url, 'setup_provider', { id: 'thing' }, 'granted');
+    const { text } = await call(granted.server.url, 'lanes_setup_provider', { id: 'thing' }, 'granted');
 
     expect(text).toContain('lanes link connect thing --profile granted');
   });
 
   test('it discloses no filesystem path', async () => {
-    const { text } = await call(granted.server.url, 'setup_overview', {}, 'granted');
+    const { text } = await call(granted.server.url, 'lanes_setup_overview', {}, 'granted');
 
     expect(text).not.toContain('/');
   });
@@ -284,12 +284,12 @@ describe('what a caller is handed to run', () => {
   test('an unknown provider is an error result rather than a dropped connection', async () => {
     const { text, isError } = await call(
       granted.server.url,
-      'setup_provider',
+      'lanes_setup_provider',
       { id: 'nope' },
       'granted',
     );
 
     expect(isError).toBe(true);
-    expect(text).toContain('setup_overview');
+    expect(text).toContain('lanes_setup_overview');
   });
 });

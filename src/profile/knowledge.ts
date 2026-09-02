@@ -96,11 +96,17 @@ export type KnowledgeConfig = z.infer<typeof knowledgeTargetSchema>;
 /**
  * Where each area sits inside the repository.
  *
- * Three directories, named after the three things that move. `memory` is also
- * the memory provider's own blob namespace — the prefix core scopes it into under
- * the profile's blob root — which is why the same word does both jobs: the
- * route that redirects it and the directory it lands in are the same fact, and
- * spelling them separately is how they would come to disagree.
+ * Three directories, named after the three things that move — and named for a
+ * *reader*, because a knowledge repository is somebody's own and they browse it
+ * on GitHub. `memory/` is what belongs at the top of that tree, not
+ * `lanes_memory/`.
+ *
+ * **This used to be the provider's blob prefix as well**, on the reasoning that
+ * one word doing both jobs could not come to disagree with itself. Contract 4
+ * prefixed the owner layer (`lanes_memory`), so the two are no longer the same
+ * string and the choice has to be made rather than avoided: the route below
+ * reads `PROVIDER_PREFIX`, and this stays the readable name. `KNOWLEDGE_ROUTES`
+ * pairs them in one place so a rename still cannot move one without the other.
  *
  * Declared here, beside the schema, so the runtime that opens these stores and
  * the command that migrates into them read one definition.
@@ -112,6 +118,13 @@ export const KNOWLEDGE_LAYOUT = {
 } as const;
 
 export type KnowledgeArea = keyof typeof KNOWLEDGE_LAYOUT;
+
+/** The blob prefix each area is scoped into locally — the provider's own id. */
+export const KNOWLEDGE_PREFIX = {
+  memory: 'lanes_memory',
+  skills: 'lanes_skills',
+  entities: 'lanes_entities',
+} as const;
 
 /** The directory one area occupies, under the profile's optional path prefix. */
 export function knowledgeRoot(knowledge: KnowledgeConfig, area: KnowledgeArea): string {

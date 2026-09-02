@@ -189,6 +189,6 @@ function assertStatus(raw: string | undefined): TaskStatus | undefined {
  * CLI cannot address a different directory from the provider.
  */
 export function tasksStore(runtime: Runtime, flags: OwnerFlags): BlobStore {
-  const connection = ownerConnection(runtime.config, 'tasks', flags);
-  return scopeBlobStore(runtime.storage, scopeNamespace('tasks', connection));
+  const connection = ownerConnection(runtime.config, 'lanes_tasks', flags);
+  return scopeBlobStore(runtime.storage, scopeNamespace('lanes_tasks', connection));
 }
