@@ -6,7 +6,12 @@ import { clientLabelFrom } from './client-info.ts';
 import { toolNameFor } from './naming.ts';
 import { resourceLinkRouter } from './routing.ts';
 import { sanitizeSchema } from './schema.ts';
-import { describeWithConnections, type BuildServerOptions, type MergedCapability } from './visibility.ts';
+import {
+  accountsByProfile,
+  describeWithConnections,
+  type BuildServerOptions,
+  type MergedCapability,
+} from './visibility.ts';
 
 /**
  * Tools — the capability kind everything else is measured against.
@@ -51,7 +56,11 @@ export function registerDiscoveredTool(
     toolNameFor(id),
     {
       ...(discovered.title ? { title: discovered.title } : {}),
-      description: describeWithConnections(discovered.description, entry.reachable),
+      description: describeWithConnections(
+        discovered.description,
+        entry.reachable,
+        accountsByProfile(options),
+      ),
       // Spread the upstream schema rather than rebuilding it from properties
       // and required alone. Vendors put `$defs` beside those and `$ref` into
       // them — Linear's attachment tools do — and a rebuild drops the
@@ -87,7 +96,11 @@ export function registerLocalTool(
     toolNameFor(id),
     {
       ...(capability.title ? { title: capability.title } : {}),
-      description: describeWithConnections(capability.description, entry.reachable),
+      description: describeWithConnections(
+        capability.description,
+        entry.reachable,
+        accountsByProfile(options),
+      ),
       inputSchema: {
         ...shape,
         // Injected by core, never declared by a provider — ADR-001. Both enums

@@ -176,6 +176,10 @@ function profileRuntimes(runtimes: ReadonlyMap<string, Runtime>): Map<string, Pr
       name,
       {
         config: runtime.config,
+        // For the `connection` argument's description: an id says nothing about
+        // which account it is, and the caller choosing between two of a vendor
+        // has only that description to go on.
+        connections: runtime.connections,
         registry: runtime.registry,
         dispatcher: runtime.dispatcher,
         policy: toPolicyDocument(runtime.config),
