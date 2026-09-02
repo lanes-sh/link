@@ -194,10 +194,16 @@ export async function migrateToContract4(
 /**
  * Move each stored credential to the ref its renamed connection now derives.
  *
- * A store that will not open is a warning rather than a throw for the same
- * reason the rest of this is ordered the way it is: the rows have not been
- * rewritten yet, so a workspace that stops here still resolves every credential
- * it did before, and the rerun does the whole job.
+ * **Throws rather than warns**, and that is the whole of its error handling. It
+ * warned once, and the rehearsal that found it showed why it must not: the
+ * warning was printed, `renameConnections` ran anyway, and the workspace came
+ * out with rows naming `gmail.con1` while the secret sat at
+ * `gmail/wjj_andrews`. A rerun cannot repair that — the rows are renamed, so
+ * the second run computes no rename for them and the old ref is orphaned with
+ * nothing left that knows what it belonged to.
+ *
+ * Failing here leaves the rows untouched, which is the state a rerun *can*
+ * finish from. Bytes that already moved are found in place and skipped.
  */
 async function moveCredentials(
   root: string,
@@ -207,24 +213,16 @@ async function moveCredentials(
 ): Promise<string[]> {
   if (rows.length === 0) return [];
 
-  try {
-    const [store, registry] = await Promise.all([
-      openSecretStoreFor(root, target),
-      buildRegistryWithWorkspace(root),
-    ]);
+  const [store, registry] = await Promise.all([
+    openSecretStoreFor(root, target),
+    buildRegistryWithWorkspace(root),
+  ]);
 
-    const connections = await readConnections(root);
-    return await applyCredentialMoves(
-      store,
-      planCredentialMoves(connections.connections, registry, renames),
-    );
-  } catch (cause) {
-    return [
-      `credentials could not be moved (${
-        cause instanceof Error ? cause.message : String(cause)
-      }) — nothing was renamed, so run this again`,
-    ];
-  }
+  const connections = await readConnections(root);
+  return await applyCredentialMoves(
+    store,
+    planCredentialMoves(connections.connections, registry, renames),
+  );
 }
 
 /** Every connection row, however far through the migration this workspace is. */

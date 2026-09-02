@@ -67,8 +67,16 @@ export function planCredentialMoves(
 
     for (const [from, into] of refs) {
       if (from === undefined || into === undefined || from === into) continue;
-      if (seen.has(from)) continue;
-      seen.add(from);
+
+      // Keyed on the *pair*, not on the source. Several connections can derive
+      // one ref — three iCloud surfaces authorised as one account share
+      // `icloud/<id>` through `auth.app` — and giving distinct ids to each
+      // turns one credential into three. Deduping on the source sent it to
+      // whichever connection came first and orphaned the rest, which is what a
+      // real workspace showed on the first rehearsal.
+      const pair = `${from}\u0000${into}`;
+      if (seen.has(pair)) continue;
+      seen.add(pair);
       moves.push({ from, to: into });
     }
   }
@@ -91,26 +99,34 @@ export async function applyCredentialMoves(
 ): Promise<string[]> {
   const applied: string[] = [];
 
+  // Grouped by source, because one credential may feed several destinations
+  // and the source may only go once every one of them is written. Deleting
+  // after the first would take it away from the connections still to come.
+  const bySource = new Map<string, string[]>();
   for (const move of moves) {
-    const value = await store.get(move.from);
+    const into = bySource.get(move.from) ?? [];
+    into.push(move.to);
+    bySource.set(move.from, into);
+  }
+
+  for (const [from, destinations] of bySource) {
+    const value = await store.get(from);
     if (value === null) continue;
 
-    if (await store.has(move.to)) {
-      await store.delete(move.from);
-      applied.push(`${move.from} → ${move.to} (already there)`);
-      continue;
+    for (const to of destinations) {
+      if (await store.has(to)) continue;
+
+      await store.set(to, value);
+      if ((await store.get(to)) === null) {
+        throw new ConfigError(
+          `${to} did not read back after being written. Nothing has been deleted; ` +
+            'fix the credential store and run this again.',
+        );
+      }
     }
 
-    await store.set(move.to, value);
-    if ((await store.get(move.to)) === null) {
-      throw new ConfigError(
-        `${move.to} did not read back after being written. Nothing has been deleted; ` +
-          'fix the credential store and run this again.',
-      );
-    }
-
-    await store.delete(move.from);
-    applied.push(`${move.from} → ${move.to}`);
+    await store.delete(from);
+    applied.push(`${from} → ${destinations.join(', ')}`);
   }
 
   return applied;

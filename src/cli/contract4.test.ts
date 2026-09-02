@@ -79,7 +79,13 @@ describe('what contract 4 moves', () => {
       {
         'data/credentials.enc': 'ciphertext',
         'data/credentials.enc.key': 'the key',
-        'data/providers.d/acme.yaml': 'id: acme\n',
+        // A manifest the loader accepts, because the registry is built to
+        // resolve credential refs and refuses a malformed one — the same way
+        // every other command that opens a workspace does.
+        'data/providers.d/acme.yaml':
+          'id: acme\nname: Acme\n' +
+          'connector: { kind: http, base_url: https://acme.example.com, openapi: https://acme.example.com/openapi.json }\n' +
+          'auth: { kind: header, header: X-API-Key, credential_ref: acme/api_key }\n',
         'data/audit.log/2026/08/24/x.json': '{}',
         'data/state.kv/connections%2Ev1/memory%2Elan1.json': '{}',
       },
@@ -89,7 +95,7 @@ describe('what contract 4 moves', () => {
 
     expect(await read(root, 'credentials.enc')).toBe('ciphertext');
     expect(await read(root, 'credentials.enc.key')).toBe('the key');
-    expect(await read(root, 'providers.d/acme.yaml')).toBe('id: acme\n');
+    expect(await read(root, 'providers.d/acme.yaml')).toContain('id: acme');
     expect(has(root, 'audit.log/2026/08/24/x.json')).toBe(true);
     expect(has(root, 'state.kv/connections%2Ev1/memory%2Elan1.json')).toBe(true);
 
@@ -163,6 +169,42 @@ describe('what contract 4 moves', () => {
     expect(await read(root, 'profiles/personal/vault.d/lan1.enc')).toBe('sealed');
     expect(await read(root, 'profiles/personal/vault.d/lan1.enc.key')).toBe('its key');
     expect(has(root, 'profiles/personal/skills.d/lan2/triage/SKILL.md')).toBe(true);
+  });
+
+  test('the namespaces that gained a dot bring their objects with them', async () => {
+    // `discovery` and `oauth/…` were reachable by a provider, so contract 4
+    // dots them. Renaming the namespace without carrying the objects signs out
+    // every client that had signed in and re-fetches every discovered spec —
+    // 75 records, on the workspace that found this.
+    const root = await workspace(
+      { personal: ['memory.main'] },
+      {
+        'data/state.kv/oauth/tokens/abc.json': '{"t":1}',
+        'data/state.kv/oauth/clients/def.json': '{"c":1}',
+        'data/state.kv/discovery/gmail.json': '{"d":1}',
+      },
+    );
+
+    await migrateToContract4(root);
+
+    expect(await read(root, 'state.kv/oauth%2Ev1/tokens/abc.json')).toBe('{"t":1}');
+    expect(await read(root, 'state.kv/oauth%2Ev1/clients/def.json')).toBe('{"c":1}');
+    expect(await read(root, 'state.kv/discovery%2Ev1/gmail.json')).toBe('{"d":1}');
+  });
+
+  test("a provider's own state follows its connection, slash and dot notwithstanding", async () => {
+    // A state namespace is `<provider>/<connection>` and a grant is keyed
+    // `<provider>.<connection>`. Looking one up with the other matched nothing
+    // and dropped every provider's state in silence — the same shape of bug
+    // `contract3-data.ts` records having shipped once.
+    const root = await workspace(
+      { personal: ['gmail.main'] },
+      { 'data/state.kv/gmail/main/cursor.json': '{"at":"x"}' },
+    );
+
+    await migrateToContract4(root);
+
+    expect(await read(root, 'profiles/personal/state.kv/gmail/con1/cursor.json')).toBe('{"at":"x"}');
   });
 
   test('state splits by what a key is about, not by who reads it', async () => {
@@ -291,6 +333,55 @@ describe('the credentials, which the rename would otherwise orphan', () => {
     await migrateToContract4(root);
 
     expect(await storedAt(root, 'gmail/con4')).toBe('unchanged');
+  });
+
+  test('one credential feeding several connections is copied to each', async () => {
+    // Three iCloud surfaces authorised as one account share `icloud/<id>`
+    // through `auth.app`. Giving each a distinct id turns one credential into
+    // three refs, and only a copy to every destination keeps all three
+    // working — a move to the first orphans the other two. A real workspace
+    // showed exactly this on the first rehearsal.
+    const root = await workspace({
+      personal: ['icloud_calendar.shared', 'icloud_contacts.shared', 'icloud_mail.shared'],
+    });
+    const { createFileSecretStore } = await import('#secrets');
+    await mkdir(join(root, 'data'), { recursive: true });
+    await createFileSecretStore({ path: join(root, 'data', 'credentials.enc') }).set(
+      'icloud/shared',
+      'one app-specific password',
+    );
+
+    await migrateToContract4(root);
+
+    const { createFileSecretStore: open } = await import('#secrets');
+    const store = open({ path: join(root, 'credentials.enc') });
+    for (const ref of ['icloud/con1', 'icloud/con2', 'icloud/con3']) {
+      expect(await store.get(ref)).toBe('one app-specific password');
+    }
+    expect(await store.get('icloud/shared')).toBeNull();
+  });
+
+  test('a credential store it cannot open aborts, leaving the rows renameable', async () => {
+    // It warned and carried on once. The rehearsal that found it showed why
+    // that is the wrong shape: the warning was printed, the rows were renamed
+    // anyway, and the workspace came out naming `gmail.con1` with the secret
+    // still at `gmail/wjj_andrews`. A rerun cannot repair that — the rows are
+    // renamed, so the second pass computes no rename and the old ref is
+    // orphaned with nothing left that knows what it belonged to.
+    //
+    // Failing leaves the rows untouched, which is the state a rerun finishes
+    // from.
+    const root = await workspace({ personal: ['gmail.main'] });
+    await writeFile(
+      join(root, 'lanes-link.yaml'),
+      'contract: 3\nworkspaces:\n  elsewhere:\n    credentials: { adapter: file }\n    storage: { adapter: filesystem }\n',
+    );
+
+    await expect(migrateToContract4(root)).rejects.toThrow(/not declared/);
+
+    // Untouched, so the rerun after the workspace is fixed does the whole job.
+    const rows = parse(await read(root, 'connections.yaml'))['connections'] as { id: string }[];
+    expect(rows.map((row) => row.id)).toEqual(['main']);
   });
 
   test('the endpoint token is not a connection, and does not move', async () => {

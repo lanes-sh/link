@@ -2,7 +2,13 @@ import { layout } from '#profile';
 import { RESERVED_PROVIDER_IDS } from '#connectivity';
 import { nextConnectionId } from './identity.ts';
 import type { BlobStore } from '#stores/blobs';
-import { decodeSegment, encodeSegment, isWorkspaceNamespace } from '#stores/state';
+import {
+  decodeSegment,
+  DISCOVERY_NAMESPACE,
+  encodeSegment,
+  isWorkspaceNamespace,
+  OAUTH_NAMESPACE,
+} from '#stores/state';
 import { C3 } from './contract3-layout.ts';
 import { claim, type Move } from './migrate-move.ts';
 
@@ -124,7 +130,9 @@ export async function planMoves(
       continue;
     }
     if (head === 'state.kv') {
-      for (const move of stateMoves(blob.key, tail, granting, claimed, renames)) moves.push(move);
+      for (const move of stateMoves(blob.key, tail, granting, claimed, renames, orphaned)) {
+        moves.push(move);
+      }
       continue;
     }
 
@@ -220,18 +228,54 @@ function record(
  * same fan-out as a blob does. The alternative — one cursor shared — is exactly
  * the bug ADR-066 is fixing, two agents consuming each other's position.
  */
+/**
+ * The namespaces contract 3 spelled without a dot, and contract 4 does.
+ *
+ * `discovery` and `oauth/…` were reachable by a provider — only `custom` is
+ * refused by grammar, so a manifest with id `oauth` landed inside them — and a
+ * dotted name is one no provider can reach. Renaming them is only half the job:
+ * the objects already written under the old spelling have to come across, or
+ * every client that had signed in is signed out and every discovered spec is
+ * fetched again. The rehearsal that found this left 75 OAuth records behind.
+ */
+const RENAMED_NAMESPACES: readonly [string, string][] = [
+  ['discovery', DISCOVERY_NAMESPACE],
+  ['oauth', OAUTH_NAMESPACE],
+];
+
+/** `<provider>/<connection>` as a state namespace is `<provider>.<connection>` as a ref. */
+function refOf(namespace: string): string {
+  const slash = namespace.indexOf('/');
+  return slash === -1 ? namespace : `${namespace.slice(0, slash)}.${namespace.slice(slash + 1)}`;
+}
+
 function stateMoves(
   from: string,
   tail: readonly string[],
   granting: Granting,
   claimed: Set<string>,
   renames: Renames = new Map(),
+  orphaned: string[] = [],
 ): Move[] {
   const namespace = tail.slice(0, -1).map(decodeSegment).join('/');
   const leaf = tail[tail.length - 1];
   if (leaf === undefined) return [];
 
   const key = decodeSegment(leaf.replace(/\.json$/, ''));
+
+  // The undotted spellings, carried across before anything else looks at them.
+  for (const [was, now] of RENAMED_NAMESPACES) {
+    if (namespace !== was && !namespace.startsWith(`${was}/`)) continue;
+
+    // Only the first segment. `oauth/tokens` is two segments and each is
+    // encoded on its own, so encoding `oauth.v1/tokens` whole would escape the
+    // separator too and write one segment named `oauth%2Ev1%2Ftokens`.
+    const move = claim(claimed, {
+      from,
+      to: `${layout.state()}/${[encodeSegment(now), ...tail.slice(1)].join('/')}`,
+    });
+    return move === null ? [] : [move];
+  }
 
   if (isWorkspaceNamespace(namespace)) {
     // A connection record is keyed on the ref *and* carries it in the body:
@@ -256,17 +300,31 @@ function stateMoves(
     return move === null ? [] : [move];
   }
 
-  // A cursor's namespace is `cursors.v1` and its *key* is the connection;
-  // a provider's own store is namespaced `<provider>/<connection>` instead.
+  // A cursor's namespace is `cursors.v1` and its *key* is the connection; a
+  // provider's own store is namespaced `<provider>/<connection>` instead — and
+  // that slash is not the dot a grant is keyed on. Looking the one up with the
+  // other matched nothing and dropped every provider's state in silence, which
+  // is the same shape of bug `contract3-data.ts` records having shipped once.
   const cursor = namespace === 'cursors.v1';
-  const ref = cursor ? key : namespace;
+  const ref = cursor ? key : refOf(namespace);
   const owners = granting.get(ref) ?? [];
+
+  if (owners.length === 0) {
+    orphaned.push(from);
+    return [];
+  }
+
   const settled = renames.get(ref) ?? ref;
+  const dot = settled.indexOf('.');
 
   // The rename reaches whichever half carries the ref, and only that half.
   const moved = cursor
     ? `${tail[0]!}/${encodeSegment(settled)}.json`
-    : [...settled.split('.').map(encodeSegment), ...tail.slice(2)].join('/');
+    : [
+        encodeSegment(settled.slice(0, dot)),
+        encodeSegment(settled.slice(dot + 1)),
+        ...tail.slice(2),
+      ].join('/');
 
   return owners.map((profile) => ({
     from,
