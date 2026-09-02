@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { join } from 'node:path';
+import { tokenNote } from './register.ts';
 import { harnessCommands } from './harnesses.ts';
 import { plannedAssets } from './assets.ts';
 
@@ -45,7 +46,7 @@ describe('claude', () => {
     expect(claude.remove('lanes-link')).toEqual(['mcp', 'remove', 'lanes-link']);
   });
 
-  test('it stores the token, so a rotation invalidates the registration', () => {
+  test('it can store a token, which is not the same as having stored one', () => {
     expect(claude.storesToken).toBe(true);
   });
 });
@@ -156,5 +157,32 @@ describe('the documents each harness will take', () => {
     const codex = harnessCommands('codex')!;
 
     expect(plannedAssets(codex, 'local')).toEqual(plannedAssets(codex, 'user'));
+  });
+});
+
+/**
+ * What the operator is told about the token, which is not the same question as
+ * whether the client is able to hold one.
+ */
+describe('the note about the token', () => {
+  const claude = { storesToken: true, label: 'Claude Code' };
+
+  test('says a rotate needs a re-register, when a token was stored', () => {
+    expect(tokenNote(claude, 'llk_secret').join(' ')).toContain('--force');
+  });
+
+  test('says nothing was stored, when the client will sign itself in', () => {
+    // The ordinary path against a deployed endpoint: the bare URL is
+    // registered and the client discovers the protected-resource document.
+    // Keyed on `storesToken` alone, this claimed a token had been stored and
+    // that a rotate meant re-registering — neither of which was true.
+    const said = tokenNote(claude, undefined).join(' ');
+
+    expect(said).toContain('No token was stored');
+    expect(said).not.toContain('--force');
+  });
+
+  test('and says nothing at all for a client that holds no token', () => {
+    expect(tokenNote({ storesToken: false, label: 'Codex' }, undefined)).toEqual([]);
   });
 });

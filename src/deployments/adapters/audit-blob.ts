@@ -59,6 +59,25 @@ const TAIL_YEAR_WINDOW = 10;
 
 const MARKER_PREFIX = 'runs.closed/';
 
+/**
+ * Whether a key is something this store wrote, rather than something the OS did.
+ *
+ * `verify` enumerates the whole prefix and feeds every non-marker key to the
+ * chain, so a `.DS_Store` that Finder dropped in the audit directory arrived as
+ * a record, failed to decode, and was reported as `malformed run ? at seq -1` —
+ * the whole log **BROKEN** because somebody opened the folder. Seen on a real
+ * workspace, where the file had ridden through two contract migrations.
+ *
+ * A dotfile is the narrowest rule that covers it: no key this store writes
+ * begins with a dot, in either segment. Deliberately not "does it look like an
+ * event" — a corrupt event must still fail loudly, because reporting `ok` for a
+ * record it could not read is the one thing `verify` must never do.
+ */
+function isOurs(key: string): boolean {
+  return !key.split('/').some((segment) => segment.startsWith('.'));
+}
+
+
 export interface BlobAuditOptions {
   /** Scoped to the audit root — `data/<profile>/audit.log` or its bucket prefix. */
   readonly storage: BlobStore;
@@ -113,7 +132,7 @@ export function createBlobAuditStore(options: BlobAuditOptions): AuditStore {
       for (let year = start; year >= floor && found.length < limit; year -= 1) {
         const keys = (await storage.list(`${year}/`))
           .map((entry) => entry.key)
-          .filter((key) => !key.startsWith(MARKER_PREFIX))
+          .filter((key) => !key.startsWith(MARKER_PREFIX) && isOurs(key))
           // Keys are compact ISO within a day and the day is in the path, so
           // lexicographic order is chronological — no parsing to sort.
           .sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
@@ -160,6 +179,8 @@ export function createBlobAuditStore(options: BlobAuditOptions): AuditStore {
       const markers: RunMarker[] = [];
 
       for (const entry of await storage.list('')) {
+        if (!isOurs(entry.key)) continue;
+
         const bytes = await storage.get(entry.key);
         if (bytes === null) continue;
 
