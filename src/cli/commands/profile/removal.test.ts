@@ -195,6 +195,7 @@ describe('removalPlan', () => {
     const plan = await removalPlan(config(), '/ws', 'personal', registry, {
       target: 'local',
       declared: target(),
+      disposition: { kind: 'delete' as const },
       openSecrets: async () => fakeSecrets(['profile/token']),
       openBlobs: async () => fakeBlobs(['state.kv/a']),
     });
@@ -207,31 +208,87 @@ describe('removalPlan', () => {
   });
 
 
-  test('plans no blob deletion at all, because a profile owns no bytes', async () => {
-    // The property that replaced six tests about a sweep. Under contract 2 the
-    // blob root *was* the profile's directory and `rm -r data/work` was the
-    // whole answer to "what could this profile reach". The root is the
-    // workspace's now (ADR-057, ADR-059), and the stores under it belong to
-    // connections other profiles may grant — so listing it here would queue
-    // every byte in the workspace for deletion because one profile is going.
+  test("sweeps the profile's own directory, and nothing an account owns", async () => {
+    // The inverse of what this file asserted under ADR-059, when a profile
+    // owned no bytes and the blob root was the whole workspace — listing it
+    // then would have queued every byte in the workspace for deletion because
+    // one profile was going. The profile has a directory again (ADR-066), so
+    // the sweep is bounded by it.
     const plan = await removalPlan(config(), '/ws', 'personal', registry, {
       target: 'local',
       declared: target(),
+      disposition: { kind: 'delete' as const },
       openSecrets: async () => fakeSecrets(['profile/token']),
-      openBlobs: async () => fakeBlobs(['memory/main/note.md', 'skills.d/main/triage.md']),
+      openBlobs: async () => fakeBlobs(['memory/lan1/note.md', 'skills.d/lan4/triage.md']),
     });
 
-    expect(plan.items.filter((item) => item.kind === 'blob')).toEqual([]);
-    expect(plan.items.filter((item) => item.kind === 'file')).toEqual([]);
-    // The profile's own token still goes, and the profile file still goes.
+    // Keys within the profile's own area, which is carried on the item — the
+    // executor opens the store at that area, and the two must not be able to
+    // disagree about where a key is rooted.
+    expect(ids(plan, 'blob')).toEqual(['memory/lan1/note.md', 'skills.d/lan4/triage.md']);
+    expect(plan.items.filter((item) => item.kind === 'blob').map((item) => item.area)).toEqual([
+      'profiles/personal',
+      'profiles/personal',
+    ]);
+    // An adapter must never delete the root it was configured with, so emptying
+    // leaves the directory — and one left behind is silently reused by a later
+    // `profile add` of the same name.
+    expect(ids(plan, 'file')).toEqual(['profiles/personal']);
+
     expect(ids(plan, 'secret')).toContain('profile/token');
     expect(plan.items.some((item) => item.kind === 'config')).toBe(true);
+  });
+
+  test('--migrate-to sends every object into the other profile rather than deleting it', async () => {
+    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
+      target: 'local',
+      declared: target(),
+      disposition: { kind: 'migrate' as const, into: 'work' },
+      openSecrets: async () => fakeSecrets(['profile/token']),
+      // `work` holds nothing, so there is nothing to collide with.
+      openBlobs: async (_target, area) =>
+        area === 'profiles/work' ? fakeBlobs([]) : fakeBlobs(['memory/lan1/note.md']),
+    });
+
+    // Still a deletion of the source — what changes is that the bytes are read
+    // across first, so a failure part way through leaves the source in place.
+    expect(plan.items.filter((item) => item.kind === 'blob')).toEqual([
+      {
+        target: 'local',
+        kind: 'blob',
+        id: 'memory/lan1/note.md',
+        area: 'profiles/personal',
+        movedTo: ['profiles/work', 'memory/lan1/note.md'],
+      },
+    ]);
+  });
+
+  test('a name the destination already holds is renamed, never overwritten', async () => {
+    // Resolved while this is still a plan, so the operator sees the rename in
+    // the preview they confirm from and the execution has no decision to make.
+    // The suffix goes before the extension: an asset's key is whatever the file
+    // was called, and `note.md-2` is a file nothing will open.
+    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
+      target: 'local',
+      declared: target(),
+      disposition: { kind: 'migrate' as const, into: 'work' },
+      openSecrets: async () => fakeSecrets(['profile/token']),
+      openBlobs: async (_target, area) =>
+        area === 'profiles/work'
+          ? fakeBlobs(['memory/lan1/note.md'])
+          : fakeBlobs(['memory/lan1/note.md']),
+    });
+
+    const blob = plan.items.find((item) => item.kind === 'blob');
+    expect(blob?.movedTo).toEqual(['profiles/work', 'memory/lan1/note-2.md']);
+    expect(plan.warnings.join('\n')).toContain('arrives as memory/lan1/note-2.md');
   });
 
   test('the local config is the last item, because it is the record of where things are', async () => {
     const plan = await removalPlan(config(), '/ws', 'personal', registry, {
       target: 'local',
       declared: target(),
+      disposition: { kind: 'delete' as const },
       openSecrets: async () => fakeSecrets(['profile/token']),
       openBlobs: async () => fakeBlobs(['a']),
     });
@@ -243,6 +300,7 @@ describe('removalPlan', () => {
     const plan = await removalPlan(config(), '/ws', 'personal', registry, {
       target: 'local',
       declared: target(),
+      disposition: { kind: 'delete' as const },
       openSecrets: async () => fakeSecrets(['profile/token', 'gmail/someone_else']),
       openBlobs: async () => fakeBlobs([]),
     });
@@ -256,6 +314,7 @@ describe('removalPlan', () => {
     const plan = await removalPlan(config(), '/ws', 'personal', registry, {
       target: 'cloud',
       declared: target(),
+      disposition: { kind: 'delete' as const },
       openSecrets: async () => fakeSecrets(['profile/token']),
       openBlobs: async () => fakeBlobs(['a']),
     });
@@ -272,6 +331,7 @@ describe('removalPlan', () => {
       declared: target({
         deploy: { platform: 'cloudrun', project: 'my-project', region: 'r', service: 's' },
       } as never),
+      disposition: { kind: 'delete' as const },
       openSecrets: async () => fakeSecrets([]),
       openBlobs: async () => fakeBlobs([]),
     });

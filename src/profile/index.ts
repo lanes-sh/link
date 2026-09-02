@@ -135,6 +135,7 @@ export {
 } from './workspace.ts';
 
 export {
+  PROFILE_FILE,
   LEGACY_DATA_DIR,
   LEGACY_WORKSPACE_FILE,
   layout,

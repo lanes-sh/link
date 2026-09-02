@@ -24,6 +24,7 @@ import {
 } from '../../runtime.ts';
 import { loadWorkspaceProfiles } from '#profile';
 import { removalPlan, renderPlan, type RemovalItem, type RemovalPlan } from './removal.ts';
+import { settleDisposition, type Disposition } from './disposition.ts';
 
 /**
  * Performing a removal, and being honest about the parts that did not happen.
@@ -107,9 +108,30 @@ export async function executeRemoval(
           await (await secretStore(item.target!)).delete(item.id);
           break;
 
-        case 'blob':
-          await (await blobStore(item.target!)).delete(item.id);
+        case 'blob': {
+          const store = await blobStore(item.target!, item.area);
+
+          // Read across *before* deleting, and verify it landed — the same rule
+          // the contract migrations follow, for the same reason: a copy that
+          // half happened and a source that is already gone is the one state
+          // with nothing to retry from. A collision was resolved while this was
+          // still a plan, so the destination is free.
+          if (item.movedTo !== undefined) {
+            const [area, key] = item.movedTo;
+            const bytes = await store.get(item.id);
+
+            if (bytes !== null) {
+              const into = await blobStore(item.target!, area);
+              await into.put(key, bytes);
+              if ((await into.get(key)) === null) {
+                throw new Error(`${area}/${key} did not read back after being written`);
+              }
+            }
+          }
+
+          await store.delete(item.id);
           break;
+        }
 
         case 'config':
           if (item.target === null) await deps.removeConfig(item.id);
@@ -241,9 +263,14 @@ export interface RemoveFlags extends GlobalFlags {
   readonly dryRun?: boolean | undefined;
   readonly yes?: boolean | undefined;
   readonly json?: boolean | undefined;
+  /** Delete this profile's memory, tasks, assets, entities, vault and skills. */
+  readonly deleteData?: boolean | undefined;
+  /** Move them into this profile instead. */
+  readonly migrateTo?: string | undefined;
   /** Injected by a caller that has already asked — the console, and tests. */
   readonly prompter?: Prompter | undefined;
 }
+
 
 /**
  * `lanes link profile remove <name>` — the profile, and everything it owns.
@@ -261,9 +288,31 @@ export async function removeProfile(name: string, flags: RemoveFlags): Promise<v
   const files = workspaceFiles(root);
   const { declared } = await openTarget(root, target);
 
+  const prompter = flags.prompter ?? terminalPrompter;
+  const someoneToAsk = flags.prompter ? prompter.interactive : process.stdin.isTTY;
+  const disposition = await settleDisposition(name, flags, prompter, someoneToAsk);
+
+  if (disposition === null) {
+    print(style.dim('  cancelled — nothing was removed'));
+    return;
+  }
+
+  if (disposition.kind === 'migrate') {
+    // Before the plan, because a plan against a profile that does not exist
+    // would name destinations nothing will ever read.
+    const staying = (await loadWorkspaceProfiles(root)).loaded.map((one) => one.profile);
+    if (disposition.into === name || !staying.includes(disposition.into)) {
+      throw new ConfigError(
+        `Cannot migrate "${name}" into "${disposition.into}".\n` +
+          `  Staying: ${staying.filter((one) => one !== name).join(', ') || 'nothing'}`,
+      );
+    }
+  }
+
   const plan = await removalPlan(config, root, name, registry, {
     target,
     declared,
+    disposition,
     openSecrets: (target) => openSecretStoreFor(config, root, target),
     openBlobs: (target, area) => openBlobStoreFor(config, root, target, area),
     readDefaultProfile: async () => (await readWorkspace(root))?.default_profile,

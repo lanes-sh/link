@@ -506,7 +506,15 @@ describe('removing a profile does not reach into the repository', () => {
 
     // `--dry-run`, so this asserts what the operator is shown *before* they
     // confirm — which is where a surprise of this size has to be said.
-    const { output } = await run(() => removeProfile('personal', { ...SELECT, dryRun: true, yes: true }));
+    //
+    // `--delete-data` is the sharper half of the assertion rather than a
+    // formality: the operator has said delete, and the repository still
+    // survives, because this command opens the target's declared storage and
+    // the routing that points memory at a repository is applied in
+    // `openRuntime`.
+    const { output } = await run(() =>
+      removeProfile('personal', { ...SELECT, dryRun: true, yes: true, deleteData: true }),
+    );
 
     expect(output).toContain('my-org/my-notes');
     expect(output).toContain('survive this removal');
