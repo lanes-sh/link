@@ -1,4 +1,11 @@
-import { CONNECTIONS_FILE, listProfiles, workspaceFiles, writeWorkspaceFile } from '#profile';
+import {
+  CONNECTIONS_FILE,
+  listProfiles,
+  SUPPORTED_CONTRACT,
+  WORKSPACE_FILE,
+  workspaceFiles,
+  writeWorkspaceFile,
+} from '#profile';
 import { newConnectionsTemplate } from './config-templates.ts';
 import { ConfigDocument } from './config-edit.ts';
 import { ok, print, style, warn } from './output.ts';
@@ -13,6 +20,56 @@ import { DEFAULT_SURFACES, ensureOwnerLayer, repairLines, repaired } from './con
  * documents and is tested as one; the sweep is all filesystem, ordering and
  * what to say when a profile will not open.
  */
+
+/**
+ * Stamp the registry with the contract the workspace is actually in.
+ *
+ * `renameRegistry` copies `lanes-link.yaml` to `workspaces.yaml` byte for byte,
+ * which is what makes an interruption survivable — but it carried the old
+ * `contract:` across with everything else, so a migrated workspace sat at 3
+ * while every profile in it said 4, and a workspace `profile add` created said
+ * 4 from the start. Two workspaces at the same contract disagreeing about which
+ * one they are in.
+ *
+ * Cosmetic in most commands, which read the profiles. Not in `isUnmigrated`
+ * (`src/profile/registry.ts`), the one place a registry's own contract is read:
+ * it compares against `SUPPORTED_CONTRACT` to tell a pointer at an out-of-date
+ * bucket from a pointer at the wrong target, so a stale stamp there answers a
+ * question about contract 4 with a refusal naming *contract 1* and sends the
+ * operator to a `deploy` that changes nothing.
+ *
+ * Called from the migration, so its output needs no repair, and from the sweep,
+ * for the workspaces 0.9.0 already migrated. One spelling, for the reason the
+ * template and `ensureOwnerLayer` share one: two would have to agree forever.
+ */
+export async function ensureRegistryContract(workspaceRoot: string): Promise<boolean> {
+  const files = workspaceFiles(workspaceRoot);
+  if (!(await files.has(WORKSPACE_FILE))) return false;
+
+  const document = await ConfigDocument.openKey(workspaceRoot, WORKSPACE_FILE);
+  if (document.getIn(['contract']) === SUPPORTED_CONTRACT) return false;
+
+  document.setIn(['contract'], SUPPORTED_CONTRACT);
+  await document.save();
+  return true;
+}
+
+/**
+ * The first line of an error that actually says something.
+ *
+ * `message.split('\n')[0]` was the whole of this, and a `ConfigError` from a
+ * schema failure is `<path>:\n  <field>: <reason>` — so the warning rendered as
+ * "could not give personal its owner layer: /…/personal.yaml:" and named no
+ * reason at all. Seen for real on an upgrade, twice, with nothing after the
+ * colon.
+ */
+function reasonOf(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+
+  const lines = error.message.split('\n').map((line) => line.trim());
+  const said = lines.find((line) => line !== '' && !line.endsWith(':'));
+  return said ?? lines.find((line) => line !== '') ?? error.message;
+}
 
 /** `memory, tasks, assets, skills, vault, setup and entities`, in repair order. */
 function listSurfaces(): string {
@@ -109,11 +166,18 @@ export async function repairOwnerLayer(
     } catch (error) {
       say(
         warn(
-          `could not give ${name} its owner layer: ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`,
+          `could not give ${name} its owner layer: ${reasonOf(error)}`,
         ),
       );
     }
   }
 
   if (connectionsChanged) await connections.save();
+
+  // After the profiles, so a workspace that could not be repaired is not told
+  // it is current. The stamp says what the workspace is; the profiles are what
+  // makes it true.
+  if (await ensureRegistryContract(workspaceRoot)) {
+    say(ok(`stamped ${style.bold(WORKSPACE_FILE)} as contract ${SUPPORTED_CONTRACT}`));
+  }
 }
