@@ -185,14 +185,15 @@ export function visibleToolCount(options: BuildServerOptions): number {
  * entities: ordering is not selection, and a caller that cannot tell two
  * candidates apart must be given what tells them apart.
  *
- * **The enum is the qualified ref, and this join does not land.** `reachable`
- * carries `gmail.con1` — the grant row (ADR-058) — while `accountsByProfile`
- * keys on the bare `con1`, so `known.get(id)` always misses and the annotation
- * this block describes never reaches a live tool description.
- * `connection-choice.test.ts` passes bare ids in by hand, which is why it
- * passes. Contract 4 made that worse rather than academic: the ids used to
- * carry the account (`gmail.<local-part>`) and are `con1`, `con2` now, so the
- * id says nothing and the field meant to say it is switched off.
+ * **The key is the grant ref, not the bare id.** `connectionsOf` fills the enum
+ * from the grant rows (ADR-058), so `reachable` carries `gmail.con1`, and
+ * `accountsByProfile` keys on that same `ref` — one string from one source, so
+ * the two sides cannot drift. Keyed on `connection.id` instead it missed every
+ * lookup, and no served description carried an account at all, while
+ * `connection-choice.test.ts` passed bare ids in by hand and stayed green.
+ * Contract 4 is what turned that from cosmetic into a real loss: the ids used to
+ * carry the account and are `con1`, `con2` now, so the id says nothing about
+ * which mailbox it is and this annotation is the only thing that does.
  */
 export function describeWithConnections(
   description: string,
@@ -222,9 +223,9 @@ export function accountsByProfile(
 
   for (const [name, runtime] of options.profiles) {
     const rows = new Map<string, string>();
-    for (const { connection } of runtime.connections ?? []) {
+    for (const { ref, connection } of runtime.connections ?? []) {
       rows.set(
-        connection.id,
+        ref,
         connection.label === undefined
           ? connection.account
           : `${connection.account} (${connection.label})`,
