@@ -1,6 +1,6 @@
 # ADR-009: One endpoint serves every profile
 
-**Status:** accepted · **Milestone:** M2 · **Supersedes part of [ADR-003](003-auth-model.md)**
+**Status:** accepted; "profiles share nothing" is true again under [ADR-066](066-a-profile-owns-its-data-again.md) · **Milestone:** M2 · **Supersedes part of [ADR-003](003-auth-model.md)**
 
 ## Decision
 
