@@ -5,6 +5,7 @@ import { repairOwnerLayer } from '../config-repair-sweep.ts';
 import { migrateToCurrentContract, needsMigration, type ContractMigration } from '../workspace-migrate.ts';
 import { needsContract3, type Contract3Migration } from '../contract3.ts';
 import { needsContract4 } from '../contract4.ts';
+import { sayContract3, sayContract4 } from './update-migration.ts';
 import { emit, fail, ok, print, printErr, progress, style, warn } from '../output.ts';
 import { PACKAGE, release, type ReleaseState } from '../release.ts';
 import { version } from '../version.ts';
@@ -322,20 +323,6 @@ async function runInstall(argv: readonly string[], json: boolean): Promise<boole
  * fifteen accounts were merged into one store should see that happen rather than
  * discover it from a directory listing.
  */
-function sayContract3(migration: Contract3Migration, say: (line: string) => void): void {
-  say(
-    `migrated ${migration.profiles.length} profile(s) to contract 3 — connections belong to the ` +
-      'workspace now, and a profile grants them one by one',
-  );
-  for (const change of migration.changes) say(`  ${change}`);
-
-  if (migration.renames.length > 0) {
-    say('  Two profiles named different accounts with the same id, so one was renamed.');
-    say('  Check the grants in each profile before running an agent against them.');
-  }
-
-  say(`  The old per-profile credential stores are left in place; remove them once this works.`);
-}
 
 async function migrateLocal(root: string, say: (line: string) => void): Promise<boolean> {
   try {
@@ -354,6 +341,7 @@ async function migrateLocal(root: string, say: (line: string) => void): Promise<
 
     if (migration.legacy) sayLegacyTargets(migration.legacy, say);
     if (migration.contract3) sayContract3(migration.contract3, say);
+    if (migration.contract4) sayContract4(migration.contract4, say);
     return true;
   } catch (error) {
     say(`could not migrate this workspace: ${error instanceof Error ? error.message : String(error)}`);

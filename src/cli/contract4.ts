@@ -133,7 +133,7 @@ export async function migrateToContract4(
   // two destinations, which is the shape this check exists to catch elsewhere.
   assertOneObjectPerDestination(plan.moves.filter((move) => move.keep !== true));
 
-  const changes = describe(plan, profiles);
+  const changes = [...describe(plan, profiles), ...repositoryNotes(configs, renames)];
   if (!options.apply) {
     return {
       workspaceRoot,
@@ -254,6 +254,55 @@ async function renameRegistry(root: string): Promise<void> {
   await files.delete(C3.workspace);
 }
 
+/**
+ * What a `knowledge:` repository needs done by hand, named rather than left.
+ *
+ * A profile keeping its memory and entities in GitHub addresses them by the
+ * connection id — an entry reaches the repository as `memory/<id>/<entry>.md`.
+ * Contract 4 renames the id, so the provider starts reading `memory/lan1/`
+ * while the repository still holds `memory/main/`: `memory_search` returns
+ * nothing and `entities_find` finds nobody, with the data sitting intact under
+ * the old name and nothing having failed.
+ *
+ * Not repaired here on purpose. Renaming directories in somebody's repository
+ * is a network write to a thing this migration does not own, and `applyMoves`
+ * cannot reach a GitHub store at all — so the honest move is to say exactly
+ * what to rename, which is one `git mv` per area. `removalPlan` warns about the
+ * same class for the same reason.
+ */
+function repositoryNotes(
+  configs: ReadonlyMap<string, { knowledge?: unknown; grants?: { connection?: unknown }[] }>,
+  renames: Renames,
+): string[] {
+  const notes: string[] = [];
+
+  for (const [profile, config] of configs) {
+    const repo = (config.knowledge as { repo?: unknown } | undefined)?.repo;
+    if (typeof repo !== 'string') continue;
+
+    for (const surface of ['memory', 'entities'] as const) {
+      const granted = (config.grants ?? [])
+        .map((grant) => grant.connection)
+        .find((ref): ref is string => typeof ref === 'string' && ref.startsWith(`${surface}.`));
+      if (granted === undefined) continue;
+
+      const to = renames.get(granted);
+      if (to === undefined) continue;
+
+      const was = granted.slice(granted.indexOf('.') + 1);
+      const now = to.slice(to.indexOf('.') + 1);
+      if (was === now) continue;
+
+      notes.push(
+        `${repo}: rename ${surface}/${was}/ to ${surface}/${now}/ — "${profile}" reads it by the ` +
+          'connection id, and nothing here can write to your repository',
+      );
+    }
+  }
+
+  return notes;
+}
+
 function describe(plan: DataPlan, profiles: readonly string[]): string[] {
   const changes = [`${C3.workspace} → ${WORKSPACE_FILE}`];
 
@@ -269,6 +318,17 @@ function describe(plan: DataPlan, profiles: readonly string[]): string[] {
   }
   for (const key of plan.orphaned) {
     changes.push(`${key}: no profile grants it, so it stays where it is`);
+  }
+
+  // Said as what it is. Contract 3 merged these and deliberately did not delete
+  // them, so a workspace that came through it still holds a decryptable
+  // credential document per profile — and reporting that as an ungranted store
+  // reads as tidy-up rather than as a credential left on disk.
+  for (const key of plan.leftover) {
+    changes.push(
+      `${key}: a credential store contract 3 merged and left behind — its contents are in ` +
+        `${layout.credentials()} now, so delete it`,
+    );
   }
 
   return changes;

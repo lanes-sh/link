@@ -157,6 +157,27 @@ describe('what contract 4 moves', () => {
     expect(migration.changes.join('\n')).toContain('copied into personal and work');
   });
 
+  test("a contract-2 credential store is named as one, not as an ungranted store", async () => {
+    // Contract 3 merges these and deliberately does not delete them, so a
+    // workspace that came through it still holds one per profile. Classified as
+    // `<provider>/<connection>` it was reported as "no profile grants it" —
+    // true, and the wrong sentence about a decryptable credential document.
+    const root = await workspace(
+      { personal: ['memory.main'] },
+      {
+        'data/personal/credentials.enc': 'ciphertext',
+        'data/personal/credentials.enc.key': 'the key that opens it',
+      },
+    );
+
+    const migration = await migrateToContract4(root);
+
+    expect(migration.changes.join('\n')).toContain('a credential store contract 3 merged');
+    expect(migration.changes.join('\n')).not.toContain(
+      'data/personal/credentials.enc: no profile grants it',
+    );
+  });
+
   test('a store nobody grants is left where it is, and named', async () => {
     const root = await workspace(
       { personal: ['memory.main'] },
@@ -451,6 +472,28 @@ describe('the credentials, which the rename would otherwise orphan', () => {
     // `profile/token` looks like `<something>/<id>` and is not one. Moving it
     // would take the endpoint's own token away from every profile at once.
     expect(await storedAt(root, 'profile/token')).toBe('the endpoint token');
+  });
+});
+
+describe('a knowledge repository, which the migration cannot reach', () => {
+  test('the directory rename is named, because nothing here can do it', async () => {
+    // An entry reaches the repository as `memory/<id>/<entry>.md`, so renaming
+    // the connection makes the provider read `memory/lan1/` while the
+    // repository still holds `memory/main/` — search returns nothing, with the
+    // data intact under the old name and nothing having failed.
+    const root = await workspace({ personal: ['memory.main', 'entities.main'] });
+    const path = join(root, 'profiles', 'personal.yaml');
+    await writeFile(
+      path,
+      `${await read(root, 'profiles/personal.yaml')}knowledge:\n  adapter: github\n  repo: my-org/my-notes\n`,
+    );
+
+    const migration = await migrateToContract4(root);
+
+    expect(migration.changes.join('\n')).toContain(
+      'my-org/my-notes: rename memory/main/ to memory/lan1/',
+    );
+    expect(migration.changes.join('\n')).toContain('rename entities/main/ to entities/lan');
   });
 });
 

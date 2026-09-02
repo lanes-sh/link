@@ -62,6 +62,13 @@ export interface DataPlan {
   readonly shared: readonly { readonly key: string; readonly profiles: readonly string[] }[];
   /** Granted by nobody. Left exactly where it is, and named. */
   readonly orphaned: readonly string[];
+  /**
+   * Per-profile credential stores contract 3 merged but did not delete.
+   *
+   * Named separately because they are a decryptable credential document and its
+   * key, and "no profile grants it" is the wrong sentence about one.
+   */
+  readonly leftover: readonly string[];
 }
 
 /**
@@ -85,6 +92,7 @@ export async function planMoves(
   const moves: Move[] = [];
   const shared: { key: string; profiles: readonly string[] }[] = [];
   const orphaned: string[] = [];
+  const leftover: string[] = [];
   const claimed = new Set<string>();
 
   for (const blob of await files.list('data/')) {
@@ -135,6 +143,19 @@ export async function planMoves(
       continue;
     }
 
+    // **A contract-2 leftover is a credential, not an ungranted store.** The
+    // contract-3 migration deliberately leaves `data/<profile>/credentials.enc`
+    // and its `.key` behind — read back and merged, never deleted — so a
+    // workspace that came through it still holds them. Classified as
+    // `<provider>/<connection>` they were reported as "no profile grants it, so
+    // it stays where it is", which is true and is the wrong sentence about a
+    // decryptable credential document: the operator reads it as tidy-up and
+    // leaves it.
+    if (tail[0] === 'credentials.enc' || tail[0] === 'credentials.enc.key') {
+      leftover.push(blob.key);
+      continue;
+    }
+
     // Otherwise `<provider>/<connection>/…`, the namespace every provider's
     // blobs are scoped into — memory, tasks, assets, entities and every vendor.
     const connection = tail[0];
@@ -165,7 +186,7 @@ export async function planMoves(
     if (await files.has(from)) moves.push({ from, to: layout.profileConfig(profile) });
   }
 
-  return { moves, shared, orphaned };
+  return { moves, shared, orphaned, leftover };
 }
 
 /**
