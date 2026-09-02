@@ -46,8 +46,8 @@ describe('what a deploy sends up', () => {
     // ADR-030 moved both into the profile. They still have to go up: a skill
     // that does not is the ADR-014 §2 regression, and a manifest that does not
     // is a provider the revision has never heard of.
-    expect(isWorkspaceConfig('data/skills.d/main/review-diff/SKILL.md')).toBe(true);
-    expect(isWorkspaceConfig('data/skills.d/main/review-diff.md')).toBe(true);
+    expect(isWorkspaceConfig('profiles/personal/skills.d/main/review-diff/SKILL.md')).toBe(true);
+    expect(isWorkspaceConfig('profiles/personal/skills.d/main/review-diff.md')).toBe(true);
     expect(isWorkspaceConfig('data/providers.d/acme.yaml')).toBe(true);
   });
 
@@ -61,13 +61,13 @@ describe('what a deploy sends up', () => {
 
   test('credentials never go, however they are spelled', () => {
     for (const key of [
-      'data/credentials.enc',
-      'data/credentials.enc.key',
-      'data/vault.d/main.enc',
-      'data/vault.d/main.enc.key',
-      'data/state.kv/connections%2Ev1/gmail%2Emain.json',
-      'data/audit.log/2026/08/12/x.json',
-      'data/memory/main/note.md',
+      'credentials.enc',
+      'credentials.enc.key',
+      'profiles/personal/vault.d/main.enc',
+      'profiles/personal/vault.d/main.enc.key',
+      'state.kv/connections%2Ev1/gmail%2Emain.json',
+      'audit.log/2026/08/12/x.json',
+      'profiles/personal/memory/main/note.md',
       'data/gmail/ada_lovelace/attachments/x.pdf',
     ]) {
       expect(isWorkspaceConfig(key)).toBe(false);
@@ -86,7 +86,7 @@ describe('what a deploy sends up', () => {
       'data/providers.d',
       // The area itself, with a connection but no file — a directory is not a
       // file to send.
-      'data/skills.d/main',
+      'profiles/personal/skills.d/main',
       'data//skills.d/review-diff.md',
     ]) {
       expect({ key, sent: isWorkspaceConfig(key) }).toEqual({ key, sent: false });
@@ -114,7 +114,7 @@ describe('what a deploy sends up', () => {
     // any profile in the workspace may grant one — so "only this profile's
     // skills" is not a set that can be computed, and withholding them would
     // deploy an endpoint whose prompts are missing.
-    expect(isWorkspaceConfig('data/skills.d/main/a.md', ['personal'])).toBe(true);
+    expect(isWorkspaceConfig('profiles/personal/skills.d/main/a.md', ['personal'])).toBe(true);
     expect(isWorkspaceConfig('data/providers.d/acme.yaml', ['personal'])).toBe(true);
   });
 
@@ -549,8 +549,8 @@ describe('the allowlist against a real workspace listing', () => {
     expect(await landed(destination)).toEqual([
       'connections.yaml',
       'data/providers.d/acme.yaml',
-      'data/skills.d/main/review-diff/SKILL.md',
-      'data/skills.d/work/triage.md',
+      'profiles/personal/skills.d/main/review-diff/SKILL.md',
+      'profiles/personal/skills.d/work/triage.md',
       'profiles/personal/profile.yaml',
       'profiles/work/profile.yaml',
     ]);
@@ -569,8 +569,8 @@ describe('the allowlist against a real workspace listing', () => {
     expect(await landed(destination)).toEqual([
       'connections.yaml',
       'data/providers.d/acme.yaml',
-      'data/skills.d/main/review-diff/SKILL.md',
-      'data/skills.d/work/triage.md',
+      'profiles/personal/skills.d/main/review-diff/SKILL.md',
+      'profiles/personal/skills.d/work/triage.md',
       'profiles/personal/profile.yaml',
     ]);
   });
@@ -581,7 +581,7 @@ describe('the allowlist against a real workspace listing', () => {
     // either, silently.
     const { source } = await populated();
 
-    expect(await landed(source)).toContain('data/credentials.enc.key');
+    expect(await landed(source)).toContain('credentials.enc.key');
   });
 });
 

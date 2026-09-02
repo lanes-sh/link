@@ -10,9 +10,7 @@ import { parseDocument } from 'yaml';
 import {
   CONNECTIONS_FILE,
   ConfigError,
-  LEGACY_DATA_DIR,
   isRemoteWorkspace,
-  LEGACY_WORKSPACE_FILE,
   layout,
   listProfiles,
   readWorkspaceFile,
@@ -22,6 +20,7 @@ import {
 import { RESERVED_PROVIDER_IDS } from '#connectivity';
 import { ConfigDocument } from './config-edit.ts';
 import { grantsFor, hoistConnections } from './contract3-shape.ts';
+import { C3 } from './contract3-layout.ts';
 
 /**
  * Contract 2 to contract 3: connections move out of the profile.
@@ -102,7 +101,7 @@ export async function needsContract3(workspaceRoot: string): Promise<boolean> {
 }
 
 async function readProfile(root: string, profile: string): Promise<LegacyProfile | null> {
-  const text = await readWorkspaceFile(workspaceFiles(root), `profiles/${profile}.yaml`);
+  const text = await readWorkspaceFile(workspaceFiles(root), C3.profile(profile));
   if (text === null) return null;
   try {
     return parseDocument(text).toJSON() as LegacyProfile;
@@ -162,7 +161,7 @@ export async function migrateToContract3(
     ...[...legacy.keys()].map((profile) => `profiles/${profile}.yaml: contract 3, grants`),
   ];
   if (credentials.refs.length > 0) {
-    changes.push(`${LEGACY_DATA_DIR}/credentials.enc: ${credentials.refs.length} credential(s) merged`);
+    changes.push(`${C3.credentials()}: ${credentials.refs.length} credential(s) merged`);
   }
   if (credentials.tokens.length > 0) {
     changes.push(
@@ -281,11 +280,8 @@ async function rewriteProfiles(
 ): Promise<void> {
   for (const [profile, config] of legacy) {
     // `openKey` at the contract-3 path, not `open`, which resolves the live
-    // layout. This migration *produces* contract 3 and contract 4 moves what it
-    // produced; writing the new path here would skip a step the next migration
-    // is about to take, and leave `needsContract4` looking at a tree it has no
-    // record of having moved.
-    const document = await ConfigDocument.openKey(root, `profiles/${profile}.yaml`);
+    // layout: this produces contract 3, and contract 4 moves what it produced.
+    const document = await ConfigDocument.openKey(root, C3.profile(profile));
 
     document.setIn(['contract'], 3);
     document.setIn(['grants'], grantsFor(config, perProfile.get(profile) ?? new Map()));
@@ -312,7 +308,7 @@ async function rewriteProfiles(
 
 /** `targets:` becomes `workspaces:`, and a pointer's `workspace:` becomes `at:`. */
 async function rewriteRegistry(root: string): Promise<void> {
-  const document = await ConfigDocument.openKey(root, LEGACY_WORKSPACE_FILE);
+  const document = await ConfigDocument.openKey(root, C3.workspace);
   const registry = document.toJSON() as {
     contract?: number;
     targets?: Record<string, { workspace?: string }>;

@@ -187,6 +187,8 @@ describe('a profile owns its skills, whichever instance it grants', () => {
     // for anything left behind: absent, not silently serving every profile.
     await workspace({
       'skills/review-diff/SKILL.md': skill('Review a diff', 'Review it.'),
+      // The contract-3 path: `data/skills.d/<connection>/`, with no profile in
+      // front of it. Migrated by contract 4 rather than read in place.
       'data/skills.d/personal/triage/SKILL.md': skill('Triage', 'Sort it.'),
     });
 

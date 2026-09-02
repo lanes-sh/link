@@ -1,4 +1,5 @@
 import { ConfigError, LEGACY_DATA_DIR, isRemoteWorkspace } from '#profile';
+import { C3 } from './contract3-layout.ts';
 import { createFileSecretStore } from '#secrets';
 
 /**
@@ -267,7 +268,7 @@ export async function mergeCredentials(
   if (isRemoteWorkspace(root)) return;
 
   const { merged } = await readMerged(root, plans);
-  const destination = createFileSecretStore({ path: `${root}/${LEGACY_DATA_DIR}/credentials.enc` });
+  const destination = createFileSecretStore({ path: `${root}/${C3.credentials()}` });
 
   for (const [ref, value] of merged) {
     const already = await destination.get(ref);
@@ -277,7 +278,7 @@ export async function mergeCredentials(
       // not something to overwrite silently.
       if (already === value) continue;
       throw new ConfigError(
-        `${LEGACY_DATA_DIR}/credentials.enc already holds a different value for "${ref}" than the profile ` +
+        `${C3.credentials()} already holds a different value for "${ref}" than the profile ` +
           `stores do. Nothing has been deleted; resolve it and run this again.`,
       );
     }
@@ -286,7 +287,7 @@ export async function mergeCredentials(
     if ((await destination.get(ref)) !== value) {
       throw new ConfigError(
         `The credential "${ref}" did not read back after being written to ` +
-          `${LEGACY_DATA_DIR}/credentials.enc. Nothing has been deleted; fix the store and run this again.`,
+          `${C3.credentials()}. Nothing has been deleted; fix the store and run this again.`,
       );
     }
   }

@@ -1,32 +1,15 @@
 import { ConfigError, LEGACY_DATA_DIR } from '#profile';
+import { C3 } from './contract3-layout.ts';
 import type { BlobStore } from '#stores/blobs';
 import { CONNECTIONS_NAMESPACE, decodeSegment, objectKey } from '#stores/state';
-
-/**
- * Where contract 3 put things, frozen.
- *
- * This module migrates *to* contract 3, so its destinations are contract-3
- * paths and must stay contract-3 paths however the live layout moves. Asking
- * `#profile`'s `layout` would hand back contract-4 defaults (ADR-067) and this
- * migration would write a shape the next one expects to find already moved.
- * `migrate-plan.ts` spells the contract-1 defaults out for the same reason.
- */
-const C3 = {
-  state: (): string => `${LEGACY_DATA_DIR}/state.kv`,
-  providers: (): string => `${LEGACY_DATA_DIR}/providers.d`,
-  vault: (connection: string): string => `${LEGACY_DATA_DIR}/vault.d/${connection}.enc`,
-  skills: (connection: string): string => `${LEGACY_DATA_DIR}/skills.d/${connection}`,
-} as const;
-
 
 /**
  * The half of the contract-3 migration that moves bytes rather than YAML.
  *
  * Split from `contract3.ts` on the seam the migration already has: that file
  * decides *what* the new shape is, and this one carries the credentials and
- * objects into it. Both halves are ordered so a crash between any two steps
- * leaves a workspace that still opens, and the rule that makes that true lives
- * here — nothing is deleted until what replaced it has been read back.
+ * objects into it. Both are ordered so a crash between any two steps leaves a
+ * workspace that still opens — nothing is deleted until it has been read back.
  */
 
 export interface Move {
@@ -132,7 +115,7 @@ export async function planMoves(
       // One object per event under a key already carrying the timestamp, so
       // concatenating three profiles' logs is exactly moving them across.
       if (head === 'audit.log') {
-        moves.push({ from: blob.key, to: `${LEGACY_DATA_DIR}/audit.log/${tail.join('/')}` });
+        moves.push({ from: blob.key, to: `${C3.audit()}/${tail.join('/')}` });
         continue;
       }
       if (head === 'state.kv') {

@@ -54,12 +54,9 @@ import { findSecrets, formatSecretFindings } from './secret-detection.ts';
 export const WORKSPACE_FILE = 'workspaces.yaml';
 
 /**
- * What the registry was called through contract 3.
- *
- * Still recognised by the ancestor walk, and only there. A workspace holding
- * only the old name has to stay *findable* or the migration that renames it
- * cannot be run against it — `doctor --fix` would report no workspace here and
- * the operator would have no route forward. Nothing writes this name.
+ * What the registry was called through contract 3. Recognised, never written:
+ * a workspace holding only the old name has to stay findable, or the migration
+ * that renames it cannot be run against it.
  */
 export const LEGACY_WORKSPACE_FILE = 'lanes-link.yaml';
 
@@ -246,20 +243,14 @@ export async function listProfiles(workspaceRoot: string): Promise<string[]> {
     const entries = await workspaceFiles(workspaceRoot).list(root);
 
     // A profile is a *directory* holding a `profile.yaml` (ADR-067), so the
-    // shape being matched is `<name>/profile.yaml` and nothing else under it
-    // counts. The listing walks each profile's memory, tasks and assets on the
-    // way past, which is the price of the declaration sitting beside the bytes;
-    // `audit.log/` is the workspace's and is not in here, so the largest
-    // collection by object count is not walked.
+    // shape matched is `<name>/profile.yaml`. The listing walks each profile's
+    // memory and assets on the way past, which is the price of the declaration
+    // sitting beside the bytes; `audit.log/` is the workspace's, so the largest
+    // collection is not in here.
     //
-    // **Both shapes, and the flat one is not a leftover to ignore.** Through
-    // contract 3 a profile was `profiles/<name>.yaml`. Every migration
-    // enumerates through here, so listing only the new shape means a workspace
-    // that has not been migrated yet holds no profiles as far as the code that
-    // migrates it is concerned — it reports nothing to do and the operator is
-    // stuck. It is the same reason `resolveWorkspaceRoot` still answers to
-    // `lanes-link.yaml`: a thing that needs migrating has to be findable by the
-    // command that migrates it.
+    // **Both shapes**, because every migration enumerates through here: listing
+    // only the new one leaves an unmigrated workspace holding no profiles as
+    // far as its own migration is concerned. Same rule as the marker file.
     const names = new Set<string>();
     for (const entry of entries) {
       const rest = entry.key.slice(root.length);
