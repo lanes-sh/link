@@ -7,6 +7,7 @@ import {
 } from '#profile';
 import { parseDocument } from 'yaml';
 import { ConfigDocument } from './config-edit.ts';
+import { openOrCreateConnections } from './config-repair-sweep.ts';
 import { ensureRegistryContract } from './config-repair-sweep.ts';
 
 /**
@@ -116,8 +117,11 @@ export async function migrateToContract5(
   // owner-role member of a profile that held the ref. Refusing beats writing a
   // row nobody can use: a token bound to the wrong subject reaches the wrong
   // profiles, and one bound to nobody reaches none while looking issued.
-  const document = await ConfigDocument.openKey(workspaceRoot, CONNECTIONS_FILE);
-  const existing = asRows(document.getIn(['tokens']));
+  const document = await openOrCreateConnections(workspaceRoot);
+  // Through `toJSON`, not `getIn`. `getIn` hands back YAML nodes, so reading
+  // `row.ref` off one is `undefined` — the idempotence check below silently
+  // never matched, and a rerun after an interruption wrote the row twice.
+  const existing = asRows((document.toJSON() as { tokens?: unknown } | null)?.tokens);
   let next = existing.length + 1;
 
   for (const [ref, holders] of refs) {

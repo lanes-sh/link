@@ -55,7 +55,7 @@ $ bun install -g @lanes-sh/link                # puts `lanes` on your PATH
 $ lanes auth login                             # opens a browser once
 $ lanes link profile add personal --workspace local
 $ lanes link profile members add --me --profile personal --workspace local
-$ lanes link start --profile personal --workspace local
+$ lanes link start --workspace local
 ok    serving http://127.0.0.1:7337/mcp
       profiles: personal
 ```
@@ -63,7 +63,7 @@ ok    serving http://127.0.0.1:7337/mcp
 Then, in another shell:
 
 ```console
-$ lanes link mcp add --profile personal --workspace local     # every agent installed; or name one: claude, codex
+$ lanes link mcp add --workspace local     # every agent installed; or name one: claude, codex
 ok    registered lanes-link with Claude Code (user scope)
 ok    registered lanes-link with Codex
 ```
@@ -75,8 +75,14 @@ Mail and calendar are the next step. **[Full quickstart →](https://lanes.sh/do
 **Why the sign-in.** A profile declares who may consume it, and there is nothing to check that
 against if the endpoint has no idea who is asking. That is a real dependency for a self-hostable
 tool and worth stating plainly; what it is not is a dependency per request. The network is needed
-to sign in and to refresh, and a machine offline for a day keeps serving. `lanes link token
-show` still mints a static token for CI, which has no browser to sign in with.
+to sign in and to refresh, and a machine offline for a day keeps serving.
+
+**Why `mcp add` names no profile.** One endpoint serves every profile in the workspace, and each
+call names one in its `profile` argument — so registering is about the endpoint, not a profile.
+Which profiles a client actually reaches is decided when its owner signs in: every profile whose
+`members:` lists them, and no others. A credential is an identity here, not a selection. For a
+runner with no browser, `lanes link token issue --me` mints a static token that reaches exactly
+what its subject is a member of.
 
 ## What you keep in it
 

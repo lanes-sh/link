@@ -197,6 +197,7 @@ describe('the provider context exposes no control-plane handle', () => {
       manifest: exampleProvider.manifest,
       definition: exampleProvider,
       connection: { id: 'a', provider: 'example', account: 'A' },
+      profiles: ['personal'],
       state: createMemoryState(),
       credentials: createMemoryCredentials({ 'gmail/main': 'refresh-token' }),
       storage: createMemoryBlobStore(),
@@ -214,10 +215,26 @@ describe('the provider context exposes no control-plane handle', () => {
       'connection',
       'credentials',
       'log',
+      // The caller's reachable profile names (ADR-068). A design decision, and
+      // the argument for it is that it is not a handle: it is the same routing
+      // fact the client already holds in every tool's `profile` enum, and a
+      // provider still acts in exactly one profile per dispatch. It is here so
+      // a surface describing what a caller can reach is given the caller's
+      // answer rather than the workspace's.
+      'profiles',
       'signal',
       'state',
       'storage',
     ]);
+  });
+
+  test('the profile names it carries are strings, not a way into any of them', () => {
+    // The thing that would make this a control-plane handle is a runtime, a
+    // store, or a dispatcher per profile. It is a list of names.
+    const surface = contextFor() as unknown as Record<string, unknown>;
+
+    expect(Array.isArray(surface['profiles'])).toBe(true);
+    expect((surface['profiles'] as unknown[]).every((n) => typeof n === 'string')).toBe(true);
   });
 
   test('carries no unscoped store, config, policy, or registry', () => {
@@ -323,6 +340,7 @@ describe('vault will not be able to reach the credential store', () => {
       manifest: exampleProvider.manifest,
       definition: exampleProvider,
       connection: { id: 'a', provider: 'example', account: 'A' },
+      profiles: ['personal'],
       state: createMemoryState(),
       credentials: createMemoryCredentials(),
       storage: createMemoryBlobStore(),

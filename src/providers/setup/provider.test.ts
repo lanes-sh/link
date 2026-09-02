@@ -71,13 +71,28 @@ function tool(name: string, options: Parameters<typeof createSetupProvider>[0]):
   return found;
 }
 
-/** Only `connection.key` is read by these handlers. */
-const context = { connection: { key: 'lanes_setup.main', id: 'main', provider: 'lanes_setup' } } as
-  unknown as ProviderContext;
+/**
+ * `connection.key` and `profiles` are the only two these handlers read.
+ *
+ * `profiles` is the *caller's* reachable set (ADR-068), which is what the
+ * overview names — so a test that wants to see the leak this fixed passes a
+ * narrower set than `options.profiles` holds.
+ */
+const contextFor = (profiles: readonly string[] = ['personal']): ProviderContext =>
+  ({
+    connection: { key: 'lanes_setup.main', id: 'main', provider: 'lanes_setup' },
+    profiles,
+  }) as unknown as ProviderContext;
 
-async function textOf(capability: Capability, input: unknown): Promise<string> {
+const context = contextFor();
+
+async function textOf(
+  capability: Capability,
+  input: unknown,
+  ctx: ProviderContext = context,
+): Promise<string> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const result = (await (capability as any).handler(input, context)) as {
+  const result = (await (capability as any).handler(input, ctx)) as {
     content: { text: string }[];
     isError?: boolean;
   };
@@ -153,16 +168,44 @@ describe('lanes_setup.overview', () => {
     expect(await textOf(capability, {})).toContain('thing.main');
   });
 
-  test('points at sibling profiles by name only', async () => {
-    const text = await textOf(tool('overview', {
-      profile: 'personal',
-      target: 'local',
-      profiles: ['personal', 'work'],
-      catalogue: CATALOGUE,
-    }), {});
+  test('names the sibling profiles this caller can reach', async () => {
+    const text = await textOf(
+      tool('overview', {
+        profile: 'personal',
+        target: 'local',
+        profiles: ['personal', 'work'],
+        catalogue: CATALOGUE,
+      }),
+      {},
+      contextFor(['personal', 'work']),
+    );
 
-    expect(text).toContain('work');
-    expect(text).not.toContain('personal, work');
+    expect(text).toContain('You can reach 2 profile(s)');
+    expect(text).toContain('Also: work');
+    // Nothing to hide from somebody who is a member of both.
+    expect(text).not.toContain('you are not a member of');
+  });
+
+  test('a profile the caller cannot reach is counted, never named', async () => {
+    // The leak this had: `options.profiles` is every profile on disk, and
+    // naming them told a delegated member about profiles `mayReach` keeps out
+    // of the `profile` enum they were shown (ADR-068). A count is not a leak —
+    // and it is what stops an agent concluding the others do not exist.
+    const text = await textOf(
+      tool('overview', {
+        profile: 'personal',
+        target: 'local',
+        profiles: ['personal', 'work', 'shared'],
+        catalogue: CATALOGUE,
+      }),
+      {},
+      contextFor(['personal']),
+    );
+
+    expect(text).not.toContain('work');
+    expect(text).not.toContain('shared,');
+    expect(text).toContain('You can reach 1 profile(s)');
+    expect(text).toContain('2 other profile(s) exist here that you are not a member of');
   });
 
   /**

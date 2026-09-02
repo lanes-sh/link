@@ -271,6 +271,11 @@ export class Dispatcher {
         // provider that could be brokered but is not reads its client from the
         // store, so it has to be able to.
         ownClients: this.#deps.oauthApps,
+        // The *caller's* set, not the workspace's. `undefined` means
+        // unrestricted — the stdio pipe — and the profile in play is the only
+        // honest answer a dispatcher can give for it without knowing what the
+        // endpoint is serving.
+        profiles: request.principal.profiles ?? [request.principal.profile],
         ...(entry.manifest.connector.kind === 'local' ? {} : { authorize }),
       });
 

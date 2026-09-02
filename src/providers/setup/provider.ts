@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { defineLocalProvider, keepKeys, type ProviderDefinition, type ProviderManifest } from '#connectivity';
+import { defaultConnectionLabel } from '#profile';
 import { planAll, planFor, type ProviderPlan } from './plan.ts';
 
 /**
@@ -54,7 +55,12 @@ export interface SetupProviderOptions {
    * further than the commands this provider emits — nothing here opens a store.
    */
   readonly target: string;
-  /** Sibling profile names on this endpoint. Names only; already at `/health`. */
+  /**
+   * Every profile in this workspace, on disk. **Not what gets rendered:** the
+   * caller's own set arrives at handler time in `ProviderContext.profiles`, and
+   * this only says *how many* are being withheld — the difference between "you
+   * reach one profile" and "you reach one of four".
+   */
   readonly profiles?: readonly string[];
   /**
    * `oauth_apps` entries this profile declares.
@@ -132,7 +138,13 @@ export function createSetupProvider(options: SetupProviderOptions): ProviderDefi
             content: [
               {
                 type: 'text',
-                text: renderOverview(options, connections, plans, handlerContext.connection.key),
+                // The caller's set, not the workspace's (ADR-068): rendering
+                // `options.profiles` named profiles `mayReach` keeps out of the
+                // `profile` enum the same caller was shown.
+                text: renderOverview(options, connections, plans, handlerContext.connection.key, {
+                  reachable: handlerContext.profiles,
+                  total: options.profiles?.length ?? handlerContext.profiles.length,
+                }),
               },
             ],
           };
@@ -188,6 +200,7 @@ function renderOverview(
   connections: ReadonlyArray<{ key: string; account: string; label?: string | undefined }>,
   plans: readonly ProviderPlan[],
   self: string,
+  caller: { reachable: readonly string[]; total: number },
 ): string {
   const lines: string[] = [`Profile "${options.profile}".`, ''];
 
@@ -199,11 +212,16 @@ function renderOverview(
       // Account first, label in brackets. The other way round for a person
       // reading `status`, and deliberately not here: an agent choosing which
       // connection to call needs the identity, and "Work mail" is not one.
+      //
+      // `defaultConnectionLabel` when the row carries none, so this calls an
+      // unnamed row what `connection list` and `/state` call it.
+      const named = connection.label ?? defaultConnectionLabel(
+        connection.key.split('.')[0] ?? connection.key,
+        connection.account,
+      );
       lines.push(
         `  ${connection.key}  — ${connection.account}` +
-          (connection.label && connection.label !== connection.account
-            ? ` (${connection.label})`
-            : ''),
+          (named && named !== connection.account ? ` (${named})` : ''),
       );
     }
   }
@@ -241,11 +259,23 @@ function renderOverview(
     );
   }
 
-  const siblings = (options.profiles ?? []).filter((name) => name !== options.profile);
-  if (siblings.length > 0) {
+  // **Which profiles *this caller* can reach** — the question an agent asks
+  // first and had no reliable answer to. `initialize.instructions` names them
+  // until its length budget is tight, then collapses to a count; this is the
+  // surface those instructions already point at, so the answer belongs here.
+  const others = caller.reachable.filter((name) => name !== options.profile);
+  lines.push('', `You can reach ${caller.reachable.length} profile(s) on this endpoint.`);
+  if (others.length > 0) {
+    lines.push(`  Also: ${others.join(', ')}. Pass one as \`profile\` to see what it reaches.`);
+  }
+
+  // A count, never names: naming them is the leak this surface used to be. That
+  // some exist is not a secret, and an agent told "one of four" asks the owner
+  // rather than concluding the other three do not exist.
+  const hidden = caller.total - caller.reachable.length;
+  if (hidden > 0) {
     lines.push(
-      '',
-      `This endpoint also serves: ${siblings.join(', ')}. Pass that profile to see what it reaches.`,
+      `  ${hidden} other profile(s) exist here that you are not a member of. Only the owner can change that.`,
     );
   }
 

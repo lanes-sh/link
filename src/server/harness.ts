@@ -144,6 +144,15 @@ export interface HarnessOptions {
   /** Extra profiles this one endpoint also serves, each with its own policy. */
   alsoServe?: ReadonlyArray<{ profile: string; policy: string }>;
   /**
+   * The profiles the static token's subject is a member of.
+   *
+   * Absent means every profile wired, which is what a workspace owner's token
+   * reaches. Naming fewer is how a test expresses a delegated member — the
+   * caller ADR-068 exists for, and the one every disclosure surface has to be
+   * checked against.
+   */
+  reaches?: readonly string[];
+  /**
    * What the endpoint calls to re-read skills before serving a request.
    *
    * Handed the registry so a test can swap the skills provider in it, which is
@@ -286,7 +295,7 @@ export function startHarness(options: HarnessOptions): Harness {
     profile: options.profile,
     tokens: async () => [{ id: 'tok1', subject: HARNESS_SUBJECT, ref: 'tokens/tok1' }],
     credentials,
-    profilesFor: async () => [...profiles.keys()],
+    profilesFor: async () => options.reaches ?? [...profiles.keys()],
   });
 
   // The real wiring from `endpoint.ts`, not a stand-in: the flow under test is

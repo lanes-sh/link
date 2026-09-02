@@ -83,7 +83,11 @@ export const ACCEPTS: Record<string, readonly string[]> = {
   start: ['port', 'only'],
   'mcp stdio': ['only'],
   'mcp add': ['name', 'scope', 'token-env', 'dry-run', 'force', 'no-skill', 'headless'],
-  'mcp skill': ['print', 'force'],
+  // No `--force`: `mcp skill` prints a path or the document and writes nothing,
+  // so there was nothing for it to force. It was accepted and ignored, which is
+  // the defect `selection.ts` exists to prevent. `mcp add --force` is the flag
+  // that replaces a registration.
+  'mcp skill': ['print'],
   'mcp list': ['name', 'scope'],
   // `--yes` because it installs the app when nothing answers the scheme, and
   // that is the one prompt in this CLI that puts an application on the machine.
