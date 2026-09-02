@@ -1,5 +1,5 @@
 import { CONNECTIONS_FILE } from '#profile';
-import { connectionsYaml, workspaceYaml } from '#profile/testing.ts';
+import { connectionsYaml, workspaceYaml, writeProfileFixture } from '#profile/testing.ts';
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -57,9 +57,9 @@ async function workspace(seed = true): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'lanes-link-knowledge-'));
   roots.push(root);
 
-  await mkdir(join(root, 'profiles'), { recursive: true });
-  await writeFile(join(root, 'lanes-link.yaml'), workspaceYaml(['local'], {defaultProfile: 'personal'}));
-  await writeFile(join(root, 'profiles', 'personal.yaml'), PROFILE);
+  await mkdir(join(root, 'profiles', 'personal'), { recursive: true });
+  await writeFile(join(root, 'workspaces.yaml'), workspaceYaml(['local'], {defaultProfile: 'personal'}));
+  await writeProfileFixture(root, 'personal', PROFILE);
   await writeFile(join(root, CONNECTIONS_FILE), connectionsYaml());
 
   if (seed) {
@@ -84,7 +84,7 @@ async function workspace(seed = true): Promise<string> {
   return root;
 }
 
-const readProfile = (root: string) => readFile(join(root, 'profiles', 'personal.yaml'), 'utf8');
+const readProfile = (root: string) => readFile(join(root, 'profiles', 'personal', 'profile.yaml'), 'utf8');
 
 let github: FakeGithub;
 beforeEach(() => {

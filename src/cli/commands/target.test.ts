@@ -1,3 +1,4 @@
+import { writeProfileFixture } from '#profile/testing.ts';
 import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -74,8 +75,8 @@ async function workspace(): Promise<{
   process.env['LANES_LINK_HOME'] = root;
 
   await mkdir(join(root, 'profiles'), { recursive: true });
-  await writeFile(join(root, 'lanes-link.yaml'), TARGETS);
-  await writeFile(join(root, 'profiles', 'personal.yaml'), PROFILE);
+  await writeFile(join(root, 'workspaces.yaml'), TARGETS);
+  await writeProfileFixture(root, 'personal', PROFILE);
   return { root, env: { LANES_LINK_HOME: root } };
 }
 
@@ -204,7 +205,7 @@ describe('a pointer, which is what a deployed target looks like from here', () =
     // work when the bucket does not.
     const { root, env } = await workspace();
     await writeFile(
-      join(root, 'lanes-link.yaml'),
+      join(root, 'workspaces.yaml'),
       `contract: 3
 
 workspaces:

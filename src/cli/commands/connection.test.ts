@@ -70,7 +70,7 @@ async function workspace(): Promise<string> {
   const held = await Bun.file(connections).text();
   await Bun.write(connections, held.replace('connections:', `connections:${CONNECTIONS}`));
 
-  const path = join(root, 'profiles', 'personal.yaml');
+  const path = join(root, 'profiles', 'personal', 'profile.yaml');
   const text = await Bun.file(path).text();
   await Bun.write(path, text.replace('grants:', `grants:${GRANTS}`));
   return root;
@@ -83,7 +83,7 @@ afterAll(async () => {
 });
 
 async function onDisk(root: string): Promise<Config> {
-  const text = await Bun.file(join(root, 'profiles', 'personal.yaml')).text();
+  const text = await Bun.file(join(root, 'profiles', 'personal', 'profile.yaml')).text();
   return parseConfig(text).config;
 }
 
@@ -117,7 +117,7 @@ describe('disconnect', () => {
     const root = await workspace();
     await removeConnection('gmail.side', { ...WHERE, yes: true });
 
-    const text = await Bun.file(join(root, 'profiles', 'personal.yaml')).text();
+    const text = await Bun.file(join(root, 'profiles', 'personal', 'profile.yaml')).text();
     // The template's own commentary, which a reformatting writer would drop.
     expect(text).toContain('# One row per connection this profile may reach');
   });

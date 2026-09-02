@@ -1,5 +1,5 @@
 import { CONNECTIONS_FILE, type TargetConfig } from '#profile';
-import { workspaceYaml } from '#profile/testing.ts';
+import { workspaceYaml, writeProfileFixture } from '#profile/testing.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -31,7 +31,7 @@ afterAll(async () => {
  */
 describe('what a deploy sends up', () => {
   test('profiles go, and the workspace file does not', () => {
-    expect(isWorkspaceConfig('profiles/personal.yaml')).toBe(true);
+    expect(isWorkspaceConfig('profiles/personal/profile.yaml')).toBe(true);
 
     // The one file that must not travel. It holds the target registry, and the
     // two workspaces have different ones: this machine's says
@@ -39,7 +39,7 @@ describe('what a deploy sends up', () => {
     // pointing at itself — a loop `openTarget` refuses, on the target that had
     // just been deployed (ADR-052). The bucket's own registry is written by
     // `deploy`, from the declaration, once the upload is done.
-    expect(isWorkspaceConfig('lanes-link.yaml')).toBe(false);
+    expect(isWorkspaceConfig('workspaces.yaml')).toBe(false);
   });
 
   test('the authored areas inside a profile go — they are config, not state', () => {
@@ -105,8 +105,8 @@ describe('what a deploy sends up', () => {
   test('naming a profile sends only that profile file', () => {
     // A workspace holding personal and work should not push both into a bucket
     // that only one of them is for.
-    expect(isWorkspaceConfig('profiles/personal.yaml', ['personal'])).toBe(true);
-    expect(isWorkspaceConfig('profiles/work.yaml', ['personal'])).toBe(false);
+    expect(isWorkspaceConfig('profiles/personal/profile.yaml', ['personal'])).toBe(true);
+    expect(isWorkspaceConfig('profiles/work/profile.yaml', ['personal'])).toBe(false);
   });
 
   test('the authored areas are not filtered by profile, because they cannot be', () => {
@@ -125,7 +125,7 @@ describe('what a deploy sends up', () => {
     // bucket pointing at itself (ADR-052).
     expect(isWorkspaceConfig('connections.yaml')).toBe(true);
     expect(isWorkspaceConfig('connections.yaml', ['personal'])).toBe(true);
-    expect(isWorkspaceConfig('lanes-link.yaml')).toBe(false);
+    expect(isWorkspaceConfig('workspaces.yaml')).toBe(false);
   });
 });
 
@@ -160,9 +160,9 @@ oauth_apps: {}
   async function workspace(...profiles: string[]): Promise<string> {
     const root = await mkdtemp(join(tmpdir(), 'lanes-link-deploy-'));
     roots.push(root);
-    await mkdir(join(root, 'profiles'), { recursive: true });
+    await mkdir(join(root, 'profiles', 'personal'), { recursive: true });
     for (const name of profiles) {
-      await writeFile(join(root, 'profiles', `${name}.yaml`), OLD(name));
+      await writeProfileFixture(root, name, OLD(name));
     }
     await writeFile(join(root, CONNECTIONS_FILE), OLD_CONNECTIONS);
     return root;
@@ -172,7 +172,7 @@ oauth_apps: {}
   // connection and the rule together (ADR-058), so there is no second half to
   // check for.
   const has = async (root: string, name: string): Promise<boolean> =>
-    (await readFile(join(root, 'profiles', `${name}.yaml`), 'utf8')).includes('connection: setup.');
+    (await readFile(join(root, 'profiles', name, 'profile.yaml'), 'utf8')).includes('connection: setup.');
 
   test('every profile it would upload, when none is named', async () => {
     const root = await workspace('personal', 'work');
@@ -214,11 +214,11 @@ oauth_apps: {}
   test('a profile that already has it is left byte-identical', async () => {
     const root = await workspace('personal');
     await repairOwnerLayer(root, undefined);
-    const after = await readFile(join(root, 'profiles', 'personal.yaml'), 'utf8');
+    const after = await readFile(join(root, 'profiles', 'personal', 'profile.yaml'), 'utf8');
 
     await repairOwnerLayer(root, undefined);
 
-    expect(await readFile(join(root, 'profiles', 'personal.yaml'), 'utf8')).toBe(after);
+    expect(await readFile(join(root, 'profiles', 'personal', 'profile.yaml'), 'utf8')).toBe(after);
   });
 
   /**
@@ -265,7 +265,7 @@ oauth_apps: {}
 
     test('a profile that cannot be read is warned about, not fatal', async () => {
       const root = await workspace('personal', 'work');
-      await writeFile(join(root, 'profiles', 'work.yaml'), 'a: [1, 2\n');
+      await writeProfileFixture(root, 'work', 'a: [1, 2\n');
 
       // The upload that follows still sends it, which is what happened before
       // this function existed — repairing is a courtesy on the way past, and a
@@ -309,11 +309,11 @@ members: []
   async function workspaceOf(profiles: Record<string, string>): Promise<string> {
     const root = await mkdtemp(join(tmpdir(), 'lanes-link-rotatable-'));
     roots.push(root);
-    await mkdir(join(root, 'profiles'), { recursive: true });
+    await mkdir(join(root, 'profiles', 'personal'), { recursive: true });
 
     const rows: string[] = [];
     for (const [name, connections] of Object.entries(profiles)) {
-      await writeFile(join(root, 'profiles', `${name}.yaml`), PROFILE(name, connections));
+      await writeProfileFixture(root, name, PROFILE(name, connections));
       rows.push(connections);
     }
 
@@ -418,7 +418,7 @@ members: []
     const root = await workspaceOf({
       personal: '  - { id: mine, provider: gmail, account: a@example.test }',
     });
-    await writeFile(join(root, 'profiles', 'work.yaml'), 'a: [1, 2\n');
+    await writeProfileFixture(root, 'work', 'a: [1, 2\n');
 
     // Matching the repair: a broken sibling nobody named should not cost the
     // operator a rollout, and provisioning happens before anything is uploaded.
@@ -514,20 +514,20 @@ describe('the allowlist against a real workspace listing', () => {
       `contract: 3\ninstance:\n  profile: ${name}\ngrants: []\nmembers: []\n`;
 
     const files: Record<string, string> = {
-      'lanes-link.yaml': workspaceYaml(['local', 'cloud'], { defaultProfile: 'personal' }),
-      'profiles/personal.yaml': profile('personal'),
-      'profiles/work.yaml': profile('work'),
+      'workspaces.yaml': workspaceYaml(['local', 'cloud'], { defaultProfile: 'personal' }),
+      'profiles/personal/profile.yaml': profile('personal'),
+      'profiles/work/profile.yaml': profile('work'),
       'connections.yaml': `contract: 3\nconnections: []\noauth_apps: {}\n`,
-      [`${layout.skills('main')}/review-diff/SKILL.md`]: '---\ndescription: d\n---\nb\n',
-      [`${layout.skills('work')}/triage.md`]: '---\ndescription: d\n---\nb\n',
+      [`${layout.skills('personal', 'main')}/review-diff/SKILL.md`]: '---\ndescription: d\n---\nb\n',
+      [`${layout.skills('work', 'main')}/triage.md`]: '---\ndescription: d\n---\nb\n',
       [`${layout.providers()}/acme.yaml`]: 'id: acme\n',
-      'data/credentials.enc': 'ciphertext',
-      'data/credentials.enc.key': 'the key that opens it',
-      'data/vault.d/main.enc': 'ciphertext',
-      'data/state.kv/connections%2Ev1/example%2Ea.json': '{}',
-      'data/audit.log/2026/08/24/x.json': '{}',
-      'data/memory/main/note.md': 'a note',
-      'data/example/a/attachments/x.pdf': 'bytes',
+      'credentials.enc': 'ciphertext',
+      'credentials.enc.key': 'the key that opens it',
+      'profiles/personal/vault.d/main.enc': 'ciphertext',
+      'state.kv/connections%2Ev1/example%2Ea.json': '{}',
+      'audit.log/2026/08/24/x.json': '{}',
+      'profiles/personal/memory/main/note.md': 'a note',
+      'profiles/personal/example/a/attachments/x.pdf': 'bytes',
     };
 
     for (const [key, contents] of Object.entries(files)) {
@@ -551,8 +551,8 @@ describe('the allowlist against a real workspace listing', () => {
       'data/providers.d/acme.yaml',
       'data/skills.d/main/review-diff/SKILL.md',
       'data/skills.d/work/triage.md',
-      'profiles/personal.yaml',
-      'profiles/work.yaml',
+      'profiles/personal/profile.yaml',
+      'profiles/work/profile.yaml',
     ]);
   });
 
@@ -571,7 +571,7 @@ describe('the allowlist against a real workspace listing', () => {
       'data/providers.d/acme.yaml',
       'data/skills.d/main/review-diff/SKILL.md',
       'data/skills.d/work/triage.md',
-      'profiles/personal.yaml',
+      'profiles/personal/profile.yaml',
     ]);
   });
 

@@ -143,3 +143,28 @@ export function profileYaml(
     `members:${members ? `\n${members}` : ' []'}\n`
   );
 }
+
+/**
+ * Write a profile's declaration into a fixture workspace.
+ *
+ * A profile is a directory now (ADR-067), so writing one means creating that
+ * directory — which every fixture that used to write `profiles/<name>.yaml`
+ * beside its siblings got for free. Centralised here rather than repeated in
+ * twenty test files, for the reason `layout.ts` exists at all: the last time a
+ * path was spelled in two places one of them went stale, and the failure was a
+ * listing that disagreed with a loader about what existed.
+ */
+export async function writeProfileFixture(
+  root: string,
+  profile: string,
+  body: string,
+): Promise<string> {
+  const { mkdir, writeFile } = await import('node:fs/promises');
+  const { dirname, join } = await import('node:path');
+  const { layout } = await import('./layout.ts');
+
+  const path = join(root, layout.profileConfig(profile));
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, body);
+  return path;
+}

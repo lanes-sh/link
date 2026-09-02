@@ -35,7 +35,7 @@ const config = (): Config =>
 async function workspace(storage?: string): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'lanes-link-select-'));
   await writeFile(
-    join(root, 'lanes-link.yaml'),
+    join(root, 'workspaces.yaml'),
     'contract: 3\nworkspaces:\n  local:\n' +
       '    credentials: { adapter: file }\n' +
       `    storage: { adapter: filesystem${storage ? `, path: ${storage}` : ''} }\n`,

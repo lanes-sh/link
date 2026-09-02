@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { layout, PROFILE_FILE } from './layout.ts';
 import { isRemoteWorkspace, readWorkspaceFile, workspaceFiles } from './files.ts';
 import { parseConfig, type LoadedConfig } from './load.ts';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
@@ -42,14 +43,25 @@ import { findSecrets, formatSecretFindings } from './secret-detection.ts';
  * cannot do that.
  *
  * The workspace root is deliberately not part of this and keeps its chain —
- * `LANES_LINK_HOME`, then an ancestor holding `lanes-link.yaml`, then
+ * `LANES_LINK_HOME`, then an ancestor holding `workspaces.yaml` (or the
+ * `lanes-link.yaml` it was called before contract 4), then
  * `~/.lanes-link`. Getting it wrong yields "no profiles here" rather than an
  * action against the wrong account, it is the only channel a container has for
  * its bucket (ADR-023), and the ancestor walk is what makes a per-repository
  * workspace work at all.
  */
 
-export const WORKSPACE_FILE = 'lanes-link.yaml';
+export const WORKSPACE_FILE = 'workspaces.yaml';
+
+/**
+ * What the registry was called through contract 3.
+ *
+ * Still recognised by the ancestor walk, and only there. A workspace holding
+ * only the old name has to stay *findable* or the migration that renames it
+ * cannot be run against it — `doctor --fix` would report no workspace here and
+ * the operator would have no route forward. Nothing writes this name.
+ */
+export const LEGACY_WORKSPACE_FILE = 'lanes-link.yaml';
 
 /** A profile, found. Everything a command needs before it has read the config. */
 export interface ProfileSelection {
@@ -104,7 +116,14 @@ export function resolveWorkspaceRoot(options: ResolveOptions = {}): string {
     // `existsSync`, not `Bun.file(path).size`: a missing file reports size 0,
     // so a `>= 0` check would call every candidate a workspace and stop at the
     // first directory it looked at.
-    if (existsSync(join(directory, WORKSPACE_FILE))) return directory;
+    // Either name. A contract-3 workspace has only the old one, and a root
+    // that cannot be found is a root whose migration cannot be run.
+    if (
+      existsSync(join(directory, WORKSPACE_FILE)) ||
+      existsSync(join(directory, LEGACY_WORKSPACE_FILE))
+    ) {
+      return directory;
+    }
     const parent = dirname(directory);
     if (parent === directory) break;
     directory = parent;
@@ -144,7 +163,7 @@ export function installRoot(from: string): string {
  * workspace stopped being a directory.
  */
 export function profilePath(workspaceRoot: string, profile: string): string {
-  const key = `profiles/${profile}.yaml`;
+  const key = layout.profileConfig(profile);
   return isRemoteWorkspace(workspaceRoot) ? `${workspaceRoot}/${key}` : join(workspaceRoot, key);
 }
 
@@ -153,7 +172,7 @@ export async function loadProfileConfig(
   workspaceRoot: string,
   profile: string,
 ): Promise<LoadedConfig> {
-  const key = `profiles/${profile}.yaml`;
+  const key = layout.profileConfig(profile);
   const text = await readWorkspaceFile(workspaceFiles(workspaceRoot), key);
   const shown = profilePath(workspaceRoot, profile);
 
@@ -223,15 +242,21 @@ export async function readWorkspace(workspaceRoot: string): Promise<WorkspaceCon
 
 export async function listProfiles(workspaceRoot: string): Promise<string[]> {
   try {
-    const entries = await workspaceFiles(workspaceRoot).list('profiles/');
-    return entries
-      .map((entry) => entry.key.slice('profiles/'.length))
-      .filter((name) => name.endsWith('.yaml') && !name.endsWith('.example.yaml'))
-      // Direct children only: a nested directory under `profiles/` is not a
-      // profile, and a bucket listing is flat so it would otherwise look like one.
-      .filter((name) => !name.includes('/'))
-      .map((name) => name.slice(0, -'.yaml'.length))
-      .sort();
+    const root = `${layout.profilesRoot()}/`;
+    const entries = await workspaceFiles(workspaceRoot).list(root);
+
+    // A profile is a *directory* holding a `profile.yaml` (ADR-067), so the
+    // shape being matched is `<name>/profile.yaml` and nothing else under it
+    // counts. The listing walks each profile's memory, tasks and assets on the
+    // way past, which is the price of the declaration sitting beside the bytes;
+    // `audit.log/` is the workspace's and is not in here, so the largest
+    // collection by object count is not walked.
+    const names = new Set<string>();
+    for (const entry of entries) {
+      const parts = entry.key.slice(root.length).split('/');
+      if (parts.length === 2 && parts[1] === PROFILE_FILE) names.add(parts[0]!);
+    }
+    return [...names].sort();
   } catch {
     return [];
   }
@@ -254,7 +279,7 @@ export async function resolveSelection(options: ResolveOptions = {}): Promise<Pr
   if (!profile) throw noProfileNamed(workspaceRoot, await listProfiles(workspaceRoot), env);
 
   const path = profilePath(workspaceRoot, profile);
-  if (!(await workspaceFiles(workspaceRoot).has(`profiles/${profile}.yaml`))) {
+  if (!(await workspaceFiles(workspaceRoot).has(layout.profileConfig(profile)))) {
     const available = await listProfiles(workspaceRoot);
     throw new ConfigError(
       `Profile "${profile}" does not exist (looked for ${path}).\n` +

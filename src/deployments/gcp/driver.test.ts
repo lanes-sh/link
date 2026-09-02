@@ -374,7 +374,7 @@ describe('first-run provisioning', () => {
     // that now includes the manifests living inside the tree this grants, which
     // is why the expression carries a negation at all.
     expect(write).not.toContain('profiles/');
-    expect(write).not.toContain('lanes-link.yaml');
+    expect(write).not.toContain('workspaces.yaml');
     expect(write).toContain('!(resource.name.startsWith(');
     expect(write).toContain('/objects/data/providers.d/');
     expect(write).not.toContain('matches(');

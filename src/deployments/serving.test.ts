@@ -1,4 +1,4 @@
-import { workspaceYaml } from '#profile/testing.ts';
+import { workspaceYaml, writeProfileFixture } from '#profile/testing.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -42,10 +42,10 @@ async function workspace(
   const root = await mkdtemp(join(tmpdir(), 'lanes-link-serving-'));
   roots.push(root);
 
-  await writeFile(join(root, 'lanes-link.yaml'), workspaceFile);
+  await writeFile(join(root, 'workspaces.yaml'), workspaceFile);
   await mkdir(join(root, 'profiles'), { recursive: true });
   for (const [name, body] of Object.entries(profiles)) {
-    await writeFile(join(root, 'profiles', `${name}.yaml`), body);
+    await writeProfileFixture(root, name, body);
   }
   return root;
 }

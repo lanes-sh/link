@@ -15,6 +15,7 @@ import {
   validateConfigShape,
   workspaceFiles,
   writeWorkspaceFile,
+  layout,
 } from '#profile';
 
 /**
@@ -101,7 +102,7 @@ export class ConfigDocument {
    * `gs://` URL produces something that addresses nothing.
    */
   static async open(workspaceRoot: string, profile: string): Promise<ConfigDocument> {
-    return ConfigDocument.openKey(workspaceRoot, `profiles/${profile}.yaml`);
+    return ConfigDocument.openKey(workspaceRoot, layout.profileConfig(profile));
   }
 
   /**

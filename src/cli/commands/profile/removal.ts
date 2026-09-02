@@ -223,7 +223,7 @@ export async function removalPlan(
       items.push({
         target: name,
         kind: 'config',
-        id: `profiles/${profile}.yaml`,
+        id: layout.profileConfig(profile),
         note: 'the copy a deployed revision reads',
       });
     }

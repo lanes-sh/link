@@ -14,6 +14,7 @@ import {
   writeWorkspaceFile,
   resolveTargetWorkspace,
   resolveWorkspaceRoot,
+  layout,
 } from '#profile';
 
 import { recordConfigChange } from '../audit-change.ts';
@@ -93,7 +94,7 @@ export async function createProfile(
     await writeWorkspaceFile(workspaceFiles(root), CONNECTIONS_FILE, newConnectionsTemplate());
   }
 
-  if (await workspaceFiles(root).has(`profiles/${name}.yaml`)) {
+  if (await workspaceFiles(root).has(layout.profileConfig(name))) {
     throw new Error(`Profile "${name}" already exists at ${path}`);
   }
 
@@ -127,7 +128,7 @@ export async function createProfile(
 
   await writeWorkspaceFile(
     workspaceFiles(root),
-    `profiles/${name}.yaml`,
+    layout.profileConfig(name),
     newProfileTemplate(name, port, session?.subject),
   );
 

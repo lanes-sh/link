@@ -72,7 +72,7 @@ const AREAS: Record<string, [string | undefined, string]> = {
   'the audit log': [layout.audit(), '2026/08/13/1755075600000-abc.json'],
   'a memory entry': [undefined, 'memory/main/note.md'],
   'an attachment': [undefined, 'gmail/ada_lovelace/attachments/x.pdf'],
-  'a skill': [layout.skills(PROFILE), 'review-diff/SKILL.md'],
+  'a skill': [layout.skills(PROFILE, 'main'), 'review-diff/SKILL.md'],
 };
 
 const WRITES: Record<string, string> = {};
@@ -127,8 +127,8 @@ afterAll(() => {
 
 /** What ADR-007 says a deployed instance must never rewrite. */
 const READS = {
-  'its own profile': `profiles/${PROFILE}.yaml`,
-  'the workspace file': 'lanes-link.yaml',
+  'its own profile': `profiles/${PROFILE}/profile.yaml`,
+  'the workspace file': 'workspaces.yaml',
   // Inside `data/` since ADR-030, so the write condition has to carve it back
   // out rather than simply not mentioning it.
   'a provider manifest': `${layout.providers()}/acme.yaml`,

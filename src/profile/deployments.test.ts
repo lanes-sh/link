@@ -24,7 +24,7 @@ const roots: string[] = [];
 async function workspace(contents = workspaceYaml(['local', 'cloud', 'staging'])): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'lanes-link-idx-'));
   roots.push(root);
-  await writeFile(join(root, 'lanes-link.yaml'), contents);
+  await writeFile(join(root, 'workspaces.yaml'), contents);
   return root;
 }
 
@@ -127,7 +127,7 @@ describe('recording where a target lives', () => {
     const root = await workspace('# why this workspace exists\ncontract: 3\n');
     await recordTarget(root, 'cloud', { at: 'gs://your-bucket' });
 
-    expect(await readFile(join(root, 'lanes-link.yaml'), 'utf8')).toContain(
+    expect(await readFile(join(root, 'workspaces.yaml'), 'utf8')).toContain(
       '# why this workspace exists',
     );
   });
@@ -173,7 +173,7 @@ describe('a registry that is still at contract 2', () => {
       last_deploy_version: '0.8.0',
     });
 
-    const text = await readFile(join(root, 'lanes-link.yaml'), 'utf8');
+    const text = await readFile(join(root, 'workspaces.yaml'), 'utf8');
     expect(text).not.toContain('workspaces:');
     expect(text).toContain('last_deploy_version: 0.8.0');
     expect(text).not.toContain('0.7.2');
@@ -187,7 +187,7 @@ describe('a registry that is still at contract 2', () => {
 
     await recordTarget(root, 'cloud', { at: 'gs://your-bucket', primary: 'personal' });
 
-    const text = await readFile(join(root, 'lanes-link.yaml'), 'utf8');
+    const text = await readFile(join(root, 'workspaces.yaml'), 'utf8');
     expect(text).toContain('workspace: gs://your-bucket');
     expect(text).not.toContain('at: gs://your-bucket');
   });
@@ -198,6 +198,6 @@ describe('a registry that is still at contract 2', () => {
 
     await recordTarget(root, 'cloud', { at: 'gs://your-bucket', last_deploy: 'now' });
 
-    expect(await readFile(join(root, 'lanes-link.yaml'), 'utf8')).toContain('primary: personal');
+    expect(await readFile(join(root, 'workspaces.yaml'), 'utf8')).toContain('primary: personal');
   });
 });

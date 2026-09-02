@@ -1,4 +1,4 @@
-import { workspaceYaml } from '#profile/testing.ts';
+import { workspaceYaml, writeProfileFixture } from '#profile/testing.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -17,12 +17,12 @@ async function workspace(profiles: string[], defaultProfile?: string): Promise<s
   roots.push(root);
 
   await writeFile(
-    join(root, 'lanes-link.yaml'),
+    join(root, 'workspaces.yaml'),
     `contract: 1\n${defaultProfile ? `default_profile: ${defaultProfile}\n` : ''}`,
   );
-  await mkdir(join(root, 'profiles'), { recursive: true });
+  await mkdir(join(root, 'profiles', 'alpha'), { recursive: true });
   for (const name of profiles) {
-    await writeFile(join(root, 'profiles', `${name}.yaml`), `contract: 1\n`);
+    await writeProfileFixture(root, name, `contract: 1\n`);
   }
   return root;
 }
@@ -125,10 +125,10 @@ describe('reading every profile at once', () => {
     const root = await mkdtemp(join(tmpdir(), 'lanes-link-ws-'));
     roots.push(root);
 
-    await writeFile(join(root, 'lanes-link.yaml'), workspaceYaml(['local']));
-    await mkdir(join(root, 'profiles'), { recursive: true });
+    await writeFile(join(root, 'workspaces.yaml'), workspaceYaml(['local']));
+    await mkdir(join(root, 'profiles', 'alpha'), { recursive: true });
     for (const [name, body] of Object.entries(profiles)) {
-      await writeFile(join(root, 'profiles', `${name}.yaml`), body);
+      await writeProfileFixture(root, name, body);
     }
     return root;
   }
@@ -155,7 +155,7 @@ describe('reading every profile at once', () => {
 
     expect(workspace.loaded.map((entry) => entry.profile)).toEqual(['alpha', 'beta']);
     expect(workspace.unreadable).toEqual([]);
-    expect(workspace.loaded[0]!.profilePath).toBe(join(root, 'profiles', 'alpha.yaml'));
+    expect(workspace.loaded[0]!.profilePath).toBe(join(root, 'profiles', 'alpha', 'profile.yaml'));
   });
 
   test('a profile that will not parse is reported, not thrown', async () => {

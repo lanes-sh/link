@@ -306,7 +306,7 @@ const samplePlan = (over: Partial<RemovalPlan> = {}): RemovalPlan => ({
   items: [
     { target: 'local', kind: 'secret', id: 'gmail/someone' },
     { target: 'local', kind: 'blob', id: 'state.kv/a' },
-    { target: null, kind: 'config', id: '/ws/profiles/personal.yaml' },
+    { target: null, kind: 'config', id: '/ws/profiles/personal/profile.yaml' },
   ],
   untouched: [],
   warnings: [],

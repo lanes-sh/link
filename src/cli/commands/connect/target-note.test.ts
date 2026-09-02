@@ -39,7 +39,7 @@ describe('announcing the target', () => {
   const resolution: Resolution = {
     workspaceRoot: '/tmp/workspace',
     profile: 'personal',
-    profilePath: '/tmp/workspace/profiles/personal.yaml',
+    profilePath: '/tmp/workspace/profiles/personal/profile.yaml',
     target: 'local',
   };
 

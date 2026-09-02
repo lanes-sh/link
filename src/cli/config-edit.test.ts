@@ -29,8 +29,8 @@ const roots: string[] = [];
 async function profileFile(contents?: string): Promise<{ root: string; path: string }> {
   const root = await mkdtemp(join(tmpdir(), 'lanes-link-edit-'));
   roots.push(root);
-  await mkdir(join(root, 'profiles'), { recursive: true });
-  const path = join(root, 'profiles', 'personal.yaml');
+  await mkdir(join(root, 'profiles', 'personal'), { recursive: true });
+  const path = join(root, 'profiles', 'personal', 'profile.yaml');
   await writeFile(path, contents ?? newProfileTemplate('personal', 7337));
   return { root, path };
 }
@@ -54,7 +54,7 @@ interface Pair {
 async function pair2(root: string): Promise<Pair> {
   return {
     root,
-    path: join(root, 'profiles', 'personal.yaml'),
+    path: join(root, 'profiles', 'personal', 'profile.yaml'),
     connections: await ConfigDocument.openKey(root, CONNECTIONS_FILE),
     profile: await ConfigDocument.open(root, 'personal'),
   };

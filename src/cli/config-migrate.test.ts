@@ -55,7 +55,7 @@ async function brokenWorkspace(options: { keepBuiltIn?: boolean } = {}): Promise
     held.replace(builtIn, options.keepBuiltIn === true ? `${builtIn}\n${GOOGLE_TASKS}` : GOOGLE_TASKS),
   );
 
-  const path = join(root, 'profiles', 'personal.yaml');
+  const path = join(root, 'profiles', 'personal', 'profile.yaml');
   const text = await Bun.file(path).text();
   const grant = '  - { connection: tasks.main, allow: [tasks.*], deny: [] }';
 
@@ -87,7 +87,7 @@ async function open(root: string): Promise<{
 }
 
 async function onDisk(root: string): Promise<Config> {
-  return parseConfig(await Bun.file(join(root, 'profiles', 'personal.yaml')).text()).config;
+  return parseConfig(await Bun.file(join(root, 'profiles', 'personal', 'profile.yaml')).text()).config;
 }
 
 /** What the workspace holds. */
@@ -176,7 +176,7 @@ describe('with a stored credential to prove what the row was', () => {
     const { root, document, profiles, credentials } = await ready();
     await migrateRenamedProviders(document, profiles, credentials, { apply: true });
 
-    const text = await Bun.file(join(root, 'profiles', 'personal.yaml')).text();
+    const text = await Bun.file(join(root, 'profiles', 'personal', 'profile.yaml')).text();
     expect(text).toContain('# Lanes Link profile: personal');
     expect(text).toContain('# One row per connection this profile may reach');
   });
@@ -232,7 +232,7 @@ describe('with a stored credential to prove what the row was', () => {
 describe('a deny rule follows the rename too', () => {
   test('because leaving it behind re-enables what was switched off', async () => {
     const root = await brokenWorkspace();
-    const path = join(root, 'profiles', 'personal.yaml');
+    const path = join(root, 'profiles', 'personal', 'profile.yaml');
     await Bun.write(
       path,
       (await Bun.file(path).text()).replace(

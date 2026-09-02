@@ -59,6 +59,16 @@
 export const PROFILES_DIR = 'profiles';
 
 /**
+ * What a profile's declaration is called inside its own directory.
+ *
+ * Named here rather than spelled at the two call sites that need it — the path
+ * builder below and `listProfiles`, which matches on it to tell a profile
+ * directory from anything else under `profiles/`. Two spellings of one filename
+ * is how a listing and a loader come to disagree about what exists.
+ */
+export const PROFILE_FILE = 'profile.yaml';
+
+/**
  * No leading `./` on any of these.
  *
  * It used to carry one, which `path.resolve` discards and an object key does
@@ -124,7 +134,7 @@ export const layout = {
    * carves it back out. ADR-007 says a deployed revision never mutates its own
    * configuration, and that rule is older than where the file sits.
    */
-  profileConfig: (profile: string): string => `${PROFILES_DIR}/${profile}/profile.yaml`,
+  profileConfig: (profile: string): string => `${PROFILES_DIR}/${profile}/${PROFILE_FILE}`,
   /** Cursors, and each provider's own keys, for this profile's use of an account. */
   profileState: (profile: string): string => `${PROFILES_DIR}/${profile}/state.kv`,
   /** Every vault connection's sealed document, for this profile. */

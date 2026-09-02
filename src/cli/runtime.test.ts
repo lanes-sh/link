@@ -1,4 +1,4 @@
-import { connectionsYaml, workspaceYaml } from '#profile/testing.ts';
+import { connectionsYaml, workspaceYaml, writeProfileFixture } from '#profile/testing.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -74,8 +74,8 @@ async function workspace(): Promise<string> {
   roots.push(root);
 
   await mkdir(join(root, 'profiles'), { recursive: true });
-  await writeFile(join(root, 'lanes-link.yaml'), TARGETS);
-  await writeFile(join(root, 'profiles', 'personal.yaml'), PROFILE);
+  await writeFile(join(root, 'workspaces.yaml'), TARGETS);
+  await writeProfileFixture(root, 'personal', PROFILE);
   await writeFile(join(root, CONNECTIONS_FILE), connectionsYaml());
 
   process.env['LANES_LINK_HOME'] = root;
@@ -106,15 +106,15 @@ describe('the local target', () => {
 });
 
 describe('the owner layer follows the target — ADR-014', () => {
-  test("skills load from the granted connection's directory — ADR-059", async () => {
+  test("skills load from the profile's own granted connection — ADR-066", async () => {
     const root = await workspace();
     // Not `<root>/skills/`, which is where they lived while every profile
-    // shared them, and not `data/<profile>/skills.d/` either — they follow the
-    // skills *connection* a profile grants now (ADR-059). A skill left at
-    // either old path loads for nobody, deliberately.
-    await mkdir(join(root, layout.skills('main')), { recursive: true });
+    // shared them, and not `data/<profile>/skills.d/` either — they are back
+    // inside the profile and under the skills connection it grants (ADR-066).
+    // A skill left at any old path loads for nobody, deliberately.
+    await mkdir(join(root, layout.skills('personal', 'main')), { recursive: true });
     await writeFile(
-      join(root, layout.skills('main'), 'review-diff.md'),
+      join(root, layout.skills('personal', 'main'), 'review-diff.md'),
       '---\ndescription: Review a diff\n---\nReview it.\n',
     );
     await mkdir(join(root, 'skills'), { recursive: true });

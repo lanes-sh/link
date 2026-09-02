@@ -25,7 +25,7 @@ async function workspace(): Promise<{ root: string; config: Config }> {
   const root = await mkdtemp(join(tmpdir(), 'lanes-link-audit-'));
   roots.push(root);
   process.env['LANES_LINK_HOME'] = root;
-  await writeFile(join(root, 'lanes-link.yaml'), workspaceYaml(['local']));
+  await writeFile(join(root, 'workspaces.yaml'), workspaceYaml(['local']));
 
   const created = await createProfile('personal', { targets: ['local'], nonInteractive: true });
   void created;

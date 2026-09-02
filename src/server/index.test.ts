@@ -943,7 +943,7 @@ members: []
       port,
       policy: READ_ONLY,
       config: configWith('personal', port, ['a'], READ_ONLY),
-      reopen: () => Promise.reject(new Error('profiles/personal.yaml: could not parse YAML')),
+      reopen: () => Promise.reject(new Error('profiles/personal/profile.yaml: could not parse YAML')),
     });
 
     try {

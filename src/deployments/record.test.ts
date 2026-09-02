@@ -33,7 +33,7 @@ afterAll(async () => {
 async function workspace(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'lanes-link-record-'));
   roots.push(root);
-  await writeFile(join(root, 'lanes-link.yaml'), 'contract: 3\n');
+  await writeFile(join(root, 'workspaces.yaml'), 'contract: 3\n');
   return root;
 }
 

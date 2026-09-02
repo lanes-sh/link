@@ -80,10 +80,41 @@ export function bucketGrants(bucket: string, profiles: readonly string[]): Condi
   // One prefix, not one per profile. Manifests are the workspace's since
   // ADR-057 — a manifest defines a connection, and connections do not live in a
   // profile — so the carve-out no longer varies with the profile set.
-  const manifestPrefixes = [objectsUnder(`${layout.providers()}/`)];
-  // No profiles leaves the carve-out off rather than guessing at one: the
-  // revision keeps write on its own data, as it did before this existed.
-  const manifests = manifestPrefixes.length > 0 ? `(${manifestPrefixes.join(' || ')})` : null;
+  const manifests = `(${objectsUnder(`${layout.providers()}/`)})`;
+
+  /**
+   * What a running revision writes, named rather than carved out of `data/`.
+   *
+   * It used to be `objectsUnder('data/') && !manifests` — everything under one
+   * prefix, minus the exception. There is no `data/` any more (ADR-067), and
+   * naming the writable prefixes is the better shape regardless: an allowlist
+   * says what a compromised revision can reach, where a denylist says only what
+   * it cannot and grows silently every time something new lands under the
+   * prefix.
+   *
+   * `credentials.enc` is in it because `connect --from-endpoint` and a token
+   * refresh both write there (ADR-025), and its `.key` sits beside it.
+   */
+  const writable = [
+    objectsUnder(`${layout.audit()}/`),
+    objectsUnder(`${layout.state()}/`),
+    objectsUnder(layout.credentials()),
+    objectsUnder(`${layout.profilesRoot()}/`),
+  ].join(' || ');
+
+  /**
+   * The one thing inside a writable prefix that a revision must not write.
+   *
+   * ADR-007 says a deployed instance never mutates its own configuration, and
+   * ADR-067 put the declaration inside the directory it writes — so the rule
+   * that used to be expressed by `profiles/` sitting outside `data/` has to be
+   * expressed here instead. Anchored to whole segments: it is every
+   * `profiles/<name>/profile.yaml` and nothing that merely contains the string.
+   */
+  const declarations =
+    profiles.length > 0
+      ? `(${profiles.map((profile) => objectIs(layout.profileConfig(profile))).join(' || ')})`
+      : null;
 
   return [
     {
@@ -91,7 +122,7 @@ export function bucketGrants(bucket: string, profiles: readonly string[]): Condi
       // skills are all written by the running endpoint.
       role: 'roles/storage.objectAdmin',
       title: 'owns-its-data',
-      expression: `${objectsUnder('data/')}${manifests ? ` && !${manifests}` : ''}`,
+      expression: `(${writable})${declarations ? ` && !${declarations}` : ''}`,
     },
     {
       // `expression=true` was here, which is every object in the bucket — the
@@ -110,7 +141,7 @@ export function bucketGrants(bucket: string, profiles: readonly string[]): Condi
       // saw a passing build and Cloud Run saw a container that never started.
       role: 'roles/storage.objectViewer',
       title: 'reads-its-config',
-      expression: `${theBucket} || ${objectsUnder('profiles/')} || ${objectIs(WORKSPACE_FILE)} || ${objectIs(CONNECTIONS_FILE)}${manifests ? ` || ${manifests}` : ''}`,
+      expression: `${theBucket} || ${objectsUnder(`${layout.profilesRoot()}/`)} || ${objectIs(WORKSPACE_FILE)} || ${objectIs(CONNECTIONS_FILE)} || ${manifests}`,
     },
   ];
 }

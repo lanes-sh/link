@@ -28,7 +28,7 @@ async function workspace(): Promise<string> {
   // The registry, because a target is declared by the workspace now and every
   // command below names one (ADR-052). `createProfile` seeds this itself on a
   // bare directory, which the seeding test covers.
-  await writeFile(join(root, 'lanes-link.yaml'), workspaceYaml(['local']));
+  await writeFile(join(root, 'workspaces.yaml'), workspaceYaml(['local']));
   return root;
 }
 
@@ -140,7 +140,7 @@ describe('createProfile', () => {
     await createProfile('personal', { targets: ['local'] });
 
     await expect(createProfile('work', { targets: ['cloud'] })).rejects.toThrow(/cloud/);
-    expect(existsSync(join(root, 'profiles', 'work.yaml'))).toBe(false);
+    expect(existsSync(join(root, 'profiles', 'work', 'profile.yaml'))).toBe(false);
   });
 
   test('creates the workspace file first, so an empty directory can be seeded', async () => {
@@ -154,8 +154,8 @@ describe('createProfile', () => {
 
     const created = await createProfile('personal', { targets: ['local'] });
 
-    expect(existsSync(join(root, 'lanes-link.yaml'))).toBe(true);
-    expect(await readFile(join(root, 'lanes-link.yaml'), 'utf8')).toContain('  local:');
+    expect(existsSync(join(root, 'workspaces.yaml'))).toBe(true);
+    expect(await readFile(join(root, 'workspaces.yaml'), 'utf8')).toContain('  local:');
     expect(existsSync(created.path)).toBe(true);
   });
 

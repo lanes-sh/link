@@ -1,4 +1,4 @@
-import { workspaceYaml } from '#profile/testing.ts';
+import { workspaceYaml, writeProfileFixture } from '#profile/testing.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -65,8 +65,8 @@ async function workspace(): Promise<string> {
   roots.push(root);
 
   await mkdir(join(root, 'profiles'), { recursive: true });
-  await writeFile(join(root, 'lanes-link.yaml'), workspaceYaml(['local'], {defaultProfile: 'personal'}));
-  await writeFile(join(root, 'profiles', 'personal.yaml'), PROFILE);
+  await writeFile(join(root, 'workspaces.yaml'), workspaceYaml(['local'], {defaultProfile: 'personal'}));
+  await writeProfileFixture(root, 'personal', PROFILE);
   await writeFile(join(root, CONNECTIONS_FILE), CONNECTIONS);
 
   process.env['LANES_LINK_HOME'] = root;

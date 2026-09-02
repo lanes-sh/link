@@ -51,7 +51,7 @@ afterAll(async () => {
 
 /** The profile as it is on disk, parsed the way the endpoint parses it. */
 async function onDisk(root: string): Promise<ReturnType<typeof parseConfig>['config']> {
-  const text = await Bun.file(join(root, 'profiles', 'personal.yaml')).text();
+  const text = await Bun.file(join(root, 'profiles', 'personal', 'profile.yaml')).text();
   return parseConfig(text).config;
 }
 
