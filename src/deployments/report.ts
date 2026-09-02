@@ -22,14 +22,14 @@ import { heading, ok, print, style, warn } from '#cli/output.ts';
  * `tools/list` when it connects and keeps it: this endpoint is stateless, so
  * there is no stream on which to send `notifications/tools/list_changed`, and
  * `buildMcpServer` no longer pretends otherwise. A first deploy necessarily
- * publishes a profile whose only connection is `setup.main` — the accounts come
+ * publishes a profile whose only connection is `lanes_setup.lan1` — the accounts come
  * after — so a connector registered in that window captures a two-tool surface
  * and holds it. The endpoint is right, every reload lands, and the client shows
  * two tools until someone removes and re-adds it.
  *
  * Unconditional, and that is the correction that matters. This was gated on
  * `prepared.warnings.length`, which is zero in precisely the case it describes:
- * a fresh profile declares only `setup.main`, `setup` is a local provider with
+ * a fresh profile declares only `lanes_setup.lan1`, and it is a local provider with
  * no credential, so `prepareSecrets` has nothing to warn about. The advice
  * appeared only on a later re-deploy, by which point the connector is usually
  * registered and the ordering is no longer available to get right.
@@ -39,7 +39,10 @@ export function registerLine(profile: string, target: string): string {
     `  Connect your accounts first, then register with:\n` +
       `    lanes link outputs --profile ${profile} --workspace ${target}\n` +
       '  A client keeps the tool list it fetched when it connected, so one registered\n' +
-      '  before the accounts holds a surface without them until it is re-added.',
+      '  before the accounts holds a surface without them until it is re-added.\n' +
+      '  One registered before this deploy holds the list from before it, so a version\n' +
+      '  that renamed a provider or an id leaves it calling names that are gone:\n' +
+      '    lanes link mcp add',
   );
 }
 

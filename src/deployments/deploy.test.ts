@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readableRefs, rotatableRefs } from './prepare.ts';
+import { registerLine } from './report.ts';
 import {
   deployedWorkspace,
   isWorkspaceConfig,
@@ -623,3 +624,23 @@ describe('the allowlist against a real workspace listing', () => {
  * a deploy that reports success followed by a service that will not start, and
  * nothing in either points at the profile that caused it.
  */
+
+/**
+ * What a deploy tells an operator whose clients are already registered.
+ *
+ * ADR-032 covers the first deploy: register before the accounts exist and the
+ * client holds a two-tool surface. The case it left unsaid is every deploy after
+ * that one, and 0.9.0 is what made it expensive — renaming the owner layer's
+ * provider ids renamed their tools, so a registered client went on calling
+ * `setup_overview` against an endpoint serving `lanes_setup_overview` and read as
+ * a broken endpoint rather than a stale list. `sayContract4` says it when the
+ * migration runs; a deploy is when it reaches anybody.
+ */
+describe('the deploy report names the re-add', () => {
+  test('an already-registered client is told, and given the command', () => {
+    const line = registerLine('personal', 'cloud');
+
+    expect(line).toContain('registered before this deploy');
+    expect(line).toContain('lanes link mcp add');
+  });
+});
