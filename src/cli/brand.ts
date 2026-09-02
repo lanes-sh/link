@@ -13,17 +13,19 @@
  * Values are transcribed from https://lanes.sh/design/foundations. The rules
  * they express, which the CSS below encodes rather than restates:
  *
- * - **Gold is the only accent.** "Gold for positive, neutral tokens otherwise."
- *   That is why there is no green here: a connection that works is `positive`,
- *   which is gold, and everything else is one of two neutrals. `--destructive`
- *   is for errors, not for a state that merely needs attention.
+ * - **Emerald is the only accent.** "Accent for positive, neutral tokens
+ *   otherwise." A connection that works is `positive`, which is the accent, and
+ *   everything else is one of two neutrals. `--destructive` is for errors, not
+ *   for a state that merely needs attention. The accent was gold until emerald
+ *   replaced it site-wide; there is still only one.
  * - **Two weights, 400 and 500.** Nothing else is available in the loaded faces,
  *   so a heavier rule would silently synthesise.
  * - **Lora heads, Geist speaks, Geist Mono for code and eyebrow labels.**
  *
- * `--border`, `--accent-gold` and `--destructive` are constant across themes.
- * Only the five neutrals swap, which is why the dark block below is five lines
- * rather than a second stylesheet.
+ * `--border` and `--destructive` are constant across themes. The five neutrals
+ * swap, and so does `--accent-brand`: the deep emerald goes illegible on the
+ * dark ground, so dark mode takes the brighter value. That is why the dark block
+ * below is six lines rather than a second stylesheet.
  */
 
 /**
@@ -61,7 +63,7 @@ export const FONTS =
 
 /** The one-row footer, identical to the one the Lanes API's own pages carry. */
 export const FOOTER =
-  '<div class="footer"><p>Your unfair advantage in parallel AI coding. ' +
+  '<div class="footer"><p>Run many agents at once. Connect them to your tools once - ' +
   '<a href="https://lanes.sh/">lanes.sh</a></p></div>';
 
 /**
@@ -85,13 +87,13 @@ export const TOKENS = `
   --foreground: #171717;
   --muted-foreground: #202329;
   --border: rgba(120,113,108,0.2);
-  --accent-gold: #A1845A;
+  --accent-brand: #059669;
   --destructive: #A06060;
   /* The two tints the badge variants need. Spelled as rgba rather than
      color-mix because the consent screen opens in whatever browser a phone
      happens to use, and both accents are constant across themes anyway. */
-  --gold-fill: rgba(161,132,90,0.1);
-  --gold-ring: rgba(161,132,90,0.25);
+  --brand-fill: rgba(5,150,105,0.1);
+  --brand-ring: rgba(5,150,105,0.25);
   --destructive-fill: rgba(160,96,96,0.1);
   --destructive-ring: rgba(160,96,96,0.25);
   --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -105,6 +107,9 @@ export const TOKENS = `
     --muted: #202329;
     --foreground: #EBEAE7;
     --muted-foreground: #A8A29E;
+    --accent-brand: #34D399;
+    --brand-fill: rgba(52,211,153,0.1);
+    --brand-ring: rgba(52,211,153,0.25);
   }
 }
 * { box-sizing: border-box; }
@@ -124,21 +129,21 @@ a { color: inherit; }
 /* Surfaces are dashed and 10px; controls are 6px; pills are round. */
 .surface { background: var(--card); border: 1px dashed var(--border); border-radius: 10px; }
 
-/* The four badge variants, as the design system defines them: gold for
+/* The four badge variants, as the design system defines them: the accent for
    positive, neutral tokens otherwise, destructive for an error only. The ring
    is an inset shadow so it costs no layout, exactly as \`ring-inset\` does. */
 .pill { display: inline-flex; align-items: center; flex: none; white-space: nowrap;
         font-size: 11px; font-weight: 500; letter-spacing: 0.02em;
         padding: 2px 8px; border-radius: 999px; box-shadow: inset 0 0 0 1px var(--border); }
-.pill.positive { background: var(--gold-fill); color: var(--accent-gold);
-                 box-shadow: inset 0 0 0 1px var(--gold-ring); }
+.pill.positive { background: var(--brand-fill); color: var(--accent-brand);
+                 box-shadow: inset 0 0 0 1px var(--brand-ring); }
 .pill.neutral { background: var(--muted); color: var(--muted-foreground); }
 .pill.quiet { background: transparent; color: var(--muted-foreground); opacity: 0.7; }
 .pill.negative { background: var(--destructive-fill); color: var(--destructive);
                  box-shadow: inset 0 0 0 1px var(--destructive-ring); }
 
 /* Ghost is the variant every button on these pages is: muted until it is
-   wanted, and never gold, because gold is reserved for saying a thing is good. */
+   wanted, and never the accent, which is reserved for saying a thing is good. */
 .btn { font: inherit; font-size: 12px; font-weight: 500; line-height: 1;
        padding: 6px 9px; border-radius: 6px; cursor: pointer;
        background: transparent; color: var(--muted-foreground);
