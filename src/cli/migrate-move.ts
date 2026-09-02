@@ -69,7 +69,8 @@ export function assertOneObjectPerDestination(moves: readonly Move[]): void {
       throw new ConfigError(
         `Two objects want to be at ${move.to}, and this migration cannot merge them.\n` +
           `  ${first} and ${move.from}. Nothing has been written.\n` +
-          '  Please report it with the layout of your data directory.',
+          '  Which one to keep is yours to decide, because both are your data: move or\n' +
+          '  delete one of the two, then run this again.',
       );
     }
     seen.set(move.to, move.from);

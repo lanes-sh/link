@@ -318,6 +318,47 @@ describe('removalPlan', () => {
     expect(plan.warnings.join('\n')).toContain('arrives as memory/lan1/note-2.md');
   });
 
+  test('a skill the destination already has refuses, because a suffix resolves nothing', async () => {
+    // A skill's name is not a filename: it becomes the capability id
+    // `skills.<name>`, which policy rules grant and MCP prompts are called by.
+    // So `proc-b-2` arrives granted by no rule the destination holds and
+    // offered to no client — `refuseSealedVault`'s argument by another route.
+    // Renaming only the directory is worse: the frontmatter keeps declaring the
+    // old name, and `skills list` then refuses for the whole profile.
+    await expect(
+      removalPlan(config(), '/ws', 'personal', registry, {
+        target: 'local',
+        declared: target(),
+        disposition: { kind: 'migrate' as const, into: 'work' },
+        openSecrets: async () => fakeSecrets(['profile/token']),
+        openBlobs: async (_t, area) =>
+          area === 'profiles/work'
+            ? fakeBlobs(['skills.d/lan3/proc-b/SKILL.md'])
+            : fakeBlobs(['skills.d/lan3/proc-b/SKILL.md']),
+      }),
+    ).rejects.toThrow(/skill named "proc-b"[\s\S]*--delete-data/);
+  });
+
+  test('a skill only one of them has migrates, whole', async () => {
+    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
+      target: 'local',
+      declared: target(),
+      disposition: { kind: 'migrate' as const, into: 'work' },
+      openSecrets: async () => fakeSecrets(['profile/token']),
+      openBlobs: async (_t, area) =>
+        area === 'profiles/work'
+          ? fakeBlobs(['skills.d/lan3/other/SKILL.md'])
+          : fakeBlobs(['skills.d/lan3/proc-a/SKILL.md', 'skills.d/lan3/proc-a/helper.py']),
+    });
+
+    // Everything the skill ships, not just its SKILL.md — a bundle split across
+    // two directories is a skill that loads without half of itself.
+    expect(
+      plan.items.filter((item) => item.kind === 'blob').map((item) => item.movedTo?.[1]),
+    ).toEqual(['skills.d/lan3/proc-a/SKILL.md', 'skills.d/lan3/proc-a/helper.py']);
+    expect(plan.warnings).toEqual([]);
+  });
+
   test('the local config is the last item, because it is the record of where things are', async () => {
     const plan = await removalPlan(config(), '/ws', 'personal', registry, {
       target: 'local',

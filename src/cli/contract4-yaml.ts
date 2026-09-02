@@ -1,4 +1,11 @@
-import { CONNECTIONS_FILE, layout, readWorkspaceFile, workspaceFiles } from '#profile';
+import {
+  CONNECTIONS_FILE,
+  connectionsFileSchema,
+  ConfigError,
+  layout,
+  readWorkspaceFile,
+  workspaceFiles,
+} from '#profile';
 import { parseDocument } from 'yaml';
 import { ConfigDocument } from './config-edit.ts';
 import type { Renames } from './contract4-data.ts';
@@ -100,6 +107,36 @@ export async function rewriteGrants(
 }
 
 /** Every connection row, however far through the migration this workspace is. */
+/**
+ * Refuse a `connections.yaml` the rewrite at the end could not have saved.
+ *
+ * `readConnectionRows` reads raw and drops a row it cannot understand, which is
+ * what lets it run before the guard that would block its own fix — but it means
+ * a malformed file yields *fewer* rows rather than an error, and a rehearsal
+ * found what that costs: the rename map came out empty, every byte moved
+ * verbatim into the profiles, and the validating save at the very end refused.
+ * `data/` was then empty, so a rerun had nothing to move and left the bytes at
+ * their old ids while the rows moved on without them.
+ *
+ * So it is checked here, before the first byte moves, which is where this
+ * migration says everything that can fail belongs. Deliberately *not*
+ * `readConnections`: that one also runs `assertNoRenamedProviders`, and a
+ * workspace holding `tasks` is the workspace this migration exists to repair.
+ */
+export async function assertConnectionsSavable(root: string): Promise<void> {
+  const text = await readWorkspaceFile(workspaceFiles(root), CONNECTIONS_FILE);
+  if (text === null) return;
+
+  const parsed = connectionsFileSchema.safeParse(parseDocument(text).toJSON());
+  if (parsed.success) return;
+
+  throw new ConfigError(
+    `${CONNECTIONS_FILE} is not valid, and this migration rewrites it — so it stops here,\n` +
+      '  with the workspace exactly as it was. Fix these, then run it again:\n' +
+      parsed.error.issues.map((issue) => `  ${issue.path.join('.')}: ${issue.message}`).join('\n'),
+  );
+}
+
 export async function readConnectionRows(
   root: string,
   full = false,

@@ -617,3 +617,131 @@ describe('what it stamps, and when', () => {
     expect(await read(root, 'profiles/personal/lanes_memory/lan1/a-note.md')).toBe('a note');
   });
 });
+
+/**
+ * A `connections.yaml` the rewrite could not have saved, found before any byte
+ * moves.
+ *
+ * The rehearsal that produced this ran the migration against a workspace whose
+ * rows were malformed in a way `readConnectionRows` tolerates — it drops a row
+ * it cannot read rather than refusing — so the rename map came out empty, all
+ * 11 objects moved into the profiles verbatim, and the validating save at the
+ * very end refused. `data/` was empty by then, so a rerun had nothing to move
+ * and would have left every byte at its old id while the rows moved on.
+ */
+describe('a connections.yaml it could not save at the end', () => {
+  const malformed = async (): Promise<string> => {
+    const root = await workspace({ personal: ['memory.main'] }, { 'data/memory/main/a.md': 'A' });
+    await writeFile(
+      join(root, 'connections.yaml'),
+      'contract: 3\nconnections:\n  - { id: , provider: , account: }\noauth_apps: {}\n',
+    );
+    return root;
+  };
+
+  test('refuses, naming the fields to fix', async () => {
+    const root = await malformed();
+
+    await expect(migrateToContract4(root, { apply: true })).rejects.toThrow(/connections\.yaml/);
+    await expect(migrateToContract4(root, { apply: true })).rejects.toThrow(
+      /connections\.0\.provider/,
+    );
+  });
+
+  test('leaves the workspace exactly as it was', async () => {
+    const root = await malformed();
+
+    await migrateToContract4(root, { apply: true }).catch(() => undefined);
+
+    // The three that together say nothing ran: the byte at its old path, the
+    // declaration at its old path, and the registry under its old name.
+    expect(has(root, 'data/memory/main/a.md')).toBe(true);
+    expect(has(root, 'profiles/personal.yaml')).toBe(true);
+    expect(has(root, 'lanes-link.yaml')).toBe(true);
+    expect(has(root, 'workspaces.yaml')).toBe(false);
+    expect(await read(root, 'data/memory/main/a.md')).toBe('A');
+  });
+
+  test('and a rerun once it is fixed migrates normally', async () => {
+    const root = await malformed();
+    await migrateToContract4(root, { apply: true }).catch(() => undefined);
+
+    await writeFile(
+      join(root, 'connections.yaml'),
+      'contract: 3\nconnections:\n  - { id: main, provider: memory, account: Memory }\noauth_apps: {}\n',
+    );
+    await migrateToContract4(root, { apply: true });
+
+    expect(await read(root, 'profiles/personal/lanes_memory/lan1/a.md')).toBe('A');
+    expect(has(root, 'data/memory/main/a.md')).toBe(false);
+  });
+});
+
+/**
+ * Two granted stores merging onto one id, which is the whole of rule 3.
+ *
+ * The workspace this change was made for holds no owner-layer data, so the
+ * rehearsal against a copy of it exercised none of this: the case had to be
+ * built. `personal` grants two memory instances and `work` a third, all three
+ * merge to `lanes_memory.lan1`, and the profile in the path is what keeps them
+ * apart.
+ */
+describe('several sources merging onto one owner id', () => {
+  const seeded = (): Promise<string> =>
+    workspace(
+      {
+        personal: ['memory.main', 'memory.personal', 'tasks.main'],
+        work: ['memory.work', 'tasks.personal'],
+      },
+      {
+        'data/memory/main/from-main.md': 'MAIN',
+        'data/memory/personal/from-personal.md': 'PERSONAL',
+        'data/memory/work/from-work.md': 'WORK',
+        'data/tasks/main/t1.json': '{"id":"t1"}',
+        'data/tasks/personal/t2.json': '{"id":"t2"}',
+      },
+    );
+
+  test('both of one profile’s sources land in it, under the merged id', async () => {
+    const root = await seeded();
+
+    await migrateToContract4(root, { apply: true });
+
+    expect(await read(root, 'profiles/personal/lanes_memory/lan1/from-main.md')).toBe('MAIN');
+    expect(await read(root, 'profiles/personal/lanes_memory/lan1/from-personal.md')).toBe(
+      'PERSONAL',
+    );
+  });
+
+  test('and the other profile holds different bytes at the same id', async () => {
+    const root = await seeded();
+
+    await migrateToContract4(root, { apply: true });
+
+    expect(await read(root, 'profiles/work/lanes_memory/lan1/from-work.md')).toBe('WORK');
+    expect(has(root, 'profiles/work/lanes_memory/lan1/from-main.md')).toBe(false);
+    expect(has(root, 'profiles/personal/lanes_memory/lan1/from-work.md')).toBe(false);
+  });
+
+  test('nothing is left behind, and the grants dedupe to one row', async () => {
+    const root = await seeded();
+
+    await migrateToContract4(root, { apply: true });
+
+    expect(has(root, 'data/memory/main/from-main.md')).toBe(false);
+    const grants = (parse(await read(root, 'profiles/personal/profile.yaml')) as {
+      grants: { connection: string }[];
+    }).grants.map((one) => one.connection);
+    expect(grants.filter((ref) => ref === 'lanes_memory.lan1')).toHaveLength(1);
+  });
+
+  test('a rerun changes nothing', async () => {
+    const root = await seeded();
+    await migrateToContract4(root, { apply: true });
+
+    const again = await migrateToContract4(root, { apply: true });
+
+    expect(again.alreadyCurrent).toBe(true);
+    expect(await read(root, 'profiles/personal/lanes_memory/lan1/from-main.md')).toBe('MAIN');
+  });
+});

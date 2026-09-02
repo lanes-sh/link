@@ -14,7 +14,12 @@ import { ConfigDocument } from './config-edit.ts';
 import { C3 } from './contract3-layout.ts';
 import { grantingProfiles, planMoves, type DataPlan, type Renames } from './contract4-data.ts';
 import { planRenames } from './contract4-rename.ts';
-import { readConnectionRows, renameConnections, rewriteGrants } from './contract4-yaml.ts';
+import {
+  assertConnectionsSavable,
+  readConnectionRows,
+  renameConnections,
+  rewriteGrants,
+} from './contract4-yaml.ts';
 import { applyMoves, assertOneObjectPerDestination } from './migrate-move.ts';
 import {
   applyCredentialMoves,
@@ -123,6 +128,8 @@ export async function migrateToContract4(
   // once and read by every rewrite below — the contract-3 mover's own bug was a
   // map keyed one way and queried the other, which made the resolution a silent
   // no-op and sent two profiles' blobs into one namespace.
+  await assertConnectionsSavable(workspaceRoot);
+
   const rows = await readConnectionRows(workspaceRoot);
   const renames = planRenames(rows);
 

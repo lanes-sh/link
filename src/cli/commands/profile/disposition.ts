@@ -91,6 +91,46 @@ export async function settleDisposition(
 
 
 /**
+ * The skill a key belongs to, or null when the key is not a skill's.
+ *
+ * Both layouts: `<name>/SKILL.md` and whatever it ships beside it, and the flat
+ * `<name>.md`.
+ */
+export function skillNameIn(key: string): string | null {
+  const parts = key.split('/');
+  if (parts[0] !== 'skills.d' || parts.length < 3) return null;
+
+  const third = parts[2]!;
+  return parts.length > 3 ? third : third.replace(/\.md$/, '');
+}
+
+/**
+ * Two skills of one name have no union either, so this refuses like the vault.
+ *
+ * A skill's name is not a filename — it becomes the capability id
+ * `skills.<name>`, which is what a policy rule grants and what an MCP prompt is
+ * called. So the suffix that resolves a colliding note resolves nothing here: a
+ * skill arriving as `proc-b-2` is granted by no rule the destination holds and
+ * offered to no client, which is `refuseSealedVault`'s argument — a copy under a
+ * name no command opens — reached by a different route. Renaming only the
+ * directory is worse still, because the frontmatter keeps declaring the old
+ * name: two skills then claim one capability id and `skills list` refuses for
+ * the whole profile rather than for the one skill.
+ *
+ * Which of the two to keep is a decision about the operator's procedures, and
+ * they are the only one who can make it.
+ */
+export function refuseCollidingSkill(into: string, name: string): never {
+  throw new ConfigError(
+    `"${into}" already has a skill named "${name}", and the one arriving cannot take another ` +
+      `name: it becomes the capability id "skills.${name}", which policy rules grant and MCP ` +
+      'prompts are called by.\n' +
+      `  Rename one of the two first — lanes link skills show ${name} --profile ${into} — then ` +
+      'run this again, or remove the profile with --delete-data.',
+  );
+}
+
+/**
  * Rename anything the destination already holds, before a byte moves.
  *
  * Resolved while this is still a plan, so the operator sees every rename in the
@@ -140,6 +180,11 @@ export async function resolveCollisions(
       held.add(key);
       continue;
     }
+
+    // Before the suffix, because for one kind of key there is no suffix that
+    // works and the answer is to stop rather than to invent one.
+    const skill = skillNameIn(key);
+    if (skill !== null) refuseCollidingSkill(profile, skill);
 
     const renamed = suffixed(key, (candidate) => held.has(candidate));
     held.add(renamed);
