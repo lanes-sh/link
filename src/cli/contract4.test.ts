@@ -103,7 +103,13 @@ describe('what contract 4 moves', () => {
     expect(has(root, 'data/credentials.enc')).toBe(false);
   });
 
-  test('a store one profile grants moves into that profile', async () => {
+  test("two profiles' own memories merge to one row and keep their bytes apart", async () => {
+    // Contract 3 gave each profile its own `memory` instance, because the
+    // *connection* was the boundary — so a three-profile workspace came out of
+    // that migration with three memory rows and a file that read as
+    // duplicated. ADR-066 makes the profile the boundary, so they merge onto
+    // one row and each profile's notes stay its own. Merging the rows merges no
+    // notes, which is why contract 3 could not do this and contract 4 can.
     const root = await workspace(
       { personal: ['memory.main'], work: ['memory.other'] },
       {
@@ -114,8 +120,18 @@ describe('what contract 4 moves', () => {
 
     await migrateToContract4(root);
 
+    // One row, and it is `lan1` for both.
+    const rows = parse(await read(root, 'connections.yaml'))['connections'] as {
+      id: string;
+      provider: string;
+    }[];
+    expect(rows.filter((row) => row.provider === 'lanes_memory').map((row) => row.id)).toEqual([
+      'lan1',
+    ]);
+
+    // Two sets of bytes, under the same connection id, in different profiles.
     expect(await read(root, 'profiles/personal/lanes_memory/lan1/a-note.md')).toBe('personal');
-    expect(await read(root, 'profiles/work/lanes_memory/lan2/b-note.md')).toBe('work');
+    expect(await read(root, 'profiles/work/lanes_memory/lan1/b-note.md')).toBe('work');
     expect(has(root, 'data/memory/main/a-note.md')).toBe(false);
   });
 

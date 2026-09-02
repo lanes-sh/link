@@ -176,10 +176,12 @@ export function newConnectionsTemplate(): string {
 # this list says whose data is reachable without having to look anything up.
 # "label" is your own word for the same row, and only ever displayed.
 #
-# The seven below hold no account: they reach your own material rather than
-# anybody's API, so there was never anything for a connect step to authorise
-# (ADR-050). Make a second one — "lanes link connect memory --id work" — when you
-# want two profiles to share nothing.
+# The "lanes_" rows are Lanes' own surfaces and hold no account: they reach your
+# own material rather than anybody's API, so there was never anything for a
+# connect step to authorise (ADR-050). Every profile grants the same ones and
+# still keeps its own bytes — what you write through one profile is absent in
+# another (ADR-066). A second instance is for holding two of something in one
+# profile: "lanes link connect lanes_memory --id lan9".
 contract: 4
 
 connections:

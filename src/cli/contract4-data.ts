@@ -1,5 +1,4 @@
 import { layout } from '#profile';
-import { nextConnectionId } from './identity.ts';
 import type { BlobStore } from '#stores/blobs';
 import {
   decodeSegment,
@@ -8,7 +7,8 @@ import {
   isWorkspaceNamespace,
   OAUTH_NAMESPACE,
 } from '#stores/state';
-import { C3, C3_OWNER_PROVIDERS } from './contract3-layout.ts';
+import { C3 } from './contract3-layout.ts';
+import { planRenames, renamedProvider } from './contract4-rename.ts';
 import { claim, type Move } from './migrate-move.ts';
 
 /**
@@ -48,40 +48,6 @@ export type Renames = ReadonlyMap<string, string>;
  * for: a reader can tell a surface built into Lanes from somebody's account
  * without resolving anything.
  */
-export function planRenames(
-  connections: readonly { id: string; provider: string }[],
-): Renames {
-  const renames = new Map<string, string>();
-  const taken = connections
-    .map((row) => row.id)
-    .filter((id) => /^(lan|con)[0-9]+$/.test(id));
-
-  for (const row of connections) {
-    // The *provider* moves too — contract 3's `memory` is contract 4's
-    // `lanes_memory` — so a row is renamed on both halves or neither.
-    // `C3_OWNER_PROVIDERS` says which, because the live reserved list is
-    // already prefixed and answers no for every contract-3 row.
-    const owner = C3_OWNER_PROVIDERS.includes(row.provider);
-    const provider = renamedProvider(row.provider);
-    const from = `${row.provider}.${row.id}`;
-
-    if (/^(lan|con)[0-9]+$/.test(row.id)) {
-      renames.set(from, `${provider}.${row.id}`);
-      continue;
-    }
-
-    const id = nextConnectionId(taken, owner);
-    taken.push(id);
-    renames.set(from, `${provider}.${id}`);
-  }
-
-  return renames;
-}
-
-/** `memory` becomes `lanes_memory`; everything else keeps its id. */
-export function renamedProvider(provider: string): string {
-  return C3_OWNER_PROVIDERS.includes(provider) ? `lanes_${provider}` : provider;
-}
 
 export interface DataPlan {
   readonly moves: readonly Move[];

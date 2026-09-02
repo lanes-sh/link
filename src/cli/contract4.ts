@@ -7,18 +7,12 @@ import {
   writeWorkspaceFile,
   WORKSPACE_FILE,
   CONNECTIONS_FILE,
-  readConnections,
 } from '#profile';
 import { parseDocument } from 'yaml';
 import { ConfigDocument } from './config-edit.ts';
 import { C3 } from './contract3-layout.ts';
-import {
-  grantingProfiles,
-  planMoves,
-  planRenames,
-  type DataPlan,
-  type Renames,
-} from './contract4-data.ts';
+import { grantingProfiles, planMoves, type DataPlan, type Renames } from './contract4-data.ts';
+import { planRenames } from './contract4-rename.ts';
 import { applyMoves, assertOneObjectPerDestination } from './migrate-move.ts';
 import { applyCredentialMoves, planCredentialMoves } from './contract4-credentials.ts';
 import { openSecretStoreFor } from './runtime/select.ts';
@@ -235,10 +229,14 @@ async function moveCredentials(
     buildRegistryWithWorkspace(root),
   ]);
 
-  const connections = await readConnections(root);
+  // `readConnectionRows`, not `readConnections`. The latter runs
+  // `assertNoRenamedProviders`, which refuses a `tasks` row — and a workspace
+  // holding one is exactly the workspace being migrated, so reading through the
+  // guard makes the refusal block its own fix. ADR-051's rule, met twice now: a
+  // refusal has to name a command, and the command has to be able to run.
   return await applyCredentialMoves(
     store,
-    planCredentialMoves(connections.connections, registry, renames),
+    planCredentialMoves(await readConnectionRows(root, true), registry, renames),
   );
 }
 
@@ -267,7 +265,8 @@ function retitle(rules: unknown, was: string, now: string): unknown {
 /** Every connection row, however far through the migration this workspace is. */
 async function readConnectionRows(
   root: string,
-): Promise<{ id: string; provider: string }[]> {
+  full = false,
+): Promise<{ id: string; provider: string; account: string; credential_ref?: string }[]> {
   const text = await readWorkspaceFile(workspaceFiles(root), CONNECTIONS_FILE);
   if (text === null) return [];
 
@@ -275,10 +274,19 @@ async function readConnectionRows(
   if (!Array.isArray(held.connections)) return [];
 
   return held.connections.flatMap((row) => {
-    const one = row as { id?: unknown; provider?: unknown };
-    return typeof one.id === 'string' && typeof one.provider === 'string'
-      ? [{ id: one.id, provider: one.provider }]
-      : [];
+    const one = row as { id?: unknown; provider?: unknown; account?: unknown };
+    if (typeof one.id !== 'string' || typeof one.provider !== 'string') return [];
+
+    // `account` matters only to `credentialRefFor`, which reads a row's own
+    // `credential_ref` off it; the id and provider are all the rest wants.
+    return [
+      {
+        ...(full ? (row as object) : {}),
+        id: one.id,
+        provider: one.provider,
+        account: typeof one.account === 'string' ? one.account : '',
+      },
+    ];
   });
 }
 
@@ -300,22 +308,42 @@ async function renameConnections(root: string, renames: Renames): Promise<void> 
   const held = document.toJSON() as { connections?: unknown };
   if (!Array.isArray(held.connections)) return;
 
-  document.setIn(
-    ['connections'],
-    held.connections.map((row) => {
-      const one = row as { id?: unknown; provider?: unknown };
-      if (typeof one.id !== 'string' || typeof one.provider !== 'string') return row;
+  // **Deduplicated, because the owner layer merges.** Three profiles' own
+  // `memory` rows all rename to `lanes_memory.lan1` (ADR-066), and keeping
+  // three of them would be three rows at one address — which
+  // `assertConnectionsUnique` refuses, on the save at the end of this. The
+  // first row wins and the rest are dropped; the *bytes* are not merged, they
+  // land under each profile's own directory.
+  const seen = new Set<string>();
+  const rows = held.connections.flatMap((row) => {
+    const one = row as { id?: unknown; provider?: unknown };
+    if (typeof one.id !== 'string' || typeof one.provider !== 'string') return [row];
 
-      const to = renames.get(`${one.provider}.${one.id}`);
-      if (to === undefined) return row;
+    const to = renames.get(`${one.provider}.${one.id}`);
+    if (to === undefined) return [row];
+    if (seen.has(to)) return [];
+    seen.add(to);
 
-      // Both halves. The provider moved for the owner layer (`memory` became
-      // `lanes_memory`) and the id moved for everything unallocated, and a row
-      // that took one without the other names a connection nothing resolves.
-      const dot = to.indexOf('.');
-      return { ...one, provider: to.slice(0, dot), id: to.slice(dot + 1) };
-    }),
-  );
+    // Both halves. The provider moved for the owner layer (`memory` became
+    // `lanes_memory`) and the id moved for everything unallocated, and a row
+    // that took one without the other names a connection nothing resolves.
+    const dot = to.indexOf('.');
+    return [{ ...one, provider: to.slice(0, dot), id: to.slice(dot + 1) }];
+  });
+
+  // **Lanes' own rows last, and the accounts in file order.** Nothing reads the
+  // order, but somebody does: interleaved, `con17` landed between `lan14` and
+  // `lan15` and the file read as though the numbering had gone wrong.
+  const owned = (row: unknown): boolean =>
+    typeof (row as { provider?: unknown }).provider === 'string' &&
+    (row as { provider: string }).provider.startsWith('lanes_');
+
+  document.setIn(['connections'], [...rows.filter((r) => !owned(r)), ...rows.filter(owned)]);
+
+  // The stamp this file was missing. Nothing reads it — every contract check is
+  // on a profile — which is exactly why it went stale, and a marker that lies
+  // is worse than no marker for whoever writes the next migration.
+  document.setIn(['contract'], 4);
 
   await document.save();
 }
