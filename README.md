@@ -12,10 +12,7 @@ that speaks MCP — reaches all of it through that one endpoint. Change your AI 
 context, because none of it ever lived in the agent. Open source, self-hostable, no vendor in the
 middle of your data.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/lanes-link-dark.svg">
-  <img alt="Claude, Codex, and Gemini all reach one Lanes Link endpoint, which you run yourself. Beneath it sit the profiles it serves: personal, holding Gmail, Memory, and Skills; and work, holding Gmail, Calendar, and Docs." src="docs/images/lanes-link-light.svg">
-</picture>
+![Left: every agent wired directly to every account, each line crossing the others. Right: the same three agents reaching one Lanes Link endpoint, which fans out to Gmail, GitHub, Slack, memory, skills, and a task list through an Access Profile named engineering.](docs/images/lanes-link-hero.png)
 
 ## Why
 
@@ -80,27 +77,6 @@ against if the endpoint has no idea who is asking. That is a real dependency for
 tool and worth stating plainly; what it is not is a dependency per request. The network is needed
 to sign in and to refresh, and a machine offline for a day keeps serving. `lanes link token
 show` still mints a static token for CI, which has no browser to sign in with.
-
-## In the Lanes desktop app
-
-Prefer not to use a terminal? The [Lanes desktop app](https://lanes.sh/desktop) drives this CLI from
-a settings page. **Settings → Integrations → Lanes Link** installs it, holds the profile and
-workspace every command runs against, starts and stops the endpoint, and registers it with Claude
-Code or Codex. From 0.8.0 your connections, profiles and audit log are on the
-[Lanes dashboard](https://lanes.sh/dashboard/link) instead, which reads your endpoint directly over
-loopback: run `lanes link pair` once to let it.
-
-![The Lanes Link page in the Lanes desktop app: the CLI status card and its version, the workspace and profile selectors, the endpoint row with its running state, and the list of connected accounts.](docs/images/lanes-link-desktop.png)
-
-It runs the commands above rather than reimplementing them, so consent and the token stay here where
-they belong, and an endpoint set up in the app is the same one you get from a shell. Available from
-Lanes v0.47.0, as a research preview.
-
-```console
-$ lanes link desktop     # opens the app on that page, installing it if it is not there
-```
-
-**[How to use it →](https://lanes.sh/docs/desktop/lanes-link)**
 
 ## What you keep in it
 
