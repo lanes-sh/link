@@ -148,7 +148,7 @@ export async function openRuntime(
   // `EMPTY_SKILLS` when none is granted: a profile that denies `skills.*` has
   // no store to open, and handing it the workspace root instead would serve
   // every other profile's procedures.
-  const skillsConnection = soleGrantFor(config, 'skills');
+  const skillsConnection = soleGrantFor(config, 'lanes_skills');
   const skills =
     knowledge?.skills ??
     (skillsConnection === undefined ? undefined : skillStore(storageFor, config.instance.profile, skillsConnection));

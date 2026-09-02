@@ -172,7 +172,7 @@ function slugify(title: string): string {
 }
 
 export const memoryProvider: ProviderDefinition = defineLocalProvider({
-  id: 'memory',
+  id: 'lanes_memory',
   name: 'Memory',
   version: '1.0.0',
   description:
@@ -212,7 +212,7 @@ export const memoryProvider: ProviderDefinition = defineLocalProvider({
       name: 'entry',
       title: 'Memory entry',
       description: 'One stored memory entry, addressed by its id.',
-      uriTemplate: 'memory://entry/{id}',
+      uriTemplate: 'lanes-memory://entry/{id}',
       mimeType: 'text/markdown',
       // The address is worth recording and the content is not — the same trade
       // `gmail.get_message` makes with a message id.
@@ -220,7 +220,7 @@ export const memoryProvider: ProviderDefinition = defineLocalProvider({
 
       async list(context) {
         return (await allEntries(context.storage)).map((entry) => ({
-          uri: `memory://entry/${encodeURIComponent(entry.id)}`,
+          uri: `lanes-memory://entry/${encodeURIComponent(entry.id)}`,
           name: entry.title,
         }));
       },
@@ -242,7 +242,7 @@ export const memoryProvider: ProviderDefinition = defineLocalProvider({
       name: 'get',
       title: 'Read a memory entry',
       description:
-        'Return one entry by id. The resource memory://entry/{id} is the same content; this exists for clients that do not read resources.',
+        'Return one entry by id. The resource lanes-memory://entry/{id} is the same content; this exists for clients that do not read resources.',
       inputSchema: z.object({
         id: z.string().min(1).describe('Entry id'),
       }),
@@ -326,7 +326,7 @@ export const memoryProvider: ProviderDefinition = defineLocalProvider({
           content: matches.flatMap(({ entry, snippet }) => [
             {
               type: 'resource_link' as const,
-              uri: `memory://entry/${encodeURIComponent(entry.id)}`,
+              uri: `lanes-memory://entry/${encodeURIComponent(entry.id)}`,
               name: entry.title,
             },
             {
@@ -370,7 +370,7 @@ export const memoryProvider: ProviderDefinition = defineLocalProvider({
         return {
           content: [
             { type: 'text', text: `Stored memory entry "${entryId}" on ${context.connection.key}.` },
-            { type: 'resource_link', uri: `memory://entry/${entryId}`, name: title },
+            { type: 'resource_link', uri: `lanes-memory://entry/${entryId}`, name: title },
           ],
         };
       },

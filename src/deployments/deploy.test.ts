@@ -195,7 +195,7 @@ oauth_apps: {}
   // connection and the rule together (ADR-058), so there is no second half to
   // check for.
   const has = async (root: string, key: string): Promise<boolean> =>
-    (await readFile(join(root, 'profiles', key), 'utf8')).includes('connection: setup.');
+    (await readFile(join(root, 'profiles', key), 'utf8')).includes('connection: lanes_setup.');
 
   test('every profile it would upload, when none is named', async () => {
     const root = await workspace('personal', 'work');

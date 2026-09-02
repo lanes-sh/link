@@ -42,18 +42,18 @@ instance:
   profile: ${name}
 
 grants:
-  - { connection: skills.${skills}, allow: ['skills.*'], deny: [] }
-  - { connection: setup.main, allow: ['setup.*'], deny: [] }
+  - { connection: lanes_skills.${skills}, allow: ['lanes_skills.*'], deny: [] }
+  - { connection: lanes_setup.main, allow: ['lanes_setup.*'], deny: [] }
 members: []
 `;
 
 /** The workspace's rows: one skills instance per profile, plus the owner layer. */
 const CONNECTIONS = `contract: 4
 connections:
-  - { id: personal, provider: skills, account: Skills }
-  - { id: work, provider: skills, account: Skills }
-  - { id: shared, provider: skills, account: Skills }
-  - { id: main, provider: setup, account: Setup }
+  - { id: personal, provider: lanes_skills, account: Skills }
+  - { id: work, provider: lanes_skills, account: Skills }
+  - { id: shared, provider: lanes_skills, account: Skills }
+  - { id: main, provider: lanes_setup, account: Setup }
 oauth_apps: {}
 `;
 
@@ -112,7 +112,7 @@ afterAll(async () => {
 
 describe('a profile owns its skills, whichever instance it grants', () => {
   test('two profiles granting one instance still share nothing', async () => {
-    // The ADR-066 assertion. Both profiles grant `skills.shared` — the same
+    // The ADR-066 assertion. Both profiles grant `lanes_skills.shared` — the same
     // row, the same id — and each still reads only what was written under its
     // own directory. Under ADR-059 this fixture was one store and both files
     // would appear on both sides.
@@ -129,11 +129,11 @@ describe('a profile owns its skills, whichever instance it grants', () => {
     );
 
     await bothProfiles(async ({ personal, work }) => {
-      expect(capabilities(personal)).toContain('skills.holiday-plan');
-      expect(capabilities(personal)).not.toContain('skills.incident-review');
+      expect(capabilities(personal)).toContain('lanes_skills.holiday-plan');
+      expect(capabilities(personal)).not.toContain('lanes_skills.incident-review');
 
-      expect(capabilities(work)).toContain('skills.incident-review');
-      expect(capabilities(work)).not.toContain('skills.holiday-plan');
+      expect(capabilities(work)).toContain('lanes_skills.incident-review');
+      expect(capabilities(work)).not.toContain('lanes_skills.holiday-plan');
     });
   });
 
@@ -176,8 +176,8 @@ describe('a profile owns its skills, whichever instance it grants', () => {
     });
 
     await bothProfiles(async ({ personal }) => {
-      expect(capabilities(personal)).toContain('skills.holiday-plan');
-      expect(capabilities(personal)).not.toContain('skills.incident-review');
+      expect(capabilities(personal)).toContain('lanes_skills.holiday-plan');
+      expect(capabilities(personal)).not.toContain('lanes_skills.incident-review');
     });
   });
 
@@ -193,9 +193,9 @@ describe('a profile owns its skills, whichever instance it grants', () => {
     });
 
     await bothProfiles(async ({ personal, work }) => {
-      expect(capabilities(personal)).not.toContain('skills.review-diff');
-      expect(capabilities(work)).not.toContain('skills.review-diff');
-      expect(capabilities(personal)).not.toContain('skills.triage');
+      expect(capabilities(personal)).not.toContain('lanes_skills.review-diff');
+      expect(capabilities(work)).not.toContain('lanes_skills.review-diff');
+      expect(capabilities(personal)).not.toContain('lanes_skills.triage');
     });
   });
 });

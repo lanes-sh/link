@@ -107,7 +107,7 @@ describe('the facts under the prose', () => {
     const text = serverInstructions(
       ['personal'],
       new Map([
-        ['memory.search', reaching({ personal: ['memory.owner'] })],
+        ['lanes_memory.search', reaching({ personal: ['lanes_memory.owner'] })],
         ['example.echo', reaching({ personal: ['example.a'] })],
       ]),
     );
@@ -160,9 +160,9 @@ describe('the habits it teaches', () => {
     const granted = serverInstructions(
       ['personal'],
       new Map([
-        ['memory.search', reaching({ personal: ['memory.owner'] })],
-        ['skills.manage.list', reaching({ personal: ['skills.owner'] })],
-        ['vault.put', reaching({ personal: ['vault.owner'] })],
+        ['lanes_memory.search', reaching({ personal: ['lanes_memory.owner'] })],
+        ['lanes_skills.manage.list', reaching({ personal: ['lanes_skills.owner'] })],
+        ['lanes_vault.put', reaching({ personal: ['lanes_vault.owner'] })],
       ]),
     );
 
@@ -181,11 +181,11 @@ describe('the habits it teaches', () => {
       ['personal'],
       new Map([
         ['gmail.send', reaching({ personal: ['gmail.a'] })],
-        ['setup.overview', reaching({ personal: ['setup.main'] })],
+        ['lanes_setup.overview', reaching({ personal: ['lanes_setup.main'] })],
       ]),
     );
 
-    expect(granted).toContain('setup_overview');
+    expect(granted).toContain('lanes_setup_overview');
     expect(granted).toContain('inventing it is not');
   });
 
@@ -204,11 +204,11 @@ describe('the habits it teaches', () => {
       ['personal'],
       new Map([
         ['gmail.send', reaching({ personal: ['gmail.a'] })],
-        ['identity.list', reaching({ personal: ['identity.main'] })],
+        ['lanes_identity.list', reaching({ personal: ['lanes_identity.main'] })],
       ]),
     );
 
-    expect(granted).toContain('identity_list');
+    expect(granted).toContain('lanes_identity_list');
     expect(granted).toContain('Identity is declared, not inferred');
     // The instruction is to fetch, so the fetchable part must not be here.
     expect(granted).not.toContain('note on when it applies.\n  ');
@@ -219,12 +219,12 @@ describe('the habits it teaches', () => {
     // capability is unreachable and the paragraph is unspent. Telling a client
     // to call a tool it cannot see is the contradiction the test above this one
     // exists to prevent.
-    expect(text).not.toContain('identity_list');
+    expect(text).not.toContain('lanes_identity_list');
     expect(text).not.toContain('Identity is declared');
   });
 
   test('says nothing about setup when there is no surface to point at', () => {
-    expect(text).not.toContain('setup_overview');
+    expect(text).not.toContain('lanes_setup_overview');
   });
 
   test('does not call the setup surface the owner\'s own material', () => {
@@ -233,7 +233,7 @@ describe('the habits it teaches', () => {
     // It holds none: it describes what the others are.
     const granted = serverInstructions(
       ['personal'],
-      new Map([['setup.overview', reaching({ personal: ['setup.main'] })]]),
+      new Map([['lanes_setup.overview', reaching({ personal: ['lanes_setup.main'] })]]),
     );
 
     expect(granted).not.toContain("owner's own material");
@@ -291,13 +291,13 @@ describe('the habits it teaches', () => {
       profiles,
       new Map([
         ['x.y', { reachable, capability: undefined, discovered: undefined }],
-        ['memory.search', reaching({ [first]: ['memory.owner'] })],
-        ['tasks.list', reaching({ [first]: ['tasks.owner'] })],
-        ['assets.list', reaching({ [first]: ['assets.owner'] })],
-        ['skills.manage.list', reaching({ [first]: ['skills.owner'] })],
-        ['vault.put', reaching({ [first]: ['vault.owner'] })],
-        ['setup.overview', reaching({ [first]: ['setup.main'] })],
-        ['identity.list', reaching({ [first]: ['identity.main'] })],
+        ['lanes_memory.search', reaching({ [first]: ['lanes_memory.owner'] })],
+        ['lanes_tasks.list', reaching({ [first]: ['lanes_tasks.owner'] })],
+        ['lanes_assets.list', reaching({ [first]: ['lanes_assets.owner'] })],
+        ['lanes_skills.manage.list', reaching({ [first]: ['lanes_skills.owner'] })],
+        ['lanes_vault.put', reaching({ [first]: ['lanes_vault.owner'] })],
+        ['lanes_setup.overview', reaching({ [first]: ['lanes_setup.main'] })],
+        ['lanes_identity.list', reaching({ [first]: ['lanes_identity.main'] })],
       ]),
       true,
     );
@@ -327,7 +327,14 @@ describe('the habits it teaches', () => {
     );
     const first = profiles[0] as string;
 
-    const owners = (ids: readonly string[]) =>
+    // Prefixed here rather than at every call: these are Lanes' own surfaces,
+    // and the tests below read better naming the surface than the provider id.
+    const owners = (bare: readonly string[]) => {
+      const ids = bare.map((id) => `lanes_${id}`);
+      return owner(ids);
+    };
+
+    const owner = (ids: readonly string[]) =>
       new Map([
         ['x.y', { reachable, capability: undefined, discovered: undefined }],
         ...ids.map(
@@ -374,8 +381,12 @@ describe('the habits it teaches', () => {
 
   test('collapsing identity and entities is what keeps the ceiling where it is', () => {
     const profiles = ['personal'];
-    const owners = (ids: readonly string[]) =>
-      new Map(ids.map((id) => [`${id}.list`, reaching({ personal: [`${id}.owner`] })]));
+    const owners = (bare: readonly string[]) =>
+      new Map(
+        bare
+          .map((id) => `lanes_${id}`)
+          .map((id) => [`${id}.list`, reaching({ personal: [`${id}.owner`] })]),
+      );
 
     const neither = serverInstructions(profiles, owners(['memory']), true).length;
     const identityOnly = serverInstructions(profiles, owners(['memory', 'identity']), true).length;
@@ -405,15 +416,17 @@ describe('the habits it teaches', () => {
    * client that most needs it is the one holding no skills directory.
    */
   describe('memory and tasks are distinguished, and only when both are there', () => {
-    const owners = (ids: readonly string[]) =>
+    const owners = (bare: readonly string[]) =>
       new Map(
-        ids.map(
-          (id) =>
-            [`${id}.list`, reaching({ personal: [`${id}.owner`] })] as [
-              string,
-              ReturnType<typeof reaching>,
-            ],
-        ),
+        bare
+          .map((id) => `lanes_${id}`)
+          .map(
+            (id) =>
+              [`${id}.list`, reaching({ personal: [`${id}.owner`] })] as [
+                string,
+                ReturnType<typeof reaching>,
+              ],
+          ),
       );
 
     test('both reachable gives one paragraph naming the difference', () => {
@@ -472,17 +485,17 @@ describe('the habits it teaches', () => {
       ['personal'],
       new Map([
         ['gmail.send', reaching({ personal: ['gmail.a', 'gmail.b'] })],
-        ['memory.search', reaching({ personal: ['memory.owner'] })],
-        ['skills.manage.list', reaching({ personal: ['skills.owner'] })],
-        ['vault.put', reaching({ personal: ['vault.owner'] })],
-        ['setup.overview', reaching({ personal: ['setup.main'] })],
+        ['lanes_memory.search', reaching({ personal: ['lanes_memory.owner'] })],
+        ['lanes_skills.manage.list', reaching({ personal: ['lanes_skills.owner'] })],
+        ['lanes_vault.put', reaching({ personal: ['lanes_vault.owner'] })],
+        ['lanes_setup.overview', reaching({ personal: ['lanes_setup.main'] })],
       ]),
     );
 
     expect(granted.length).toBeLessThan(MAX_INSTRUCTIONS);
     // All four habits, and still the accounts by name.
     expect(granted).toContain('Memory is worth consulting');
-    expect(granted).toContain('setup_overview');
+    expect(granted).toContain('lanes_setup_overview');
     expect(granted).toContain('Reachable now, by profile:');
     expect(granted).toContain('personal: gmail.a, gmail.b');
   });
@@ -504,10 +517,10 @@ describe('the habits it teaches', () => {
         profiles,
         new Map([
           ['x.y', { reachable, capability: undefined, discovered: undefined }],
-          ['memory.search', reaching({ [profiles[0] as string]: ['memory.owner'] })],
-          ['skills.manage.list', reaching({ [profiles[0] as string]: ['skills.owner'] })],
-          ['vault.put', reaching({ [profiles[0] as string]: ['vault.owner'] })],
-          ['setup.overview', reaching({ [profiles[0] as string]: ['setup.main'] })],
+          ['lanes_memory.search', reaching({ [profiles[0] as string]: ['lanes_memory.owner'] })],
+          ['lanes_skills.manage.list', reaching({ [profiles[0] as string]: ['lanes_skills.owner'] })],
+          ['lanes_vault.put', reaching({ [profiles[0] as string]: ['lanes_vault.owner'] })],
+          ['lanes_setup.overview', reaching({ [profiles[0] as string]: ['lanes_setup.main'] })],
         ]),
       );
 

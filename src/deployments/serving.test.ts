@@ -27,11 +27,11 @@ const roots: string[] = [];
 function profileYaml(name: string, options: { gmail?: string } = {}): string {
   return (
     `contract: 2\ninstance: { profile: ${name} }\n` +
-    `connections:\n  - { id: main, provider: setup, account: Setup }\n` +
+    `connections:\n  - { id: main, provider: lanes_setup, account: Setup }\n` +
     (options.gmail
       ? `  - { id: ${options.gmail}, provider: gmail, account: ${name}@example.com }\n`
       : '') +
-    `policy:\n  allow: [setup.*${options.gmail ? ', gmail.*' : ''}]\n`
+    `policy:\n  allow: [lanes_setup.*${options.gmail ? ', gmail.*' : ''}]\n`
   );
 }
 

@@ -372,7 +372,7 @@ export const policySchema = z.object({
  * So the refusal is at load, where it names both rows, rather than at call time
  * where one would silently win.
  */
-export const SINGLE_INSTANCE_PROVIDERS: readonly string[] = ['skills', 'vault'];
+export const SINGLE_INSTANCE_PROVIDERS: readonly string[] = ['lanes_skills', 'lanes_vault'];
 
 /**
  * One connection, and what may be done with it (ADR-058).

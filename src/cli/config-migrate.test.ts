@@ -14,11 +14,17 @@ import { openSecretStoreFor } from './runtime.ts';
  * Undoing a provider rename on a profile that will not load because of one.
  *
  * The property that matters most is the one that is easiest to lose: **nothing
- * is guessed**. A `tasks` row labelled anything but `Tasks` is ambiguous between
- * a pre-rename Google Tasks connection and a hand-edited built-in one, and the
- * two fixes are opposite — so the stored credential decides, because only the
- * OAuth connection has ever had one. Take the evidence away and the repair must
- * report rather than pick, which is what most of this file is about.
+ * is guessed**. A `tasks` row is ambiguous between a pre-rename Google Tasks
+ * connection and a hand-edited built-in one, and the two fixes are opposite —
+ * so the stored credential decides, because only the OAuth connection has ever
+ * had one. Take the evidence away and the repair must report rather than pick,
+ * which is what most of this file is about.
+ *
+ * The label used to settle some of it: while the built-in claimed `tasks`, a
+ * row labelled `Tasks` was self-evidently the built-in and owed no rename. The
+ * built-in is `lanes_tasks` since contract 4, so nothing claims `tasks` and no
+ * label makes a row here legitimate — every one of them is stale, and the
+ * credential is the only evidence left.
  *
  * The second property is that a repair which cannot be finished is not started:
  * the credential is copied before the config is saved, and the old reference
@@ -48,7 +54,7 @@ async function brokenWorkspace(options: { keepBuiltIn?: boolean } = {}): Promise
   // profile's (ADR-057) — so a pre-rename workspace is broken in two files.
   const connectionsPath = join(root, CONNECTIONS_FILE);
   const held = await Bun.file(connectionsPath).text();
-  const builtIn = '  - { id: lan2, provider: tasks, account: Tasks }';
+  const builtIn = '  - { id: lan2, provider: lanes_tasks, account: Tasks }';
 
   await Bun.write(
     connectionsPath,
@@ -57,7 +63,7 @@ async function brokenWorkspace(options: { keepBuiltIn?: boolean } = {}): Promise
 
   const path = join(root, 'profiles', 'personal', 'profile.yaml');
   const text = await Bun.file(path).text();
-  const grant = '  - { connection: tasks.lan2, allow: [tasks.*], deny: [] }';
+  const grant = '  - { connection: lanes_tasks.lan2, allow: [lanes_tasks.*], deny: [] }';
 
   await Bun.write(
     path,
@@ -112,7 +118,7 @@ describe('a profile still naming a renamed provider', () => {
     // "is this really Google Tasks?" — and an account lives in connections.yaml
     // now (ADR-057), so the profile loader has nothing to judge it by.
     const root = await brokenWorkspace();
-    await expect(readConnections(root)).rejects.toThrow(/set account to Tasks/);
+    await expect(readConnections(root)).rejects.toThrow(/set provider to google_tasks/);
   });
 
   test('is found in raw YAML, which is all there is to read', async () => {
@@ -217,15 +223,15 @@ describe('with a stored credential to prove what the row was', () => {
     expect(migration.blocked).toEqual([]);
 
     expect(await held(root)).toContain('google_tasks.personal');
-    expect(await held(root)).toContain('tasks.lan2');
+    expect(await held(root)).toContain('lanes_tasks.lan2');
 
     const config = await onDisk(root);
     const google = config.grants.find((grant) => grant.connection === 'google_tasks.personal');
-    const builtIn = config.grants.find((grant) => grant.connection === 'tasks.lan2');
+    const builtIn = config.grants.find((grant) => grant.connection === 'lanes_tasks.lan2');
 
     expect(google?.allow.map((rule) => rule.capability)).toEqual(['google_tasks.*']);
     // Untouched, and still valid: its rule names its own provider.
-    expect(builtIn?.allow.map((rule) => rule.capability)).toEqual(['tasks.*']);
+    expect(builtIn?.allow.map((rule) => rule.capability)).toEqual(['lanes_tasks.*']);
   });
 });
 

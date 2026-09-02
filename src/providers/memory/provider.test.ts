@@ -31,7 +31,7 @@ describe('storing and retrieving an entry', () => {
     const harness = memory();
     await write(harness, 'Standup notes', 'We ship on Friday.');
 
-    const read = await harness.invoke('entry', { uri: 'memory://entry/standup-notes' });
+    const read = await harness.invoke('entry', { uri: 'lanes-memory://entry/standup-notes' });
 
     expect(isResourceResult(read)).toBe(true);
     expect(textOf(read)).toBe('We ship on Friday.');
@@ -42,8 +42,8 @@ describe('storing and retrieving an entry', () => {
     await write(harness, 'A Long: Title!', 'x');
     await write(harness, 'Anything', 'y', { id: 'chosen' });
 
-    expect(textOf(await harness.invoke('entry', { uri: 'memory://entry/a-long-title' }))).toBe('x');
-    expect(textOf(await harness.invoke('entry', { uri: 'memory://entry/chosen' }))).toBe('y');
+    expect(textOf(await harness.invoke('entry', { uri: 'lanes-memory://entry/a-long-title' }))).toBe('x');
+    expect(textOf(await harness.invoke('entry', { uri: 'lanes-memory://entry/chosen' }))).toBe('y');
   });
 
   test('writing the same id again replaces the entry', async () => {
@@ -51,7 +51,7 @@ describe('storing and retrieving an entry', () => {
     await write(harness, 'Note', 'first', { id: 'note' });
     await write(harness, 'Note', 'second', { id: 'note' });
 
-    expect(textOf(await harness.invoke('entry', { uri: 'memory://entry/note' }))).toBe('second');
+    expect(textOf(await harness.invoke('entry', { uri: 'lanes-memory://entry/note' }))).toBe('second');
     expect(isResourceListResult(await harness.invoke('entry'))).toBe(true);
     const listed = await harness.invoke('entry');
     expect(isResourceListResult(listed) && listed.resources).toHaveLength(1);
@@ -91,7 +91,7 @@ describe('storing and retrieving an entry', () => {
 
     const listed = await harness.invoke('entry');
     expect(isResourceListResult(listed) && listed.resources).toEqual([
-      { uri: 'memory://entry/by-hand', name: 'by-hand' },
+      { uri: 'lanes-memory://entry/by-hand', name: 'by-hand' },
     ]);
   });
 
@@ -111,7 +111,7 @@ describe('storing and retrieving an entry', () => {
 
   test('a missing entry is an error, not empty contents', async () => {
     const harness = memory();
-    await expect(harness.invoke('entry', { uri: 'memory://entry/absent' })).rejects.toThrow(
+    await expect(harness.invoke('entry', { uri: 'lanes-memory://entry/absent' })).rejects.toThrow(
       /No memory entry "absent"/,
     );
   });
@@ -132,8 +132,8 @@ describe('listing', () => {
     const listed = await harness.invoke('entry');
 
     expect(isResourceListResult(listed) && listed.resources).toEqual([
-      { uri: 'memory://entry/newer', name: 'Newer' },
-      { uri: 'memory://entry/older', name: 'Older' },
+      { uri: 'lanes-memory://entry/newer', name: 'Newer' },
+      { uri: 'lanes-memory://entry/older', name: 'Older' },
     ]);
   });
 });
@@ -147,7 +147,7 @@ describe('search', () => {
 
     // A link rather than a URI spelled into the text: core routes it to the
     // profile and connection, which a provider must not learn.
-    expect(linksOf(found)).toEqual(['memory://entry/standup']);
+    expect(linksOf(found)).toEqual(['lanes-memory://entry/standup']);
     expect(textOf(found)).toContain('Thursday evening');
   });
 
@@ -156,9 +156,9 @@ describe('search', () => {
     await write(harness, 'Deploy runbook', 'unrelated content', { id: 'r', tags: ['ops'] });
 
     expect(linksOf(await harness.invoke('search', { query: 'runbook' }))).toEqual([
-      'memory://entry/r',
+      'lanes-memory://entry/r',
     ]);
-    expect(linksOf(await harness.invoke('search', { query: 'ops' }))).toEqual(['memory://entry/r']);
+    expect(linksOf(await harness.invoke('search', { query: 'ops' }))).toEqual(['lanes-memory://entry/r']);
   });
 
   test('a tag filter narrows before matching', async () => {
@@ -168,7 +168,7 @@ describe('search', () => {
 
     const found = linksOf(await harness.invoke('search', { query: 'shared', tag: 'ops' }));
 
-    expect(found).toEqual(['memory://entry/one']);
+    expect(found).toEqual(['lanes-memory://entry/one']);
   });
 
   test('no match says so rather than returning nothing', async () => {
@@ -271,7 +271,7 @@ describe('what reaches the audit log', () => {
     // id, and no capability on this provider keeps a body.
     const bodies = memoryProvider.capabilities
       .filter((capability) => capability.name === 'entry' || capability.name === 'get')
-      .map((capability) => capability.redact!({ uri: 'memory://entry/x', id: 'x', body: 'secret' }));
+      .map((capability) => capability.redact!({ uri: 'lanes-memory://entry/x', id: 'x', body: 'secret' }));
 
     for (const redacted of bodies) expect(redacted['body']).toBe('<string:6>');
   });
@@ -279,6 +279,6 @@ describe('what reaches the audit log', () => {
   test('a resource read records its address but not its contents', () => {
     const entry = memoryProvider.capabilities.find((capability) => capability.name === 'entry')!;
 
-    expect(entry.redact!({ uri: 'memory://entry/standup' })['uri']).toBe('memory://entry/standup');
+    expect(entry.redact!({ uri: 'lanes-memory://entry/standup' })['uri']).toBe('lanes-memory://entry/standup');
   });
 });

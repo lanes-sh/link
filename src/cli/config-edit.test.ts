@@ -266,7 +266,7 @@ describe('repairing a profile that predates the setup surface', () => {
    * other would leave a workspace that does not load.
    */
   const ensureSetup = (p: Pair): SurfaceRepair =>
-    ensureReservedConnection(p.connections, p.profile, 'setup');
+    ensureReservedConnection(p.connections, p.profile, 'lanes_setup');
 
   /** A profile as it was written before the surface, and as this operator's is. */
   const OLD = `contract: 4
@@ -302,13 +302,13 @@ oauth_apps: {}
     // workspace's only other row is a vendor account, so the first owner-layer
     // number is free. The prefix is what says the surface is built in.
     expect(added).toEqual([
-      'connections.yaml += setup.lan1',
-      'grants += setup.lan1',
-      'grants[].allow += setup.*',
+      'connections.yaml += lanes_setup.lan1',
+      'grants += lanes_setup.lan1',
+      'grants[].allow += lanes_setup.*',
     ]);
 
-    expect(rowsOf(p)).toContainEqual({ id: 'lan1', provider: 'setup', account: 'Setup' });
-    expect(grantsOf(p)).toContainEqual({ connection: 'setup.lan1', allow: ['setup.*'], deny: [] });
+    expect(rowsOf(p)).toContainEqual({ id: 'lan1', provider: 'lanes_setup', account: 'Setup' });
+    expect(grantsOf(p)).toContainEqual({ connection: 'lanes_setup.lan1', allow: ['lanes_setup.*'], deny: [] });
   });
 
   test("the operator's own connection and grant are left alone", async () => {
@@ -339,32 +339,32 @@ oauth_apps: {}
 
   test('the row alone is repaired when the grant is already there', async () => {
     const p = await pair(
-      OLD.replace('members: []', '  - { connection: setup.main, allow: [setup.*], deny: [] }\nmembers: []'),
+      OLD.replace('members: []', '  - { connection: lanes_setup.main, allow: [lanes_setup.*], deny: [] }\nmembers: []'),
       OLD_CONNECTIONS,
     );
 
-    expect(repairLines(ensureSetup(p))).toEqual(['connections.yaml += setup.main']);
+    expect(repairLines(ensureSetup(p))).toEqual(['connections.yaml += lanes_setup.main']);
   });
 
   test('the grant alone is repaired when the row is already there', async () => {
     const p = await pair(
       OLD,
-      OLD_CONNECTIONS.replace('oauth_apps: {}', '  - { id: main, provider: setup, account: Setup }\noauth_apps: {}'),
+      OLD_CONNECTIONS.replace('oauth_apps: {}', '  - { id: main, provider: lanes_setup, account: Setup }\noauth_apps: {}'),
     );
 
-    expect(repairLines(ensureSetup(p))).toEqual(['grants += setup.main', 'grants[].allow += setup.*']);
+    expect(repairLines(ensureSetup(p))).toEqual(['grants += lanes_setup.main', 'grants[].allow += lanes_setup.*']);
   });
 
   test('an operator who renamed the row keeps their id', async () => {
     // Any instance will do, and the first is taken rather than `main`
-    // specifically — bolting a second `setup.main` on beside a renamed one
+    // specifically — bolting a second `lanes_setup.main` on beside a renamed one
     // would be the repair inventing a surface the operator already has.
     const p = await pair(
       OLD,
-      OLD_CONNECTIONS.replace('oauth_apps: {}', '  - { id: mine, provider: setup, account: Setup }\noauth_apps: {}'),
+      OLD_CONNECTIONS.replace('oauth_apps: {}', '  - { id: mine, provider: lanes_setup, account: Setup }\noauth_apps: {}'),
     );
 
-    expect(repairLines(ensureSetup(p))).toEqual(['grants += setup.mine', 'grants[].allow += setup.*']);
+    expect(repairLines(ensureSetup(p))).toEqual(['grants += lanes_setup.mine', 'grants[].allow += lanes_setup.*']);
   });
 
   describe('a rule that has expired is not a rule', () => {
@@ -374,12 +374,12 @@ oauth_apps: {}
       const p = await pair(
         OLD.replace(
           'members: []',
-          '  - { connection: setup.main, allow: [{ capability: setup.*, expires_at: "2030-01-01T00:00:00Z" }], deny: [] }\nmembers: []',
+          '  - { connection: lanes_setup.main, allow: [{ capability: lanes_setup.*, expires_at: "2030-01-01T00:00:00Z" }], deny: [] }\nmembers: []',
         ),
         OLD_CONNECTIONS,
       );
 
-      expect(repairLines(ensureSetup(p))).toEqual(['connections.yaml += setup.main']);
+      expect(repairLines(ensureSetup(p))).toEqual(['connections.yaml += lanes_setup.main']);
     });
   });
 
@@ -388,9 +388,9 @@ oauth_apps: {}
       const p = await pair(`contract: 4\ninstance:\n  profile: personal\n`, OLD_CONNECTIONS);
 
       expect(repairLines(ensureSetup(p))).toEqual([
-        'connections.yaml += setup.lan1',
-        'grants += setup.lan1',
-        'grants[].allow += setup.*',
+        'connections.yaml += lanes_setup.lan1',
+        'grants += lanes_setup.lan1',
+        'grants[].allow += lanes_setup.*',
       ]);
     });
 
@@ -413,7 +413,7 @@ oauth_apps: {}
       // command puts it back. A deny is the way it stays off, so it is the one
       // thing the repair must not undo (ADR-050).
       const p = await pair(
-        OLD.replace('members: []', '  - { connection: setup.main, allow: [], deny: [setup.*] }\nmembers: []'),
+        OLD.replace('members: []', '  - { connection: lanes_setup.main, allow: [], deny: [lanes_setup.*] }\nmembers: []'),
         OLD_CONNECTIONS,
       );
 
@@ -421,17 +421,17 @@ oauth_apps: {}
     });
 
     test('denying one capability is a narrowing, and the repair still runs', async () => {
-      // `setup.provider` withheld is the operator keeping the overview and
+      // `lanes_setup.provider` withheld is the operator keeping the overview and
       // dropping the command detail — not switching the surface off. Refusing
       // to repair would leave them with neither.
       const p = await pair(
-        OLD.replace('members: []', '  - { connection: setup.main, allow: [], deny: [setup.provider] }\nmembers: []'),
+        OLD.replace('members: []', '  - { connection: lanes_setup.main, allow: [], deny: [lanes_setup.provider] }\nmembers: []'),
         OLD_CONNECTIONS,
       );
 
       expect(repairLines(ensureSetup(p))).toEqual([
-        'connections.yaml += setup.main',
-        'grants[].allow += setup.*',
+        'connections.yaml += lanes_setup.main',
+        'grants[].allow += lanes_setup.*',
       ]);
     });
   });
@@ -473,18 +473,18 @@ oauth_apps: {}
 
     // ADR-042: a profile declaring no identity has nothing for the surface to
     // report, so it arrives with the first `identity add` rather than here.
-    expect(repair.granted).not.toContain('identity.*');
+    expect(repair.granted).not.toContain('lanes_identity.*');
   });
 
   test('a surface the operator denied is left off', async () => {
     const p = await pair(
-      OLD.replace('members: []', '  - { connection: skills.main, allow: [], deny: [skills.*] }\nmembers: []'),
+      OLD.replace('members: []', '  - { connection: lanes_skills.main, allow: [], deny: [lanes_skills.*] }\nmembers: []'),
       OLD_CONNECTIONS,
     );
     const repair = ensureOwnerLayer(p.connections, p.profile);
 
-    expect(repair.granted).not.toContain('skills.*');
-    expect(repair.granted).toContain('memory.*');
+    expect(repair.granted).not.toContain('lanes_skills.*');
+    expect(repair.granted).toContain('lanes_memory.*');
   });
 
   test('a fresh profile and workspace need no repair at all', async () => {
@@ -552,10 +552,10 @@ describe('the repair reads this profile\'s grants, not the workspace\'s first ro
   const workspaceRows = [
     'contract: 4',
     'connections:',
-    '  - { id: main, provider: memory, account: Memory }',
-    '  - { id: demo, provider: memory, account: Memory }',
-    '  - { id: main, provider: vault, account: Vault }',
-    '  - { id: demo, provider: vault, account: Vault }',
+    '  - { id: main, provider: lanes_memory, account: Memory }',
+    '  - { id: demo, provider: lanes_memory, account: Memory }',
+    '  - { id: main, provider: lanes_vault, account: Vault }',
+    '  - { id: demo, provider: lanes_vault, account: Vault }',
     '',
   ].join('\n');
 
@@ -572,13 +572,13 @@ describe('the repair reads this profile\'s grants, not the workspace\'s first ro
       [
         'contract: 4',
         'grants:',
-        '  - { connection: memory.demo, allow: [memory.*], deny: [] }',
-        '  - { connection: vault.demo, allow: [vault.*], deny: [] }',
+        '  - { connection: lanes_memory.demo, allow: [lanes_memory.*], deny: [] }',
+        '  - { connection: vault.demo, allow: [lanes_vault.*], deny: [] }',
         '',
       ].join('\n'),
     );
 
-    const repair = ensureReservedConnection(connections, profile, 'memory');
+    const repair = ensureReservedConnection(connections, profile, 'lanes_memory');
 
     expect(repair.changes).toEqual([]);
     expect(repair.granted).toEqual([]);
@@ -592,9 +592,9 @@ describe('the repair reads this profile\'s grants, not the workspace\'s first ro
     const connections = ConfigDocument.fromText(workspaceRows, CONNECTIONS_FILE);
     const profile = ConfigDocument.fromText('contract: 4\ngrants: []\n');
 
-    const repair = ensureReservedConnection(connections, profile, 'memory');
+    const repair = ensureReservedConnection(connections, profile, 'lanes_memory');
 
-    expect(repair.granted).toEqual(['memory.*']);
+    expect(repair.granted).toEqual(['lanes_memory.*']);
   });
 
   test('a deny on the profile\'s own instance still blocks the repair', () => {
@@ -606,12 +606,12 @@ describe('the repair reads this profile\'s grants, not the workspace\'s first ro
       [
         'contract: 4',
         'grants:',
-        '  - { connection: memory.demo, allow: [], deny: [memory.*] }',
+        '  - { connection: lanes_memory.demo, allow: [], deny: [lanes_memory.*] }',
         '',
       ].join('\n'),
     );
 
-    expect(ensureReservedConnection(connections, profile, 'memory')).toEqual({
+    expect(ensureReservedConnection(connections, profile, 'lanes_memory')).toEqual({
       changes: [],
       granted: [],
     });
@@ -622,8 +622,8 @@ describe('a profile granting two instances of one surface', () => {
   const twoInstances = [
     'contract: 4',
     'connections:',
-    '  - { id: team, provider: memory, account: Memory }',
-    '  - { id: personal, provider: memory, account: Memory }',
+    '  - { id: team, provider: lanes_memory, account: Memory }',
+    '  - { id: personal, provider: lanes_memory, account: Memory }',
     '',
   ].join('\n');
 
@@ -636,13 +636,13 @@ describe('a profile granting two instances of one surface', () => {
       [
         'contract: 4',
         'grants:',
-        '  - { connection: memory.team, allow: [], deny: [] }',
-        '  - { connection: memory.personal, allow: [], deny: [memory.*] }',
+        '  - { connection: lanes_memory.team, allow: [], deny: [] }',
+        '  - { connection: lanes_memory.personal, allow: [], deny: [lanes_memory.*] }',
         '',
       ].join('\n'),
     );
 
-    expect(ensureReservedConnection(connections, profile, 'memory')).toEqual({
+    expect(ensureReservedConnection(connections, profile, 'lanes_memory')).toEqual({
       changes: [],
       granted: [],
     });
@@ -654,13 +654,13 @@ describe('a profile granting two instances of one surface', () => {
       [
         'contract: 4',
         'grants:',
-        '  - { connection: memory.team, allow: [], deny: [] }',
-        '  - { connection: memory.personal, allow: [memory.*], deny: [] }',
+        '  - { connection: lanes_memory.team, allow: [], deny: [] }',
+        '  - { connection: lanes_memory.personal, allow: [lanes_memory.*], deny: [] }',
         '',
       ].join('\n'),
     );
 
-    expect(ensureReservedConnection(connections, profile, 'memory').granted).toEqual([]);
+    expect(ensureReservedConnection(connections, profile, 'lanes_memory').granted).toEqual([]);
   });
 
   test('a connection value with no dot in it matches no provider', () => {
@@ -668,14 +668,14 @@ describe('a profile granting two instances of one surface', () => {
     // dotless value, and `'vaults'.slice(0, -1)` is `'vault'` — so a typo was
     // widened while the real surface stayed unreachable.
     const connections = ConfigDocument.fromText(
-      'contract: 4\nconnections:\n  - { id: main, provider: vault, account: Vault }\n',
+      'contract: 4\nconnections:\n  - { id: main, provider: lanes_vault, account: Vault }\n',
       CONNECTIONS_FILE,
     );
     const profile = ConfigDocument.fromText(
       'contract: 4\ngrants:\n  - { connection: vaults, allow: [], deny: [] }\n',
     );
 
-    const repair = ensureReservedConnection(connections, profile, 'vault');
-    expect(repair.changes).toEqual(['grants += vault.main']);
+    const repair = ensureReservedConnection(connections, profile, 'lanes_vault');
+    expect(repair.changes).toEqual(['grants += lanes_vault.main']);
   });
 });

@@ -153,7 +153,7 @@ export function soleGrantFor(config: Config, provider: string): string | undefin
  * under one name has to keep opening it.
  */
 export function vaultRef(declared: TargetConfig | undefined, config: Config): string {
-  return declared?.vault?.ref ?? `vault/${soleGrantFor(config, 'vault') ?? 'main'}`;
+  return declared?.vault?.ref ?? `vault/${soleGrantFor(config, 'lanes_vault') ?? 'main'}`;
 }
 
 /**

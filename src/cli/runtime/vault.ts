@@ -40,7 +40,7 @@ export function openVault(
   // The vault connection this profile grants (ADR-059). `main` when it grants
   // none, which keeps a profile that denied the vault opening against the same
   // document every other profile uses rather than inventing a second one.
-  const connection = soleGrantFor(config, 'vault') ?? 'main';
+  const connection = soleGrantFor(config, 'lanes_vault') ?? 'main';
 
   switch (vault.adapter) {
     case 'file':

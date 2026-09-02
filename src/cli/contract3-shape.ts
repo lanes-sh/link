@@ -1,6 +1,7 @@
 import { RESERVED_PROVIDER_IDS } from '#connectivity';
 import type { ContractRename, LegacyConnection, LegacyProfile } from './contract3.ts';
 import { keyOf } from './contract3.ts';
+import { C3_OWNER_PROVIDERS } from './contract3-layout.ts';
 
 /**
  * Turning contract 2's shape into contract 3's, without touching a file.
@@ -49,7 +50,7 @@ export function hoistConnections(profiles: ReadonlyMap<string, LegacyProfile>): 
       // merge. That is the one outcome ADR-059 forbids: interleaving two sets of
       // notes is not reversible and not reviewable, and for the vault the wrong
       // answer is a credential. Keying on the profile forces a rename instead.
-      const owner = RESERVED_PROVIDER_IDS.includes(connection.provider);
+      const owner = C3_OWNER_PROVIDERS.includes(connection.provider);
       const identity = owner
         ? `${connection.provider} @${profile}`
         : `${connection.provider} ${connection.account}`;

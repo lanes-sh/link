@@ -339,8 +339,8 @@ describe('what the manifest carries without being asked', () => {
     expect(deriveManifest(answers('mcp', 'oauth')).setup).toBeUndefined();
   });
 
-  test('a sentence becomes a step and a URL becomes a link, never setup.docs', () => {
-    // `setup.docs` is read by nothing — `printSetup` renders `summary`,
+  test('a sentence becomes a step and a URL becomes a link, never lanes_setup.docs', () => {
+    // `lanes_setup.docs` is read by nothing — `printSetup` renders `summary`,
     // `docs_url` and `steps`. A manifest using it validates and shows nothing.
     const sentence = deriveManifest(answers('http', 'bearer', { 'setup-docs': 'Ask your admin.' }));
     expect(sentence.setup).toMatchObject({ steps: ['Ask your admin.'] });

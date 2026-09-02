@@ -170,9 +170,26 @@ export async function migrateToContract4(
       document.setIn(
         ['grants'],
         grants.map((grant) => {
-          const held = grant as { connection?: unknown };
+          const held = grant as { connection?: unknown; allow?: unknown; deny?: unknown };
           const ref = typeof held.connection === 'string' ? held.connection : undefined;
-          return ref === undefined ? grant : { ...held, connection: renames.get(ref) ?? ref };
+          if (ref === undefined) return grant;
+
+          const to = renames.get(ref) ?? ref;
+          const was = ref.slice(0, ref.indexOf('.'));
+          const now = to.slice(0, to.indexOf('.'));
+
+          // **The rules move with the row.** A rule governs the connection it
+          // sits under and may only name that provider (ADR-058), so renaming
+          // `memory` to `lanes_memory` on the row and leaving `memory.*` in its
+          // `allow` is a profile the loader refuses — which is how this was
+          // found, on the save at the end of the migration that wrote it.
+          return {
+            ...held,
+            connection: to,
+            ...(was === now
+              ? {}
+              : { allow: retitle(held.allow, was, now), deny: retitle(held.deny, was, now) }),
+          };
         }),
       );
     }
@@ -225,6 +242,28 @@ async function moveCredentials(
   );
 }
 
+/**
+ * `memory.*` becomes `lanes_memory.*`, in either spelling a rule may take.
+ *
+ * A rule is a bare pattern string or `{ capability, expires_at }`, and an
+ * expiry has to survive: dropping it would turn a lapsing grant into a
+ * permanent one, which is the direction that fails unsafely.
+ */
+function retitle(rules: unknown, was: string, now: string): unknown {
+  if (!Array.isArray(rules)) return rules;
+
+  const moved = (pattern: string): string =>
+    pattern === was || pattern.startsWith(`${was}.`) ? `${now}${pattern.slice(was.length)}` : pattern;
+
+  return rules.map((rule) => {
+    if (typeof rule === 'string') return moved(rule);
+    const held = rule as { capability?: unknown };
+    return typeof held.capability === 'string'
+      ? { ...held, capability: moved(held.capability) }
+      : rule;
+  });
+}
+
 /** Every connection row, however far through the migration this workspace is. */
 async function readConnectionRows(
   root: string,
@@ -268,7 +307,13 @@ async function renameConnections(root: string, renames: Renames): Promise<void> 
       if (typeof one.id !== 'string' || typeof one.provider !== 'string') return row;
 
       const to = renames.get(`${one.provider}.${one.id}`);
-      return to === undefined ? row : { ...one, id: to.slice(to.indexOf('.') + 1) };
+      if (to === undefined) return row;
+
+      // Both halves. The provider moved for the owner layer (`memory` became
+      // `lanes_memory`) and the id moved for everything unallocated, and a row
+      // that took one without the other names a connection nothing resolves.
+      const dot = to.indexOf('.');
+      return { ...one, provider: to.slice(0, dot), id: to.slice(dot + 1) };
     }),
   );
 

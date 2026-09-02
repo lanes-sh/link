@@ -25,9 +25,9 @@ instance:
   profile: personal
 
 grants:
-  - { connection: memory.main, allow: ['memory.*'], deny: [] }
-  - { connection: skills.main, allow: ['skills.*'], deny: [] }
-  - { connection: vault.main, allow: ['vault.*'], deny: [] }
+  - { connection: lanes_memory.lan1, allow: ['lanes_memory.*'], deny: [] }
+  - { connection: lanes_skills.lan4, allow: ['lanes_skills.*'], deny: [] }
+  - { connection: lanes_vault.lan5, allow: ['lanes_vault.*'], deny: [] }
 members: []
 `;
 
@@ -112,9 +112,9 @@ describe('the owner layer follows the target — ADR-014', () => {
     // shared them, and not `data/<profile>/skills.d/` either — they are back
     // inside the profile and under the skills connection it grants (ADR-066).
     // A skill left at any old path loads for nobody, deliberately.
-    await mkdir(join(root, layout.skills('personal', 'main')), { recursive: true });
+    await mkdir(join(root, layout.skills('personal', 'lan4')), { recursive: true });
     await writeFile(
-      join(root, layout.skills('personal', 'main'), 'review-diff.md'),
+      join(root, layout.skills('personal', 'lan4'), 'review-diff.md'),
       '---\ndescription: Review a diff\n---\nReview it.\n',
     );
     await mkdir(join(root, 'skills'), { recursive: true });
@@ -126,13 +126,13 @@ describe('the owner layer follows the target — ADR-014', () => {
     const runtime = await openRuntime({ profile: 'personal', target: 'local' });
     try {
       expect(runtime.registry.capabilities().map((entry) => entry.id)).toContain(
-        'skills.review-diff',
+        'lanes_skills.review-diff',
       );
       // The same store the provider reads, exposed so `lanes link skills` cannot drift
       // into a second spelling of the same layout.
       expect((await runtime.skills?.list())?.map((blob) => blob.key)).toEqual(['review-diff.md']);
       expect(runtime.registry.capabilities().map((entry) => entry.id)).not.toContain(
-        'skills.stale',
+        'lanes_skills.stale',
       );
     } finally {
       await runtime.close();
@@ -150,11 +150,11 @@ describe('the owner layer follows the target — ADR-014', () => {
       // documents, which is the whole reversal: the wrong answer here is a
       // credential read by the wrong profile.
       expect(
-        await Bun.file(join(root, layout.vault('personal', 'main'))).exists(),
+        await Bun.file(join(root, layout.vault('personal', 'lan5'))).exists(),
       ).toBe(true);
       // Its own key, never the credential store's.
       expect(
-        await Bun.file(join(root, `${layout.vault('personal', 'main')}.key`)).exists(),
+        await Bun.file(join(root, `${layout.vault('personal', 'lan5')}.key`)).exists(),
       ).toBe(true);
     } finally {
       await runtime.close();
@@ -177,7 +177,7 @@ describe('the owner layer follows the target — ADR-014', () => {
       // vault connection in the workspace, which is the collision whose wrong
       // answer is a credential.
       expect(
-        await Bun.file(join(root, 'data', 'files', 'vault.d', 'main.enc')).exists(),
+        await Bun.file(join(root, 'data', 'files', 'vault.d', 'lan5.enc')).exists(),
       ).toBe(true);
       expect(await Bun.file(join(root, 'data', 'personal.vault.enc')).exists()).toBe(false);
     } finally {

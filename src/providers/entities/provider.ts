@@ -58,7 +58,7 @@ const DESCRIPTION =
   'so more than one means ask rather than take the first.';
 
 export const entitiesProvider: ProviderDefinition = defineLocalProvider({
-  id: 'entities',
+  id: 'lanes_entities',
   name: 'Entities',
   version: '1.0.0',
   description: DESCRIPTION,
@@ -99,14 +99,14 @@ export const entitiesProvider: ProviderDefinition = defineLocalProvider({
       name: 'entity',
       title: 'Entity',
       description: 'One declared entity, addressed by its id.',
-      uriTemplate: 'entities://entity/{id}',
+      uriTemplate: 'lanes-entities://entity/{id}',
       mimeType: 'text/markdown',
       redact: keepKeys('uri'),
 
       async list(context) {
         const catalogue = await openCatalogue(context.storage);
         return catalogue.entities.map((entity) => ({
-          uri: `entities://entity/${encodeURIComponent(entity.id)}`,
+          uri: `lanes-entities://entity/${encodeURIComponent(entity.id)}`,
           name: entity.name,
         }));
       },
@@ -230,7 +230,7 @@ export const entitiesProvider: ProviderDefinition = defineLocalProvider({
               { type: 'text', text: renderCandidates(matches, criteria, context.connection.key) },
               ...matches.candidates.map((one) => ({
                 type: 'resource_link' as const,
-                uri: `entities://entity/${encodeURIComponent(one.entity.id)}`,
+                uri: `lanes-entities://entity/${encodeURIComponent(one.entity.id)}`,
                 name: one.entity.name,
               })),
             ],
@@ -244,7 +244,7 @@ export const entitiesProvider: ProviderDefinition = defineLocalProvider({
           content: [
             {
               type: 'resource_link' as const,
-              uri: `entities://entity/${encodeURIComponent(found.id)}`,
+              uri: `lanes-entities://entity/${encodeURIComponent(found.id)}`,
               name: found.name,
             },
             { type: 'text', text: renderEntity(found, catalogue, file?.body ?? '') },
@@ -259,7 +259,7 @@ export const entitiesProvider: ProviderDefinition = defineLocalProvider({
       title: 'Read one entity',
       description:
         'Return one entity by id, with its relationships and everything pointing at it. The resource ' +
-        'entities://entity/{id} is the same content; this exists for clients that do not read resources.',
+        'lanes-entities://entity/{id} is the same content; this exists for clients that do not read resources.',
       inputSchema: z.object({ id: z.string().min(1).describe('Entity id') }),
       redact: keepKeys('id'),
       async handler({ id }, context) {

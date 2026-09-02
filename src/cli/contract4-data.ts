@@ -1,5 +1,4 @@
 import { layout } from '#profile';
-import { RESERVED_PROVIDER_IDS } from '#connectivity';
 import { nextConnectionId } from './identity.ts';
 import type { BlobStore } from '#stores/blobs';
 import {
@@ -9,7 +8,7 @@ import {
   isWorkspaceNamespace,
   OAUTH_NAMESPACE,
 } from '#stores/state';
-import { C3 } from './contract3-layout.ts';
+import { C3, C3_OWNER_PROVIDERS } from './contract3-layout.ts';
 import { claim, type Move } from './migrate-move.ts';
 
 /**
@@ -58,18 +57,30 @@ export function planRenames(
     .filter((id) => /^(lan|con)[0-9]+$/.test(id));
 
   for (const row of connections) {
+    // The *provider* moves too — contract 3's `memory` is contract 4's
+    // `lanes_memory` — so a row is renamed on both halves or neither.
+    // `C3_OWNER_PROVIDERS` says which, because the live reserved list is
+    // already prefixed and answers no for every contract-3 row.
+    const owner = C3_OWNER_PROVIDERS.includes(row.provider);
+    const provider = renamedProvider(row.provider);
     const from = `${row.provider}.${row.id}`;
+
     if (/^(lan|con)[0-9]+$/.test(row.id)) {
-      renames.set(from, from);
+      renames.set(from, `${provider}.${row.id}`);
       continue;
     }
 
-    const id = nextConnectionId(taken, RESERVED_PROVIDER_IDS.includes(row.provider));
+    const id = nextConnectionId(taken, owner);
     taken.push(id);
-    renames.set(from, `${row.provider}.${id}`);
+    renames.set(from, `${provider}.${id}`);
   }
 
   return renames;
+}
+
+/** `memory` becomes `lanes_memory`; everything else keeps its id. */
+export function renamedProvider(provider: string): string {
+  return C3_OWNER_PROVIDERS.includes(provider) ? `lanes_${provider}` : provider;
 }
 
 export interface DataPlan {
@@ -163,12 +174,19 @@ export async function planMoves(
     const connection = tail[0];
     if (connection === undefined) continue;
 
-    const owners = granting.get(`${head}.${connection}`) ?? [];
+    const ref = `${head}.${connection}`;
+    const owners = granting.get(ref) ?? [];
+
+    // Both segments, from the one rename: a path that took one without the
+    // other is a namespace nothing reads.
+    const settled = renames.get(ref) ?? ref;
+    const dot = settled.indexOf('.');
+    const into = `${settled.slice(0, dot)}/${settled.slice(dot + 1)}`;
+
     record(
       blob.key,
       owners,
-      (profile) =>
-        `${layout.blobs(profile)}/${head}/${renamed(head, connection)}/${tail.slice(1).join('/')}`,
+      (profile) => `${layout.blobs(profile)}/${into}/${tail.slice(1).join('/')}`,
       moves,
       shared,
       orphaned,

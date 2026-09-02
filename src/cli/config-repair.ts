@@ -17,16 +17,16 @@ import { nextConnectionId } from './identity.ts';
  * than several that look alike.
  */
 
-/** The reserved provider ids that hold no account, and the label each row carries. */
+/** Lanes' own provider ids, and the label each row carries. */
 const RESERVED_SURFACES = {
-  memory: 'Memory',
-  tasks: 'Tasks',
-  assets: 'Assets',
-  skills: 'Skills',
-  vault: 'Vault',
-  setup: 'Setup',
-  identity: 'Identity',
-  entities: 'Entities',
+  lanes_memory: 'Memory',
+  lanes_tasks: 'Tasks',
+  lanes_assets: 'Assets',
+  lanes_skills: 'Skills',
+  lanes_vault: 'Vault',
+  lanes_setup: 'Setup',
+  lanes_identity: 'Identity',
+  lanes_entities: 'Entities',
 } as const;
 
 type ReservedSurface = keyof typeof RESERVED_SURFACES;
@@ -54,13 +54,13 @@ type ReservedSurface = keyof typeof RESERVED_SURFACES;
  * template writes and a diff between the two reads as a diff.
  */
 export const DEFAULT_SURFACES: readonly ReservedSurface[] = [
-  'memory',
-  'tasks',
-  'assets',
-  'skills',
-  'vault',
-  'setup',
-  'entities',
+  'lanes_memory',
+  'lanes_tasks',
+  'lanes_assets',
+  'lanes_skills',
+  'lanes_vault',
+  'lanes_setup',
+  'lanes_entities',
 ];
 
 /**
@@ -317,6 +317,6 @@ export function ensureIdentityConnection(
   connections: ConfigDocument,
   profile: ConfigDocument,
 ): SurfaceRepair {
-  return ensureReservedConnection(connections, profile, 'identity');
+  return ensureReservedConnection(connections, profile, 'lanes_identity');
 }
 

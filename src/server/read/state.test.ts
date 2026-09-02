@@ -14,7 +14,7 @@ import type { ProfileRuntime } from '../mcp/visibility.ts';
  */
 
 const ROWS: ConnectionRow[] = [
-  { provider: 'memory', id: 'main', account: 'Memory' },
+  { provider: 'lanes_memory', id: 'main', account: 'Memory' },
   { provider: 'gmail', id: 'ada', account: 'ada@example.com', label: 'Work mail' },
   { provider: 'gmail', id: 'rin', account: 'rin@example.com' },
 ];
@@ -46,17 +46,17 @@ describe('which connections exist', () => {
     // The bug this file exists for. `gmail.rin` is authorised and no profile
     // grants it; it is still a connection, and a dashboard that hid it would be
     // telling somebody their `connect` did nothing.
-    const state = readState('local', new Map([['personal', profile(['memory.main', 'gmail.ada'])]]), ROWS, ENDPOINT);
+    const state = readState('local', new Map([['personal', profile(['lanes_memory.main', 'gmail.ada'])]]), ROWS, ENDPOINT);
 
     expect(state.connections.map((one) => one.ref).sort()).toEqual([
       'gmail.ada',
       'gmail.rin',
-      'memory.main',
+      'lanes_memory.main',
     ]);
   });
 
   test('an ungranted one says so, rather than being absent', () => {
-    const state = readState('local', new Map([['personal', profile(['memory.main'])]]), ROWS, ENDPOINT);
+    const state = readState('local', new Map([['personal', profile(['lanes_memory.main'])]]), ROWS, ENDPOINT);
     const rin = state.connections.find((one) => one.ref === 'gmail.rin');
 
     expect(rin?.profiles).toEqual([]);

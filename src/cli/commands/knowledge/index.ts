@@ -265,7 +265,7 @@ async function openLocalStores(
   // The *granted* connection, beside the profile. `layout.skills` changed
   // meaning without changing arity at ADR-059, so the compiler was silent;
   // ADR-066 put the profile back in front of it, and it is an argument now.
-  const skillsConnection = soleGrantFor(runtime.config, 'skills');
+  const skillsConnection = soleGrantFor(runtime.config, 'lanes_skills');
   return {
     storage: factory(),
     skills: skillsConnection === undefined ? null : factory(layout.skills(runtime.config.instance.profile, skillsConnection)),
@@ -342,7 +342,7 @@ function grantedInstances(config: Parameters<typeof soleGrantFor>[0]): {
   entities: string;
 } {
   return {
-    memory: soleGrantFor(config, 'memory') ?? 'main',
-    entities: soleGrantFor(config, 'entities') ?? 'main',
+    memory: soleGrantFor(config, 'lanes_memory') ?? 'main',
+    entities: soleGrantFor(config, 'lanes_entities') ?? 'main',
   };
 }

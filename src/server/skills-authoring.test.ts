@@ -77,7 +77,7 @@ limits:
   requests_per_minute: 1000
   upstream_calls_per_minute: 1000
 grants:
-  - connection: skills.owner
+  - connection: lanes_skills.owner
 ${policy.split('\n').filter((line) => line.trim().length > 0).map((line) => `  ${line}`).join('\n')}
 members: []
 `).config;
@@ -100,7 +100,7 @@ const author = startHarness({
       store: authorFixture.store,
     }),
   ],
-  config: config('personal', authorPort, `  allow:\n    - "skills.*"`),
+  config: config('personal', authorPort, `  allow:\n    - "lanes_skills.*"`),
   refreshSkills: authorFixture.refresh,
 });
 
@@ -122,7 +122,7 @@ const invokeOnly = startHarness({
   config: config(
     'readonly',
     invokePort,
-    `  allow:\n    - "skills.*"\n  deny:\n    - "skills.manage.*"`,
+    `  allow:\n    - "lanes_skills.*"\n  deny:\n    - "lanes_skills.manage.*"`,
   ),
   refreshSkills: invokeFixture.refresh,
 });
@@ -142,22 +142,22 @@ async function promptNames(harness: typeof author, token?: string): Promise<stri
 
 describe('a skill written over MCP is a prompt on the next call', () => {
   test('without a restart, and invocable', async () => {
-    expect(await promptNames(author)).toEqual(['skills_review-diff']);
+    expect(await promptNames(author)).toEqual(['lanes_skills_review-diff']);
 
     const written = await rpc(url(author), 'tools/call', {
-      name: 'skills_manage_write',
-      arguments: { profile: 'personal', connection: 'skills.owner', name: 'draft-reply', text: WRITTEN },
+      name: 'lanes_skills_manage_write',
+      arguments: { profile: 'personal', connection: 'lanes_skills.owner', name: 'draft-reply', text: WRITTEN },
     });
     expect(written.status).toBe(200);
     expect(JSON.stringify(written.body)).toContain('Stored skill');
 
     // The endpoint throttles its own polling, but a write made *through* MCP
     // refreshes directly — so the very next call sees it.
-    expect(await promptNames(author)).toEqual(['skills_draft-reply', 'skills_review-diff']);
+    expect(await promptNames(author)).toEqual(['lanes_skills_draft-reply', 'lanes_skills_review-diff']);
 
     const got = await rpc(url(author), 'prompts/get', {
-      name: 'skills_draft-reply',
-      arguments: { profile: 'personal', connection: 'skills.owner' },
+      name: 'lanes_skills_draft-reply',
+      arguments: { profile: 'personal', connection: 'lanes_skills.owner' },
     });
     expect(JSON.stringify(got.body)).toContain('Draft a reply.');
   });
@@ -166,9 +166,9 @@ describe('a skill written over MCP is a prompt on the next call', () => {
     // The endpoint memoised the wire names it advertises. Left stale, a
     // just-added skill would be recorded as a refusal on its first use even
     // though it succeeded.
-    const events = await author.audit.tail({ capability: 'skills.draft-reply' });
+    const events = await author.audit.tail({ capability: 'lanes_skills.draft-reply' });
     const denied = await author.audit.tail({
-      capability: 'skills.draft-reply',
+      capability: 'lanes_skills.draft-reply',
       deniedOnly: true,
     });
 
@@ -178,11 +178,11 @@ describe('a skill written over MCP is a prompt on the next call', () => {
 
   test('removing it takes the prompt away again', async () => {
     await rpc(url(author), 'tools/call', {
-      name: 'skills_manage_remove',
-      arguments: { profile: 'personal', connection: 'skills.owner', name: 'draft-reply' },
+      name: 'lanes_skills_manage_remove',
+      arguments: { profile: 'personal', connection: 'lanes_skills.owner', name: 'draft-reply' },
     });
 
-    expect(await promptNames(author)).toEqual(['skills_review-diff']);
+    expect(await promptNames(author)).toEqual(['lanes_skills_review-diff']);
   });
 });
 
@@ -238,7 +238,7 @@ describe('authoring is a separate grant', () => {
     // again, and "this server does not do tools" tells it never to.
     //
     // What the test is actually about is unchanged. Policy-filtered discovery
-    // means the four `skills.manage.*` capabilities are not withheld at call
+    // means the four `lanes_skills.manage.*` capabilities are not withheld at call
     // time — they were never advertised.
     const listed = await rpc(url(invokeOnly), 'tools/list', {}, { token });
     const result = listed.body['result'] as { tools?: unknown[] } | undefined;
@@ -248,14 +248,14 @@ describe('authoring is a separate grant', () => {
   });
 
   test('it can still invoke the skills it has', async () => {
-    expect(await promptNames(invokeOnly, token)).toEqual(['skills_review-diff']);
+    expect(await promptNames(invokeOnly, token)).toEqual(['lanes_skills_review-diff']);
 
     const got = await rpc(
       url(invokeOnly),
       'prompts/get',
       {
-        name: 'skills_review-diff',
-        arguments: { profile: 'readonly', connection: 'skills.owner', diff: '--- a\n+++ b' },
+        name: 'lanes_skills_review-diff',
+        arguments: { profile: 'readonly', connection: 'lanes_skills.owner', diff: '--- a\n+++ b' },
       },
       { token },
     );
@@ -270,8 +270,8 @@ describe('authoring is a separate grant', () => {
       url(invokeOnly),
       'tools/call',
       {
-        name: 'skills_manage_get',
-        arguments: { profile: 'readonly', connection: 'skills.owner', name: 'review-diff' },
+        name: 'lanes_skills_manage_get',
+        arguments: { profile: 'readonly', connection: 'lanes_skills.owner', name: 'review-diff' },
       },
       { token },
     );
@@ -284,14 +284,14 @@ describe('authoring is a separate grant', () => {
       url(invokeOnly),
       'tools/call',
       {
-        name: 'skills_manage_write',
-        arguments: { profile: 'readonly', connection: 'skills.owner', name: 'x', text: WRITTEN },
+        name: 'lanes_skills_manage_write',
+        arguments: { profile: 'readonly', connection: 'lanes_skills.owner', name: 'x', text: WRITTEN },
       },
       { token },
     );
 
     const refusals = await invokeOnly.audit.tail({
-      capability: 'skills.manage.write',
+      capability: 'lanes_skills.manage.write',
       deniedOnly: true,
     });
 

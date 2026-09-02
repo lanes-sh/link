@@ -37,9 +37,9 @@ export interface IdentityListing {
   readonly reachable: boolean;
 }
 
-/** Whether a rule list puts `identity.*` in force, in either spelling. */
+/** Whether a rule list puts `lanes_identity.*` in force, in either spelling. */
 function covers(rules: ReadonlyArray<{ capability: string }>): boolean {
-  return rules.some((rule) => rule.capability === '*' || rule.capability === 'identity.*');
+  return rules.some((rule) => rule.capability === '*' || rule.capability === 'lanes_identity.*');
 }
 
 /**
@@ -61,7 +61,7 @@ function readable(config: {
   // (ADR-058). The old shape could say "declared but not granted" and
   // "granted but not declared", and both served nothing while reading like
   // configuration that worked; neither is expressible here.
-  const grant = config.grants.find((row) => row.connection.startsWith('identity.'));
+  const grant = config.grants.find((row) => row.connection.startsWith('lanes_identity.'));
   if (grant === undefined) return false;
 
   return covers(grant.allow) && !covers(grant.deny);
@@ -244,7 +244,7 @@ export async function identityList(options: { json?: boolean } & GlobalFlags): P
       print(warn('declared, but no agent can read it'));
       print(
         style.dim(
-          '      the identity surface needs a connection row and an identity.* allow rule;',
+          '      the identity surface needs a connection row and a lanes_identity.* allow rule;',
         ),
       );
       print(style.dim('      adding an entry with this command writes both.'));

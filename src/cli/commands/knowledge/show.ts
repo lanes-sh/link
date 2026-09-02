@@ -1,4 +1,4 @@
-import { KNOWLEDGE_LAYOUT, layout, soleGrantFor } from '#profile';
+import { KNOWLEDGE_LAYOUT, KNOWLEDGE_PREFIX, layout, soleGrantFor } from '#profile';
 import { announce, emit, heading, print, style, table } from '../../output.ts';
 import { openRuntime } from '../../runtime.ts';
 import type { KnowledgeFlags } from './index.ts';
@@ -20,12 +20,16 @@ export async function knowledgeShow(flags: KnowledgeFlags): Promise<void> {
     const profile = runtime.config.instance.profile;
     const selection = ` --profile ${runtime.resolution.profile} --target ${runtime.target}`;
     const skills = runtime.skills ? (await runtime.skills.list()).length : 0;
-    const memory = (await runtime.storage.list(`${KNOWLEDGE_LAYOUT.memory}/`)).length;
-    const entities = (await runtime.storage.list(`${KNOWLEDGE_LAYOUT.entities}/`)).length;
+    // Counted through the *provider's* prefix, which is what the local store is
+    // scoped into; `KNOWLEDGE_LAYOUT` is the repository's directory name and
+    // since contract 4 the two are different strings. Counting by the wrong one
+    // reports zero for a profile whose memory is perfectly well populated.
+    const memory = (await runtime.storage.list(`${KNOWLEDGE_PREFIX.memory}/`)).length;
+    const entities = (await runtime.storage.list(`${KNOWLEDGE_PREFIX.entities}/`)).length;
     const where = runtime.knowledge?.describe;
     // Null when no skills connection is granted (ADR-059). The row still prints,
     // saying so: a missing row reads as "there are none", not "not granted".
-    const skillsConnection = soleGrantFor(runtime.config, 'skills');
+    const skillsConnection = soleGrantFor(runtime.config, 'lanes_skills');
 
     if (flags.json) {
       print(
@@ -46,7 +50,7 @@ export async function knowledgeShow(flags: KnowledgeFlags): Promise<void> {
       // mostly not memory.
       [
         '  memory',
-        where ? `${where}/${KNOWLEDGE_LAYOUT.memory}` : `${layout.blobs(profile)}/${KNOWLEDGE_LAYOUT.memory}`,
+        where ? `${where}/${KNOWLEDGE_LAYOUT.memory}` : `${layout.blobs(profile)}/${KNOWLEDGE_PREFIX.memory}`,
         style.dim(`${memory} file${memory === 1 ? '' : 's'}`),
       ],
       [
@@ -65,7 +69,7 @@ export async function knowledgeShow(flags: KnowledgeFlags): Promise<void> {
         '  entities',
         where
           ? `${where}/${KNOWLEDGE_LAYOUT.entities}`
-          : `${layout.blobs(profile)}/${KNOWLEDGE_LAYOUT.entities}`,
+          : `${layout.blobs(profile)}/${KNOWLEDGE_PREFIX.entities}`,
         style.dim(`${entities} file${entities === 1 ? '' : 's'}`),
       ],
     ]);

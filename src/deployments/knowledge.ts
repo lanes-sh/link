@@ -1,7 +1,7 @@
 import type { SecretStore } from '#secrets';
 import type { BlobStore } from '#stores/blobs';
 import type { BlobRoute } from '#stores/blobs/route.ts';
-import { KNOWLEDGE_LAYOUT, knowledgeRoot, type KnowledgeArea, type KnowledgeConfig } from '#profile';
+import { KNOWLEDGE_LAYOUT, KNOWLEDGE_PREFIX, knowledgeRoot, type KnowledgeArea, type KnowledgeConfig } from '#profile';
 import { requireSecret, type TargetInput } from './target.ts';
 import type { FetchLike } from './adapters/github-api.ts';
 // Type-only, so a target with no `knowledge` block never loads the adapter.
@@ -134,10 +134,15 @@ export async function knowledgeStores(
  * how they would come to disagree. `skills` is absent because it is not a
  * prefix of that root — it is a store of its own, handed over whole.
  */
-export function knowledgeRoutes(stores: KnowledgeStores): BlobRoute[] {
+export function knowledgeRoutes(
+  stores: Pick<KnowledgeStores, 'memory' | 'entities'>,
+): BlobRoute[] {
   return [
-    { prefix: `${KNOWLEDGE_LAYOUT.memory}/`, store: stores.memory },
-    { prefix: `${KNOWLEDGE_LAYOUT.entities}/`, store: stores.entities },
+    // The *provider's* prefix, which is what core scopes a store into. The
+    // repository directory it lands in is `KNOWLEDGE_LAYOUT`, and the two are
+    // different strings since contract 4 prefixed the owner layer.
+    { prefix: `${KNOWLEDGE_PREFIX.memory}/`, store: stores.memory },
+    { prefix: `${KNOWLEDGE_PREFIX.entities}/`, store: stores.entities },
   ];
 }
 

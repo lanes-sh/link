@@ -72,7 +72,7 @@ function tool(name: string, options: Parameters<typeof createSetupProvider>[0]):
 }
 
 /** Only `connection.key` is read by these handlers. */
-const context = { connection: { key: 'setup.main', id: 'main', provider: 'setup' } } as
+const context = { connection: { key: 'lanes_setup.main', id: 'main', provider: 'lanes_setup' } } as
   unknown as ProviderContext;
 
 async function textOf(capability: Capability, input: unknown): Promise<string> {
@@ -102,7 +102,7 @@ describe('the surface is read-only', () => {
   });
 });
 
-describe('setup.overview', () => {
+describe('lanes_setup.overview', () => {
   test('names only the connections it was given', async () => {
     const text = await textOf(tool('overview', {
       profile: 'personal',
@@ -252,7 +252,7 @@ describe('setup.overview', () => {
   });
 });
 
-describe('setup.provider', () => {
+describe('lanes_setup.provider', () => {
   const options = { profile: 'personal', target: 'local', catalogue: CATALOGUE };
 
   test('emits a command naming the profile it was stamped with', async () => {
@@ -318,7 +318,7 @@ describe('setup.provider', () => {
     const result = await (tool('provider', options) as any).handler({ id: 'nope' }, context);
 
     expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain('setup_overview');
+    expect(result.content[0].text).toContain('lanes_setup_overview');
   });
 
   test('records the provider id in the audit log, and nothing else verbatim', () => {

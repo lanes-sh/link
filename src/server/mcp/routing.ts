@@ -16,8 +16,8 @@ import type { MergedCapability, ProfileRuntime } from './visibility.ts';
  * They have to go somewhere that works for *any* template, not just one that
  * happens to spell `{key}`, so they are inserted as the first two path segments
  * directly after the authority: `example://note/{key}` becomes
- * `example://note/personal/a/{key}`, and `memory://entry/{id}` becomes
- * `memory://entry/personal/owner/{id}`.
+ * `example://note/personal/a/{key}`, and `lanes-memory://entry/{id}` becomes
+ * `lanes-memory://entry/personal/owner/{id}`.
  *
  * The previous form substituted the literal token `{key}`, which meant any
  * provider naming its variable anything else — every provider except `example` —
@@ -53,7 +53,7 @@ function originOf(uri: string): string {
 /**
  * Route the `resource_link`s a tool hands back.
  *
- * A provider names its own resources — `memory://entry/deploy_window` — because
+ * A provider names its own resources — `lanes-memory://entry/deploy_window` — because
  * it does not know, and must not learn, which profile or connection it is
  * serving. Core does. Without this, `memory.search` returns addresses that look
  * like resources and cannot be read, which is worse than returning none.

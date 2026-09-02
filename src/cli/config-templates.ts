@@ -94,13 +94,13 @@ limits:
 #   deny: [skills.manage.*]     invoke procedures, do not write them
 #   deny: [vault.put, vault.remove]
 grants:
-  - { connection: memory.lan1, allow: [memory.*], deny: [] }
-  - { connection: tasks.lan2, allow: [tasks.*], deny: [] }
-  - { connection: assets.lan3, allow: [assets.*], deny: [] }
-  - { connection: skills.lan4, allow: [skills.*], deny: [] }
-  - { connection: vault.lan5, allow: [vault.*], deny: [] }
-  - { connection: setup.lan6, allow: [setup.*], deny: [] }
-  - { connection: entities.lan7, allow: [entities.*], deny: [] }
+  - { connection: lanes_memory.lan1, allow: [lanes_memory.*], deny: [] }
+  - { connection: lanes_tasks.lan2, allow: [lanes_tasks.*], deny: [] }
+  - { connection: lanes_assets.lan3, allow: [lanes_assets.*], deny: [] }
+  - { connection: lanes_skills.lan4, allow: [lanes_skills.*], deny: [] }
+  - { connection: lanes_vault.lan5, allow: [lanes_vault.*], deny: [] }
+  - { connection: lanes_setup.lan6, allow: [lanes_setup.*], deny: [] }
+  - { connection: lanes_entities.lan7, allow: [lanes_entities.*], deny: [] }
 
 # Who may consume this profile (ADR-060).
 #
@@ -183,13 +183,13 @@ export function newConnectionsTemplate(): string {
 contract: 4
 
 connections:
-  - { id: lan1, provider: memory, account: Memory }
-  - { id: lan2, provider: tasks, account: Tasks }
-  - { id: lan3, provider: assets, account: Assets }
-  - { id: lan4, provider: skills, account: Skills }
-  - { id: lan5, provider: vault, account: Vault }
-  - { id: lan6, provider: setup, account: Setup }
-  - { id: lan7, provider: entities, account: Entities }
+  - { id: lan1, provider: lanes_memory, account: Memory }
+  - { id: lan2, provider: lanes_tasks, account: Tasks }
+  - { id: lan3, provider: lanes_assets, account: Assets }
+  - { id: lan4, provider: lanes_skills, account: Skills }
+  - { id: lan5, provider: lanes_vault, account: Vault }
+  - { id: lan6, provider: lanes_setup, account: Setup }
+  - { id: lan7, provider: lanes_entities, account: Entities }
 
 # App registrations, shared by every connection of that vendor.
 oauth_apps: {}

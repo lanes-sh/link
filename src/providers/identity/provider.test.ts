@@ -23,7 +23,7 @@ function capabilities(entries: readonly IdentityEntry[]): Capability[] {
 }
 
 /** Nothing on the context is read by this handler; it is required, not used. */
-const context = { connection: { key: 'identity.main', id: 'main', provider: 'identity' } } as
+const context = { connection: { key: 'lanes_identity.main', id: 'main', provider: 'lanes_identity' } } as
   unknown as ProviderContext;
 
 async function textOf(entries: readonly IdentityEntry[]): Promise<string> {

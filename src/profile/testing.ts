@@ -89,13 +89,13 @@ export function connectionsYaml(
   extra: readonly { id: string; provider: string; account: string }[] = [],
 ): string {
   const owner = [
-    { id: 'main', provider: 'memory', account: 'Memory' },
-    { id: 'main', provider: 'tasks', account: 'Tasks' },
-    { id: 'main', provider: 'assets', account: 'Assets' },
-    { id: 'main', provider: 'skills', account: 'Skills' },
-    { id: 'main', provider: 'vault', account: 'Vault' },
-    { id: 'main', provider: 'setup', account: 'Setup' },
-    { id: 'main', provider: 'entities', account: 'Entities' },
+    { id: 'lan1', provider: 'lanes_memory', account: 'Memory' },
+    { id: 'lan2', provider: 'lanes_tasks', account: 'Tasks' },
+    { id: 'lan3', provider: 'lanes_assets', account: 'Assets' },
+    { id: 'lan4', provider: 'lanes_skills', account: 'Skills' },
+    { id: 'lan5', provider: 'lanes_vault', account: 'Vault' },
+    { id: 'lan6', provider: 'lanes_setup', account: 'Setup' },
+    { id: 'lan7', provider: 'lanes_entities', account: 'Entities' },
   ];
 
   const rows = [...owner, ...extra]
@@ -109,9 +109,19 @@ export function connectionsYaml(
 export function grantsYaml(
   extra: readonly { connection: string; allow?: readonly string[]; deny?: readonly string[] }[] = [],
 ): string {
-  const owner = ['memory', 'tasks', 'assets', 'skills', 'vault', 'setup', 'entities'].map(
-    (provider) => ({ connection: `${provider}.main`, allow: [`${provider}.*`], deny: [] }),
-  );
+  const owner = [
+    'lanes_memory',
+    'lanes_tasks',
+    'lanes_assets',
+    'lanes_skills',
+    'lanes_vault',
+    'lanes_setup',
+    'lanes_entities',
+  ].map((provider, index) => ({
+    connection: `${provider}.lan${index + 1}`,
+    allow: [`${provider}.*`],
+    deny: [],
+  }));
 
   return [...owner, ...extra]
     .map(

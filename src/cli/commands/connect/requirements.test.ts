@@ -8,7 +8,7 @@ import { missingRequirements, preflight } from './requirements.ts';
  * What a provider needs before `connect` can finish.
  *
  * Three callers have to agree on this answer — the non-interactive preflight,
- * `lanes link setup plan`, and the read-only `setup.provider` capability — so
+ * `lanes link setup plan`, and the read-only `lanes_setup.provider` capability — so
  * the property worth holding is that the command it emits is one somebody can
  * actually paste. A `secrets set` line naming a ref the credential store would
  * reject, or storing half of a `basic` credential, is a wrong answer that looks

@@ -173,7 +173,7 @@ describe('an id that cannot work', () => {
   const cases: ReadonlyArray<[string, string, RegExp]> = [
     ['custom', 'the second word of this command', /never connected/],
     ['gmail', 'a built-in it would shadow', /already built in/],
-    ['memory', 'reserved for the owner layer', /reserved for what this endpoint provides/],
+    ['lanes_memory', 'reserved for the owner layer', /reserved for what this endpoint provides/],
     ['My-Thing', 'not a legal identifier', /lowercase, start with a letter/],
   ];
 
@@ -183,6 +183,19 @@ describe('an id that cannot work', () => {
 
     await expect(connectCustom(id, declaring({ connectWith }))).rejects.toThrow(message);
     expect(calls).toEqual([]);
+  });
+
+  test('the short names are free again, which is what the lanes_ prefix buys', async () => {
+    // `memory` was refused because the built-in claimed it. It is
+    // `lanes_memory` since contract 4, so an operator's own `memory` connector
+    // is a legal thing to declare — which is most of what the reservation was
+    // holding back.
+    await workspace();
+    const { connectWith } = handOff();
+
+    await expect(
+      connectCustom('memory', declaring({ connectWith })),
+    ).resolves.toBeUndefined();
   });
 
   test('a hyphen is refused with the spelling that would work', async () => {
