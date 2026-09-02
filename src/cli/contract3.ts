@@ -12,7 +12,7 @@ import {
   ConfigError,
   LEGACY_DATA_DIR,
   isRemoteWorkspace,
-  WORKSPACE_FILE,
+  LEGACY_WORKSPACE_FILE,
   layout,
   listProfiles,
   readWorkspaceFile,
@@ -162,7 +162,7 @@ export async function migrateToContract3(
     ...[...legacy.keys()].map((profile) => `profiles/${profile}.yaml: contract 3, grants`),
   ];
   if (credentials.refs.length > 0) {
-    changes.push(`${layout.credentials()}: ${credentials.refs.length} credential(s) merged`);
+    changes.push(`${LEGACY_DATA_DIR}/credentials.enc: ${credentials.refs.length} credential(s) merged`);
   }
   if (credentials.tokens.length > 0) {
     changes.push(
@@ -280,7 +280,12 @@ async function rewriteProfiles(
   subject: string | undefined,
 ): Promise<void> {
   for (const [profile, config] of legacy) {
-    const document = await ConfigDocument.open(root, profile);
+    // `openKey` at the contract-3 path, not `open`, which resolves the live
+    // layout. This migration *produces* contract 3 and contract 4 moves what it
+    // produced; writing the new path here would skip a step the next migration
+    // is about to take, and leave `needsContract4` looking at a tree it has no
+    // record of having moved.
+    const document = await ConfigDocument.openKey(root, `profiles/${profile}.yaml`);
 
     document.setIn(['contract'], 3);
     document.setIn(['grants'], grantsFor(config, perProfile.get(profile) ?? new Map()));
@@ -307,7 +312,7 @@ async function rewriteProfiles(
 
 /** `targets:` becomes `workspaces:`, and a pointer's `workspace:` becomes `at:`. */
 async function rewriteRegistry(root: string): Promise<void> {
-  const document = await ConfigDocument.openKey(root, WORKSPACE_FILE);
+  const document = await ConfigDocument.openKey(root, LEGACY_WORKSPACE_FILE);
   const registry = document.toJSON() as {
     contract?: number;
     targets?: Record<string, { workspace?: string }>;

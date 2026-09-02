@@ -251,10 +251,29 @@ export async function listProfiles(workspaceRoot: string): Promise<string[]> {
     // way past, which is the price of the declaration sitting beside the bytes;
     // `audit.log/` is the workspace's and is not in here, so the largest
     // collection by object count is not walked.
+    //
+    // **Both shapes, and the flat one is not a leftover to ignore.** Through
+    // contract 3 a profile was `profiles/<name>.yaml`. Every migration
+    // enumerates through here, so listing only the new shape means a workspace
+    // that has not been migrated yet holds no profiles as far as the code that
+    // migrates it is concerned — it reports nothing to do and the operator is
+    // stuck. It is the same reason `resolveWorkspaceRoot` still answers to
+    // `lanes-link.yaml`: a thing that needs migrating has to be findable by the
+    // command that migrates it.
     const names = new Set<string>();
     for (const entry of entries) {
-      const parts = entry.key.slice(root.length).split('/');
-      if (parts.length === 2 && parts[1] === PROFILE_FILE) names.add(parts[0]!);
+      const rest = entry.key.slice(root.length);
+      const parts = rest.split('/');
+
+      if (parts.length === 2 && parts[1] === PROFILE_FILE) {
+        names.add(parts[0]!);
+        continue;
+      }
+
+      // Contract 3 and earlier. `.example.yaml` was never a profile.
+      if (parts.length === 1 && rest.endsWith('.yaml') && !rest.endsWith('.example.yaml')) {
+        names.add(rest.slice(0, -'.yaml'.length));
+      }
     }
     return [...names].sort();
   } catch {

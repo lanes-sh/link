@@ -4,6 +4,7 @@ import {
   CONNECTIONS_FILE,
   ConfigError,
   WORKSPACE_FILE,
+  LEGACY_WORKSPACE_FILE,
   workspaceSchema,
   assertConnectionsUnique,
   connectionsFileSchema,
@@ -45,7 +46,11 @@ function validateDocument(
   key: string | undefined,
   options: { shapeOnly?: boolean },
 ): void {
-  if (key === WORKSPACE_FILE) {
+  // Either name. The contract-3 migration rewrites the registry under the name
+  // it still has, and a document checked against the wrong schema fails with
+  // "instance: expected object" — which reads as a corrupt profile rather than
+  // as a registry being validated as one.
+  if (key === WORKSPACE_FILE || key === LEGACY_WORKSPACE_FILE) {
     const parsed = workspaceSchema.safeParse(raw);
     if (!parsed.success) {
       throw new ConfigError(

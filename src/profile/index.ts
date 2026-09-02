@@ -84,6 +84,7 @@ export {
 
 export {
   WORKSPACE_FILE,
+  LEGACY_WORKSPACE_FILE,
   installRoot,
   listProfiles,
   loadProfileConfig,
