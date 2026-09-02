@@ -1,5 +1,6 @@
 import { newConnectionsTemplate } from './config-templates.ts';
-import { applyMoves, planMoves, type Move } from './contract3-data.ts';
+import { planMoves } from './contract3-data.ts';
+import { applyMoves, type Move } from './migrate-move.ts';
 import {
   mergeCredentials,
   planCredentials,
