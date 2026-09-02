@@ -185,7 +185,14 @@ export function visibleToolCount(options: BuildServerOptions): number {
  * entities: ordering is not selection, and a caller that cannot tell two
  * candidates apart must be given what tells them apart.
  *
- * The enum stays bare ids, because the id is what the caller passes.
+ * **The enum is the qualified ref, and this join does not land.** `reachable`
+ * carries `gmail.con1` — the grant row (ADR-058) — while `accountsByProfile`
+ * keys on the bare `con1`, so `known.get(id)` always misses and the annotation
+ * this block describes never reaches a live tool description.
+ * `connection-choice.test.ts` passes bare ids in by hand, which is why it
+ * passes. Contract 4 made that worse rather than academic: the ids used to
+ * carry the account (`gmail.<local-part>`) and are `con1`, `con2` now, so the
+ * id says nothing and the field meant to say it is switched off.
  */
 export function describeWithConnections(
   description: string,
