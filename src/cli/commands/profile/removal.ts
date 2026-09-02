@@ -11,7 +11,12 @@ import type { SecretStore } from '#secrets';
 import type { BlobStore } from '#stores/blobs';
 import { credentialRefFor, ownClientRefsFor, type ProviderRegistry } from '#registry';
 import { print, style, warn } from '../../output.ts';
-import { resolveCollisions, type Disposition } from './disposition.ts';
+import {
+  migratesAcross,
+  refuseSealedVault,
+  resolveCollisions,
+  type Disposition,
+} from './disposition.ts';
 
 /**
  * What a profile's removal is allowed to delete, worked out before any of it
@@ -183,6 +188,7 @@ export async function removalPlan(
   const items: RemovalItem[] = [];
   const migrateInto =
     options.disposition.kind === 'migrate' ? options.disposition.into : undefined;
+  const sealed: string[] = [];
   const untouched: { target: string; refs: string[] }[] = [];
   const warnings: string[] = [];
 
@@ -249,15 +255,22 @@ export async function removalPlan(
         // members landing inside another's directory.
         if (blob.key === PROFILE_FILE) continue;
 
+        const migratable = migrateInto !== undefined && migratesAcross(blob.key);
+
         items.push({
           target: name,
           kind: 'blob',
           id: blob.key,
           area: layout.profileDir(profile),
-          ...(migrateInto === undefined
-            ? {}
-            : { movedTo: [layout.profileDir(migrateInto), blob.key] as const }),
+          ...(migratable
+            ? { movedTo: [layout.profileDir(migrateInto), blob.key] as const }
+            : {}),
+          ...(migrateInto !== undefined && !migratable
+            ? { note: 'not migrated — deleted with the profile' }
+            : {}),
         });
+
+        if (migrateInto !== undefined && blob.key.startsWith('vault.d/')) sealed.push(blob.key);
       }
     } catch (cause) {
       warnings.push(
@@ -314,6 +327,8 @@ export async function removalPlan(
       note: 'cleared, not repointed at whatever remains',
     });
   }
+
+  if (sealed.length > 0) refuseSealedVault(profile, migrateInto!);
 
   if (migrateInto !== undefined) {
     warnings.push(

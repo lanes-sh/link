@@ -90,9 +90,9 @@ limits:
 # works, because the next connect or deploy puts it back. The three narrowings
 # worth knowing:
 #
-#   deny: [memory.write]        remember nothing new
-#   deny: [skills.manage.*]     invoke procedures, do not write them
-#   deny: [vault.put, vault.remove]
+#   deny: [lanes_memory.write]     remember nothing new
+#   deny: [lanes_skills.manage.*]  invoke procedures, do not write them
+#   deny: [lanes_vault.put, lanes_vault.remove]
 grants:
   - { connection: lanes_memory.lan1, allow: [lanes_memory.*], deny: [] }
   - { connection: lanes_tasks.lan2, allow: [lanes_tasks.*], deny: [] }

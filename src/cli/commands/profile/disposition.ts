@@ -153,3 +153,39 @@ export async function resolveCollisions(
 
   return warnings;
 }
+
+/**
+ * Whether one key inside a profile's directory can cross into another profile.
+ *
+ * Only the owner's material can. The prompt asks about memory, tasks, assets
+ * and skills; the directory holds two more things and neither may travel.
+ *
+ * `state.kv/` is derived and disposable, and adopting it would hand the
+ * destination another profile's cursor — resuming a mailbox from a position it
+ * never read and never seeing the messages in between, which is the
+ * cross-profile cursor sharing ADR-066 exists to remove.
+ *
+ * `vault.d/` is refused by `refuseSealedVault` rather than copied. Because the
+ * owner layer merges to one row per surface, both profiles hold
+ * `vault.d/lan5.enc` — so a copy always collided, landed as `lan5-2.enc`, and
+ * had its source deleted, leaving every item in it unreachable by any command.
+ */
+export function migratesAcross(key: string): boolean {
+  return !key.startsWith('state.kv/') && !key.startsWith('vault.d/');
+}
+
+/**
+ * Two sealed documents have no union, so the command says so and stops.
+ *
+ * Deleting one silently is the outcome nobody would accept, and a copy under
+ * another name is one no command opens — so neither is offered. The refusal
+ * names the two ways forward, which is the rule every refusal here follows.
+ */
+export function refuseSealedVault(profile: string, into: string): never {
+  throw new ConfigError(
+    `"${profile}" holds a sealed vault, and a vault cannot be merged into "${into}"'s: two ` +
+      'encrypted documents have no union, and a copy under another name is one no command opens.\n' +
+      `  Move what you need first — lanes link vault list --profile ${profile} — then remove it ` +
+      'with --delete-data.',
+  );
+}

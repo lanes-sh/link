@@ -263,6 +263,40 @@ describe('removalPlan', () => {
     ]);
   });
 
+  test('cursors and a sealed vault do not cross into another profile', async () => {
+    // The prompt asks about memory, tasks, assets and skills. The directory
+    // holds two more things: a cursor would hand the destination another
+    // profile's read position, and a sealed vault cannot merge — both profiles
+    // hold `vault.d/lan5.enc` since the owner layer merged, so a copy always
+    // collided and had its source deleted, leaving the items unreachable.
+    await expect(
+      removalPlan(config(), '/ws', 'personal', registry, {
+        target: 'local',
+        declared: target(),
+        disposition: { kind: 'migrate' as const, into: 'work' },
+        openSecrets: async () => fakeSecrets(['profile/token']),
+        openBlobs: async (_t, area) =>
+          area === 'profiles/work' ? fakeBlobs([]) : fakeBlobs(['vault.d/lan5.enc']),
+      }),
+    ).rejects.toThrow(/vault cannot be merged[\s\S]*--delete-data/);
+
+    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
+      target: 'local',
+      declared: target(),
+      disposition: { kind: 'migrate' as const, into: 'work' },
+      openSecrets: async () => fakeSecrets(['profile/token']),
+      openBlobs: async (_t, area) =>
+        area === 'profiles/work'
+          ? fakeBlobs([])
+          : fakeBlobs(['state.kv/cursors%2Ev1/gmail%2Econ1.json', 'lanes_memory/lan1/note.md']),
+    });
+
+    const migrated = plan.items.filter((item) => item.kind === 'blob' && item.movedTo !== undefined);
+    expect(migrated.map((item) => item.id)).toEqual(['lanes_memory/lan1/note.md']);
+    // Still deleted with the profile — derived state is nobody's to inherit.
+    expect(ids(plan, 'blob')).toContain('state.kv/cursors%2Ev1/gmail%2Econ1.json');
+  });
+
   test('a name the destination already holds is renamed, never overwritten', async () => {
     // Resolved while this is still a plan, so the operator sees the rename in
     // the preview they confirm from and the execution has no decision to make.
