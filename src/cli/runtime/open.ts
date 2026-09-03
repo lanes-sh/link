@@ -191,7 +191,12 @@ export async function openRuntime(
   // Lazy for the same reason `refreshSkills` is: it reads the registry it is
   // registered into. Per call rather than a snapshot, so a policy the runtime
   // was opened with is re-evaluated rather than remembered.
-  const reachable = (): ReadonlyArray<{ key: string; provider: string; account: string }> =>
+  const reachable = (): ReadonlyArray<{
+    key: string;
+    provider: string;
+    providerName: string;
+    account: string;
+  }> =>
     selected
       .filter(({ ref, connection }) =>
         registry
@@ -205,6 +210,11 @@ export async function openRuntime(
       .map(({ ref, connection }) => ({
         key: ref,
         provider: connection.provider,
+        // The manifest's display name, not the id. `defaultConnectionLabel`
+        // composes "Gmail (ada)" and needs the name — handed the id it produces
+        // "gmail (ada)", and for the owner layer, whose `account` is already the
+        // proper noun, "lanes_memory (Memory)".
+        providerName: registry.manifest(connection.provider)?.name ?? connection.provider,
         account: connection.account,
         ...(connection.label ? { label: connection.label } : {}),
       }));

@@ -168,6 +168,37 @@ describe('lanes_setup.overview', () => {
     expect(await textOf(capability, {})).toContain('thing.main');
   });
 
+  test("an unnamed row is called what every other surface calls it", async () => {
+    // `defaultConnectionLabel` (#147), given the provider's display *name*. The
+    // bug this covers was found by running the endpoint: handed the provider id
+    // instead, an owner-layer row whose account is already the proper noun read
+    // `Memory (lanes_memory (Memory))`.
+    const text = await textOf(
+      tool('overview', {
+        profile: 'personal',
+        target: 'local',
+        catalogue: CATALOGUE,
+        reachable: () => [
+          {
+            key: 'lanes_memory.lan1',
+            provider: 'lanes_memory',
+            providerName: 'Memory',
+            account: 'Memory',
+          },
+          { key: 'thing.con1', provider: 'thing', providerName: 'Thing', account: 'ada@example.test' },
+        ],
+      }),
+      {},
+    );
+
+    // The provider alone where the account repeats it, which is every owner
+    // surface — composing would read "Memory (Memory)".
+    expect(text).toContain('lanes_memory.lan1  — Memory\n');
+    expect(text).not.toContain('lanes_memory (Memory)');
+    // And the pair where the account is an address.
+    expect(text).toContain('thing.con1  — ada@example.test (Thing (ada))');
+  });
+
   test('names the sibling profiles this caller can reach', async () => {
     const text = await textOf(
       tool('overview', {

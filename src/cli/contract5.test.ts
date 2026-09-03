@@ -87,6 +87,17 @@ describe('what contract 5 moves', () => {
     expect(migration.issued).toEqual([{ id: 'tok1', subject: 'lanes:ownersubject' }]);
   });
 
+  test('connections.yaml is stamped, so the next migration is not misled', async () => {
+    // Nothing reads it — every contract check is on a profile — which is
+    // exactly why it goes stale. Found by running the migration against a real
+    // contract-4 workspace: the profiles and the registry said 5 and this said 4.
+    const root = await workspace({ personal: { members: OWNER } });
+
+    await migrateToContract5(root);
+
+    expect((parse(await read(root, 'connections.yaml')) as { contract: number }).contract).toBe(5);
+  });
+
   test('the registry is stamped too, and never ahead of the profiles', async () => {
     // `isUnmigrated` reads the registry's contract and nothing else, so a stamp
     // ahead of the profiles reports a finished migration with a step to run.
@@ -166,6 +177,33 @@ describe('what contract 5 moves', () => {
 
     const rows = (parse(await read(root, 'connections.yaml')) as Rows).tokens;
     expect(rows?.[0]?.subject).toBe('lanes:signedinnow');
+  });
+});
+
+describe('what it says when the row reaches nothing', () => {
+  test('a subject no profile lists is named as a warning, not left silent', async () => {
+    // Found by running the migration: a signed-in operator upgrading a
+    // workspace whose `members:` is empty gets a row bound to themselves that
+    // the endpoint then refuses, with a 401 that reads as a bad credential.
+    const root = await workspace({ personal: { members: '  []\n' } });
+
+    const migration = await migrateToContract5(root, {
+      apply: true,
+      subject: 'lanes:signedinnow',
+    });
+
+    const lines = migration.changes.join('\n');
+    expect(lines).toContain('no profile lists lanes:signedinnow');
+    expect(lines).toContain('reaches nothing until one does');
+    expect(lines).toContain('members add --me');
+  });
+
+  test('and says nothing when the subject is listed', async () => {
+    const root = await workspace({ personal: { members: OWNER } });
+
+    const migration = await migrateToContract5(root);
+
+    expect(migration.changes.join('\n')).not.toContain('reaches nothing');
   });
 });
 

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { defineLocalProvider, keepKeys, type ProviderDefinition, type ProviderManifest } from '#connectivity';
 import { defaultConnectionLabel } from '#profile';
-import { planAll, planFor, type ProviderPlan } from './plan.ts';
+import { planAll, planFor, type ProviderPlan, type ReachableConnection } from './plan.ts';
 
 /**
  * `setup` — what is connected, and what connecting something else would take.
@@ -56,10 +56,9 @@ export interface SetupProviderOptions {
    */
   readonly target: string;
   /**
-   * Every profile in this workspace, on disk. **Not what gets rendered:** the
-   * caller's own set arrives at handler time in `ProviderContext.profiles`, and
-   * this only says *how many* are being withheld — the difference between "you
-   * reach one profile" and "you reach one of four".
+   * Every profile on disk. **Not what gets rendered:** the caller's own set
+   * arrives at handler time in `ProviderContext.profiles`; this only says how
+   * many are withheld — "one profile" versus "one of four".
    */
   readonly profiles?: readonly string[];
   /**
@@ -83,7 +82,7 @@ export interface SetupProviderOptions {
    * enum from. Computing it separately here is how discovery and enforcement
    * drift, and a leak in discovery is still a leak.
    */
-  readonly reachable?: () => ReadonlyArray<{ key: string; provider: string; account: string }>;
+  readonly reachable?: () => ReadonlyArray<ReachableConnection>;
 }
 
 export function createSetupProvider(options: SetupProviderOptions): ProviderDefinition {
@@ -139,8 +138,8 @@ export function createSetupProvider(options: SetupProviderOptions): ProviderDefi
               {
                 type: 'text',
                 // The caller's set, not the workspace's (ADR-068): rendering
-                // `options.profiles` named profiles `mayReach` keeps out of the
-                // `profile` enum the same caller was shown.
+                // `options.profiles` named profiles `mayReach` hides from the
+                // same caller's `profile` enum.
                 text: renderOverview(options, connections, plans, handlerContext.connection.key, {
                   reachable: handlerContext.profiles,
                   total: options.profiles?.length ?? handlerContext.profiles.length,
@@ -197,7 +196,7 @@ export function createSetupProvider(options: SetupProviderOptions): ProviderDefi
 
 function renderOverview(
   options: SetupProviderOptions,
-  connections: ReadonlyArray<{ key: string; account: string; label?: string | undefined }>,
+  connections: ReadonlyArray<ReachableConnection>,
   plans: readonly ProviderPlan[],
   self: string,
   caller: { reachable: readonly string[]; total: number },
@@ -213,12 +212,12 @@ function renderOverview(
       // reading `status`, and deliberately not here: an agent choosing which
       // connection to call needs the identity, and "Work mail" is not one.
       //
-      // `defaultConnectionLabel` when the row carries none, so this calls an
-      // unnamed row what `connection list` and `/state` call it.
-      const named = connection.label ?? defaultConnectionLabel(
-        connection.key.split('.')[0] ?? connection.key,
-        connection.account,
-      );
+      // `defaultConnectionLabel` when the row carries none, so an unnamed row is
+      // called what `connection list` and `/state` call it. The provider's
+      // *name*, never its id: `lanes_memory` with account `Memory` would read
+      // "lanes_memory (Memory)".
+      const provider = connection.providerName ?? connection.key.split('.')[0] ?? connection.key;
+      const named = connection.label ?? defaultConnectionLabel(provider, connection.account);
       lines.push(
         `  ${connection.key}  — ${connection.account}` +
           (named && named !== connection.account ? ` (${named})` : ''),
@@ -260,18 +259,16 @@ function renderOverview(
   }
 
   // **Which profiles *this caller* can reach** — the question an agent asks
-  // first and had no reliable answer to. `initialize.instructions` names them
-  // until its length budget is tight, then collapses to a count; this is the
-  // surface those instructions already point at, so the answer belongs here.
+  // first. `initialize.instructions` names them until its budget is tight, then
+  // collapses to a count; this is the surface it already points at.
   const others = caller.reachable.filter((name) => name !== options.profile);
   lines.push('', `You can reach ${caller.reachable.length} profile(s) on this endpoint.`);
   if (others.length > 0) {
     lines.push(`  Also: ${others.join(', ')}. Pass one as \`profile\` to see what it reaches.`);
   }
 
-  // A count, never names: naming them is the leak this surface used to be. That
-  // some exist is not a secret, and an agent told "one of four" asks the owner
-  // rather than concluding the other three do not exist.
+  // A count, never names: naming them is the leak this used to be. That some
+  // exist is not a secret, and an agent told "one of four" asks the owner.
   const hidden = caller.total - caller.reachable.length;
   if (hidden > 0) {
     lines.push(

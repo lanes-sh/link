@@ -144,7 +144,25 @@ export async function migrateToContract5(
     document.addTo(['tokens'], { id, subject, ref, label: 'migrated' });
     issued.push({ id, subject });
     changes.push(`${CONNECTIONS_FILE}: tokens += ${id} → ${subject} ("${ref}")`);
+
+    // **Say so when the row reaches nothing.** A subject that no profile lists
+    // is a token the endpoint refuses, and the operator's CI would fail with a
+    // 401 that reads as a bad credential. It happens on the path a signed-in
+    // operator upgrades a workspace whose `members:` is empty — legitimate, and
+    // contract 3 only fills that in for workspaces it migrates itself.
+    if (!listedAnywhere(legacy, subject)) {
+      changes.push(
+        `  warning: no profile lists ${subject}, so ${id} reaches nothing until one does — ` +
+          'lanes link profile members add --me --profile <name> --workspace <name>',
+      );
+    }
   }
+
+  // The stamp, for the reason contract 4 gives where it does the same: nothing
+  // reads this field — every contract check is on a profile — which is exactly
+  // why it goes stale, and a marker that lies is worse than no marker for
+  // whoever writes the next migration.
+  document.setIn(['contract'], 5);
 
   await document.save();
 
@@ -166,6 +184,14 @@ export async function migrateToContract5(
 
 /** Raised so `doctor` and `update` can print it rather than a stack. */
 export class ContractError extends Error {}
+
+/** Whether any profile being migrated lists this subject as a member. */
+function listedAnywhere(legacy: ReadonlyMap<string, RawProfile>, subject: string): boolean {
+  for (const raw of legacy.values()) {
+    if ((raw.members ?? []).some((member) => member.subject === subject)) return true;
+  }
+  return false;
+}
 
 /**
  * The subject to bind a ref to: an owner of a profile that held it.
