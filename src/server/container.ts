@@ -72,7 +72,9 @@ try {
     },
     port,
     host,
-    // A deployed instance never mints its own token: see `endpoint.ts`.
+    // Nothing about tokens here any more (ADR-068): a deployed instance neither
+    // mints one nor needs one to boot. A client discovers the
+    // protected-resource document from the 401 and signs its owner in.
     // Stdout is where Cloud Run collects logs, and a rejected credential on a
     // public URL is the event this exists for.
     log: streamLogger((line) => process.stdout.write(`${line}\n`)),
