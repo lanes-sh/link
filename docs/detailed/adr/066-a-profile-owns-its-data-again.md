@@ -94,6 +94,23 @@ of notes is not reversible and picking one profile's would take the other's away
 operator is told and deletes what they do not want. That is the only step in the migration that
 is theirs rather than ours, and it exists because the shipped default made the shared case common.
 
+**Every client registered before the migration holds a tool list that no longer resolves.** The
+owner layer's provider ids gained `lanes_`, and `toolNameFor` only swaps `.` for `_`, so renaming
+the provider renamed the tool: `setup_overview` is `lanes_setup_overview` now. The connection ids
+were renumbered alongside them, and those are the `connection` enum on every tool in the list. A
+client that re-reads is unaffected and sees both. A client that cached answers
+`Tool setup_overview not found` for each `lanes_*` tool and has every `connection` value it was
+given refused — while the vendor tools, whose ids did not change, keep their names and fail only on
+that argument. Half the surface working is what makes it read as a broken endpoint rather than a
+stale list, from the only side anybody is looking at.
+
+This is the cost `What is unchanged` below does not cover, and the reason it was missed: no file's
+shape changes at contract 4, so nothing in the migration looks like a wire change. The ids *are*
+the wire. [ADR-032](032-a-stateless-endpoint-does-not-announce-its-tools.md) settles what can be
+done about it — the endpoint declares `listChanged: false` so a client has no reason not to ask, and
+that is the whole of what it can do. `update` prints the one step that is the operator's:
+`lanes link mcp add`.
+
 ## What is unchanged
 
 - **Connections are the workspace's** (ADR-057) — one authorisation per account, one credential

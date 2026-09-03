@@ -1,6 +1,7 @@
+import { anyIssuedToken } from '#profile';
 import { endpointUrl } from '../../endpoint-url.ts';
 import { fail, ok, print, style, warn } from '../../output.ts';
-import { ensureProfileToken, openRuntime, type GlobalFlags } from '../../runtime.ts';
+import { openWorkspaceRuntime, type GlobalFlags } from '../../runtime.ts';
 import { installFor } from './assets.ts';
 import { HARNESSES, type AddInput, type Harness } from './harnesses.ts';
 
@@ -114,13 +115,32 @@ export async function mcpAdd(target: string | undefined, options: McpAddOptions)
   const scope = options.scope ?? 'user';
   const tokenEnv = options.tokenEnv ?? 'LANES_LINK_TOKEN';
 
-  const runtime = await openRuntime(options);
+  // **The workspace, not a profile** (ADR-068). One endpoint serves every
+  // profile in the workspace and each call names one in its `profile` argument,
+  // so a registration was never per-profile: two different `--profile` values
+  // produced byte-identical harness commands. What kept the flag required was
+  // that the endpoint's token lived at `auth.token_ref` on a profile — a ref
+  // whose default was the same constant for all of them — and reading it meant
+  // resolving one. The token is the workspace's now, so there is nothing left
+  // to ask. `--profile` is still accepted, and narrows nothing here.
+  const runtime = await openWorkspaceRuntime(options);
 
   try {
-    // Minted either way. The endpoint needs one to serve at all, and `outputs`
-    // prints it; what `--headless` decides is whether it is written into
-    // somebody's agent config.
-    const { token } = await ensureProfileToken(runtime.credentials, runtime.config.auth.token_ref);
+    // **Only for `--headless`, and only if one has been issued.** The ordinary
+    // path registers a bare URL and the client authorises itself (ADR-062).
+    // Nothing is minted here: a token names the person it was issued to, and
+    // `mcp add` does not know who — which is what `token issue` is for.
+    const token = options.headless === true
+      ? (await anyIssuedToken(runtime.resolution.workspaceRoot, runtime.credentials))?.value
+      : undefined;
+
+    if (options.headless === true && token === undefined) {
+      throw new Error(
+        'No static token is issued in this workspace, so --headless has nothing to write.\n' +
+          `  Issue one: lanes link token issue --me --workspace ${runtime.target}\n` +
+          '  Without --headless the client signs in for itself and needs none.',
+      );
+    }
 
     // The target's own address, not the local one. This built
     // `http://<host>:<port>/mcp` unconditionally, so `mcp add --workspace cloud`
@@ -130,10 +150,9 @@ export async function mcpAdd(target: string | undefined, options: McpAddOptions)
     const input: AddInput = {
       name,
       url,
-      ...(options.headless === true ? { token } : {}),
+      ...(token === undefined ? {} : { token }),
       tokenEnv,
       scope,
-      profile: runtime.resolution.profile,
       target: runtime.resolution.target,
     };
 

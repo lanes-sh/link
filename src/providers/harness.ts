@@ -36,6 +36,7 @@ export function harnessFor(
     manifest: definition.manifest,
     definition,
     connection: { id: connectionId, provider: definition.manifest.id, account: 'Owner' },
+    profiles: ['personal'],
     state: createMemoryState(),
     // Seeded deliberately: an owner provider must not be able to read any of
     // this, and the credential-boundary test says so by name.

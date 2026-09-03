@@ -5,6 +5,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { readableRefs, rotatableRefs } from './prepare.ts';
+import { registerLine } from './report.ts';
 import {
   deployedWorkspace,
   isWorkspaceConfig,
@@ -164,7 +165,7 @@ describe('what a deploy sends up', () => {
  */
 describe('what a deploy repairs before sending it', () => {
   /** An old profile: a real connection, its grant, and no setup surface. */
-  const OLD = (name: string) => `contract: 4
+  const OLD = (name: string) => `contract: 5
 instance:
   profile: ${name}
   port: 7337
@@ -174,7 +175,7 @@ members: []
 `;
 
   /** The workspace it lives in, with the account and no owner-layer row. */
-  const OLD_CONNECTIONS = `contract: 4
+  const OLD_CONNECTIONS = `contract: 5
 connections:
   - { id: a, provider: example, account: someone@example.test }
 oauth_apps: {}
@@ -320,7 +321,7 @@ oauth_apps: {}
 describe('which credentials a deploy asks provision to bind', () => {
   // The rows are the workspace's now, so a "profile" in these fixtures is the
   // set of connections it grants and the file that grants them (ADR-057).
-  const PROFILE = (name: string, connections: string) => `contract: 4
+  const PROFILE = (name: string, connections: string) => `contract: 5
 instance:
   profile: ${name}
 grants:
@@ -349,7 +350,7 @@ members: []
 
     await writeFile(
       join(root, CONNECTIONS_FILE),
-      `contract: 4\nconnections:\n${rows.join('\n')}\noauth_apps: {}\n`,
+      `contract: 5\nconnections:\n${rows.join('\n')}\noauth_apps: {}\n`,
     );
     return root;
   }
@@ -467,7 +468,7 @@ members: []
  */
 describe('publishing a config edit', () => {
   const targets = (extra: string): string => `
-contract: 4
+contract: 5
 instance:
   profile: personal
   port: 7337
@@ -542,13 +543,13 @@ describe('the allowlist against a real workspace listing', () => {
     roots.push(source, destination);
 
     const profile = (name: string): string =>
-      `contract: 4\ninstance:\n  profile: ${name}\ngrants: []\nmembers: []\n`;
+      `contract: 5\ninstance:\n  profile: ${name}\ngrants: []\nmembers: []\n`;
 
     const files: Record<string, string> = {
       'workspaces.yaml': workspaceYaml(['local', 'cloud'], { defaultProfile: 'personal' }),
       'profiles/personal/profile.yaml': profile('personal'),
       'profiles/work/profile.yaml': profile('work'),
-      'connections.yaml': `contract: 4\nconnections: []\noauth_apps: {}\n`,
+      'connections.yaml': `contract: 5\nconnections: []\noauth_apps: {}\n`,
       [`${layout.skills('personal', 'main')}/review-diff/SKILL.md`]: '---\ndescription: d\n---\nb\n',
       [`${layout.skills('work', 'main')}/triage.md`]: '---\ndescription: d\n---\nb\n',
       ['providers.d/acme.yaml']: 'id: acme\n',
@@ -623,3 +624,23 @@ describe('the allowlist against a real workspace listing', () => {
  * a deploy that reports success followed by a service that will not start, and
  * nothing in either points at the profile that caused it.
  */
+
+/**
+ * What a deploy tells an operator whose clients are already registered.
+ *
+ * ADR-032 covers the first deploy: register before the accounts exist and the
+ * client holds a two-tool surface. The case it left unsaid is every deploy after
+ * that one, and 0.9.0 is what made it expensive — renaming the owner layer's
+ * provider ids renamed their tools, so a registered client went on calling
+ * `setup_overview` against an endpoint serving `lanes_setup_overview` and read as
+ * a broken endpoint rather than a stale list. `sayContract4` says it when the
+ * migration runs; a deploy is when it reaches anybody.
+ */
+describe('the deploy report names the re-add', () => {
+  test('an already-registered client is told, and given the command', () => {
+    const line = registerLine('personal', 'cloud');
+
+    expect(line).toContain('registered before this deploy');
+    expect(line).toContain('lanes link mcp add');
+  });
+});

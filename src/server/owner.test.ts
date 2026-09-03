@@ -85,7 +85,7 @@ function ownerConfig(profile: string, port: number, policy: string) {
     .join('\n');
 
   return parseConfig(`
-contract: 4
+contract: 5
 instance:
   profile: ${profile}
   port: ${port}

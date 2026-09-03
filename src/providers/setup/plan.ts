@@ -188,3 +188,19 @@ export function planAll(
     .sort((a, b) => a.id.localeCompare(b.id))
     .map((manifest) => planFor(manifest, context));
 }
+
+/**
+ * One connection this profile can reach, as the overview renders it.
+ *
+ * Declared once rather than spelled structurally at both ends: the two literals
+ * had to agree about `providerName`, and the display name went missing on one
+ * side — which is how an owner row came to read "Memory (lanes_memory (Memory))".
+ */
+export interface ReachableConnection {
+  readonly key: string;
+  readonly provider?: string;
+  /** The manifest's display name, which is what a label composes with. */
+  readonly providerName?: string;
+  readonly account: string;
+  readonly label?: string | undefined;
+}

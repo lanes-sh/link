@@ -1,4 +1,4 @@
-import type { Authenticator } from '#auth';
+import { mayReach, type Authenticator } from '#auth';
 import type { Logger } from '#connectivity';
 import { capabilityIdForToolName } from '#server/mcp';
 import { ATTACHMENTS_PATH, handleAttachments } from './attachments.ts';
@@ -186,18 +186,18 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
       if (url.pathname === HEALTH_PATH) {
         // `status` is unauthenticated because the platform's own probe reads it
         // and a deploy waits on it. The profile *names* are not: on a public URL
-        // that is a list of what this endpoint holds, handed to anyone who asks,
-        // and `outputs` and `mcp add` — which are the reason it was ever
-        // published — both hold the token already.
+        // that is a list of what this endpoint holds, handed to anyone who asks.
+        // And they are the *caller's* since ADR-068: this listed every profile
+        // served to anybody holding a credential, so a delegated member read the
+        // ones `mayReach` keeps out of their own enum.
         const named = await options.authenticator.authenticate(
           request.headers.get('authorization'),
         );
-
+        const who = named.ok ? named.principal : null;
+        const mine = options.generations.current.names().filter((n) => who && mayReach(who, n));
         return Response.json({
           status: 'ok',
-          ...(named.ok
-            ? { profile: options.primary, profiles: options.generations.current.names() }
-            : {}),
+          ...(named.ok ? { profile: options.primary, profiles: mine } : {}),
         });
       }
 

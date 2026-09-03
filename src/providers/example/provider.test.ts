@@ -16,6 +16,7 @@ function contextFor(connectionKey: string, state = new Map<string, string>()): P
       displayName: 'Test',
       config: {},
     },
+    profiles: ['personal'],
     state: {
       async get(key) {
         return state.get(key) ?? null;

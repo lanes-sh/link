@@ -29,7 +29,7 @@ import { openCatalogue } from '#providers/entities/catalogue.ts';
 const roots: string[] = [];
 const previousHome = process.env['LANES_LINK_HOME'];
 
-const PROFILE = `contract: 4
+const PROFILE = `contract: 5
 
 instance:
   profile: personal
@@ -49,7 +49,7 @@ members: []
 // Labelled the way the CLI writes them: the provider's own name. A tasks row
 // under any other label is refused, because that is the only signal a config
 // carries that it used to be Google Tasks (ADR-051).
-const CONNECTIONS = `contract: 4
+const CONNECTIONS = `contract: 5
 connections:
   - { id: owner, provider: lanes_memory, account: Memory }
   - { id: owner, provider: lanes_tasks,  account: Tasks }

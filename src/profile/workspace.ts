@@ -178,7 +178,7 @@ export const CONNECTIONS_FILE = 'connections.yaml';
 export async function readConnections(workspaceRoot: string): Promise<ConnectionsFile> {
   const path = join(workspaceRoot, CONNECTIONS_FILE);
   const text = await readWorkspaceFile(workspaceFiles(workspaceRoot), CONNECTIONS_FILE);
-  if (text === null) return { contract: SUPPORTED_CONTRACT, connections: [], oauth_apps: {} };
+  if (text === null) return { contract: SUPPORTED_CONTRACT, connections: [], oauth_apps: {}, tokens: [] };
 
   const raw = parseYaml(text);
 

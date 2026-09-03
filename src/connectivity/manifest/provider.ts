@@ -109,7 +109,15 @@ export const RESERVED_PROVIDER_IDS: readonly string[] = [
   'lanes_entities',
 ];
 
-/** Old id to new, for the contract-4 migration and for a refusal that names it. */
+/**
+ * Old id to new, for a refusal that can name what a stale client is asking for.
+ *
+ * Nothing consumes it yet. The migration builds its own map from
+ * `C3_OWNER_PROVIDERS` (`src/cli/contract4-rename.ts`), and a `tools/call` on a
+ * pre-0.9.0 name is answered by the SDK's exact-match lookup before anything
+ * here sees it — so the refusal this exists for is still unwritten. ADR-066
+ * records the failure it would address.
+ */
 export const RENAMED_OWNER_PROVIDERS: ReadonlyMap<string, string> = new Map(
   RESERVED_PROVIDER_IDS.map((id) => [id.slice('lanes_'.length), id]),
 );

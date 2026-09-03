@@ -53,6 +53,23 @@ export interface ConnectionInfo {
  */
 export interface ProviderContext {
   readonly connection: ConnectionInfo;
+  /**
+   * Every profile this caller may reach, this one included.
+   *
+   * The narrowest widening of this interface that could carry it, and worth
+   * saying why it belongs at all given the rule above. It is not a backend, a
+   * credential or a store: it is the same routing fact the client already holds
+   * in the `profile` enum on every tool it was shown, which `visibility.ts`
+   * filters by `mayReach`. A provider cannot *act* in any of these — dispatch
+   * still resolves one profile per call — so this grants no reach.
+   *
+   * It exists because a surface that describes what a caller can get to has to
+   * be given the caller's answer rather than the workspace's.
+   * `lanes_setup.overview` was handed every profile on disk and named them all,
+   * which told a delegated member about profiles `mayReach` deliberately hides
+   * from their enum (ADR-068).
+   */
+  readonly profiles: readonly string[];
   readonly state: ScopedStore;
   readonly storage: BlobStore;
   readonly credentials: ScopedSecrets;

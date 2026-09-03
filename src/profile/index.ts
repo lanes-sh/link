@@ -46,6 +46,7 @@ export {
   assertGrantsResolve,
   assertNoRenamedProviders,
   connectionRefOf,
+  defaultConnectionLabel,
   selectConnections,
   soleGrantFor,
   vaultRef,
@@ -121,6 +122,14 @@ export {
   type ResolvedTarget,
 } from './registry.ts';
 export { recordTarget, removeTarget } from './deployments.ts';
+export {
+  anyIssuedToken,
+  membersResolver,
+  nextTokenId,
+  readEndpointTokens,
+  tokenRef,
+  type EndpointToken,
+} from './tokens.ts';
 export {
   isRemoteWorkspace,
   readWorkspaceFile,

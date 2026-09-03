@@ -1,8 +1,8 @@
-import { listProfiles } from '#profile';
+import { anyIssuedToken, listProfiles } from '#profile';
 import { fileURLToPath } from 'node:url';
 import { deployedUrl, endpointHealth, localUrl } from '../../endpoint-url.ts';
-import { announce, heading, print, style, warn } from '../../output.ts';
-import { ensureProfileToken, openRuntime, type GlobalFlags } from '../../runtime.ts';
+import { announceWorkspace, heading, print, style, warn } from '../../output.ts';
+import { openWorkspaceRuntime, type GlobalFlags } from '../../runtime.ts';
 
 export interface OutputsFlags extends GlobalFlags {
   readonly show?: boolean | undefined;
@@ -23,18 +23,27 @@ export interface OutputsFlags extends GlobalFlags {
  * the harness's business.
  */
 export async function outputs(flags: OutputsFlags): Promise<void> {
-  const runtime = await openRuntime(flags);
+  // The workspace, matching what this command's own subject has always been
+  // (ADR-068). It asked for a profile only to find the endpoint's token, and
+  // that token is the workspace's.
+  const runtime = await openWorkspaceRuntime(flags);
 
   try {
-    const { token } = await ensureProfileToken(runtime.credentials, runtime.config.auth.token_ref);
+    // Whatever has been issued, or nothing — which is the ordinary state.
+    // Nothing is minted: `outputs` reports, and a token names a person.
+    const held = await anyIssuedToken(runtime.resolution.workspaceRoot, runtime.credentials);
+    const token = held?.value;
     const declared = runtime.declared.deploy;
     const deployed = await deployedUrl(declared);
     // Not `endpointUrl`, which would ask the platform a second time for an
     // answer this line already has.
     const url = deployed ?? localUrl(runtime.config);
 
+    // Unauthenticated when nothing is issued. `/health` answers either way; what
+    // it withholds without a credential is the profile list, so `mine` below is
+    // then decided by the endpoint answering at all.
     const live = await endpointHealth(url, token);
-    const mine = live?.profile === runtime.resolution.profile;
+    const mine = live !== null;
 
     // Live if it is up, otherwise every profile in this target's workspace.
     // Those are the same set now: a profile lives in exactly one target
@@ -51,9 +60,8 @@ export async function outputs(flags: OutputsFlags): Promise<void> {
             running: mine,
             deployed: deployed !== null,
             target: runtime.target,
-            primary: runtime.resolution.profile,
             profiles,
-            ...(flags.show ? { token } : {}),
+            ...(flags.show && token !== undefined ? { token } : {}),
           },
           null,
           2,
@@ -62,7 +70,7 @@ export async function outputs(flags: OutputsFlags): Promise<void> {
       return;
     }
 
-    announce(runtime.resolution);
+    announceWorkspace(runtime.resolution);
 
     heading('Endpoint');
     print(
@@ -75,21 +83,19 @@ export async function outputs(flags: OutputsFlags): Promise<void> {
       print(style.dim(`  ${declared.platform} service "${declared.service}" for target "${runtime.target}".`));
     }
 
-    if (live && !mine) {
-      // Two workspaces can assign the same port. Saying so beats reporting an
-      // endpoint as up when it belongs to something else entirely.
-      print(warn(`something else is serving this port: profile "${live.profile}"`));
-    }
+    heading(`Profiles served by it (${profiles.length})`);
+    for (const profile of profiles) print(`  ${profile}`);
+    print(
+      style.dim(
+        '  Each call names one, in its `profile` argument. Which of these a client\n' +
+          '  actually reaches is decided by who signs in — every profile whose members\n' +
+          '  list them, and no others.',
+      ),
+    );
 
-    heading(`Profiles reachable through it (${profiles.length})`);
-    for (const profile of profiles) {
-      print(`  ${profile}${profile === runtime.resolution.profile ? style.dim('  (endpoint owner)') : ''}`);
-    }
-    print(style.dim('  Each call names one, in its `profile` argument.'));
-
-    if (flags.show) {
+    if (flags.show && token !== undefined) {
       heading('Token');
-      print(`  ${token}`);
+      print(`  ${token}  ${style.dim(`(${held?.id})`)}`);
     }
 
     heading('Register with your agent');
@@ -100,36 +106,59 @@ export async function outputs(flags: OutputsFlags): Promise<void> {
     );
     print('');
 
-    const invocation = await tokenInvocation(
-      token,
-      runtime.resolution.profile,
-      runtime.resolution.target,
-    );
-
-    print(
-      `  claude mcp add --transport http lanes-link ${url} \\\n` +
-        `    --header "Authorization: Bearer $(${invocation.command})"`,
-    );
+    // **The bare URL, and no header** (ADR-062). This printed the
+    // `Authorization: Bearer $(…)` form unconditionally, which was the shape
+    // before every endpoint ran the authorization flow — a registration that
+    // carries a credential, bypasses consent and expiry, and leaves a long-lived
+    // token in a harness config. The client discovers
+    // `/.well-known/oauth-protected-resource` from the 401 and signs its owner
+    // in instead.
+    print(`  claude mcp add --transport http lanes-link ${url}`);
     print('');
-
-    if (!invocation.onPath) {
-      // The failure this prevents is nasty: an unresolvable command substitutes
-      // to the empty string, the header becomes "Bearer ", and the only symptom
-      // is a 401 that looks like a bad token rather than a missing binary.
-      print(warn('lanes is not on your PATH, so the short form would substitute to nothing.'));
-      print(style.dim('  The command above uses this checkout instead. To shorten it permanently:'));
-      print(`      cd ${process.cwd()} && bun link`);
-      print('');
-    }
-
     print(
       style.dim(
-        '  One registration covers every profile above. The $(…) keeps the token out of your\n' +
-          '  agent\'s context and out of the transcript — but note it is resolved once, when you\n' +
-          '  run the command, and stored as a literal. After "lanes link token rotate" you have to\n' +
-          '  register again. Other harnesses take the same two facts — URL and bearer token.',
+        '  No credential goes into that command. The client reads this endpoint\'s\n' +
+          '  protected-resource document, sends its owner to sign in, and comes back\n' +
+          '  holding a token of its own — so a config file synced to a dotfiles repo\n' +
+          '  is not a leak, and rotating a static token does not invalidate it.',
       ),
     );
+
+    heading('For a machine with no browser');
+    if (token === undefined) {
+      print(style.dim('  No static token is issued in this workspace.'));
+      print(
+        style.dim(
+          `      lanes link token issue --me --workspace ${runtime.target}\n` +
+            '  It reaches the profiles that list your subject as a member, and nothing else.',
+        ),
+      );
+    } else {
+      const invocation = await tokenInvocation(runtime.resolution.target);
+      print(
+        `  claude mcp add --transport http lanes-link ${url} \\\n` +
+          `    --header "Authorization: Bearer $(${invocation.command})"`,
+      );
+      print('');
+      if (!invocation.onPath) {
+        // The failure this prevents is nasty: an unresolvable command
+        // substitutes to the empty string, the header becomes "Bearer ", and
+        // the only symptom is a 401 that looks like a bad token rather than a
+        // missing binary.
+        print(warn('lanes is not on your PATH, so the short form would substitute to nothing.'));
+        print(style.dim('  The command above uses this checkout instead. To shorten it permanently:'));
+        print(`      cd ${process.cwd()} && bun link`);
+        print('');
+      }
+      print(
+        style.dim(
+          '  CI only, and it is narrower than it looks: the token reaches the profiles\n' +
+            '  its subject is a member of. The $(…) keeps it out of your agent\'s context\n' +
+            '  and out of the transcript, but it resolves once and is stored as a literal —\n' +
+            '  so a rotate means registering again.',
+        ),
+      );
+    }
   } finally {
     await runtime.close();
   }
@@ -146,28 +175,32 @@ export async function outputs(flags: OutputsFlags): Promise<void> {
  * checkout, which always works.
  */
 export async function tokenInvocation(
-  expected: string,
-  profile: string,
   target: string,
 ): Promise<{ command: string; onPath: boolean }> {
-  // Both, always, and from the *resolved* selection rather than the flags. A
-  // token is per-target, so `outputs --workspace cloud` printing a bare
-  // `token show --raw` hands over the local one beside a deployed URL — a
-  // credential that looks like an answer and fails as a wrong password. Naming
-  // the profile as well makes the line pasteable into any shell rather than
-  // only into one where the same default happens to resolve.
-  const selection = ` --profile ${profile} --workspace ${target}`;
+  // `--workspace`, always, and from the *resolved* selection rather than the
+  // flags. A token is per-workspace, so `outputs --workspace cloud` printing a
+  // bare `token show --raw` hands over the local one beside a deployed URL — a
+  // credential that looks like an answer and fails as a wrong password.
+  //
+  // No `--profile` any more (ADR-068): `token show` refuses one, so printing it
+  // here would emit a line that cannot be pasted.
+  const selection = ` --workspace ${target}`;
   const short = `lanes link token show --raw${selection}`;
-  const argv = ['link', 'token', 'show', '--raw', '--profile', profile, '--workspace', target];
+  const argv = ['link', 'token', 'show', '--raw', '--workspace', target];
 
   const resolved = Bun.which('lanes');
   if (resolved) {
     try {
       const result = Bun.spawnSync([resolved, ...argv]);
-      // Compared against the token rather than merely checking it exited zero:
-      // a `lanes` on PATH could belong to a different workspace entirely,
-      // and would hand the harness a token this endpoint rejects.
-      if (result.success && new TextDecoder().decode(result.stdout).trim() === expected) {
+      // Exit status and a plausible token, rather than a comparison against a
+      // known value. This used to be handed the expected token and check for
+      // equality, which caught a `lanes` on PATH belonging to a different
+      // workspace. It cannot now: with several rows issued, `token show`
+      // refuses without `--id` — so demanding one value back would reject a
+      // correctly-installed binary. What survives is the check that matters for
+      // the failure this function exists to prevent, which is a substitution
+      // that yields nothing at all.
+      if (result.success && new TextDecoder().decode(result.stdout).trim().startsWith('llk_')) {
         return { command: short, onPath: true };
       }
     } catch {

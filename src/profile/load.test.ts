@@ -7,7 +7,7 @@ import { assertNoRenamedProviders } from './connections.ts';
 
 /** A minimal valid config; each test overrides the part it is about. */
 const VALID = `
-contract: 4
+contract: 5
 instance:
   profile: personal
 grants:
@@ -23,7 +23,6 @@ describe('a valid config', () => {
     expect(config.instance.profile).toBe('personal');
     expect(config.instance.port).toBe(7337);
     expect(config.instance.host).toBe('127.0.0.1');
-    expect(config.auth.token_ref).toBe('profile/token');
     expect(config.limits.requests_per_minute).toBe(120);
     expect(connectionKeys).toEqual(['example.a']);
   });
@@ -37,13 +36,13 @@ describe('a valid config', () => {
 
 describe('contract major fails closed', () => {
   test('rejects a newer major outright', () => {
-    expect(() => parseConfig(VALID.replace('contract: 4', 'contract: 5'))).toThrow(
-      /contract 5 is newer than.*Upgrade lanes-link/s,
+    expect(() => parseConfig(VALID.replace('contract: 5', 'contract: 6'))).toThrow(
+      /contract 6 is newer than.*Upgrade lanes-link/s,
     );
   });
 
   test('rejects an older major outright', () => {
-    expect(() => parseConfig(VALID.replace('contract: 4', 'contract: 0'))).toThrow(/older than/);
+    expect(() => parseConfig(VALID.replace('contract: 5', 'contract: 0'))).toThrow(/older than/);
   });
 
   // Contract 1 is the shape this release replaced, and it is refused here rather
@@ -51,14 +50,14 @@ describe('contract major fails closed', () => {
   // that, so a profile still carrying `targets:` fails at the boundary with a
   // sentence naming the migration (ADR-052).
   test('rejects contract 2, which the migration handles instead', () => {
-    expect(() => parseConfig(VALID.replace('contract: 4', 'contract: 2'))).toThrow(
+    expect(() => parseConfig(VALID.replace('contract: 5', 'contract: 2'))).toThrow(
       /contract 2 is older than/,
     );
   });
 
   test('rejects a missing or non-integer contract', () => {
-    expect(() => parseConfig(VALID.replace('contract: 4\n', ''))).toThrow(/"contract" is required/);
-    expect(() => parseConfig(VALID.replace('contract: 4', 'contract: "2"'))).toThrow(
+    expect(() => parseConfig(VALID.replace('contract: 5\n', ''))).toThrow(/"contract" is required/);
+    expect(() => parseConfig(VALID.replace('contract: 5', 'contract: "2"'))).toThrow(
       /must be an integer/,
     );
   });
@@ -66,7 +65,7 @@ describe('contract major fails closed', () => {
   test('the contract check runs before anything else', () => {
     // A config that is wrong in several ways must report the contract, because
     // under an unknown major we cannot claim to know what the rest means.
-    const broken = VALID.replace('contract: 4', 'contract: 99').replace(
+    const broken = VALID.replace('contract: 5', 'contract: 99').replace(
       'profile: personal',
       'profile: "not an identifier"',
     );
@@ -333,7 +332,7 @@ describe('where a target deploys', () => {
   const withTarget = (block: string) =>
     workspaceSchema.parse(
       parseYaml(
-        'contract: 4\nworkspaces:\n  cloud:\n' +
+        'contract: 5\nworkspaces:\n  cloud:\n' +
           '    credentials: { adapter: gcp-secret-manager, project: my-project }\n' +
           '    storage: { adapter: s3, bucket: link-blobs }\n' +
           block,
@@ -471,7 +470,7 @@ describe('malformed input', () => {
   });
 
   test('reports unparseable YAML as such', () => {
-    expect(() => parseConfig('contract: 4\n  bad: [indent')).toThrow(/could not parse YAML/);
+    expect(() => parseConfig('contract: 5\n  bad: [indent')).toThrow(/could not parse YAML/);
   });
 
   test('rejects an out-of-range port', () => {

@@ -62,10 +62,10 @@ ${style.bold('Profiles')}
   ${PROGRAM} profile list [--json]
   ${PROGRAM} profile remove <name> [--workspace <name>] [--dry-run] [--yes] [--json]
                                  [--delete-data | --migrate-to <profile>]
-                                 the profile and its own token. Say which of
-                                 --delete-data or --migrate-to for its memory,
-                                 tasks, assets and skills — there is no default.
-                                 Accounts outlive it; disconnect removes those.
+                                 Say which of --delete-data or --migrate-to for
+                                 its memory, tasks, assets and skills — there is
+                                 no default. Accounts outlive it; disconnect
+                                 removes those, and token revoke the tokens.
 
 ${style.bold('Workspaces')}
   ${PROGRAM} workspace list [--urls]   every workspace this one knows
@@ -90,8 +90,13 @@ ${style.bold('Permissions')}
   ${PROGRAM} profile members list       who may consume this profile, and who could
   ${PROGRAM} profile members add <subject>|--me [--role owner|member]
   ${PROGRAM} profile members remove <subject>
-  ${PROGRAM} token show [--show|--raw]  CI only: --raw prints only the token, for $(…)
-  ${PROGRAM} token rotate [--show]      also ends every session a member holds
+  ${PROGRAM} token list [--json]        static tokens, and what each one reaches
+  ${PROGRAM} token issue --me|--subject <id> [--label <t>]
+                                 CI only: a token for one person. It reaches
+                                 every profile whose members list them
+  ${PROGRAM} token show [--id t] [--show|--raw]   --raw prints only it, for $(…)
+  ${PROGRAM} token rotate [--id t] [--show]
+  ${PROGRAM} token revoke --id <t>
 
 ${style.bold('Your own context')}
   ${PROGRAM} memory list [--tag t]      what you have stored
@@ -146,7 +151,7 @@ ${style.bold('Deploying')}
                                  set up, build, and roll one revision serving
                                  every profile that declares the target
   ${PROGRAM} deploy --workspace <name> --profile a --profile b
-                                 only these; the first owns the endpoint token
+                                 only these; the first is the primary
   ${PROGRAM} deploy --non-interactive   take the stored answers, never prompt
   ${PROGRAM} deploy --access iam|public who gets past the platform's own door
   ${PROGRAM} secrets list               credential references in this target

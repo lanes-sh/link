@@ -1,7 +1,8 @@
 import { capabilityIdForToolName } from '#server/mcp';
+import { anyIssuedToken } from '#profile';
 import { deployedUrl, endpointHealth, localUrl } from '../../endpoint-url.ts';
 import { announce, emit, heading, print, style, warn } from '../../output.ts';
-import { ensureProfileToken, openRuntime, type GlobalFlags } from '../../runtime.ts';
+import { openRuntime, type GlobalFlags } from '../../runtime.ts';
 
 export interface ToolsFlags extends GlobalFlags {
   readonly json?: boolean | undefined;
@@ -27,7 +28,12 @@ export async function tools(flags: ToolsFlags): Promise<void> {
   const runtime = await openRuntime(flags);
 
   try {
-    const { token } = await ensureProfileToken(runtime.credentials, runtime.config.auth.token_ref);
+    // Any token the workspace holds, or none (ADR-068). `tools` reports a
+    // profile's resolved surface, so it still names one — what it no longer
+    // does is mint a credential in order to read.
+    const token = (
+      await anyIssuedToken(runtime.resolution.workspaceRoot, runtime.credentials)
+    )?.value;
     const declared = runtime.declared.deploy;
     const deployed = await deployedUrl(declared);
     // Not `endpointUrl`, which asks the platform a second time for an answer
@@ -40,9 +46,26 @@ export async function tools(flags: ToolsFlags): Promise<void> {
     // token that works. Reporting that as the deployed endpoint's surface is
     // the failure `endpoint-url.ts` calls "silent in the worst way".
     const live = await endpointHealth(url, token);
-    const mine = live?.profile === runtime.resolution.profile;
+    const mine =
+      token === undefined ? live !== null : live?.profile === runtime.resolution.profile;
 
-    const surface = await askEndpoint(url, token);
+    // **Nothing to ask with** is a reportable state rather than a failure
+    // (ADR-068). Asking the endpoint for its tool list means being a client of
+    // it, and a client authenticates; a workspace that has issued no static
+    // token has nothing this command can present, and minting one would bind a
+    // credential to a subject nobody chose. What is still true without it is
+    // everything on the left of the comparison — the capabilities this
+    // *config* resolves to — which is most of what the command is for.
+    const surface =
+      token === undefined
+        ? {
+            reachable: false,
+            reason:
+              'no static token is issued in this workspace, so the endpoint cannot be queried',
+            names: [],
+            bytes: 0,
+          }
+        : await askEndpoint(url, token);
     const providers = [...new Set(runtime.registry.capabilities().map(({ id }) => id))];
 
     await emit(

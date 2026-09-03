@@ -21,6 +21,9 @@ import {
   policyRule,
   start,
   status,
+  tokenIssue,
+  tokenList,
+  tokenRevoke,
   tokenRotate,
   tokenShow,
   tools,
@@ -284,16 +287,37 @@ export async function run(argv: readonly string[]): Promise<void> {
           throw new Error(`Unknown: ${PROGRAM} policy ${second}`);
       }
 
-    case 'token':
+    case 'token': {
+      const row = {
+        ...global,
+        show,
+        raw,
+        ...(typeof flags['id'] === 'string' ? { id: flags['id'] } : {}),
+        ...(typeof flags['subject'] === 'string' ? { subject: flags['subject'] } : {}),
+        me: flags['me'] === true,
+        ...(typeof flags['label'] === 'string' ? { label: flags['label'] } : {}),
+        json: flags['json'] === true,
+      };
       switch (second) {
-        case 'show':
+        // A bare `token` lists rather than showing one. It used to show, because
+        // there was one token and nothing to list; there are several now, and a
+        // command that printed a credential when asked for an inventory would be
+        // the wrong default in the more expensive direction.
+        case 'list':
         case undefined:
-          return tokenShow({ ...global, show, raw });
+          return tokenList(row);
+        case 'issue':
+          return tokenIssue(row);
+        case 'show':
+          return tokenShow(row);
         case 'rotate':
-          return tokenRotate({ ...global, show });
+          return tokenRotate(row);
+        case 'revoke':
+          return tokenRevoke(row);
         default:
           throw new Error(`Unknown: ${PROGRAM} token ${second}`);
       }
+    }
 
     case 'pair':
       return pair({

@@ -1,4 +1,5 @@
 import { migrateToContract4, type Contract4Migration } from './contract4.ts';
+import { migrateToContract5, type Contract5Migration } from './contract5.ts';
 import { migrateToContract3, needsContract3, type Contract3Migration } from './contract3.ts';
 import { readSession } from '#auth/lanes/session.ts';
 import { parseDocument } from 'yaml';
@@ -196,6 +197,8 @@ export interface ContractMigration {
   /** The contract 2 → 3 half, when this workspace needed one. */
   readonly contract3: Contract3Migration | null;
   readonly contract4: Contract4Migration | null;
+  /** The contract 4 → 5 half: the endpoint token becomes a person's (ADR-068). */
+  readonly contract5: Contract5Migration | null;
   /** Every profile either half rewrote, deduplicated. */
   readonly profiles: readonly string[];
   /** Targets written into the registry by the contract 1 → 2 half. */
@@ -250,10 +253,10 @@ export async function migrateToCurrentContract(
 
   const subject = options.subject ?? (await readSession().catch(() => null))?.subject;
 
-  const contract3 = await migrateToContract3(workspaceRoot, {
-    apply: options.apply,
-    ...(subject === undefined ? {} : { subject }),
-  });
+  // Contract 3 writes `members:` from it; contract 5 binds the token to it.
+  const signed = { apply: options.apply, ...(subject === undefined ? {} : { subject }) };
+
+  const contract3 = await migrateToContract3(workspaceRoot, signed);
 
   // In sequence, not in parallel: contract 4 moves what contract 3 produced, so
   // it has to run against the tree the previous step left. With `apply: false`
@@ -264,20 +267,23 @@ export async function migrateToCurrentContract(
     ...(options.target === undefined ? {} : { target: options.target }),
   });
 
+  // In sequence again, for contract 4's reason.
+  const contract5 = await migrateToContract5(workspaceRoot, signed);
+
+  // Collected, not spelled out per step: a step left out of `alreadyCurrent`
+  // reports a migration as finished when it is not.
+  const steps = [legacy, contract3, contract4, contract5].filter((s) => s !== null);
+
   return {
     workspaceRoot,
     legacy: legacy !== null && !legacy.alreadyCurrent ? legacy : null,
     contract3: contract3.alreadyCurrent ? null : contract3,
     contract4: contract4.alreadyCurrent ? null : contract4,
-    profiles: [
-      ...new Set([...(legacy?.profiles ?? []), ...contract3.profiles, ...contract4.profiles]),
-    ],
+    contract5: contract5.alreadyCurrent ? null : contract5,
+    profiles: [...new Set(steps.flatMap((step) => step.profiles))],
     targets: legacy?.targets ?? [],
-    changes: [...(legacy?.changes ?? []), ...contract3.changes, ...contract4.changes],
-    alreadyCurrent:
-      (legacy === null || legacy.alreadyCurrent) &&
-      contract3.alreadyCurrent &&
-      contract4.alreadyCurrent,
+    changes: steps.flatMap((step) => step.changes),
+    alreadyCurrent: steps.every((step) => step.alreadyCurrent),
   };
 }
 

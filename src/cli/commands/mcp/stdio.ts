@@ -48,7 +48,6 @@ export async function mcpStdio(
       reconciled: ({ profile, plan, ofMany }) =>
         printErr(`${ofMany ? `${profile}\n` : ''}${plan}`),
       // Unreachable: this path never mints a token, because it never needs one.
-      tokenMinted: () => {},
     },
     log: {
       debug() {},

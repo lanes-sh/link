@@ -17,7 +17,6 @@
  */
 
 export {
-  ensureProfileToken,
   openBlobStoreFor,
   openSecretStoreFor,
   ownerPrincipal,

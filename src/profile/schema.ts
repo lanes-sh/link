@@ -59,11 +59,22 @@ import { knowledgeTargetSchema } from './knowledge.ts';
  * declaration moved inside it. No file's *shape* changed: `grants:`,
  * `members:` and `connections.yaml` are untouched, and only the paths moved.
  *
+ * **5 made the endpoint token a person's rather than a profile's** (ADR-068).
+ * `auth.token_ref` defaulted to the constant `profile/token` for every profile
+ * out of a credential store that is one per workspace, so the "profile's token"
+ * was the workspace's wearing a per-profile name — which is why removing one
+ * profile once deleted the token its siblings were served by. It moves to
+ * `tokens:` in `connections.yaml`, one row per issued token, each naming the
+ * Lanes subject it was issued to. What that buys is the thing a bearer token
+ * could not do: it resolves through `members:` like an OAuth token does, so a
+ * credential says who you are and the profiles follow from that rather than
+ * from which profile happened to mint it.
+ *
  * A hard cut each time, and only the newest is read here. `./legacy.ts`
  * understands the older shapes and only the migration uses it — a runtime that
  * loaded either would be the two-sources-of-truth problem again, one level up.
  */
-export const SUPPORTED_CONTRACT = 4;
+export const SUPPORTED_CONTRACT = 5;
 
 /**
  * There is no `database:` block any more.
@@ -447,6 +458,29 @@ export const oauthAppSchema = z.object({
   client_secret_ref: credentialRef,
 });
 
+/**
+ * One static endpoint token, and the person it was issued to.
+ *
+ * **`subject` is the whole point** (ADR-068). A bearer token used to resolve to
+ * the primary profile's owner and reach every profile in the workspace, which
+ * made it the one credential here that answered "what may I open" without ever
+ * answering "who are you". It names a Lanes subject now, and the profiles it
+ * reaches are the ones whose `members:` list that subject — the same resolution
+ * an OAuth token has gone through since ADR-060.
+ *
+ * The value is never here. `ref` points into the workspace's credential store,
+ * which is what keeps `findSecrets` from having anything to find in this file.
+ */
+export const endpointTokenSchema = z.object({
+  id: identifier,
+  subject: subjectRef,
+  ref: credentialRef,
+  /** What it is for, in a word — `ci`, `runner`. Free text, shown in listings. */
+  label: z.string().min(1).optional(),
+  /** ISO 8601, written when the row is created. Reported, never compared. */
+  issued_at: z.string().min(1).optional(),
+});
+
 
 /**
  * One profile: who it is, what it reaches, and what it may do.
@@ -473,7 +507,6 @@ export const configSchema = z.object({
   auth: z
     .object({
       mode: z.literal('bearer').default('bearer'),
-      token_ref: credentialRef.default('profile/token'),
       /**
        * Additive. `mode` above still describes what the endpoint accepts on the
        * wire — a bearer token — and this describes where a *remote* client can
@@ -490,7 +523,7 @@ export const configSchema = z.object({
        */
       allowed_origins: z.array(browserOrigin).optional(),
     })
-    .default({ mode: 'bearer', token_ref: 'profile/token' }),
+    .default({ mode: 'bearer' }),
 
   limits: z
     .object({
@@ -575,12 +608,23 @@ export const connectionsFileSchema = z.object({
   contract: z.number().int().positive(),
   connections: z.array(connectionSchema).default([]),
   oauth_apps: z.record(identifier, oauthAppSchema).default({}),
+  /**
+   * The static tokens this workspace has issued (ADR-068).
+   *
+   * Here rather than in a file of their own because this is already where the
+   * workspace keeps what is not a profile's and not an account's — `oauth_apps`
+   * is the precedent, and it is credential-referencing in the same way. A
+   * workspace that has issued none has no key, which is what lets an untouched
+   * file parse.
+   */
+  tokens: z.array(endpointTokenSchema).default([]),
 });
 
 export type ConnectionsFile = z.infer<typeof connectionsFileSchema>;
 
 export type Config = z.infer<typeof configSchema>;
 export type ConnectionConfig = z.infer<typeof connectionSchema>;
+export type EndpointToken = z.infer<typeof endpointTokenSchema>;
 export type GrantConfig = z.infer<typeof grantSchema>;
 export type MemberConfig = z.infer<typeof memberSchema>;
 export type PolicyRuleConfig = z.infer<typeof policyRuleSchema>;

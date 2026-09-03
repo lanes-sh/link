@@ -45,14 +45,17 @@ export interface AddInput {
   readonly tokenEnv: string;
   readonly scope: string;
   /**
-   * Which selection this registration is for.
+   * Which workspace this registration is for.
    *
-   * Not part of the URL — a deployed endpoint serves every profile in its bucket
-   * and each call names one. It is here because the shell commands a harness is
-   * told to run afterwards do need it, and a `lanes link token show` without it
-   * substitutes to nothing.
+   * Not part of the URL — one endpoint serves every profile in the workspace and
+   * each call names one in its `profile` argument. It is here because the shell
+   * commands a harness is told to run afterwards do need it, and a `lanes link
+   * token show` without it substitutes to nothing.
+   *
+   * There is no `profile` beside it any more (ADR-068). It was here for exactly
+   * one reader — the `export` line below — and what that line names is a token,
+   * which is the workspace's.
    */
-  readonly profile: string;
   readonly target: string;
 }
 
@@ -142,14 +145,18 @@ export const HARNESSES: readonly Harness[] = [
     scoped: false,
     storesToken: false,
     home: CODEX_HOME,
-    add: ({ name, url, tokenEnv }) => [
+    // The env var only under `--headless`, which is what the header comment
+    // above claims and this did not do: it was passed unconditionally, so every
+    // Codex registration was a token registration while `storesToken: false`
+    // said otherwise and `afterAdd` told the operator to export a variable an
+    // OAuth-capable client would never read.
+    add: ({ name, url, tokenEnv, token }) => [
       'mcp',
       'add',
       name,
       '--url',
       url,
-      '--bearer-token-env-var',
-      tokenEnv,
+      ...(token ? ['--bearer-token-env-var', tokenEnv] : []),
     ],
     get: (name) => ['mcp', 'get', name],
     remove: (name) => ['mcp', 'remove', name],
@@ -157,19 +164,26 @@ export const HARNESSES: readonly Harness[] = [
     // installs to both unchanged. Codex has no subagent directory, so it gets
     // the skill and not the scout — and `mcp add` says which it did.
     skills: () => join(CODEX_HOME(), 'skills'),
-    afterAdd: ({ tokenEnv, profile, target }) => [
-      `Codex reads the token from $${tokenEnv} when it starts, so set it where Codex will see it:`,
-      '',
-      // Both flags, and this line is the reason they matter more here than
-      // anywhere else: an unresolvable substitution yields the empty string, the
-      // header becomes "Bearer ", and the only symptom is a 401 that reads as a
-      // bad token rather than a command that refused.
-      `    export ${tokenEnv}="$(lanes link token show --raw --profile ${profile} --workspace ${target})"`,
-      '',
-      'Add that to your shell profile. This is the better half of the bargain: the token never',
-      'reaches ~/.codex/config.toml, and a "lanes link token rotate" is picked up on next launch',
-      'with no re-registration.',
-    ],
+    afterAdd: ({ tokenEnv, target, token }) =>
+      // Nothing to say unless a token is actually in play. Without `--headless`
+      // this registration is a bare URL like Claude Code's, and telling somebody
+      // to export a variable nothing reads was the instruction that made
+      // `storesToken: false` read as a contradiction.
+      token === undefined
+        ? []
+        : [
+            `Codex reads the token from $${tokenEnv} when it starts, so set it where Codex will see it:`,
+            '',
+            // `--workspace`, and this line is the reason it matters more here
+            // than anywhere else: an unresolvable substitution yields the empty
+            // string, the header becomes "Bearer ", and the only symptom is a
+            // 401 that reads as a bad token rather than a command that refused.
+            `    export ${tokenEnv}="$(lanes link token show --raw --workspace ${target})"`,
+            '',
+            'Add that to your shell profile. This is the better half of the bargain: the token never',
+            'reaches ~/.codex/config.toml, and a "lanes link token rotate" is picked up on next launch',
+            'with no re-registration.',
+          ],
   },
 ];
 

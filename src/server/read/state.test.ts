@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { readState, type ConnectionRow, type ReadEndpoint } from './state.ts';
+import {
+  readState,
+  type ConnectionRow,
+  type ProviderNames,
+  type ReadEndpoint,
+} from './state.ts';
 import type { ProfileRuntime } from '../mcp/visibility.ts';
 
 /**
@@ -18,6 +23,16 @@ const ROWS: ConnectionRow[] = [
   { provider: 'gmail', id: 'ada', account: 'ada@example.com', label: 'Work mail' },
   { provider: 'gmail', id: 'rin', account: 'rin@example.com' },
 ];
+
+/**
+ * What the two providers in `ROWS` are called, as a registry would say.
+ *
+ * A closure rather than the real registry: `readState` takes the lookup because
+ * the read surface may not import the catalogue, and a test supplying two names
+ * exercises the same path a bind does.
+ */
+const NAMES: ProviderNames = (provider) =>
+  ({ gmail: 'Gmail', lanes_memory: 'Memory' })[provider];
 
 /** What the bind says about itself. Fixed for a test about which rows exist. */
 const ENDPOINT: ReadEndpoint = {
@@ -63,17 +78,36 @@ describe('which connections exist', () => {
   });
 
   test('carries the label and the account, which are what a reader is shown', () => {
-    const state = readState('local', new Map(), ROWS, ENDPOINT);
+    const state = readState('local', new Map(), ROWS, ENDPOINT, NAMES);
     const ada = state.connections.find((one) => one.ref === 'gmail.ada');
 
     expect(ada?.label).toBe('Work mail');
     expect(ada?.account).toBe('ada@example.com');
   });
 
-  test('a row with no label says null rather than inventing one', () => {
-    const state = readState('local', new Map(), ROWS, ENDPOINT);
+  test('a row with no label is named after its provider and its account', () => {
+    // `con8` is what this showed before, which is the one field on a row that
+    // says nothing: the id is opaque on purpose. Every reader fell back to it,
+    // so a dashboard's whole Label column read as keys.
+    const state = readState('local', new Map(), ROWS, ENDPOINT, NAMES);
 
-    expect(state.connections.find((one) => one.ref === 'gmail.rin')?.label).toBeNull();
+    expect(state.connections.find((one) => one.ref === 'gmail.rin')?.label).toBe('Gmail (rin)');
+  });
+
+  test('a built-in is its proper noun, not its noun twice', () => {
+    // The owner layer carries the name in `account` already, so composing the
+    // two would read `Memory (Memory)`.
+    const state = readState('local', new Map(), ROWS, ENDPOINT, NAMES);
+
+    expect(state.connections.find((one) => one.ref === 'lanes_memory.main')?.label).toBe('Memory');
+  });
+
+  test('a provider nothing can name says null rather than guessing', () => {
+    // A grant pointing at a connection the workspace no longer holds, and the
+    // one row left with nothing to derive a name from.
+    const state = readState('local', new Map([['personal', profile(['ghost.one'])]]), ROWS, ENDPOINT, NAMES);
+
+    expect(state.connections.find((one) => one.ref === 'ghost.one')?.label).toBeNull();
   });
 
   test('with no profiles at all, the workspace still lists what it holds', () => {

@@ -131,6 +131,8 @@ export interface BuildContextOptions {
   readonly authorize?: ((request: Request) => Promise<Request>) | undefined;
   /** `oauth_apps` entries this profile declares. See `resolveSecretRefs`. */
   readonly ownClients?: readonly string[] | undefined;
+  /** Every profile the caller may reach. See `ProviderContext.profiles`. */
+  readonly profiles: readonly string[];
 }
 
 export function buildProviderContext(options: BuildContextOptions): ProviderContext {
@@ -146,6 +148,7 @@ export function buildProviderContext(options: BuildContextOptions): ProviderCont
 
   return {
     connection: info,
+    profiles: options.profiles,
     state: createScopedStore(options.state, namespace),
     storage: scopeBlobStore(options.storage, namespace),
     credentials: scopeSecrets(

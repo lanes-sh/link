@@ -42,14 +42,28 @@ import { DEFAULT_SURFACES, ensureOwnerLayer, repairLines, repaired } from './con
  * for the workspaces 0.9.0 already migrated. One spelling, for the reason the
  * template and `ensureOwnerLayer` share one: two would have to agree forever.
  */
-export async function ensureRegistryContract(workspaceRoot: string): Promise<boolean> {
+export async function ensureRegistryContract(
+  workspaceRoot: string,
+  /**
+   * The contract to stamp, which is the one the caller is *producing*.
+   *
+   * Defaulted to the newest for the repair sweep, and passed explicitly by each
+   * migration step. A step that stamped the newest would put the registry ahead
+   * of the profiles it just wrote — and `isUnmigrated` reads exactly this field,
+   * so the registry would report the workspace as migrated with a later step
+   * still to run. That is the same defect the note on
+   * `the contract it stamps on the registry` describes, in the direction that
+   * fails silently rather than loudly.
+   */
+  contract: number = SUPPORTED_CONTRACT,
+): Promise<boolean> {
   const files = workspaceFiles(workspaceRoot);
   if (!(await files.has(WORKSPACE_FILE))) return false;
 
   const document = await ConfigDocument.openKey(workspaceRoot, WORKSPACE_FILE);
-  if (document.getIn(['contract']) === SUPPORTED_CONTRACT) return false;
+  if (document.getIn(['contract']) === contract) return false;
 
-  document.setIn(['contract'], SUPPORTED_CONTRACT);
+  document.setIn(['contract'], contract);
   await document.save();
   return true;
 }
@@ -79,7 +93,7 @@ function listSurfaces(): string {
 }
 
 /** The workspace's connections document, written from the template if missing. */
-async function openOrCreateConnections(workspaceRoot: string): Promise<ConfigDocument> {
+export async function openOrCreateConnections(workspaceRoot: string): Promise<ConfigDocument> {
   try {
     return await ConfigDocument.openKey(workspaceRoot, CONNECTIONS_FILE);
   } catch {

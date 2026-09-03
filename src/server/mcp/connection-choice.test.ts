@@ -33,7 +33,7 @@ describe('the connection argument says which account it is', () => {
   test('two ids that differ by a digit carry the addresses that differ by a domain', () => {
     const described = describeWithConnections(
       'Read a message.',
-      new Map([['personal', ['ada_lovelace', 'ada_lovelace2']]]),
+      new Map([['personal', ['gmail.ada_lovelace', 'gmail.ada_lovelace2']]]),
       accountsByProfile(
         options([
           connection('ada_lovelace', 'ada.lovelace@example.com'),
@@ -42,18 +42,31 @@ describe('the connection argument says which account it is', () => {
       ),
     );
 
-    expect(described).toContain('ada_lovelace — ada.lovelace@example.com');
-    expect(described).toContain('ada_lovelace2 — ada.lovelace@example.org');
+    expect(described).toContain('gmail.ada_lovelace — ada.lovelace@example.com');
+    expect(described).toContain('gmail.ada_lovelace2 — ada.lovelace@example.org');
+  });
+
+  test('keyed on the grant ref, which is what the enum carries', () => {
+    // The guard on the bug the tests below hid. `connectionsOf` fills the enum
+    // from the grant rows, so `reachable` holds `gmail.ada_lovelace`; a map keyed
+    // on the bare `connection.id` missed every lookup and no served description
+    // ever showed an account, while these tests passed the bare id by hand and
+    // went green. Both sides read `ref` now, so they cannot drift.
+    const accounts = accountsByProfile(
+      options([connection('ada_lovelace', 'ada.lovelace@example.com')]),
+    );
+
+    expect([...accounts.get('personal')!.keys()]).toEqual(['gmail.ada_lovelace']);
   });
 
   test("the operator's label comes too, where they set one", () => {
     const described = describeWithConnections(
       'Read a message.',
-      new Map([['personal', ['ada_lovelace']]]),
+      new Map([['personal', ['gmail.ada_lovelace']]]),
       accountsByProfile(options([connection('ada_lovelace', 'ada.lovelace@example.com', 'Work')])),
     );
 
-    expect(described).toContain('ada_lovelace — ada.lovelace@example.com (Work)');
+    expect(described).toContain('gmail.ada_lovelace — ada.lovelace@example.com (Work)');
   });
 
   test('grouped by profile, because the two arguments are not independent', () => {

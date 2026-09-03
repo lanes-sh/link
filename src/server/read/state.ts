@@ -1,4 +1,5 @@
 import { allowedConnections } from '#policy';
+import { defaultConnectionLabel } from '#profile';
 import type { ProfileRuntime } from '../mcp/visibility.ts';
 
 /**
@@ -19,11 +20,20 @@ export interface ReadConnection {
   readonly provider: string;
   readonly id: string;
   /**
-   * The operator's own word for it, and what a reader should be shown.
+   * What a reader should be shown: the operator's own word for it, or the name
+   * derived from the provider and the account when they never gave one.
    *
    * `gmail.ada_lovelace` is an address, not a name. A dashboard listing refs is
    * asking somebody to read identifiers when they gave the thing a label
    * precisely so they would not have to.
+   *
+   * **Filled rather than left null**, which reverses what this said. Null meant
+   * "they never gave one" and every consumer answered it the same way, by
+   * showing the id — so a dashboard's whole Label column read `con8`, `lan7`,
+   * `con5`. `connect` writes no label that only repeats the lines above it
+   * (`declareConnection`), so an unlabelled row is the ordinary case and not an
+   * omission worth reporting. `null` survives for the row nothing can name: a
+   * grant pointing at a connection the workspace no longer holds.
    */
   readonly label: string | null;
   /** The identity the provider reported at connect time. */
@@ -31,6 +41,20 @@ export interface ReadConnection {
   /** Which profiles grant this connection at all. */
   readonly profiles: readonly string[];
 }
+
+/**
+ * What a provider is called, asked of whoever built the registry.
+ *
+ * A function rather than a catalogue, because `server` may not import
+ * `#providers` — the read surface has no business knowing the vendor list, and
+ * the rule that says so is `architecture.test.ts`. Both binds already hold a
+ * `Runtime`, whose registry names the owner layer, the catalogue and a
+ * workspace's own manifests alike, so the caller passes a closure over that.
+ *
+ * Defaulted to naming nothing. A caller that supplies none gets `label: null`
+ * on an unlabelled row, which is what every reader saw before this existed.
+ */
+export type ProviderNames = (provider: string) => string | undefined;
 
 /** The connection rows as `connections.yaml` holds them. */
 export interface ConnectionRow {
@@ -97,6 +121,7 @@ export function readState(
   profiles: ReadonlyMap<string, ProfileRuntime>,
   rows: readonly ConnectionRow[],
   endpoint: ReadEndpoint,
+  providerName: ProviderNames = () => undefined,
 ): ReadState {
   // The workspace's own list is the source of truth for *which connections
   // exist*. Deriving it from the grants instead made an account that no profile
@@ -138,11 +163,14 @@ export function readState(
 
   const connections: ReadConnection[] = rows.map((row) => {
     const ref = `${row.provider}.${row.id}`;
+    const named = providerName(row.provider);
     return {
       ref,
       provider: row.provider,
       id: row.id,
-      label: row.label ?? null,
+      // The same rule `connect` offers and `connection list` prints, so one
+      // connection is called one thing wherever somebody reads it.
+      label: row.label ?? (named ? defaultConnectionLabel(named, row.account) : null),
       account: row.account ?? null,
       profiles: grantedBy.get(ref) ?? [],
     };

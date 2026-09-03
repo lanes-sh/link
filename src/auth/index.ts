@@ -32,10 +32,12 @@ export interface Principal {
   /**
    * Every profile this caller may reach, or `undefined` for "all of them".
    *
-   * `undefined` is the machine token and the stdio pipe: neither is a person,
-   * both reach the whole workspace, and saying so explicitly is better than
-   * enumerating a list that would then need keeping in step. A `member` always
-   * carries a list, because the list *is* the delegation (ADR-060).
+   * `undefined` is the stdio pipe and nothing else now (ADR-068). The pipe is
+   * its own proof — a process that can write to it already has the operator's
+   * shell — so there is no credential to carry a subject and no member list to
+   * match. Every token, static or issued, carries a list: a `member`'s because
+   * the list *is* the delegation (ADR-060), and a `machine`'s because a bearer
+   * token names the person it was issued to rather than opening everything.
    */
   readonly profiles?: readonly string[] | undefined;
 }
@@ -59,6 +61,25 @@ export function memberPrincipal(
   profiles: readonly string[],
 ): Principal {
   return { id: subject, profile, kind: 'member', profiles };
+}
+
+/**
+ * A static token's holder, and the profiles whose `members:` name them.
+ *
+ * The same shape as `memberPrincipal` and deliberately so — `kind` is the only
+ * difference, and it exists for the audit log rather than for policy. ADR-060
+ * described this principal and nothing minted one: the static token resolved to
+ * `ownerPrincipal`, reaching every profile in the workspace, which made it the
+ * one credential here that never had to say who was holding it. A row in
+ * `tokens:` names a subject (ADR-068), so this resolves the same way an OAuth
+ * token does and `mayReach` gets no special case.
+ */
+export function machinePrincipal(
+  subject: string,
+  profile: string,
+  profiles: readonly string[],
+): Principal {
+  return { id: subject, profile, kind: 'machine', profiles };
 }
 
 /**
@@ -161,10 +182,39 @@ export function tokensMatch(a: string, b: string): boolean {
   return timingSafeEqual(hash(a), hash(b));
 }
 
+/**
+ * One issued token, as the authenticator needs it.
+ *
+ * Structurally what `connections.yaml` holds, declared here rather than
+ * imported: `auth` may not reach `#profile` (the architecture test enforces the
+ * direction), and the rows arrive as a closure for the same reason
+ * `profilesFor` does.
+ */
+export interface IssuedToken {
+  readonly id: string;
+  readonly subject: string;
+  readonly ref: SecretRef;
+}
+
 export interface AuthenticatorOptions {
+  /**
+   * The primary, which is what `principal.profile` starts as.
+   *
+   * Not what the token reaches — that is `profilesFor(subject)`. It is where
+   * the connection was opened, and every dispatch rewrites it with `forProfile`.
+   */
   readonly profile: string;
-  readonly tokenRef: SecretRef;
+  /** The workspace's issued tokens. Re-read on every reload, so a revoke lands. */
+  readonly tokens: () => Promise<readonly IssuedToken[]>;
   readonly credentials: SecretStore;
+  /**
+   * Which profiles list this subject as a member.
+   *
+   * The same resolver the OAuth path is handed (`server/endpoint.ts`), passed in
+   * rather than reached for, so discovery and enforcement cannot disagree about
+   * a subject's reach.
+   */
+  readonly profilesFor: (subject: string) => Promise<readonly string[]>;
   /** Injectable for tests. Only the cache window reads it. */
   readonly now?: () => number;
 }
@@ -183,10 +233,16 @@ export interface AuthenticatorOptions {
  */
 const CACHE_TTL_MS = 5_000;
 
+/** An issued row, with its value read out of the store. */
+interface LoadedToken {
+  readonly subject: string;
+  readonly value: string;
+}
+
 export class BearerAuthenticator implements Authenticator {
   readonly #options: AuthenticatorOptions;
   readonly #now: () => number;
-  #cached: string | null = null;
+  #cached: readonly LoadedToken[] | null = null;
   #readAt = 0;
 
   constructor(options: AuthenticatorOptions) {
@@ -195,48 +251,79 @@ export class BearerAuthenticator implements Authenticator {
   }
 
   async authenticate(authorizationHeader: string | null | undefined): Promise<AuthOutcome> {
-    const { profile } = this.#options;
-
     const presented = parseBearer(authorizationHeader);
     if (presented === null) {
       return { ok: false, reason: authorizationHeader ? 'malformed' : 'missing' };
     }
 
     const fresh = this.#cached !== null && this.#now() - this.#readAt < CACHE_TTL_MS;
-    let expected = fresh ? this.#cached : await this.#reload();
+    let rows = fresh ? this.#cached! : await this.#reload();
+    let matched = find(presented, rows);
 
-    // A mismatch against a *cached* value is ambiguous: either the credential is
+    // A miss against a *cached* set is ambiguous: either the credential is
     // wrong, or it is the right one and this process has not seen the rotation
-    // that produced it. One re-read separates the two, and it is what makes a
-    // rotated-in token work on its first call rather than after the window.
-    // Only a cached comparison can be wrong this way, so a fresh read never
-    // pays for a second one — which is what keeps a wrong token from costing a
-    // store read per attempt.
-    if (fresh && (expected === null || !tokensMatch(presented, expected))) {
-      expected = await this.#reload();
+    // or the issue that produced it. One re-read separates the two, and it is
+    // what makes a rotated-in token work on its first call rather than after
+    // the window. Only a cached comparison can be wrong this way, so a fresh
+    // read never pays for a second one — which is what keeps a wrong token from
+    // costing a store read per attempt.
+    if (fresh && matched === null) {
+      rows = await this.#reload();
+      matched = find(presented, rows);
     }
 
-    if (expected === null) {
-      // The profile has no token yet. Fail closed and let `lanes link doctor` explain.
+    if (rows.length === 0) {
+      // No token has been issued. Fail closed, and distinctly from a wrong one:
+      // `lanes link doctor` reads this to say "issue one" rather than "check it".
       return { ok: false, reason: 'not_configured' };
     }
 
-    return tokensMatch(presented, expected)
-      ? { ok: true, principal: ownerPrincipal(profile) }
-      : { ok: false, reason: 'invalid' };
+    if (matched === null) return { ok: false, reason: 'invalid' };
+
+    // **Resolved per request, not cached with the value.** Membership is read
+    // when a token is minted for an OAuth client (ADR-060) because there is a
+    // mint to read it at; a static token has none, so this is the only place
+    // the question can be asked. It is what makes `profile members remove`
+    // take effect on the next call rather than on the next rotation.
+    //
+    // A resolver that throws fails closed. The alternative — falling back to
+    // "every profile" — would restore exactly the behaviour ADR-068 removes,
+    // and would do it precisely when something is already wrong.
+    let profiles: readonly string[];
+    try {
+      profiles = await this.#options.profilesFor(matched.subject);
+    } catch {
+      return { ok: false, reason: 'invalid' };
+    }
+
+    return {
+      ok: true,
+      principal: machinePrincipal(matched.subject, this.#options.profile, profiles),
+    };
   }
 
-  async #reload(): Promise<string | null> {
+  async #reload(): Promise<readonly LoadedToken[]> {
     // Both caches, or neither: the store holds its own decrypted copy, so
     // re-reading without dropping that first re-reads the same stale value.
     this.#options.credentials.refresh?.();
-    this.#cached = await this.#options.credentials.get(this.#options.tokenRef);
+
+    const rows = await this.#options.tokens();
+    const loaded: LoadedToken[] = [];
+    for (const row of rows) {
+      const value = await this.#options.credentials.get(row.ref);
+      // A row whose credential is gone is not an error to report here. It is
+      // what a half-finished `secrets push` looks like, and the row simply
+      // matches nothing — `doctor` is where that is worth a sentence.
+      if (value) loaded.push({ subject: row.subject, value });
+    }
+
+    this.#cached = loaded;
     this.#readAt = this.#now();
-    return this.#cached;
+    return loaded;
   }
 
   /**
-   * Drop the cached value immediately.
+   * Drop the cached set immediately.
    *
    * The window above already bounds how long a rotation goes unnoticed, so this
    * is an optimisation rather than the mechanism — nothing's correctness may
@@ -245,6 +332,20 @@ export class BearerAuthenticator implements Authenticator {
   invalidateCache(): void {
     this.#cached = null;
   }
+}
+
+/**
+ * The row a presented token matches, or null.
+ *
+ * Every row is compared even after one matches. Returning early would make the
+ * time taken describe *which* row answered, and the whole point of
+ * `tokensMatch` is that a comparison here leaks nothing about the value it is
+ * comparing against.
+ */
+function find(presented: string, rows: readonly LoadedToken[]): LoadedToken | null {
+  let found: LoadedToken | null = null;
+  for (const row of rows) if (tokensMatch(presented, row.value)) found = row;
+  return found;
 }
 
 /**

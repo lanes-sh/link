@@ -17,7 +17,7 @@ import { openBlobStoreFor } from './select.ts';
 
 const config = (): Config =>
   ({
-    contract: 4,
+    contract: 5,
     instance: { profile: 'personal' },
     connections: [],
     policy: { allow: [] },
@@ -36,7 +36,7 @@ async function workspace(storage?: string): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'lanes-link-select-'));
   await writeFile(
     join(root, 'workspaces.yaml'),
-    'contract: 4\nworkspaces:\n  local:\n' +
+    'contract: 5\nworkspaces:\n  local:\n' +
       '    credentials: { adapter: file }\n' +
       `    storage: { adapter: filesystem${storage ? `, path: ${storage}` : ''} }\n`,
   );

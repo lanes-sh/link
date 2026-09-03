@@ -159,7 +159,9 @@ export async function migrateToContract4(
   // unchanged. Here rather than inside `renameRegistry` because that function
   // returns early on a workspace already holding `workspaces.yaml`, which is
   // exactly the workspace whose stamp is stale.
-  await ensureRegistryContract(workspaceRoot);
+  // Four, not the newest: contract 5 runs after this, and a registry claiming it
+  // makes `isUnmigrated` report a finished migration with a step still to go.
+  await ensureRegistryContract(workspaceRoot, 4);
   await applyMoves(files, plan.moves);
 
   // Credentials before the rows: a ref is derived from the id, so the rows must
@@ -185,7 +187,10 @@ export async function migrateToContract4(
   for (const profile of profiles) {
     const document = await ConfigDocument.openKey(workspaceRoot, layout.profileConfig(profile));
     document.setIn(['contract'], 4);
-    await document.save();
+    // The contract it is *producing*, which is not the newest one any more:
+    // contract 5 exists, so a bare `save()` here validates this document
+    // against a schema it is one step short of and refuses its own output.
+    await document.save({ contract: 4 });
   }
 
   return {
