@@ -96,7 +96,7 @@ describe('the fallback token invocation', () => {
     await writeFile(join(root, 'workspaces.yaml'), workspaceYaml(['local'], {defaultProfile: 'scratch'}));
     await writeFile(
       join(root, 'profiles', 'scratch', 'profile.yaml'),
-      `contract: 4
+      `contract: 5
 
 instance:
   profile: scratch
@@ -104,18 +104,31 @@ instance:
 `,
     );
 
-    // The exact shape outputs.ts builds: the bin, the area token, the command,
-    // and the two flags that now name where the token lives.
+    const env = { ...process.env, LANES_LINK_HOME: root };
+
+    // A token has to be issued before it can be shown, and issuing names the
+    // person it is for (ADR-068). `--subject` rather than `--me`, so the test
+    // does not depend on a signed-in session.
+    const issued = Bun.spawnSync(
+      [
+        'bun', 'run', BIN, 'link', 'token', 'issue',
+        '--subject', 'lanes:scratch000', '--workspace', 'local',
+      ],
+      { env },
+    );
+    expect(issued.exitCode).toBe(0);
+
+    // The exact shape outputs.ts builds: the bin, the command, and the one flag
+    // that names where the token lives. No `--profile` — `token show` refuses
+    // it, so a line carrying one would not run at all.
     const result = Bun.spawnSync(
-      ['bun', 'run', BIN, 'link', 'token', 'show', '--raw', '--profile', 'scratch', '--target', 'local'],
-      {
-        env: { ...process.env, LANES_LINK_HOME: root },
-      },
+      ['bun', 'run', BIN, 'link', 'token', 'show', '--raw', '--workspace', 'local'],
+      { env },
     );
 
     const token = new TextDecoder().decode(result.stdout).trim();
     expect(result.exitCode).toBe(0);
-    expect(token.length).toBeGreaterThan(0);
+    expect(token.startsWith('llk_')).toBe(true);
   });
 });
 
@@ -126,18 +139,24 @@ describe('token rotate', () => {
     await Promise.all(homes.map((home) => rm(home, { recursive: true, force: true })));
   });
 
-  async function workspace(): Promise<(args: string[]) => { stdout: string; stderr: string }> {
+  async function workspace(): Promise<
+    (args: string[]) => { stdout: string; stderr: string; exitCode: number }
+  > {
     const home = await mkdtemp(join(tmpdir(), 'lanes-link-rotate-'));
     homes.push(home);
     const env = { ...process.env, LANES_LINK_HOME: home };
-    const run = (args: string[]): { stdout: string; stderr: string } => {
+    const run = (args: string[]): { stdout: string; stderr: string; exitCode: number } => {
       const result = Bun.spawnSync(['bun', 'run', BIN, ...args], { env });
       return {
         stdout: new TextDecoder().decode(result.stdout),
         stderr: new TextDecoder().decode(result.stderr),
+        exitCode: result.exitCode ?? 0,
       };
     };
     run(['link', 'profile', 'add', 'scratch', '--target', 'local']);
+    // A row to rotate. Issuing names the person it is for (ADR-068), and
+    // `--subject` keeps this off a signed-in session.
+    run(['link', 'token', 'issue', '--subject', 'lanes:scratch000', '--workspace', 'local']);
     return run;
   }
 
@@ -149,27 +168,45 @@ describe('token rotate', () => {
     // leak.
     const run = await workspace();
 
-    const rotated = run(['link', 'token', 'rotate', '--profile', 'scratch', '--target', 'local']);
-    const minted = run(['link', 'token', 'show', '--raw', '--profile', 'scratch', '--target', 'local']).stdout.trim();
+    const rotated = run(['link', 'token', 'rotate', '--workspace', 'local']);
+    const minted = run(['link', 'token', 'show', '--raw', '--workspace', 'local']).stdout.trim();
 
     expect(minted).toStartWith('llk_');
-    expect(rotated.stdout).toContain('token rotated');
+    expect(rotated.stdout).toContain('rotated tok1');
     expect(rotated.stdout).not.toContain(minted);
   });
 
   test('prints it with --show, the way `token show` does', async () => {
     const run = await workspace();
 
-    const rotated = run(['link', 'token', 'rotate', '--show', '--profile', 'scratch', '--target', 'local']);
-    const minted = run(['link', 'token', 'show', '--raw', '--profile', 'scratch', '--target', 'local']).stdout.trim();
+    const rotated = run(['link', 'token', 'rotate', '--show', '--workspace', 'local']);
+    const minted = run(['link', 'token', 'show', '--raw', '--workspace', 'local']).stdout.trim();
 
     expect(rotated.stdout).toContain(minted);
   });
 
-  test('still says every agent must be re-registered', async () => {
+  test('says what holds the old value, and no longer overstates it', async () => {
     // The part that has to stay loud: nothing re-reads the token on its own.
+    // Narrower than it was, and deliberately — a rotate used to invalidate every
+    // agent on the endpoint because every registration carried the token.
+    // Registrations do not carry one since ADR-062, so this affects only what
+    // was handed this row's value.
     const run = await workspace();
-    expect(run(['link', 'token', 'rotate', '--profile', 'scratch', '--target', 'local']).stdout).toContain('re-registered');
+    const rotated = run(['link', 'token', 'rotate', '--workspace', 'local']).stdout;
+
+    expect(rotated).toContain('tok1');
+    expect(rotated).toContain('must be given the new value');
+    expect(rotated).toContain('signed in through a browser are unaffected');
+  });
+
+  test('refuses --profile, rather than accepting and ignoring it', async () => {
+    // Somebody passing it believes they scoped the credential to one profile,
+    // and it is the member lists that decide (ADR-068).
+    const run = await workspace();
+    const refused = run(['link', 'token', 'rotate', '--profile', 'scratch', '--workspace', 'local']);
+
+    expect(refused.exitCode).not.toBe(0);
+    expect(`${refused.stdout}${refused.stderr}`).toContain('does not scope');
   });
 });
 

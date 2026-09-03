@@ -18,7 +18,7 @@ import {
   planReconcile,
   toPolicyDocument,
 } from '#registry';
-import { ensureProfileToken, openRuntime, type GlobalFlags, type Runtime } from '#cli/runtime.ts';
+import { openRuntime, type GlobalFlags, type Runtime } from '#cli/runtime.ts';
 
 /**
  * Bringing the endpoint up: open a runtime per profile, reconcile, and serve.
@@ -40,8 +40,6 @@ import { ensureProfileToken, openRuntime, type GlobalFlags, type Runtime } from 
 export interface EndpointReporter {
   /** A profile whose runtime state differed from its config, and what was applied. */
   reconciled(input: { profile: string; plan: string; ofMany: boolean }): void;
-  /** No profile token existed and one was minted. */
-  tokenMinted(minted: { target: string }): void;
   /**
    * A sibling profile that could not be opened against this target.
    *
@@ -51,7 +49,7 @@ export interface EndpointReporter {
   skipped?(input: { profile: string; reason: string }): void;
 }
 
-const SILENT: EndpointReporter = { reconciled() {}, tokenMinted() {} };
+const SILENT: EndpointReporter = { reconciled() {} };
 
 /** The first line of an error, which is the part fit to print beside a name. */
 function message(error: unknown): string {
@@ -64,11 +62,6 @@ export interface EndpointOptions {
   readonly host?: string | undefined;
   /** Serve just the resolved profile, rather than every profile in the workspace. */
   readonly only?: boolean | undefined;
-  /**
-   * Mint a profile token when the store has none. True for `lanes link start`,
-   * false in a container — see the note above.
-   */
-  readonly mintToken?: boolean | undefined;
   readonly reporter?: EndpointReporter | undefined;
   /** Operational events. Silent when absent, which is what the tests want. */
   readonly log?: Logger | undefined;
@@ -203,26 +196,21 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
   const { primary, runtimes } = await openReconciled(options);
 
   try {
-    if (options.mintToken) {
-      const { created } = await ensureProfileToken(
-        primary.credentials,
-        primary.config.auth.token_ref,
-      );
-      if (created) reporter.tokenMinted({ target: primary.target });
-    } else {
-      // Deployed, the token is written by the operator's CLI into the target's
-      // credential store and read back here. Refusing to start beats serving an
-      // endpoint whose token nobody holds.
-      const token = await primary.credentials.get(primary.config.auth.token_ref);
-      if (!token) {
-        throw new Error(
-          `No profile token at "${primary.config.auth.token_ref}" in this target's credential store. ` +
-            'A deployed instance never mints its own — run `lanes link token rotate --workspace <name>` ' +
-            'from your machine, or `lanes link secrets push --from local --to cloud`, then redeploy.',
-        );
-      }
-    }
-
+    // **No token is minted or required here any more** (ADR-068). Both halves of
+    // what used to be at this point are gone, and for the same reason.
+    //
+    // Minting: `start` did it because there was one token per endpoint and it
+    // had to exist for anything to connect. A token names the person it was
+    // issued to now, and `start` does not know who is about to connect — so
+    // inventing one would be binding a credential to a subject nobody chose.
+    //
+    // Refusing: a deployed revision used to fail to boot without one, on the
+    // reasoning that an endpoint whose token nobody holds is no use. Since
+    // ADR-062 that is backwards. A client discovers the protected-resource
+    // document, signs its owner in, and comes back with a token of its own; a
+    // static row is what CI uses because it has no browser. Zero rows is the
+    // ordinary state of a healthy endpoint, and refusing to serve was refusing
+    // the case the endpoint is now built for.
     // Read through a holder rather than closed over `runtimes`, because a
     // reload replaces that map and the gate is deliberately built once
     // (ADR-029). Without the indirection, a member added after start would

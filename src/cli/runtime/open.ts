@@ -9,6 +9,7 @@ import {
   assertGrantsResolve,
   layout,
   listProfiles,
+  membersResolver,
   readConnections,
   selectConnections,
   soleGrantFor,
@@ -190,7 +191,12 @@ export async function openRuntime(
   // Lazy for the same reason `refreshSkills` is: it reads the registry it is
   // registered into. Per call rather than a snapshot, so a policy the runtime
   // was opened with is re-evaluated rather than remembered.
-  const reachable = (): ReadonlyArray<{ key: string; provider: string; account: string }> =>
+  const reachable = (): ReadonlyArray<{
+    key: string;
+    provider: string;
+    providerName: string;
+    account: string;
+  }> =>
     selected
       .filter(({ ref, connection }) =>
         registry
@@ -204,6 +210,11 @@ export async function openRuntime(
       .map(({ ref, connection }) => ({
         key: ref,
         provider: connection.provider,
+        // The manifest's display name, not the id. `defaultConnectionLabel`
+        // composes "Gmail (ada)" and needs the name — handed the id it produces
+        // "gmail (ada)", and for the owner layer, whose `account` is already the
+        // proper noun, "lanes_memory (Memory)".
+        providerName: registry.manifest(connection.provider)?.name ?? connection.provider,
         account: connection.account,
         ...(connection.label ? { label: connection.label } : {}),
       }));
@@ -329,10 +340,16 @@ export async function openRuntime(
     registry,
     refreshSkills,
     dispatcher,
+    // The workspace's issued tokens, not a profile's (ADR-068). The rows are
+    // re-read on every reload so a `token revoke` lands inside the cache
+    // window, and the subject on the matching row is resolved through
+    // `members:` — so a bearer token reaches what its holder is a member of
+    // rather than everything the workspace holds.
     authenticator: new BearerAuthenticator({
       profile: config.instance.profile,
-      tokenRef: config.auth.token_ref,
+      tokens: async () => (await readConnections(root)).tokens,
       credentials,
+      profilesFor: membersResolver(root),
     }),
     connectorFor,
     authorizeRequest,

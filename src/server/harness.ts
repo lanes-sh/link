@@ -53,6 +53,16 @@ function harnessConnections(config: Config): ConnectionConfig[] {
 
 export const TEST_TOKEN = 'llk_test_token_value';
 
+/**
+ * The subject the harness's one token row is issued to.
+ *
+ * A real subject shape rather than a placeholder, because `subjectRef` validates
+ * it wherever a config carries one — and the harness's `profilesFor` returns
+ * every wired profile for it, which is what the static token used to reach by
+ * having no list at all.
+ */
+export const HARNESS_SUBJECT = 'lanes:harness0000';
+
 /** A signed-in person no profile lists. See the federation stub below. */
 export const STRANGER = 'NOBODY_LISTS_THIS_PERSON';
 
@@ -75,7 +85,7 @@ export function configFor(profile: string, port: number, policy: string): Config
     `  - connection: example.${id}\n${rules.replace(/^ {4}(allow|deny):/gm, '    $1:')}`;
 
   return parseConfig(`
-contract: 4
+contract: 5
 instance:
   profile: ${profile}
   port: ${port}
@@ -133,6 +143,15 @@ export interface HarnessOptions {
   config?: Config;
   /** Extra profiles this one endpoint also serves, each with its own policy. */
   alsoServe?: ReadonlyArray<{ profile: string; policy: string }>;
+  /**
+   * The profiles the static token's subject is a member of.
+   *
+   * Absent means every profile wired, which is what a workspace owner's token
+   * reaches. Naming fewer is how a test expresses a delegated member — the
+   * caller ADR-068 exists for, and the one every disclosure surface has to be
+   * checked against.
+   */
+  reaches?: readonly string[];
   /**
    * What the endpoint calls to re-read skills before serving a request.
    *
@@ -192,7 +211,9 @@ export function wireProfiles(options: HarnessOptions): WiredProfiles {
 
   const state = createMemoryState();
   const audit = createBlobAuditStore({ storage: createMemoryBlobStore() });
-  const credentials = createMemoryCredentials({ 'profile/token': token, ...options.credentials });
+  // `tokens/tok1`, matching the row `startHarness` declares below. The old key
+  // was `profile/token`, the constant ADR-068 removed.
+  const credentials = createMemoryCredentials({ 'tokens/tok1': token, ...options.credentials });
   // `allowReserved` for the same reason `buildRegistry` passes it: the owner
   // layer claims `memory`, `skills`, and `vault`, and the guard still refuses
   // them everywhere else.
@@ -267,10 +288,14 @@ export function wireProfiles(options: HarnessOptions): WiredProfiles {
 export function startHarness(options: HarnessOptions): Harness {
   const { profiles, state, audit, dispatcher, credentials, token } = wireProfiles(options);
 
+  // One row, bound to a subject the harness's profiles list, so the static
+  // token resolves the way it does in production (ADR-068) rather than through
+  // a special case that would stop the tests covering the real path.
   const bearer = new BearerAuthenticator({
     profile: options.profile,
-    tokenRef: 'profile/token',
+    tokens: async () => [{ id: 'tok1', subject: HARNESS_SUBJECT, ref: 'tokens/tok1' }],
     credentials,
+    profilesFor: async () => options.reaches ?? [...profiles.keys()],
   });
 
   // The real wiring from `endpoint.ts`, not a stand-in: the flow under test is

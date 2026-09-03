@@ -145,10 +145,10 @@ async function readMerged(
       // values for one key, and there is no merge that means anything.
       //
       // Left behind rather than picked between. It is minted locally rather
-      // than granted by anybody, `ensureProfileToken` writes a fresh one the
-      // first time a command asks, and the old stores are not deleted — so the
-      // cost is re-registering a client, and no account has to be authorised
-      // again.
+      // than granted by anybody and the old stores are not deleted, so the cost
+      // is re-registering a client and no account has to be authorised again.
+      // Contract 5 ends this problem rather than solving it: the token is the
+      // workspace's, so there are no longer several to merge (ADR-068).
       let value: string | null;
       try {
         value = await store.get(ref);
@@ -212,10 +212,10 @@ async function readMerged(
   // routine `update`, for a conflict that did not exist.
   //
   // Where they do disagree it is still left behind rather than picked between.
-  // It is minted locally rather than granted by anybody, `ensureProfileToken`
-  // writes a fresh one the first time a command asks, and the old stores are not
-  // deleted — so the cost is re-registering a client, and no account has to be
-  // authorised again.
+  // It is minted locally rather than granted by anybody and the old stores are
+  // not deleted, so the cost is re-registering a client and no account has to be
+  // authorised again. Contract 5 removes the possibility of the disagreement:
+  // one token registry per workspace (ADR-068).
   for (const [ref, byProfile] of endpoint) {
     const values = new Set(byProfile.values());
     const agreed = values.size === 1 ? [...values][0] : undefined;

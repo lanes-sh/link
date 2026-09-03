@@ -39,22 +39,24 @@ describe('audit markdown cells', () => {
 });
 
 /**
- * The token command `outputs` hands over, and the two flags it must carry.
+ * The token command `outputs` hands over, and the flag it must carry.
  *
- * A token is per-target. Printing a bare `token show --raw` beside a deployed
+ * A token is per-workspace. Printing a bare `token show --raw` beside a deployed
  * URL hands over the *local* token — a credential that looks like an answer and
  * fails as a wrong password, which is the failure mode this whole helper was
  * written to avoid and reintroduced one flag lower down.
+ *
+ * It used to name a profile too, and must not now: the token stopped being a
+ * profile's at ADR-068 and `token show` refuses the flag.
  */
 describe('the token command outputs prints', () => {
-  test('names both the profile and the target, on either path', async () => {
-    // Whichever branch is taken — a `lanes` on PATH that matches, or the
-    // checkout-relative fallback — the selection has to survive into the line
-    // somebody pastes.
-    const invocation = await tokenInvocation('a-token-no-endpoint-will-match', 'work', 'cloud');
+  test('names the workspace and not a profile, on either path', async () => {
+    // Whichever branch is taken — a `lanes` on PATH, or the checkout-relative
+    // fallback — the selection has to survive into the line somebody pastes.
+    const invocation = await tokenInvocation('cloud');
 
-    expect(invocation.command).toContain('--profile work');
     expect(invocation.command).toContain('--workspace cloud');
+    expect(invocation.command).not.toContain('--profile');
     expect(invocation.command).toContain('token show --raw');
   });
 });

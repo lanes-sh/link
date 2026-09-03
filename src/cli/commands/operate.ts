@@ -30,5 +30,11 @@ export { pair, PAIR_CERT_REF, PAIR_KEY_REF, PAIR_TOKEN_REF, type PairFlags } fro
 export { desktop, settingsUrl, type DesktopFlags } from './operate/desktop.ts';
 export { auditTail, auditVerify, markdownCell } from './operate/audit.ts';
 export { attachFile } from './operate/attach.ts';
-export { tokenRotate, tokenShow } from './operate/token.ts';
+export {
+  tokenIssue,
+  tokenList,
+  tokenRevoke,
+  tokenRotate,
+  tokenShow,
+} from './operate/token.ts';
 export { configShow, policyList, policyRule } from './operate/policy.ts';

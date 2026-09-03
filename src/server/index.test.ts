@@ -170,6 +170,58 @@ describe('authentication', () => {
       profiles: ['personal'],
     });
   });
+
+  test('health names only the profiles the caller is a member of', async () => {
+    // The same rule as discovery, in the one place that had its own answer.
+    // This listed every profile served, to anybody holding any credential — so
+    // a delegated member read the names of profiles `mayReach` deliberately
+    // keeps out of the `profile` enum they were shown (ADR-068).
+    const harness = startHarness({
+      profile: 'personal',
+      port: allocatePort(),
+      policy: 'allow: ["example.*"]',
+      alsoServe: [{ profile: 'work', policy: 'allow: ["example.*"]' }],
+      reaches: ['personal'],
+    });
+
+    try {
+      const url = new URL(harness.server.url);
+      const response = await fetch(`${url.origin}/health`, {
+        headers: { authorization: `Bearer ${TEST_TOKEN}` },
+      });
+
+      const body = (await response.json()) as { profiles: string[] };
+      expect(body.profiles).toEqual(['personal']);
+      expect(body.profiles).not.toContain('work');
+    } finally {
+      await harness.stop();
+    }
+  });
+
+  test('and every profile it serves, to a caller who is a member of all of them', async () => {
+    // The contrast is what makes the test above mean something: the filter is
+    // the caller's membership, not a blanket narrowing to the primary.
+    const harness = startHarness({
+      profile: 'personal',
+      port: allocatePort(),
+      policy: 'allow: ["example.*"]',
+      alsoServe: [{ profile: 'work', policy: 'allow: ["example.*"]' }],
+    });
+
+    try {
+      const url = new URL(harness.server.url);
+      const response = await fetch(`${url.origin}/health`, {
+        headers: { authorization: `Bearer ${TEST_TOKEN}` },
+      });
+
+      expect(((await response.json()) as { profiles: string[] }).profiles.sort()).toEqual([
+        'personal',
+        'work',
+      ]);
+    } finally {
+      await harness.stop();
+    }
+  });
 });
 
 describe('discovery is filtered by policy', () => {
@@ -768,7 +820,7 @@ describe('reload', () => {
   /** A config naming exactly these connections, so one can be seen to appear. */
   function configWith(profile: string, port: number, ids: string[], policy: string): Config {
     return parseConfig(`
-contract: 4
+contract: 5
 instance:
   profile: ${profile}
   port: ${port}

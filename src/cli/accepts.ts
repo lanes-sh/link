@@ -68,8 +68,14 @@ export const ACCEPTS: Record<string, readonly string[]> = {
   'target show': ['workspace'],
   'mcp install-instructions': ['client'],
   pair: ['print', 'rotate', 'yes'],
-  'token show': ['show', 'raw'],
-  'token rotate': ['show', 'raw', 'yes'],
+  // `--id` names which row, and is required once more than one is issued.
+  // `--subject`/`--me` say who a new one is for, which is the whole of ADR-068.
+  token: ['json'],
+  'token list': ['json'],
+  'token issue': ['show', 'subject', 'me', 'label'],
+  'token show': ['show', 'raw', 'id'],
+  'token rotate': ['show', 'raw', 'yes', 'id'],
+  'token revoke': ['yes', 'id'],
   'audit tail': ['limit', 'denied-only', 'format'],
   'audit verify': ['limit', 'format'],
   attach: ['connection'],
@@ -77,7 +83,11 @@ export const ACCEPTS: Record<string, readonly string[]> = {
   start: ['port', 'only'],
   'mcp stdio': ['only'],
   'mcp add': ['name', 'scope', 'token-env', 'dry-run', 'force', 'no-skill', 'headless'],
-  'mcp skill': ['print', 'force'],
+  // No `--force`: `mcp skill` prints a path or the document and writes nothing,
+  // so there was nothing for it to force. It was accepted and ignored, which is
+  // the defect `selection.ts` exists to prevent. `mcp add --force` is the flag
+  // that replaces a registration.
+  'mcp skill': ['print'],
   'mcp list': ['name', 'scope'],
   // `--yes` because it installs the app when nothing answers the scheme, and
   // that is the one prompt in this CLI that puts an application on the machine.

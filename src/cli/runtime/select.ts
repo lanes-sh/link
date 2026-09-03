@@ -159,17 +159,5 @@ export async function openBlobStoreFor(
   return area === undefined ? storage() : storage(area);
 }
 
-/** Mint the profile token if it does not exist yet. Returns it either way. */
-export async function ensureProfileToken(
-  credentials: SecretStore,
-  tokenRef: string,
-): Promise<{ token: string; created: boolean }> {
-  const existing = await credentials.get(tokenRef);
-  if (existing) return { token: existing, created: false };
-
-  const token = generateProfileToken();
-  await credentials.set(tokenRef, token);
-  return { token, created: true };
-}
 
 export { ownerPrincipal };

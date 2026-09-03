@@ -83,6 +83,7 @@ Run.
 | [065](065-the-app-provisions-this-cli.md) | The desktop app installs and updates this CLI on its own lifecycle, and a foreign install is replaced rather than argued with |
 | [066](066-a-profile-owns-its-data-again.md) | A profile owns its data again: the bytes go back in front of the connection, and two profiles granting one instance share nothing |
 | [067](067-one-directory-per-profile.md) | One directory per profile, `data/` goes, and a connection id becomes opaque |
+| [068](068-a-credential-names-a-person.md) | A credential names a person, and the profiles follow from that; the endpoint token becomes the workspace's |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 
@@ -287,3 +288,14 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
   the whole of the `connection` enum a model chooses from. An id that half describes its account
   is worse than one that does not. Note also that dropping `data/` does not remove the IAM
   exclusion it existed for; it moves it, and turns a denylist into an allowlist.
+
+- **ADR-068** finishes what ADR-060 started. A credential names a person, and what it reaches
+  follows from the member lists — for the static `llk_` token as well as for an OAuth one. The
+  endpoint token moves from `auth.token_ref` on every profile to `tokens:` on the workspace, which
+  is contract 5.
+
+  The part to read is why every endpoint command was asking for a profile. Not because the
+  endpoint is per-profile — one serves every profile in the workspace — but because the token's
+  ref defaulted to the constant `profile/token`, so finding it meant resolving one. The same
+  constant is why removing a profile once deleted the token its siblings were served by, and the
+  fix is not the survivor check that was added then: the token was never a profile's to declare.

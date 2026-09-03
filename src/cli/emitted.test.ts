@@ -66,10 +66,13 @@ describe('what setup tells someone to run', () => {
 });
 
 describe('what outputs tells someone to run', () => {
-  test('the token command names both, on whichever path it takes', async () => {
-    const invocation = await tokenInvocation('a-token-no-endpoint-will-match', 'work', 'cloud');
+  test('the token command names the workspace, and never a profile', async () => {
+    const invocation = await tokenInvocation('cloud');
 
-    expect(invocation.command).toContain('--profile work');
     expect(invocation.command).toContain('--workspace cloud');
+    // A token is the workspace's since ADR-068 and `token show` refuses
+    // `--profile` outright, so emitting one here would print a line that cannot
+    // be pasted — which is the class of failure this file exists to catch.
+    expect(invocation.command).not.toContain('--profile');
   });
 });

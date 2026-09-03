@@ -63,8 +63,9 @@ function deployed(allowedOrigins: readonly string[]): (request: Request) => Prom
     primary: 'personal',
     authenticator: new BearerAuthenticator({
       profile: 'personal',
-      tokenRef: 'profile/token',
+      tokens: async () => [{ id: 'tok1', subject: 'lanes:harness0000', ref: 'tokens/tok1' }],
       credentials,
+      profilesFor: async () => ['personal'],
     }),
     log,
   });

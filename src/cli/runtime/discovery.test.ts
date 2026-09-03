@@ -27,7 +27,7 @@ import { DISCOVERY_NAMESPACE } from '#stores/state';
 const roots: string[] = [];
 const previousHome = process.env['LANES_LINK_HOME'];
 
-const PROFILE = `contract: 4
+const PROFILE = `contract: 5
 
 instance:
   profile: personal

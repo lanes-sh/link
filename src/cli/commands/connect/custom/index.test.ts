@@ -20,7 +20,7 @@ import { connectCustom, type ConnectCustomOptions } from './index.ts';
  * `check`, whose whole job is catching that, does not read the directory at all.
  */
 
-const PROFILE = `contract: 4
+const PROFILE = `contract: 5
 
 instance:
   profile: personal

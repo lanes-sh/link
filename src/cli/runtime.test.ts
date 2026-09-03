@@ -19,7 +19,7 @@ import { openSecretStoreFor, openRuntime, resolveProfile } from './runtime.ts';
 const roots: string[] = [];
 const previousHome = process.env['LANES_LINK_HOME'];
 
-const PROFILE = `contract: 4
+const PROFILE = `contract: 5
 
 instance:
   profile: personal
@@ -39,7 +39,7 @@ members: []
  * by the workspace that is them — which is exactly the shape this file is here
  * to exercise.
  */
-const TARGETS = `contract: 4
+const TARGETS = `contract: 5
 default_profile: personal
 
 workspaces:

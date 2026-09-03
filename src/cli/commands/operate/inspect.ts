@@ -1,5 +1,5 @@
 import { formatPlan, planIsNoop, planReconcile } from '#registry';
-import type { ConnectionConfig, SelectedConnection } from '#profile';
+import { readEndpointTokens, type ConnectionConfig, type SelectedConnection } from '#profile';
 import { DEFAULT_SURFACES } from '../../config-repair.ts';
 import { announce, announceProfile, emit, fail, ok, print, warn } from '../../output.ts';
 import { staleNudge } from '../../release.ts';
@@ -120,16 +120,27 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
     checks.push('config is valid');
     checks.push('state store is reachable');
 
-    const token = await runtime.credentials.get(runtime.config.auth.token_ref);
-    if (token) {
-      checks.push(`profile token present (${runtime.config.auth.token_ref})`);
-    } else {
-      // Not a failure: `lanes link start` mints one. Reporting it as a problem would
-      // make every fresh profile fail doctor for something that fixes itself.
+    // **A row whose value is missing, not a missing token** (ADR-068). Having
+    // issued none is the healthy default — a client signs in for itself — so
+    // reporting that as a problem would make every working workspace fail
+    // doctor. What is genuinely broken is a row pointing at nothing: it matches
+    // no credential, and from the client's side reads exactly like a wrong
+    // token. That is what a half-finished `secrets push` leaves behind.
+    const issued = await readEndpointTokens(runtime.resolution.workspaceRoot);
+    const orphaned: string[] = [];
+    for (const row of issued) {
+      if ((await runtime.credentials.get(row.ref)) === null) orphaned.push(row.id);
+    }
+
+    if (issued.length > 0 && orphaned.length === 0) {
+      checks.push(`${issued.length} endpoint token(s) present`);
+    }
+
+    for (const id of orphaned) {
       warnings.push({
-        kind: 'no_profile_token',
-        message: 'no profile token yet — lanes link start will mint one, or run: lanes link token rotate',
-        fix: forSelection('lanes link token rotate'),
+        kind: 'orphaned_endpoint_token',
+        message: `token "${id}" has a row but no value in this workspace's store — it matches nothing`,
+        fix: `lanes link token rotate --id ${id} --workspace ${runtime.resolution.target}`,
       });
     }
 

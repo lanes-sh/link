@@ -123,6 +123,14 @@ export {
 } from './registry.ts';
 export { recordTarget, removeTarget } from './deployments.ts';
 export {
+  anyIssuedToken,
+  membersResolver,
+  nextTokenId,
+  readEndpointTokens,
+  tokenRef,
+  type EndpointToken,
+} from './tokens.ts';
+export {
   isRemoteWorkspace,
   readWorkspaceFile,
   workspaceFiles,

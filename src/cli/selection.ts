@@ -145,7 +145,14 @@ export const SELECTION: Record<string, Requires> = {
   // ignored, which is the defect this whole file exists for.
   'connect custom': 'workspace',
   setup: 'profile+workspace',
-  token: 'profile+workspace',
+  // A token belongs to the workspace and names the person it was issued to
+  // (ADR-068). It used to sit at `auth.token_ref` on a profile, whose default
+  // was the same constant for every profile in a store that is one per
+  // workspace — so `--profile` was demanded here and could not change the
+  // answer. These commands refuse it outright rather than accept and ignore it:
+  // somebody passing `--profile work` believes they scoped the credential, and
+  // it is the member lists that decide.
+  token: 'workspace',
   // One chain per workspace since contract 3, so the workspace is the subject
   // and `--profile` filters the rows rather than choosing which log to read.
   audit: 'workspace',
@@ -160,7 +167,14 @@ export const SELECTION: Record<string, Requires> = {
   auth: 'workspace',
   // Target-scoped: see the note above. `--profile` narrows each to one profile.
   status: 'workspace',
-  outputs: 'profile+workspace',
+  // Its subject has always been the endpoint rather than a profile — its own
+  // doc comment said so — and one endpoint serves every profile in the
+  // workspace. It named a profile only to find the endpoint's token. `--profile`
+  // stays accepted and picks whose `instance.port` the local URL names, which
+  // is the one thing profiles can still disagree about here.
+  outputs: 'workspace',
+  // Unlike the two above: this reports what *one profile's* policy resolves to,
+  // beside what the endpoint advertises. The profile is the subject.
   tools: 'profile+workspace',
   // It resolves nothing and opens nothing — it hands macOS a URL (ADR-053).
   // `target list` is the precedent for a `'none'` command that still takes a
@@ -171,8 +185,9 @@ export const SELECTION: Record<string, Requires> = {
   desktop: 'none',
   attach: 'profile+workspace',
   // One endpoint serves every profile in the workspace (ADR-009), so naming one
-  // described a slice of what it does. `--profile` picks the primary, whose
-  // token opens it, and `--only` is what narrows what is served.
+  // described a slice of what it does. `--profile` picks the primary — which is
+  // now only whose host and port it binds, since the token stopped being a
+  // profile's (ADR-068) — and `--only` is what narrows what is served.
   start: 'workspace',
   deploy: 'workspace',
   // Both spellings: `sync` alone is `sync targets`, which is the only thing
@@ -193,14 +208,24 @@ export const SELECTION: Record<string, Requires> = {
   // which profile was a question with no answer. `--profile` still narrows, and
   // is how a port is chosen when profiles disagree about one.
   pair: 'workspace',
-  'token show': 'profile+workspace',
-  'token rotate': 'profile+workspace',
+  'token show': 'workspace',
+  'token rotate': 'workspace',
+  'token issue': 'workspace',
+  'token list': 'workspace',
+  'token revoke': 'workspace',
   'audit tail': 'workspace',
   'audit verify': 'workspace',
   'secrets set': 'workspace',
   'secrets list': 'workspace',
-  'mcp add': 'profile+workspace',
-  'mcp stdio': 'profile+workspace',
+  // One registration serves every profile, and each call names one in its
+  // `profile` argument — so two `--profile` values produced byte-identical
+  // harness commands. What kept the flag required was reading the endpoint's
+  // token, which is the workspace's now (ADR-068). `--profile` still picks
+  // whose port the local URL names.
+  'mcp add': 'workspace',
+  // Matches `start`, which it is: the pipe serves every profile in the
+  // workspace and `--only` is what narrows that to one.
+  'mcp stdio': 'workspace',
   memory: 'profile+workspace',
   tasks: 'profile+workspace',
   assets: 'profile+workspace',
@@ -230,7 +255,7 @@ const SUBCOMMANDS: Record<string, readonly string[]> = {
   target: ['list', 'use', 'show'],
   policy: ['list', 'allow', 'deny'],
   identity: ['add', 'list', 'remove'],
-  token: ['show', 'rotate'],
+  token: ['show', 'rotate', 'issue', 'list', 'revoke'],
   audit: ['tail', 'verify'],
   config: ['show'],
   setup: ['plan'],
@@ -242,7 +267,12 @@ const SUBCOMMANDS: Record<string, readonly string[]> = {
   // No `list`: a bare `entities` is a listing, which is `find` with no
   // criteria. One concept, one word.
   entities: ['find', 'get', 'write', 'link', 'forget', 'reindex'],
-  mcp: ['skill', 'add', 'stdio', 'list'],
+  // `install-instructions` was absent, which is not cosmetic: `dispatchWillRefuse`
+  // returns true for a second word it does not know, and both `assertKnownFlags`
+  // and `requireSelection` then return early — so `mcp install-instructions
+  // --bogus` was accepted and ignored, which is the defect this whole file
+  // exists to prevent.
+  mcp: ['skill', 'add', 'stdio', 'list', 'install-instructions'],
   secrets: ['push', 'set', 'list'],
   knowledge: ['show', 'use'],
   sync: ['targets', 'workspaces'],

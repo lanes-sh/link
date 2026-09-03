@@ -146,7 +146,7 @@ Credentials follow the target, because each target has its own credential store.
 ### Example (`config/personal.example.yaml`)
 
 ```yaml
-contract: 4
+contract: 5
 
 instance:
   profile: personal
@@ -185,11 +185,12 @@ grants:
 members:
   - { subject: lanes:SUBJECT, role: owner }
 
-# The bearer token is for CI. A person signs in instead: a client that asks for
+# No token here. A profile declares no endpoint credential (ADR-068): the
+# workspace does, in "tokens:" in connections.yaml, one row per person one was
+# issued to. A person signs in rather than holding one — a client that asks for
 # authorization is sent to the Lanes login and comes back as somebody (ADR-062).
 auth:
   mode: bearer
-  token_ref: profile/token
   authorization:
     mode: self
 ```
@@ -197,7 +198,7 @@ auth:
 ### Example (`connections.yaml`)
 
 ```yaml
-contract: 4
+contract: 5
 
 # One entry per authorised account. "account" is the identity the provider
 # reports, resolved at connect time, and the id derives from it — so this list
@@ -224,6 +225,14 @@ oauth_apps:
   google:
     client_id_ref: google/client_id
     client_secret_ref: google/client_secret
+
+# Static endpoint tokens, one row per person one was issued to (ADR-068). Empty
+# is the ordinary state: a client registers against the bare URL and signs in,
+# so nothing needs one until something headless does. A row reaches whatever its
+# subject is a member of — never more, which is what "the token is an identity"
+# means in practice.
+tokens:
+  - { id: tok1, subject: lanes:SUBJECT, ref: tokens/tok1, label: ci }
 ```
 
 A rule names a capability of its row's own provider: `gmail.*` covers everything Gmail offers *for

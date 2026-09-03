@@ -27,7 +27,7 @@ export function newProfileTemplate(profile: string, port: number, subject?: stri
 #
 # Edit it by hand or through the CLI; both are supported, and CLI edits preserve
 # your comments and ordering.
-contract: 4
+contract: 5
 
 instance:
   profile: ${profile}
@@ -47,12 +47,13 @@ instance:
 #
 #     lanes link status --profile ${profile} --workspace <name>
 #
-# The bearer token below is for CI. People sign in instead: a client that asks
-# for authorization is sent to the Lanes login, and comes back as somebody
-# (ADR-062). "lanes link token show" is for a runner with no browser.
+# No token here. A profile declares no endpoint credential (ADR-068) — the
+# workspace does, in "tokens:" in connections.yaml, one row per person it was
+# issued to. People sign in rather than holding one: a client that asks for
+# authorization is sent to the Lanes login and comes back as somebody
+# (ADR-062). "lanes link token issue" is for a runner with no browser.
 auth:
   mode: bearer
-  token_ref: profile/token
   authorization:
     mode: self
 
@@ -146,7 +147,7 @@ export function newWorkspaceTemplate(): string {
 # uses it prints which one it got. Commands that publish or destroy — deploy,
 # sync, secrets push, profile remove, disconnect, token rotate — refuse it and
 # make you type the name (ADR-061).
-contract: 4
+contract: 5
 default_workspace: local
 workspaces:
   local:
@@ -182,7 +183,7 @@ export function newConnectionsTemplate(): string {
 # still keeps its own bytes — what you write through one profile is absent in
 # another (ADR-066). A second instance is for holding two of something in one
 # profile: "lanes link connect lanes_memory --id lan9".
-contract: 4
+contract: 5
 
 connections:
   - { id: lan1, provider: lanes_memory, account: Memory }
@@ -195,6 +196,12 @@ connections:
 
 # App registrations, shared by every connection of that vendor.
 oauth_apps: {}
+
+# Static endpoint tokens, one row per person one was issued to (ADR-068). Empty
+# is the ordinary state: a client registers against the bare URL and signs in,
+# so nothing needs one until something headless does. A row reaches whatever its
+# subject is a member of — "lanes link token issue --me --workspace <name>".
+tokens: []
 `;
 }
 

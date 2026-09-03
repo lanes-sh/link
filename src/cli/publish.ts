@@ -1,5 +1,5 @@
 import type { SecretStore } from '#secrets';
-import { openTarget, type Config } from '#profile';
+import { anyIssuedToken, openTarget, type Config } from '#profile';
 import { publishWorkspace } from '#deployments/upload.ts';
 import { openSecretStoreFor, type Runtime } from './runtime.ts';
 import { endpointUrl } from './endpoint-url.ts';
@@ -131,14 +131,23 @@ async function notifyReload(input: {
     return { served: false, reason: `could not work out where the endpoint is: ${message(error)}` };
   }
 
-  const token = await input.credentials.get(input.config.auth.token_ref);
-  if (!token) {
+  // Any row the workspace holds (ADR-068). Which one is not a choice worth
+  // making here: this is the operator's own command reaching the operator's own
+  // endpoint, and `/reload` cares that the caller is authenticated rather than
+  // who they are.
+  const held = await anyIssuedToken(input.workspaceRoot, input.credentials);
+  if (!held) {
     return {
       served: false,
       url,
-      reason: `no profile token at "${input.config.auth.token_ref}" to authenticate with`,
+      // Not a failure to fix in most cases, which is why it reads as a reason
+      // rather than an error. An endpoint serving browser clients needs no
+      // static token; what it costs is that a config change is picked up on the
+      // next reconcile instead of immediately.
+      reason: 'no static token is issued in this workspace, so the endpoint cannot be notified',
     };
   }
+  const token = held.value;
 
   try {
     const response = await fetch(url, {

@@ -346,9 +346,11 @@ changed, so a capability for a freshly connected account is not callable until
 the client reconnects. Say that, rather than reporting the connection as missing
 or asking them to connect again.
 
-One exception, and it is the one that matters here: the authenticator is built
-once at boot and is not re-read, so a `lanes link token rotate` does need the
-endpoint restarted before the new token opens anything.
+One exception used to be here — that a `token rotate` needed the endpoint
+restarted. It does not: the authenticator re-reads both the issued rows and
+their values on a seconds-long cache window, so `token issue`, `token rotate`
+and `token revoke` all take effect on a running endpoint. So does a change to a
+profile's `members:`, which is what decides where a token reaches.
 
 ## Operating the workspace
 
@@ -413,17 +415,35 @@ in the workspace and could be given it. Somebody with an unaccepted invitation
 has no subject yet, so they are listed, marked, and refused; the answer there is
 for them to accept, not for anyone to invent a subject.
 
-Removing somebody does not end a session they already hold: membership is read
-when a token is minted. Rotating the endpoint token closes that
-window now, and it names both flags: `lanes link token rotate --profile <name>
---workspace <name>`.
+Removing somebody does not end a browser session they already hold: membership
+is read when that token is minted. A **static** token is different — its
+membership is resolved on every call, so removing somebody takes effect within
+seconds for anything holding one.
 
-**A client is not given a token any more.** `lanes link mcp add` registers the
-bare URL, and the client discovers the endpoint, sends its owner to sign in, and
-comes back with a token of its own. The static token is for CI, which has no
-browser, and `--headless` is what writes it into a registration. If you are
-writing a registration command for somebody, do not add an `Authorization`
-header: it is no longer how a client connects.
+**A credential is an identity, not a selection.** Whether it arrived through a
+browser sign-in or is a static `llk_` token, it names a person, and what it
+reaches is every profile whose `members:` lists that person. There is nothing to
+scope at registration time and nothing to scope at deploy time; the member lists
+are the whole mechanism. `lanes link token show`, `rotate` and `revoke` refuse
+`--profile` outright rather than accept and ignore it.
+
+**A client is not given a token any more.** `lanes link mcp add --workspace
+<name>` registers the bare URL — no `--profile`, because one endpoint serves
+every profile and each call names one in its `profile` argument. The client
+discovers the endpoint, sends its owner to sign in, and comes back with a token
+of its own. If you are writing a registration command for somebody, do not add
+an `Authorization` header: it is no longer how a client connects.
+
+**For a runner with no browser**, issue one and say who it is for:
+
+```
+lanes link token issue --me --workspace <name>
+lanes link token list --workspace <name>
+```
+
+`--headless` on `mcp add` is what writes such a token into a registration. A
+workspace that has issued none is the ordinary healthy state, and `start` and
+`deploy` no longer mint or demand one.
 
 ## Deploying, and what it decides
 
@@ -437,14 +457,16 @@ resources that cost money, it implements no `--json` to inspect instead, and tha
 plan is the only place the consequences are visible while they are still
 avoidable.
 
-Two things it refuses to guess, and both are the owner's to answer:
+One thing it refuses to guess, and it is the owner's to answer:
 
-- **Whose bearer token opens the endpoint.** One token reaches every profile
-  behind that workspace, so this decides who gets in. With several candidates and
-  nothing recorded, it refuses and prints the command that names one.
 - **A first deploy.** A workspace that does not exist yet has nothing to derive
   a set from, so `--profile` is required there. It may be repeated, and the first
-  one named is the primary.
+  one named is the primary — which now decides only which profile's host and
+  port the endpoint binds, not who gets in.
+
+It used to refuse a second thing — *whose bearer token opens the endpoint* — and
+that question no longer has a subject. A token names a person and reaches what
+they are a member of, so there is no per-deploy choice of who gets in.
 
 **Never pass `--yes`, `--non-interactive`, `--access public` or
 `--service-account` yourself.** Each settles a question about who can reach their
@@ -474,45 +496,47 @@ existed in two copies that could disagree, and there is one copy now.
 
 ## Registering it, and re-registering it
 
-`lanes link mcp add --profile <name> --workspace <name>` runs each harness's own registration command and installs
-this skill where that harness keeps them. With no argument it does every harness
-installed; name one (`claude`, `codex`) to be specific. Run it again after
-`lanes link token rotate --profile <name> --workspace <name>` — add `--force`, since Claude Code stores the token as
-a value rather than a command.
+`lanes link mcp add --workspace <name>` runs each harness's own registration
+command and installs this skill where that harness keeps them. With no argument
+it does every harness installed; name one (`claude`, `codex`) to be specific.
 
-**Never paste the token.** There is a right way and a wrong way, and the
-difference matters:
+**It names no profile, and adding one changes nothing about who gets in.** One
+endpoint serves every profile in the workspace and each call names one in its
+`profile` argument, so a registration was never per-profile. What a client
+reaches is decided when its owner signs in: every profile whose `members:` lists
+them.
 
-```bash
-# RIGHT — the token goes from the CLI to the harness. You never see it.
-claude mcp add --transport http lanes-link http://127.0.0.1:7337/mcp \
-  --header "Authorization: Bearer $(lanes link token show --raw --profile <name> --workspace <name>)"
-
-# WRONG — the token is now in your context, and in the transcript, forever.
-lanes link token show --show          # then copying the value into the command
-```
-
-The token reaches every account of every profile the endpoint serves. Use the
-substitution form. If you have already printed one by accident, say so and offer
-`lanes link token rotate --profile <name> --workspace <name>`.
-
-Prefer `lanes link mcp add --profile <name> --workspace <name>` to writing the command yourself: it checks the
-endpoint is reachable, refuses to silently shadow an existing registration, and
-cannot mistype the token. For a harness it does not know, take the command from
-`lanes link outputs --profile <name> --workspace <name>` rather than writing it blind — that command checks whether
-`lanes` resolves on this machine and prints a longer working form if it does
-not, where guessing gives you an empty substitution, a `Bearer ` header, and a
-401 that reads as a bad token.
-
-If you register Codex, tell the user to export the token — Codex stores only the
-variable name, so nothing works until it is set:
+**Do not write an `Authorization` header.** The registration is a bare URL:
 
 ```bash
-export LANES_LINK_TOKEN="$(lanes link token show --raw --profile <name> --workspace <name>)"
+claude mcp add --transport http lanes-link http://127.0.0.1:7337/mcp
 ```
+
+The client reads this endpoint's protected-resource document, sends its owner to
+sign in, and comes back holding a token of its own. That is why a re-registration
+is not needed after a rotate, and why a harness config in a dotfiles repository
+is not a leak.
+
+**A static token is CI's, and it belongs to a person.** For a runner with no
+browser, issue one and let the shell substitute it — never paste it, because a
+pasted token passes through the agent's context and into the transcript:
+
+```bash
+lanes link token issue --me --workspace <name>
+export LANES_LINK_TOKEN="$(lanes link token show --raw --workspace <name>)"
+```
+
+`--headless` on `mcp add` writes such a token into a registration. If you have
+printed one by accident, say so and offer `lanes link token rotate --workspace
+<name>` — no `--profile`, which those commands refuse.
+
+Prefer `lanes link mcp add --workspace <name>` to writing the command yourself:
+it checks the endpoint is reachable and refuses to silently shadow an existing
+registration. For a harness it does not know, take the command from `lanes link
+outputs --workspace <name>` rather than writing it blind.
 
 One registration covers every profile. Do not add one per profile; they share a
-URL and a token.
+URL.
 
 `lanes link mcp list` needs neither flag and reports whether the registration and
 this document are current, out of date, or absent. That is the cheap first
@@ -521,8 +545,9 @@ copy means the rules you are reading are not the ones that shipped.
 
 Claude Desktop cannot be handed a URL, so it spawns the endpoint over stdio
 instead. That one is named in the client's own config file rather than registered
-by a command, as `lanes link mcp stdio --profile <name> --workspace <name>`; both
-flags are required, and nothing may be written to stdout.
+by a command, as `lanes link mcp stdio --workspace <name>`; the workspace is
+required, `--only --profile <name>` narrows what it serves, and nothing may be
+written to stdout.
 
 ## When it is not running
 

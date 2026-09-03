@@ -19,7 +19,7 @@ const roots: string[] = [];
 const previousHome = process.env['LANES_LINK_HOME'];
 const previousTarget = process.env['LANES_LINK_TARGET'];
 
-const PROFILE = `contract: 4
+const PROFILE = `contract: 5
 
 instance:
   profile: personal
@@ -35,7 +35,7 @@ instance:
  * once per profile (ADR-052). `cloud` deploys and `staging` does not, which is
  * the distinction the listing below is about.
  */
-const TARGETS = `contract: 4
+const TARGETS = `contract: 5
 default_profile: personal
 
 workspaces:
@@ -206,7 +206,7 @@ describe('a pointer, which is what a deployed target looks like from here', () =
     const { root, env } = await workspace();
     await writeFile(
       join(root, 'workspaces.yaml'),
-      `contract: 4
+      `contract: 5
 
 workspaces:
   cloud:
