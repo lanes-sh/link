@@ -24,6 +24,10 @@ Work lands by pull request into `develop`, squashed — `gh pr merge <n> --squas
 Both `develop` and `main` require a passing `ci` and an approval, so a solo merge adds `--admin`.
 The one pull request that is not squashed is the release; see below.
 
+**No Claude session links in pull requests.** Do not append a `https://claude.ai/code/session_…`
+URL, or a "Generated with Claude Code" footer, to a pull request body. This repository is public
+and the link is noise to everyone reading it. The `Co-Authored-By` trailer on commits is fine.
+
 ## Never run `lanes link` from a worktree without `LANES_LINK_HOME`
 
 `resolveWorkspaceRoot` (`src/profile/workspace.ts`) checks `LANES_LINK_HOME`, then
