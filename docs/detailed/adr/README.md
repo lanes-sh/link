@@ -84,6 +84,7 @@ Run.
 | [066](066-a-profile-owns-its-data-again.md) | A profile owns its data again: the bytes go back in front of the connection, and two profiles granting one instance share nothing |
 | [067](067-one-directory-per-profile.md) | One directory per profile, `data/` goes, and a connection id becomes opaque |
 | [068](068-a-credential-names-a-person.md) | A credential names a person, and the profiles follow from that; the endpoint token becomes the workspace's |
+| [069](069-a-pairing-token-may-write-the-owners-own-data.md) | A pairing token may write the owner's own data; the control plane is unmoved |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 
@@ -299,3 +300,15 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
   ref defaulted to the constant `profile/token`, so finding it meant resolving one. The same
   constant is why removing a profile once deleted the token its siblings were served by, and the
   fix is not the survivor check that was added then: the token was never a profile's to declare.
+
+- **ADR-069** narrows ADR-063 rather than reversing it. The pairing token reads and writes the
+  owner's own data — memory, tasks, assets, skills and entities — and still cannot reach a
+  connection, a profile, a grant, a token, the configuration, the audit log, or a vault value.
+
+  The part to read is the sentence being narrowed. ADR-063 said "reads only, ever" and argued it
+  from *editing a connection or a profile*, which is configuration and which ADR-007 excludes
+  because it authorises future agent behaviour. Writing a memory entry authorises nothing, the
+  owner layer arrives granted for that reason (ADR-050), and every connected agent already writes
+  these five stores. What genuinely changes is that a credential which could read every memory
+  entry can now delete them, including one minted before this release, which is why the cost is
+  named in the CLI's own prompt rather than only here.

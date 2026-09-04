@@ -4,6 +4,7 @@ import type { Runtime } from '#cli/runtime.ts';
 import type { Logger } from '#connectivity';
 import type { RunningServer } from '../index.ts';
 import type { ProfileRuntime } from '../mcp/visibility.ts';
+import type { DataSurface } from '#cli/owner-data/surface.ts';
 import { directPairingCredential } from './credential.ts';
 import { serveRead, type RunningReadListener } from './listener.ts';
 
@@ -27,6 +28,7 @@ export async function openReadListener(
   profiles: () => ReadonlyMap<string, ProfileRuntime>,
   log: Logger,
   version: string,
+  data?: DataSurface | undefined,
 ): Promise<RunningReadListener | null> {
   // Loopback only, and checked before a single credential is read.
   //
@@ -77,6 +79,7 @@ export async function openReadListener(
         onError: (reason) => log.warn('could not read the pairing credential', { reason }),
       }),
       endpoint: { kind: 'local', version, certificateExpiresAt: expiryOf(cert) },
+      ...(data ? { data } : {}),
       tls: { cert, key },
     });
   } catch (error) {

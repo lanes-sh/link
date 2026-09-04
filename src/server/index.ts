@@ -4,7 +4,7 @@ import { capabilityIdForToolName } from '#server/mcp';
 import { ATTACHMENTS_PATH, handleAttachments } from './attachments.ts';
 import { allowedHostnamesFor, rebindingRefusal } from './rebinding.ts';
 import { ANY_ORIGIN, corsAware, type CorsPolicy } from './cors.ts';
-import { isReadPath, readRoutes, type ReadDeps } from './read/routes.ts';
+import { isPairedPath, readRoutes, type ReadDeps } from './read/routes.ts';
 import type { Generation } from './generation.ts';
 import type { Generations } from './generations.ts';
 import {
@@ -166,7 +166,7 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
           healthPath: HEALTH_PATH,
           isAuthorizationPath,
           authorizationEnabled: options.authorization !== undefined,
-          isReadPath,
+          isPairedPath,
           readEnabled: options.read !== undefined,
         });
         if (refusal) {
@@ -206,9 +206,9 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
       // different credential for a different surface, and one shared check
       // would make each able to do the other's job (ADR-063). Below the meter,
       // because verifying one costs a credential-store read. Only what
-      // `isReadPath` matched is handed over — `readRoutes` answers everything
+      // `isPairedPath` matched is handed over — `readRoutes` answers everything
       // it is given, so a wider hand-off would swallow `/mcp`.
-      if (options.read && isReadPath(url.pathname)) {
+      if (options.read && isPairedPath(url.pathname)) {
         return await readRoutes(request, options.read);
       }
 
