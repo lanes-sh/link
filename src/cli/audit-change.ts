@@ -122,6 +122,114 @@ export async function recordConfigChange(
   }
 }
 
+
+/**
+ * The vocabulary a data change is recorded under.
+ *
+ * Not a `config.*` name, and not a new one either: these are the capabilities
+ * an agent would have called to make the same change over MCP. A memory entry
+ * edited from the dashboard and one written by a connected client are the same
+ * event about the same bytes, so they carry the same capability and one filter
+ * over the log finds both (ADR-069).
+ *
+ * Closed, for the reason `CONFIG_CAPABILITIES` is closed: the log's value is
+ * that its vocabulary is small enough to know.
+ */
+export const DATA_CAPABILITIES = [
+  'memory.write',
+  'memory.forget',
+  'tasks.add',
+  'tasks.remove',
+  'assets.store',
+  'assets.remove',
+  'skills.manage.write',
+  'skills.manage.remove',
+  'entities.write',
+  'entities.forget',
+] as const;
+
+export type DataCapability = (typeof DATA_CAPABILITIES)[number];
+
+export interface DataChange {
+  readonly capability: DataCapability;
+  /** The owner-layer provider whose store changed, e.g. `lanes_memory`. */
+  readonly provider: string;
+  /** `<provider>.<id>`, so a row can be traced to the store it touched. */
+  readonly connection: string;
+  /**
+   * Identifiers and shape, never the document.
+   *
+   * A write log that recorded the content would be a second copy of the thing
+   * it describes, kept somewhere with different retention. What belongs here is
+   * what changed and how much of it: the id, the store, the byte length,
+   * whether something was replaced.
+   */
+  readonly arguments: Readonly<Record<string, unknown>>;
+}
+
+/**
+ * What the paired browser did to the owner's own data.
+ *
+ * The same sink and the same event shape as a config change, and for the same
+ * reason: a change and the calls around it are one story and belong in one
+ * chain. What differs is the provider and the principal. `provider` is the
+ * owner-layer provider that owns the bytes rather than the `config`
+ * pseudo-provider, because unlike a policy edit this really is an operation on
+ * a store an agent can also reach.
+ *
+ * `principal` is the caller's to supply and is not the CLI session: a pairing
+ * token authenticates the owner at a browser, and attributing its writes to
+ * whoever last signed in at this terminal would be a guess presented as a fact.
+ *
+ * **Failing to log never fails the write**, which is `recordConfigChange`'s
+ * rule and is right for the same reason: the bytes are already on the store by
+ * the time this is called, and reporting failure for something that succeeded
+ * leaves the operator to work out which half happened.
+ */
+export async function recordDataChange(
+  runtime: {
+    readonly config: Config;
+    readonly resolution: { readonly workspaceRoot: string };
+    readonly target: string;
+  },
+  principal: string,
+  change: DataChange,
+  warn?: (message: string) => void,
+): Promise<void> {
+  const root = runtime.resolution.workspaceRoot;
+
+  try {
+    const resolved = await openTarget(root, runtime.target);
+    const input = {
+      declared: resolved.declared,
+      config: runtime.config,
+      root: resolved.workspaceRoot,
+      target: runtime.target,
+    };
+    const audit = openAudit(await openStorage(input, await openSecrets(input)));
+
+    try {
+      await audit.append({
+        profile: runtime.config.instance.profile,
+        principal,
+        provider: change.provider,
+        connection: change.connection,
+        capability: change.capability,
+        arguments: change.arguments,
+        // Written after the bytes are on the store, so there is no denied case
+        // to record and no duration worth measuring.
+        authorization: 'allowed',
+        status: 'ok',
+        durationMs: 0,
+      });
+    } finally {
+      await audit.close();
+    }
+  } catch (error) {
+    warn?.(`the change was made but not recorded in the audit log: ${message(error)}`);
+  }
+}
+
 /**
  * Who made the change.
  *

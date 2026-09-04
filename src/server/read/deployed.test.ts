@@ -197,7 +197,12 @@ describe('never ambient', () => {
   });
 });
 
-describe('reads only, ever', () => {
+describe('the control plane is still unreachable', () => {
+  // The block was `reads only, ever` until ADR-069 gave a pairing token the
+  // owner's own data. What it asserted about *these* paths did not change and
+  // must not: `/state` and `/audit` are reads, and everything the control plane
+  // owns is unreachable from here in either direction. `read/data.test.ts`
+  // holds the other half.
   test('a write to a read path is not found rather than not allowed', async () => {
     const response = await deployed(readDeps())(
       new Request('https://endpoint.example/state', {
@@ -211,10 +216,13 @@ describe('reads only, ever', () => {
     expect(response.status).toBe(404);
   });
 
-  test('the surface is exactly two paths', async () => {
-    const response = await deployed(readDeps())(paired('/connections'));
-
-    expect(response.status).toBe(404);
+  test('nothing the control plane owns is a path here', async () => {
+    // Each of these is a thing ADR-007 keeps in the CLI. None of them gained a
+    // route when `/data` did, and a pairing token reaches none of them.
+    for (const path of ['/connections', '/profiles', '/policy', '/tokens', '/config']) {
+      const response = await deployed(readDeps())(paired(path));
+      expect(response.status).toBe(404);
+    }
   });
 });
 

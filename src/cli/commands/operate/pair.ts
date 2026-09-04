@@ -21,9 +21,18 @@ import { openSecretStoreFor, type GlobalFlags } from '../../runtime.ts';
  * `lanes link pair` — let the Lanes dashboard read this machine (ADR-063).
  *
  * Three things, and each is the operator's to decline. It installs a locally
- * trusted certificate, mints a credential that reads the whole workspace, and
- * hands the browser a link carrying it. None of that happens without being
- * asked for, and none of it is implied by `start`.
+ * trusted certificate, mints a credential that reads the whole workspace and
+ * writes the owner's own data in it, and hands the browser a link carrying it.
+ * None of that happens without being asked for, and none of it is implied by
+ * `start`.
+ *
+ * **The credential is not read-only, since ADR-069.** It edits and deletes
+ * memory, tasks, assets, skills and entities, in every profile the workspace
+ * holds, and it still reaches no connection, token, policy rule, configuration
+ * or vault value. That is a widening of something a year of notes calls a read,
+ * so the paragraph this command prints says it before the operator answers —
+ * and a token minted before that release gains it silently, which is the reason
+ * saying it here is not decoration.
  *
  * **The certificate is the largest side effect any command in this CLI has.**
  * It is a persistent change to the machine's trust store, made by a CLI, and
@@ -193,7 +202,10 @@ export async function pair(flags: PairFlags, deps: PairDeps = {}): Promise<void>
       '      Open that in a browser on this machine. The token is in the URL fragment,\n' +
         '      so it never reaches a Lanes server.\n' +
         '      It reads every connection, profile and audit entry in this workspace, and\n' +
-        '      can change nothing. Take it back with: lanes link pair --rotate\n' +
+        '      can edit and delete your memory, tasks, files, skills and entities in every\n' +
+        '      profile here. It changes no connection, token, policy rule or configuration,\n' +
+        '      and never reads a vault value.\n' +
+        '      Take it back with: lanes link pair --rotate\n' +
         '\n' +
         `      The endpoint has to be running: lanes link start --workspace ${target}`,
     ),
@@ -282,7 +294,10 @@ async function pairDeployed(input: {
       '      Open that in any browser, on any machine. The token is in the URL fragment,\n' +
         '      so it never reaches a Lanes server.\n' +
         '      It reads every connection, profile and audit entry in this workspace, and\n' +
-        '      can change nothing. Take it back with:\n' +
+        '      can edit and delete your memory, tasks, files, skills and entities in every\n' +
+        '      profile here. It changes no connection, token, policy rule or configuration,\n' +
+        '      and never reads a vault value.\n' +
+        '      Take it back with:\n' +
         `        lanes link pair --workspace ${target} --rotate\n` +
         '\n' +
         '      A rotation takes up to five seconds to be refused, because the endpoint\n' +

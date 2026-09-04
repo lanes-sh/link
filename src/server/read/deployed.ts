@@ -4,6 +4,7 @@ import type { Logger } from '#connectivity';
 import type { ProfileRuntime } from '../mcp/visibility.ts';
 import { cachedPairingCredential } from './credential.ts';
 import type { ReadDeps } from './routes.ts';
+import type { DataSurface } from '#cli/owner-data/surface.ts';
 
 /**
  * The same read surface, on a deployed endpoint's own port (ADR-064).
@@ -31,6 +32,8 @@ export function deployedReadDeps(input: {
   readonly profiles: () => ReadonlyMap<string, ProfileRuntime>;
   readonly log: Logger;
   readonly version: string;
+  /** The owner's data, when the endpoint wired it. Absent means `/data` is a 404. */
+  readonly data?: DataSurface | undefined;
 }): ReadDeps {
   const { primary, log } = input;
 
@@ -55,6 +58,7 @@ export function deployedReadDeps(input: {
       onError: (reason) => log.warn('could not read the pairing credential', { reason }),
     }),
     endpoint: { kind: 'deployed', version: input.version, certificateExpiresAt: null },
+    ...(input.data ? { data: input.data } : {}),
     log,
   };
 }
