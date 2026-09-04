@@ -4,8 +4,9 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { isResourceListResult, isResourceResult, isToolResult } from '#connectivity';
 import { assetsProvider } from './provider.ts';
-import { isTextual } from './store.ts';
+import { assetStorage, isTextual } from './store.ts';
 import { harnessFor, linksOf, textOf } from '../harness.ts';
+import { createMemoryBlobStore } from '#stores/blobs/testing.ts';
 
 /**
  * Assets.
@@ -233,5 +234,46 @@ describe('reading and writing are different capabilities', () => {
 
     expect(write?.default).toBeFalsy();
     expect(write?.capabilities.sort()).toEqual(['remove', 'store']);
+  });
+});
+
+describe('a store that does not know the type', () => {
+  test('an octet-stream from the store is re-read from the extension', async () => {
+    // What a bucket hands back for a file uploaded without a content type, and
+    // the reason a markdown asset on a deployed workspace was described instead
+    // of returned. `??` never fired, because the store did give a value: it
+    // just was not a claim about the bytes.
+    const storage = createMemoryBlobStore();
+    await storage.put('notes.md', new TextEncoder().encode('# Notes\n'), {
+      contentType: 'application/octet-stream',
+    });
+
+    const asset = await assetStorage.find(storage, 'notes.md');
+    expect(asset?.contentType).toBe('text/markdown');
+    expect(assetStorage.isTextual(asset!.contentType, new TextEncoder().encode('# Notes\n'))).toBe(
+      true,
+    );
+  });
+
+  test('a real declaration is still believed over the extension', async () => {
+    const storage = createMemoryBlobStore();
+    await storage.put('report.md', new Uint8Array([0x25, 0x50, 0x44, 0x46]), {
+      contentType: 'application/pdf',
+    });
+
+    // The store knows something the name does not, and it wins.
+    expect((await assetStorage.find(storage, 'report.md'))?.contentType).toBe('application/pdf');
+  });
+
+  test('an extension nobody recognises lands where it started', async () => {
+    const storage = createMemoryBlobStore();
+    await storage.put('thing.qqq', new Uint8Array([1, 2, 3]), {
+      contentType: 'application/octet-stream',
+    });
+
+    // Re-guessing is free here: `guessContentType` falls back to the same value.
+    expect((await assetStorage.find(storage, 'thing.qqq'))?.contentType).toBe(
+      'application/octet-stream',
+    );
   });
 });
