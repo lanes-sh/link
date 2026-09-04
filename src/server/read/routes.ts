@@ -1,6 +1,9 @@
 import type { Logger } from '#connectivity';
 import type { ProfileRuntime } from '../mcp/visibility.ts';
 import type { PairingCredential } from './credential.ts';
+import { bearer, cors, json } from './http.ts';
+import { dataRoutes, isDataPath, DATA_HEADERS, DATA_METHODS } from './data.ts';
+import type { DataSurface } from '#cli/owner-data/surface.ts';
 import {
   readState,
   type ConnectionRow,
@@ -56,6 +59,18 @@ export const AUDIT_PATH = '/audit';
  */
 export function isReadPath(pathname: string): boolean {
   return pathname === STATE_PATH || pathname === AUDIT_PATH;
+}
+
+/**
+ * Everything a pairing token may reach, which is what the router hands over.
+ *
+ * A second predicate rather than widening `isReadPath`, because that one still
+ * has a job: it names the two paths that are reads and nothing else, and a
+ * predicate called "read" gating a `DELETE` would be the kind of quiet
+ * disagreement between a name and a behaviour this file exists to prevent.
+ */
+export function isPairedPath(pathname: string): boolean {
+  return isReadPath(pathname) || isDataPath(pathname);
 }
 
 /** The most entries `/audit` will return, however many are asked for. */
@@ -115,6 +130,17 @@ export interface ReadDeps {
   readonly providerName?: ProviderNames | undefined;
   /** What this endpoint says about itself. Fixed for the life of the bind. */
   readonly endpoint: ReadEndpoint;
+  /**
+   * The owner's own data, when this endpoint opened runtimes that can reach it.
+   *
+   * Narrow on purpose, and satisfied under `cli` — the only component allowed
+   * to touch both a store and the log. `server` may import neither, so this is
+   * the same seam `AuditTail` above keeps, for the same reason (ADR-069).
+   *
+   * Optional because a harness may omit it. Absent, `/data` is a `404` and
+   * every other path behaves exactly as it did before this surface existed.
+   */
+  readonly data?: DataSurface | undefined;
   readonly allowedOrigins?: readonly string[] | undefined;
   readonly log?: Logger | undefined;
 }
@@ -131,24 +157,39 @@ export async function readRoutes(request: Request, deps: ReadDeps): Promise<Resp
   const origins = deps.allowedOrigins ?? READ_ORIGINS;
   const origin = request.headers.get('origin');
   const allowed = origin !== null && origins.includes(origin);
+  const url = new URL(request.url);
+
+  // Whether this request is for the surface that may write (ADR-069), decided
+  // once. `deps.data` absent means no data surface at all — an endpoint whose
+  // runtimes were never wired answers these paths exactly as it answers an
+  // unknown one, which is the same shape as an unpaired workspace and needs no
+  // second code path.
+  const writable = deps.data !== undefined && isDataPath(url.pathname);
+  const methods = writable ? DATA_METHODS : 'GET, OPTIONS';
+  const permitted = (headers = 'authorization'): Record<string, string> =>
+    cors(origin, allowed, methods, headers);
 
   // Answered before the credential is checked, because a preflight carries no
   // credential — that is what it is for. It carries no data either, so
   // answering one reveals only that something is listening, which the TCP
   // connection already revealed.
   if (request.method === 'OPTIONS') {
-    return new Response(null, { status: allowed ? 204 : 403, headers: cors(origin, allowed) });
+    return new Response(null, {
+      status: allowed ? 204 : 403,
+      headers: permitted(writable ? DATA_HEADERS : undefined),
+    });
   }
 
   // Not `405`. A surface that answered "method not allowed" would be confirming
   // to any page that a Lanes read surface is here; a page that is not the
-  // dashboard learns nothing it did not send.
-  if (request.method !== 'GET') {
-    return json({ error: 'not_found' }, 404, cors(origin, allowed));
+  // dashboard learns nothing it did not send. `/state` and `/audit` are still
+  // reads only: the widening below is scoped to the paths `isDataPath` matched.
+  if (request.method !== 'GET' && !(writable && DATA_METHODS.includes(request.method))) {
+    return json({ error: 'not_found' }, 404, permitted());
   }
 
   if (origin !== null && !allowed) {
-    return json({ error: 'origin_not_allowed' }, 403, cors(origin, false));
+    return json({ error: 'origin_not_allowed' }, 403, cors(origin, false, methods));
   }
 
   // The header is parsed before the store is asked anything. A request carrying
@@ -170,18 +211,22 @@ export async function readRoutes(request: Request, deps: ReadDeps): Promise<Resp
         run: 'lanes link pair',
       },
       401,
-      cors(origin, allowed),
+      permitted(),
     );
   }
 
-  const url = new URL(request.url);
+  // Below the credential check, so one place verifies a pairing token and the
+  // two surfaces cannot come to disagree about who may reach them.
+  if (writable && deps.data) {
+    return dataRoutes(request, url, deps.data, permitted(DATA_HEADERS));
+  }
 
   if (url.pathname === STATE_PATH) {
     const rows = await deps.connections().catch(() => []);
     return json(
       readState(deps.workspace, deps.profiles(), rows, deps.endpoint, deps.providerName),
       200,
-      cors(origin, allowed),
+      permitted(),
     );
   }
 
@@ -220,41 +265,9 @@ export async function readRoutes(request: Request, deps: ReadDeps): Promise<Resp
         })),
       },
       200,
-      cors(origin, allowed),
+      permitted(),
     );
   }
 
-  return json({ error: 'not_found' }, 404, cors(origin, allowed));
-}
-
-function bearer(request: Request): string | null {
-  const header = request.headers.get('authorization') ?? '';
-  if (!header.toLowerCase().startsWith('bearer ')) return null;
-
-  const presented = header.slice(7).trim();
-  return presented === '' ? null : presented;
-}
-
-function cors(origin: string | null, allowed: boolean): Record<string, string> {
-  // `Vary: Origin` unconditionally, including on a refusal. Without it a cache
-  // between here and the page can serve one origin's answer to another, which
-  // is the whole grant leaking through an intermediary.
-  const headers: Record<string, string> = { vary: 'Origin' };
-  if (!allowed || origin === null) return headers;
-
-  headers['access-control-allow-origin'] = origin;
-  headers['access-control-allow-headers'] = 'authorization';
-  headers['access-control-allow-methods'] = 'GET, OPTIONS';
-  headers['access-control-max-age'] = '600';
-  // Deliberately absent: `access-control-allow-credentials`. The token is sent
-  // explicitly by the page, so allowing cookies would add an ambient credential
-  // to a surface whose safety rests on there not being one.
-  return headers;
-}
-
-function json(body: unknown, status: number, headers: Record<string, string>): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...headers, 'content-type': 'application/json', 'cache-control': 'no-store' },
-  });
+  return json({ error: 'not_found' }, 404, permitted());
 }

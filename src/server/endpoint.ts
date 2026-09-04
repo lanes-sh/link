@@ -19,6 +19,7 @@ import {
   toPolicyDocument,
 } from '#registry';
 import { openRuntime, type GlobalFlags, type Runtime } from '#cli/runtime.ts';
+import { dataSurface, type DataSurface } from '#cli/owner-data/index.ts';
 
 /**
  * Bringing the endpoint up: open a runtime per profile, reconcile, and serve.
@@ -218,6 +219,13 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
     // thing `profile members add` tells the operator has taken effect.
     let serving: ReadonlyMap<string, Runtime> = runtimes;
 
+    // The owner's data, over the same holder for the same reason: a reload
+    // replaces the runtimes, and a surface closed over the set it was built
+    // with would keep reading a generation that has been closed. Built once and
+    // handed to both binds, so loopback and a deployed port cannot come to
+    // disagree about what a pairing token may do (ADR-069).
+    const data = dataSurface(() => serving);
+
     const gate = await openAuthorization(primary, log, async (subject) =>
       [...serving]
         .filter(([, runtime]) =>
@@ -278,6 +286,7 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
         profiles: () => generations.current.profiles,
         log,
         version: runningVersion,
+        data,
       }),
     });
 
@@ -295,6 +304,7 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
       () => generations.current.profiles,
       log,
       runningVersion,
+      data,
     );
 
     return {
