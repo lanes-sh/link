@@ -6,8 +6,14 @@ it. This file covers only what an agent gets wrong that a human reading that fil
 
 ## Work on a branch, in a worktree
 
-Implementation goes on a new branch in its own worktree. Never on `main` — it is the checkout
-the operator has open, and unreviewed work landing there mixes into the files they are reading.
+Implementation goes on a new branch in its own worktree. Never on `develop` or `main`: those
+are the checkouts the operator has open, and unreviewed work landing there mixes into the files
+they are reading.
+
+Never check `develop` or `main` out *in* a worktree either. Git allows a branch in one place at
+a time, so a worktree holding `develop` locks the primary checkout out of its own integration
+branch, and the operator cannot pull, rebase or start the next branch without first working out
+which worktree took it. A worktree holds a feature branch and nothing else.
 
 ```console
 $ git worktree add .worktrees/<name> -b <name>
@@ -19,6 +25,14 @@ $ bun test          # establish the baseline before changing anything
 `.worktrees/` is already in `.gitignore`. The `bun install` is not optional: a fresh worktree
 has no `node_modules`. Getting a green baseline first is what makes a later failure
 attributable.
+
+A worktree is deleted when its pull request merges, not left for later. Eleven of them across
+four repositories, all merged, cost 11.5 GB and made the branch list unreadable.
+
+```console
+$ git worktree remove .worktrees/<name>
+$ git branch -d <name>
+```
 
 Work lands by pull request into `develop`, squashed — `gh pr merge <n> --squash --delete-branch`.
 Both `develop` and `main` require a passing `ci` and an approval, so a solo merge adds `--admin`.
