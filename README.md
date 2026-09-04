@@ -34,7 +34,7 @@ ok    registered lanes-link with Claude Code (user scope)
 ok    registered lanes-link with Codex
 ```
 
-Your memory, tasks, files and skills work now, with nothing to authorise. Mail and calendar are
+Your memory, tasks, files, skills, entities and vault work now, with nothing to authorise. Mail and calendar are
 the next step: `lanes link connect gmail`.
 
 **[Full quickstart](https://lanes.sh/docs/link/quickstart)**
@@ -76,7 +76,8 @@ comes.
 | **Tasks** | what you have to do, each with a status | `lanes link tasks` |
 | **Assets** | files you want kept, by name | `lanes link assets` |
 | **Skills** | your own procedures, handed to an agent as instructions | `lanes link skills` |
-| **Identity** | who you are, and the people and companies that recur in your work | `lanes link identity` |
+| **Identity** | who you are, so an agent signs off as you | `lanes link identity` |
+| **Entities** | the people and companies you deal with, so an agent looks an address up rather than recalling one | `lanes link entities` |
 | **Vault** | passwords and API keys, released only where you allow it | `lanes link vault` |
 
 Everything except connections arrives switched on, because it holds your own material rather
