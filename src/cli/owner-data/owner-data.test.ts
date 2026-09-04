@@ -245,3 +245,69 @@ describe('the audit log', () => {
     expect(events.some((event) => event.capability === 'memory.forget')).toBe(true);
   });
 });
+
+describe('ordering', () => {
+  test('every store answers most recently touched first', async () => {
+    // Written oldest first, so passing this cannot be an accident of insertion
+    // order or of the store's own listing. The marker in each title is what the
+    // query narrows on, so entries written by the blocks above cannot join in.
+    for (const [id, when] of [
+      ['ordercheck-older', '2026-01-01T00:00:00.000Z'],
+      ['ordercheck-newest', '2026-06-01T00:00:00.000Z'],
+      ['ordercheck-middle', '2026-03-01T00:00:00.000Z'],
+    ] as const) {
+      await writeItem(
+        runtime,
+        'memory',
+        id,
+        `---\ntitle: ${id}\nupdated_at: ${when}\n---\n\nBody.`,
+      );
+    }
+
+    const listed = await listItems(runtime, 'memory', { query: 'ordercheck-' });
+    if (!listed.ok) throw new Error(listed.refusal.message);
+
+    expect(listed.value.map((one) => one.id)).toEqual([
+      'ordercheck-newest',
+      'ordercheck-middle',
+      'ordercheck-older',
+    ]);
+  });
+
+  test('a task list here is ordered by recency, not by what to do next', async () => {
+    // `compareTasks` ranks by status and would put the done task last. That rule
+    // is right for `lanes link tasks list` and wrong for a browser, which is
+    // asked "what changed" rather than "what next" — and the status is on the
+    // row either way.
+    await writeItem(
+      runtime,
+      'tasks',
+      'ordercheck-done',
+      '---\ntitle: ordercheck done recently\nstatus: done\nupdated_at: 2026-06-01T00:00:00.000Z\n---\n\nx',
+    );
+    await writeItem(
+      runtime,
+      'tasks',
+      'ordercheck-open',
+      '---\ntitle: ordercheck open long ago\nstatus: open\nupdated_at: 2026-01-01T00:00:00.000Z\n---\n\nx',
+    );
+
+    const listed = await listItems(runtime, 'tasks', { query: 'ordercheck' });
+    if (!listed.ok) throw new Error(listed.refusal.message);
+
+    expect(listed.value.map((one) => one.id)).toEqual(['ordercheck-done', 'ordercheck-open']);
+  });
+
+  test('an item with no timestamp sorts last, and by name', async () => {
+    // Skills carry no `updated_at`. Absent is unknown rather than new, so they
+    // fall back to the name their column actually shows.
+    for (const name of ['zeta-ordercheck', 'alpha-ordercheck']) {
+      await writeItem(runtime, 'skills', name, `---\ndescription: ${name}.\n---\n\nBody.`);
+    }
+
+    const listed = await listItems(runtime, 'skills', { query: 'ordercheck' });
+    if (!listed.ok) throw new Error(listed.refusal.message);
+
+    expect(listed.value.map((one) => one.id)).toEqual(['alpha-ordercheck', 'zeta-ordercheck']);
+  });
+});

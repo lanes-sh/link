@@ -56,6 +56,39 @@ function decode(bytes: Uint8Array): string {
   return new TextDecoder().decode(bytes);
 }
 
+/**
+ * Most recently touched first, which is the question a browser is opened with.
+ *
+ * One rule over all six stores rather than each store's own, and applied here
+ * rather than in the page, because the listing is capped: ordering after the
+ * cap would sort whichever items happened to survive it, and the newest thing
+ * in a store of four hundred would be missing from a list claiming to show what
+ * changed last.
+ *
+ * **This deliberately overrides the task order.** `compareTasks` ranks by
+ * status, then due date, and its docstring is right about why: a task list is
+ * read to decide what to do next, and the most recently edited task is rarely
+ * that. A data browser is not a task list. It answers "what changed", the
+ * status is on the row either way, and a table that ordered one of six stores
+ * by a different rule would be the surface disagreeing with itself.
+ *
+ * An item with no timestamp sorts last rather than first. Skills carry no
+ * `updated_at` and the vault reports none, so absent means unknown here, and
+ * unknown is not new. Those two fall back to their name, which is stable and is
+ * what their columns show.
+ */
+function byRecency(items: DataItem[]): DataItem[] {
+  return [...items].sort((a, b) => {
+    if (a.updatedAt !== null && b.updatedAt !== null) {
+      // ISO-8601, so a string compare is a time compare.
+      return b.updatedAt.localeCompare(a.updatedAt) || a.title.localeCompare(b.title);
+    }
+    if (a.updatedAt !== null) return -1;
+    if (b.updatedAt !== null) return 1;
+    return a.title.localeCompare(b.title);
+  });
+}
+
 export async function listItems(
   runtime: Runtime,
   store: DataStoreName,
@@ -69,7 +102,7 @@ export async function listItems(
   if (!scoped.ok) return scoped;
 
   const rows = await collect(scoped.value.store, store, options.query);
-  return answered(rows.slice(0, limit));
+  return answered(byRecency(rows).slice(0, limit));
 }
 
 async function collect(
@@ -166,16 +199,17 @@ async function listVault(
   const items = await runtime.vault.ids();
 
   return answered(
-    items
-      .filter((item) => matches(query, item.id, item.description ?? ''))
-      .map((item) => ({
-        id: item.id,
-        title: item.id,
-        summary: item.description ?? null,
-        updatedAt: null,
-        tags: [],
-      }))
-      .slice(0, limit),
+    byRecency(
+      items
+        .filter((item) => matches(query, item.id, item.description ?? ''))
+        .map((item) => ({
+          id: item.id,
+          title: item.id,
+          summary: item.description ?? null,
+          updatedAt: null,
+          tags: [],
+        })),
+    ).slice(0, limit),
   );
 }
 
