@@ -39,7 +39,33 @@ Look the page up rather than deciding by feel:
 | Blog | Leave the voice alone. Correct facts only |
 | Terms, privacy, GDPR, cookies | Plain legal English. Accuracy beats brevity. No register change |
 
-## Step 2: apply the sentence test
+## Step 2: make every heading name an outcome
+
+**A heading says what the reader achieves, or what the section explains.** Not the noun the
+feature is filed under. This is the single most common way a page reads as robotic: the writer
+labels the machinery, and the reader has to read the section to find out whether it was for them.
+
+| Instead of | Write |
+|---|---|
+| Permissions | Decide what an agent may do |
+| Selection | Choose which profile a command acts on |
+| Inspection | See what is connected, and what your agents did |
+| Gate order | Catch a problem in the cheapest place |
+| Governance | Why you cannot remove the last admin |
+| The envelope | What an error looks like |
+| Tips | Settings worth changing first |
+
+**"Tips" is never a heading.** It is a bin for whatever had no home, and a reader cannot tell
+whether it is worth reading. Name what the advice is about, or move each item to the section it
+belongs to.
+
+The same applies to the page. A reader landing on it should know, from the title and the first
+sentence, what they will be able to do when they leave.
+
+**A section never opens straight into a code block.** One sentence first, saying what the code
+achieves. The reader decides whether to run it from that sentence, not by parsing the snippet.
+
+## Step 3: apply the sentence test
 
 Read every sentence and ask what it does for the reader. It stays only if it does one of:
 
@@ -66,7 +92,7 @@ to make. Nothing else does.
 | A second link to the same place | One "next" per page |
 | The mechanism behind a result | "Your agents can reach it" beats "the endpoint reconciles its manifest" |
 
-## Step 3: the standing rules
+## Step 4: the standing rules
 
 - **No em dashes.** Anywhere. Use a comma, a full stop, a colon, or a hyphen.
 - **Sentence case headings.** "Connect an account", not "Connect An Account".
@@ -150,6 +176,8 @@ Your memory, tasks, files and skills work now. Mail and calendar are next:
 
 ## Before you call it done
 
+- Every heading names an outcome, not the machinery. No section called "Tips".
+- No section opens straight into a code block.
 - Every heading is sentence case, and numbered sequences are numbered once.
 - No em dashes.
 - Every command is the shortest form that works.
