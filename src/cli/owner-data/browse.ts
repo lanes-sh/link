@@ -79,14 +79,37 @@ function decode(bytes: Uint8Array): string {
  */
 function byRecency(items: DataItem[]): DataItem[] {
   return [...items].sort((a, b) => {
-    if (a.updatedAt !== null && b.updatedAt !== null) {
-      // ISO-8601, so a string compare is a time compare.
-      return b.updatedAt.localeCompare(a.updatedAt) || a.title.localeCompare(b.title);
+    const left = instantOf(a.updatedAt);
+    const right = instantOf(b.updatedAt);
+
+    if (left !== null && right !== null) {
+      return right - left || a.title.localeCompare(b.title);
     }
-    if (a.updatedAt !== null) return -1;
-    if (b.updatedAt !== null) return 1;
+    if (left !== null) return -1;
+    if (right !== null) return 1;
     return a.title.localeCompare(b.title);
   });
+}
+
+/**
+ * A timestamp as an instant, or `null` where it is not one.
+ *
+ * Compared as a time rather than as a string. A string compare is correct for
+ * ISO-8601 in UTC and only for that, and nothing guarantees it: these files are
+ * in a directory the owner edits, `parseEntry` and `parseTask` take `updated_at`
+ * verbatim rather than normalising it, and the same store can hold
+ * `2026-09-01T11:05:00.000Z` written by the endpoint beside a date-only
+ * `2026-09-01` or an offset `2026-09-01T13:05:00+02:00` written by hand. Two of
+ * those three sort wrong as text, and the third sorts wrong against the first.
+ *
+ * Unparseable is `null` rather than zero, so a value nobody can read as a time
+ * joins the items that have none instead of claiming to be the oldest thing in
+ * the store.
+ */
+function instantOf(value: string | null): number | null {
+  if (value === null) return null;
+  const at = Date.parse(value);
+  return Number.isNaN(at) ? null : at;
 }
 
 export async function listItems(

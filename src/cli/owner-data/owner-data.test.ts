@@ -311,3 +311,64 @@ describe('ordering', () => {
     expect(listed.value.map((one) => one.id)).toEqual(['alpha-ordercheck', 'zeta-ordercheck']);
   });
 });
+
+describe('a timestamp is compared as a time, not as text', () => {
+  test('mixed spellings of the same instant still order correctly', async () => {
+    // All three are what a store actually holds: the endpoint writes the first,
+    // and the owner edits these files by hand. As strings, "2026-05-02" sorts
+    // above "2026-05-01T23:00:00.000Z" and an offset sorts by its literal hour.
+    await writeItem(
+      runtime,
+      'memory',
+      'stamp-utc',
+      '---\ntitle: stamp utc\nupdated_at: 2026-05-01T23:00:00.000Z\n---\n\nx',
+    );
+    await writeItem(
+      runtime,
+      'memory',
+      'stamp-dateonly',
+      '---\ntitle: stamp dateonly\nupdated_at: 2026-05-02\n---\n\nx',
+    );
+    await writeItem(
+      runtime,
+      'memory',
+      'stamp-offset',
+      '---\ntitle: stamp offset\nupdated_at: 2026-05-03T01:00:00+02:00\n---\n\nx',
+    );
+
+    const listed = await listItems(runtime, 'memory', { query: 'stamp-' });
+    if (!listed.ok) throw new Error(listed.refusal.message);
+
+    // 2026-05-02T23:00Z, then 2026-05-02T00:00Z, then 2026-05-01T23:00Z.
+    expect(listed.value.map((one) => one.id)).toEqual([
+      'stamp-offset',
+      'stamp-dateonly',
+      'stamp-utc',
+    ]);
+  });
+
+  test('a timestamp nobody can read joins the items that have none', async () => {
+    await writeItem(
+      runtime,
+      'memory',
+      'stampbad-unreadable',
+      '---\ntitle: stampbad unreadable\nupdated_at: last Tuesday\n---\n\nx',
+    );
+    await writeItem(
+      runtime,
+      'memory',
+      'stampbad-dated',
+      '---\ntitle: stampbad dated\nupdated_at: 2020-01-01T00:00:00.000Z\n---\n\nx',
+    );
+
+    const listed = await listItems(runtime, 'memory', { query: 'stampbad-' });
+    if (!listed.ok) throw new Error(listed.refusal.message);
+
+    // Unknown sorts last rather than claiming to be the oldest thing here,
+    // which is what treating it as zero would have done.
+    expect(listed.value.map((one) => one.id)).toEqual([
+      'stampbad-dated',
+      'stampbad-unreadable',
+    ]);
+  });
+});
