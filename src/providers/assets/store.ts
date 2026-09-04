@@ -102,12 +102,35 @@ export async function allAssets(storage: BlobStore): Promise<Asset[]> {
             {
               name,
               bytes: blob.size,
-              contentType: blob.contentType ?? guessContentType(name),
+              contentType: declaredType(blob.contentType) ?? guessContentType(name),
               modifiedAt: blob.modifiedAt.toISOString(),
             },
           ];
     })
     .sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt) || a.name.localeCompare(b.name));
+}
+
+/**
+ * The store's content type, unless the store is telling us it does not know.
+ *
+ * `application/octet-stream` is not a claim about the bytes, it is the absence
+ * of one, and adapters differ in how they say so. The filesystem adapter omits
+ * the field, so `?? guessContentType(name)` reached the extension. A bucket
+ * stores whatever was set at upload time and hands back `application/octet-stream`
+ * when that was nothing — which is a value, so the `??` never fired and every
+ * asset on a deployed workspace read as binary. A markdown file was then
+ * described rather than returned by `assets.get`, and could not be edited from
+ * a browser, on exactly the workspaces whose files nobody can reach with a text
+ * editor instead.
+ *
+ * Re-guessing costs nothing where it is genuinely unknown: `guessContentType`
+ * falls back to the same value, so an extension nobody recognises lands where it
+ * started.
+ */
+const UNKNOWN_TYPE = 'application/octet-stream';
+
+function declaredType(contentType: string | undefined): string | undefined {
+  return contentType === undefined || contentType === UNKNOWN_TYPE ? undefined : contentType;
 }
 
 export async function findAsset(storage: BlobStore, name: string): Promise<Asset | null> {
