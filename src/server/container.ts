@@ -28,6 +28,17 @@ import { streamLogger } from './logging.ts';
  *                      there is no workspace default any more (ADR-037), and
  *                      `lanes link deploy` sets it at rollout.
  *   PORT               injected by Cloud Run. 8080 is its default.
+ *
+ * And on a Lanes-managed runtime only, three more. Setting the first is what
+ * mounts the control surface; absent, this container serves exactly what a
+ * self-hosted one serves.
+ *
+ *   LANES_CONTROL_PUBLIC_KEY  the API's signing key, SPKI PEM. Pinned rather
+ *                      than discovered: a runtime that fetched its own trust
+ *                      anchor could be told to trust something else.
+ *   LANES_CONTROL_ISSUER      who may have signed. Carries the environment.
+ *   LANES_CONTROL_AUDIENCE    this service's own URL, for the same reason —
+ *                      ADR-072, so a stage assertion is not a prod one.
  */
 
 const env = process.env;
@@ -63,8 +74,37 @@ const log = (message: string): void => {
   process.stdout.write(`${new Date().toISOString()} ${message}\n`);
 };
 
+// Imported only when it is configured, and that is not a style choice.
+// `lanes link deploy` submits the *installed package* as the build source
+// (`installRoot` in `deployments/gcp/driver.ts`), and package.json's `files`
+// excludes `src/control/**` — it is Lanes-only code and has no business in
+// every CLI user's node_modules. A static import here would therefore resolve
+// in this repository and fail at startup in every self-hosted container, which
+// is the worst place to find out.
+//
+// The env var is the switch, so testing it before the import is the same
+// condition `controlDepsFrom` applies, stated once more where the module has to
+// be absent. `src/control/boot.test.ts` owns the rest of the behaviour.
+//
+// Before the bind either way, so a misconfigured key fails the revision rather
+// than leaving it healthy and refusing every control call with the same "no" a
+// forged assertion gets.
+let control;
+if (env['LANES_CONTROL_PUBLIC_KEY']) {
+  try {
+    const { controlDepsFrom } = await import('#control/boot.ts');
+    control = await controlDepsFrom(env);
+  } catch (error) {
+    process.stderr.write(`${(error as Error).message}\n`);
+    process.exit(1);
+  }
+}
+
+if (control) log(`control surface on for workspace ${control.workspace}`);
+
 try {
   const endpoint = await startEndpoint({
+    ...(control ? { control } : {}),
     flags: {
       ...(env['LANES_LINK_PROFILE'] ? { profile: env['LANES_LINK_PROFILE'] } : {}),
       ...(env['LANES_LINK_TARGET'] ? { target: env['LANES_LINK_TARGET'] } : {}),
