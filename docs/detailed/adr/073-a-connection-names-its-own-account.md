@@ -76,14 +76,27 @@ repository names, five advertise introspection and three advertise userinfo. Tha
 the per-vendor sweep is the substance and step 4 is the cheap part — and the reason the ledger
 exists rather than a claim that the problem is solved.
 
-Sixty-nine hosted-MCP providers are still unswept. Every one of those servers refuses an
-unauthenticated `tools/list`, so each identity call has to come from vendor documentation and each
-block ships unverified until somebody holding an account on that vendor connects. That is a real
-cost and the ledger states it per provider rather than hiding it in a total.
+Seventy hosted-MCP providers are still unswept. Every one of those servers refuses an
+unauthenticated `tools/list`, so each identity call has to come from vendor documentation and
+cannot be confirmed without an account on that vendor. That is a real cost and the ledger states
+it per provider rather than hiding it in a total.
 
-An unverified block is bounded in what it can do wrong: a wrong endpoint or a rejected token
-answers null and the operator is asked, which is what happened before the block existed. The
-hazard is a right endpoint and a wrong field, which is what the two probe rules above are for.
+**A block is not added on documentation alone, and Supabase is why.** Its authorization server
+*is* `api.supabase.com`, so the token an MCP connect issues is an ordinary Management API token
+and `GET /v1/profile` — which returns `primary_email` — read as a free answer. Against a real
+token it is `401`, "does not support oauth access yet": a refusal about the credential *kind*,
+which no scope changes. `/v1/user`, `/v1/me` and `/v1/oauth/userinfo` are all `404`, and what
+OAuth does reach — organizations, projects — is a collection, which the rule above already
+refuses.
+
+So a vendor sharing a host with its authorization server does not imply the token is accepted
+there, and an MCP credential is its own kind until the vendor says otherwise. The ledger entry
+that results is worth more than the block would have been: it names what was ruled out, so nobody
+researches that vendor twice.
+
+An unverified block is bounded in what it can do wrong — a wrong endpoint or a rejected token
+answers null and the operator is asked, which is what happened before it existed. The hazard is a
+right endpoint and a wrong field, which is what the two probe rules above are for.
 
 The empty answer changed with it. It used to be accepted and stored `${provider} ${provisionalId}`
 — the provider's name beside `pending`, an internal token meaning "no id yet". It now re-asks, and

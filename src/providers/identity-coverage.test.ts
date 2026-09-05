@@ -36,11 +36,12 @@ import { PROVIDER_MANIFESTS } from './index.ts';
  * the generic probe is the cheap part.
  */
 const UNSWEPT =
-  'Hosted MCP server, not yet swept: `tools/list` is refused unauthenticated, so the identity call has to come from vendor documentation.';
+  'Hosted MCP server, not yet swept: `tools/list` is refused unauthenticated, so the identity call has to come from vendor documentation, and documentation does not say whether the MCP token is accepted by the vendor REST API.';
 
 const NO_IDENTITY: Readonly<Record<string, string>> = {
   discord: 'Decided, not omitted, and written out in the provider: the stored credential is `Bot MTIz…`, so a bearer probe would send `Bearer Bot MTIz…` and earn a 401 on every connect.',
   google_tasks: 'Decided, not omitted, and written out in the provider: nothing reachable under `auth/tasks` returns an address, and `userinfo.email` is a scope this provider has no other use for.',
+  asana: UNSWEPT,
   bunq: 'Not swept. bunq authenticates through its own handshake rather than OAuth, so neither generic route applies, and its `/v1/user` shape has not been checked against what the strategy stores.',
   stripe: UNSWEPT,
   sentry: UNSWEPT,

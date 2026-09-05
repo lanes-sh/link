@@ -8,19 +8,16 @@ export const asana = defineProvider({
   connector: { kind: 'mcp', endpoint: 'https://mcp.asana.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
   /**
-   * `email` is not returned by default — `opt_fields` is Asana's whole shape for
-   * optional output, and without it this answers a user object with a name and
-   * no address. The name would resolve, and would be the wrong thing: two people
-   * called the same thing are one account to the reconnect match.
+   * No identity block. `GET /users/me?opt_fields=email` is documented and
+   * answers `data.email`, and it was written here on that reading — but Asana
+   * registers us dynamically at `mcp.asana.com`, and whether that token is
+   * accepted by `app.asana.com/api/1.0` is not documented either way.
    *
-   * Asana registers us dynamically at `mcp.asana.com`, so whether that token is
-   * accepted by `app.asana.com/api/1.0` is Asana's business and not documented
-   * either way. If it is not, the probe 401s and `connect` asks — which is what
-   * it did before this block existed, so the downside is a round trip.
+   * Supabase is why this was taken back out rather than left to fail closed.
+   * There, the authorization server *is* the API's own host, which is a much
+   * stronger reason to expect the token to work — and `GET /v1/profile` still
+   * answered "does not support oauth access yet". An MCP token is its own
+   * credential kind until a vendor says otherwise, so this one waits for
+   * somebody with an Asana account to try it.
    */
-  identity: {
-    kind: 'http',
-    url: 'https://app.asana.com/api/1.0/users/me?opt_fields=email',
-    field: 'data.email',
-  },
 });
