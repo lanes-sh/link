@@ -112,7 +112,9 @@ export interface CallbackCapture {
   close(): Promise<void>;
 }
 
-export function captureOAuthCallback(options: { label?: string } = {}): CallbackCapture {
+export function captureOAuthCallback(
+  options: { label?: string; port?: number | undefined } = {},
+): CallbackCapture {
   const state = base64url(randomBytes(24));
   let resolveCode: (value: { code: string; iss?: string }) => void;
   let rejectCode: (error: Error) => void;
@@ -122,10 +124,9 @@ export function captureOAuthCallback(options: { label?: string } = {}): Callback
     rejectCode = reject;
   });
 
-  const server = Bun.serve({
+  const listener = {
     hostname: '127.0.0.1',
-    port: 0,
-    fetch(request) {
+    fetch(request: Request) {
       const url = new URL(request.url);
       if (url.pathname !== '/callback') return new Response('Not found', { status: 404 });
 
@@ -168,7 +169,30 @@ export function captureOAuthCallback(options: { label?: string } = {}): Callback
       resolveCode({ code, ...(iss ? { iss } : {}) });
       return connectedPage(options.label);
     },
-  });
+  };
+
+  // The port a previous run registered with, where the caller knows one.
+  //
+  // Asking the OS for any free port is what broke every second connect to a
+  // vendor that matches `redirect_uri` literally. The first connect binds
+  // whatever it is handed and registers a client declaring *that* URL; the
+  // registration is then kept deliberately, because re-registering orphans the
+  // grant the operator has just approved. So the second connect arrives on a
+  // different port carrying the first one's client and is refused —
+  // `redirect_uri not allowed`, before the consent page even renders.
+  //
+  // Supabase does this. Notion does not, because RFC 8252 §7.3 says a loopback
+  // redirect is matched without its port and Notion follows it — which is the
+  // only reason this survived as long as it did.
+  let server: ReturnType<typeof Bun.serve>;
+  try {
+    server = Bun.serve({ ...listener, port: options.port ?? 0 });
+  } catch {
+    // Taken: another connect in flight, or something else holding it. Falling
+    // back beats failing — a fresh port still works against every server that
+    // follows §7.3, and the one that does not is no worse off than before.
+    server = Bun.serve({ ...listener, port: 0 });
+  }
 
   return {
     redirectUri: `http://127.0.0.1:${server.port}/callback`,

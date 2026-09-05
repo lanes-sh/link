@@ -5,6 +5,7 @@ import {
   brokerOriginOverride,
   type BrokerConfig,
 } from '#connectivity/auth/index.ts';
+import { CredentialOAuthProvider } from '#connectivity/auth/index.ts';
 import { hasOwnClientPath, type ProviderManifest } from '#connectivity';
 import type { SecretStore } from '#secrets';
 import { ConfigDocument } from '../../config-edit.ts';
@@ -309,4 +310,50 @@ export function hostedClientRefusal(input: {
   if (input.docsUrl) lines.push(`  ${input.docsUrl}`);
 
   return new Error(lines.join('\n'));
+}
+
+/**
+ * The loopback port this provider's registered client already declares.
+ *
+ * A dynamically registered client is written once and kept — re-registering
+ * orphans the grant the operator approved — so its `redirect_uris` outlive the
+ * listener that chose them. Asking for a fresh port on the next connect sends a
+ * URL that client never declared, and a server matching `redirect_uri`
+ * literally refuses it before the consent page renders.
+ *
+ * So this reads the port back out of the registration and the listener asks for
+ * it again. `undefined` where there is no registration yet, which is the first
+ * connect and the case that was always fine.
+ */
+export async function registeredCallbackPort(
+  manifest: ProviderManifest,
+  connectionId: string,
+  credentials: SecretStore,
+): Promise<number | undefined> {
+  const provider = new CredentialOAuthProvider({
+    manifest,
+    connectionId,
+    credentials,
+    scopes: manifest.auth.kind === 'oauth' ? manifest.auth.scopes : [],
+  });
+
+  try {
+    const client = (await provider.clientInformation()) as
+      | { redirect_uris?: unknown }
+      | undefined;
+
+    const declared = Array.isArray(client?.redirect_uris) ? client.redirect_uris : [];
+
+    for (const candidate of declared) {
+      if (typeof candidate !== 'string') continue;
+      const port = Number(new URL(candidate).port);
+      if (Number.isInteger(port) && port > 0) return port;
+    }
+  } catch {
+    // A malformed or unreadable registration is not worth failing a connect
+    // over: the listener falls back to any free port, which is what it did
+    // before this existed.
+  }
+
+  return undefined;
 }
