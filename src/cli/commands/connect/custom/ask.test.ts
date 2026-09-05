@@ -60,9 +60,9 @@ describe('what the flags did not say is asked for', () => {
     expect('missing' in result).toBe(false);
     // Counted from the lists rather than written down: a member landing in
     // either union is not a reason for this test to fail.
-    expect(prompter.asked[0]).toBe(`Choose 1-${CONNECTOR_KINDS.length}:`);
-    expect(prompter.asked[1]).toBe(`Choose 1-${AUTH_METHODS.length}:`);
-    expect(prompter.asked.slice(2, 4)).toEqual(['Base URL:', 'OpenAPI document:']);
+    expect(prompter.asked[0]).toBe(`Choose 1-${CONNECTOR_KINDS.length}`);
+    expect(prompter.asked[1]).toBe(`Choose 1-${AUTH_METHODS.length}`);
+    expect(prompter.asked.slice(2, 4)).toEqual(['Base URL', 'OpenAPI document']);
   });
 
   test('a member can be typed by name instead of counted', async () => {
@@ -85,7 +85,7 @@ describe('what the flags did not say is asked for', () => {
     const prompter = answering('https://mcp.example.com/mcp', '');
     await gather({ connector: 'mcp', auth: 'none' }, prompter);
 
-    expect(prompter.asked).toEqual(['MCP endpoint:', 'Display name [Thing]:']);
+    expect(prompter.asked).toEqual(['MCP endpoint', 'Display name [Thing]']);
   });
 
   test('the display name defaults to the id, read as words', async () => {

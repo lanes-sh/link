@@ -261,7 +261,7 @@ export async function confirmedByName(
     );
   }
 
-  const typed = (await prompter.ask(`Type ${profile} to remove it, or anything else to stop: `))
+  const typed = (await prompter.ask(`Type ${profile} to remove it, or anything else to stop`))
     .trim();
 
   if (typed !== profile) {

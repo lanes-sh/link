@@ -1,6 +1,6 @@
 import { discoverOAuthProtectedResourceMetadata } from '@modelcontextprotocol/client';
 import type { ProviderManifest } from '#connectivity';
-import { progress, style, warn } from '../../output.ts';
+import { progress, prose, style, warn } from '../../output.ts';
 import type { Prompter } from '../../prompt.ts';
 import { describeScopes, shortScope } from '../../scopes.ts';
 
@@ -46,22 +46,23 @@ async function reportScopeDrift(pinned: readonly string[], serverUrl: string): P
 
   if (missing.length > 0) {
     progress('');
-    progress(
-      style.dim(
-        `${new URL(serverUrl).host} advertises ${missing.length} scope(s) not requested: ` +
-          `${missing.map(shortScope).join(', ')}.`,
-      ),
+    prose(
+      `${new URL(serverUrl).host} advertises ${missing.length} scope(s) not requested: ` +
+        `${missing.map(shortScope).join(', ')}.`,
+      { paint: style.dim, to: progress },
     );
-    progress(
-      style.dim(
-        '  Deliberate — an advertised scope is not necessarily a required one, and these are broader than the docs ask for. Worth revisiting only if calls fail on permission.',
-      ),
+    prose(
+      '  Deliberate — an advertised scope is not necessarily a required one, and these are broader than the docs ask for. Worth revisiting only if calls fail on permission.',
+      { paint: style.dim, to: progress },
     );
   }
 
   if (extra.length > 0) {
     progress('');
-    progress(style.dim(`Note: ${extra.map(shortScope).join(', ')} is no longer declared by the server.`));
+    prose(`Note: ${extra.map(shortScope).join(', ')} is no longer declared by the server.`, {
+      paint: style.dim,
+      to: progress,
+    });
   }
 }
 
@@ -108,16 +109,14 @@ export async function confirmScopes(
   // Why the broad ones cannot simply be dropped — otherwise the obvious next
   // question is why we ask instead of asking for less.
   progress('');
-  progress(
-    warn(
-      'The marked scopes are broader than this provider needs. Grant them only if you ' +
-        'mean to — policy can restrict what an agent calls, but it cannot un-grant a token.',
-    ),
+  prose(
+    'The marked scopes are broader than this provider needs. Grant them only if you ' +
+      'mean to — policy can restrict what an agent calls, but it cannot un-grant a token.',
+    { prefix: warn(''), to: progress },
   );
-  progress(
-    style.dim(
-      '  Policy still applies: only capabilities you allow are reachable, and every call is audited.',
-    ),
+  prose(
+    '  Policy still applies: only capabilities you allow are reachable, and every call is audited.',
+    { paint: style.dim, to: progress },
   );
   progress('');
 

@@ -1,5 +1,5 @@
 import { createInterface } from 'node:readline';
-import { style } from './output.ts';
+import { paint, style } from './terminal.ts';
 
 /**
  * Interactive input.
@@ -37,13 +37,58 @@ function assertInteractive(): void {
   }
 }
 
+/**
+ * The chrome around every question, in one place so the three cannot drift.
+ *
+ * A marker, the question, and a caret. The marker is what separates a question
+ * from the block above it — a prompt with no chrome at the end of a seven-step
+ * walkthrough reads as an eighth step, which is what it looked like before.
+ *
+ * The trailing `: ` this replaces was appended here *and* by five call sites,
+ * so `Display name [foo]: ` came out as `Display name [foo]: : `. That the
+ * double colon survived is the argument for the punctuation living in one
+ * place rather than at every question.
+ *
+ * A question may carry lines before its last one — a variable's description is
+ * a sentence nobody can guess, and `Prompter.ask` takes one string. Those go
+ * out as narration and only the final line is decorated, so the caret stays
+ * where the cursor is.
+ */
+export function chrome(question: string): { readonly lead: readonly string[]; readonly prompt: string } {
+  const lines = question.trim().split('\n');
+  const last = lines.pop() ?? '';
+
+  return {
+    lead: lines.map((line) => line.trim()),
+    prompt: `${paint.accent('?')} ${last.trim()} ${paint.muted('\u203a')} `,
+  };
+}
+
 export async function ask(question: string): Promise<string> {
   assertInteractive();
 
-  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  const { lead, prompt } = chrome(question);
+  for (const line of lead) process.stderr.write(`${line}\n`);
+
+  // stderr, not stdout. `--json` is universal (`selection.ts`), nothing stops an
+  // interactive `connect --json`, and readline wrote its question into the
+  // middle of the document. `connect/custom/ask.ts` had already reached this
+  // conclusion and applied it to its own prompts only.
+  //
+  // `terminal` keys off the stream readline *echoes to*, not off stdin. With
+  // `terminal: true` readline puts stdin in raw mode and does the echo itself —
+  // so keying it off stdin meant `connect 2>connect.log` sent every keystroke
+  // to the file and the operator typed a token blind. Keyed off stderr, a
+  // redirect degrades to canonical mode and the tty does the echo, which is the
+  // behaviour this had before the stream moved.
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stderr,
+    terminal: process.stderr.isTTY === true,
+  });
   try {
     const answer = await new Promise<string>((resolve, reject) => {
-      rl.question(`${question}: `, resolve);
+      rl.question(prompt, resolve);
       rl.once('SIGINT', () => reject(new PromptCancelled()));
     });
     return answer.trim();
@@ -68,7 +113,9 @@ export async function ask(question: string): Promise<string> {
 export async function askSecret(question: string): Promise<string> {
   assertInteractive();
 
-  process.stdout.write(`${question}: `);
+  const { lead, prompt } = chrome(question);
+  for (const line of lead) process.stderr.write(`${line}\n`);
+  process.stderr.write(prompt);
 
   const stdin = process.stdin;
   const wasRaw = stdin.isRaw === true;
@@ -83,7 +130,7 @@ export async function askSecret(question: string): Promise<string> {
       stdin.removeListener('data', onData);
       stdin.setRawMode(wasRaw);
       stdin.pause();
-      process.stdout.write('\n');
+      process.stderr.write('\n');
     };
 
     const onData = (chunk: string): void => {
