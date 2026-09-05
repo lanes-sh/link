@@ -117,6 +117,17 @@ export interface BlobVaultStoreOptions {
   readonly key?: string;
   /** 32-byte key. When omitted, `LANES_LINK_VAULT_KEY` — and nothing else. */
   readonly encryptionKey?: Uint8Array;
+  /**
+   * Where this store's key comes from, when the environment is not the answer.
+   *
+   * Set by a host serving more than one workspace from one process: a
+   * process-global `LANES_LINK_VAULT_KEY` there is one key over every tenant's
+   * vault, so a single leak is total and rotating one workspace's key cannot be
+   * expressed. Resolved on first use and cached, unlike `encryptionKey`, which
+   * would make a host fetch a key for every store it builds including the ones
+   * that never touch the vault.
+   */
+  readonly keySource?: KeySource;
   readonly env?: Record<string, string | undefined>;
 }
 
@@ -133,13 +144,14 @@ export function createBlobVaultStore(options: BlobVaultStoreOptions): VaultStore
 
   return new DocumentVaultStore(
     blobDocumentIO(options.store, key),
-    envOnlyKeySource({
-      envVar: KEY_ENV,
-      env,
-      explicit: options.encryptionKey,
-      label: key,
-      remedy: 'lanes link vault key generate',
-    }),
+    options.keySource ??
+      envOnlyKeySource({
+        envVar: KEY_ENV,
+        env,
+        explicit: options.encryptionKey,
+        label: key,
+        remedy: 'lanes link vault key generate',
+      }),
   );
 }
 
@@ -153,6 +165,17 @@ export interface SecretVaultStoreOptions {
   readonly ref?: string;
   /** 32-byte key. When omitted, `LANES_LINK_VAULT_KEY` — and nothing else. */
   readonly encryptionKey?: Uint8Array;
+  /**
+   * Where this store's key comes from, when the environment is not the answer.
+   *
+   * Set by a host serving more than one workspace from one process: a
+   * process-global `LANES_LINK_VAULT_KEY` there is one key over every tenant's
+   * vault, so a single leak is total and rotating one workspace's key cannot be
+   * expressed. Resolved on first use and cached, unlike `encryptionKey`, which
+   * would make a host fetch a key for every store it builds including the ones
+   * that never touch the vault.
+   */
+  readonly keySource?: KeySource;
   readonly env?: Record<string, string | undefined>;
 }
 
@@ -189,13 +212,14 @@ export function createSecretVaultStore(options: SecretVaultStoreOptions): VaultS
 
   return new DocumentVaultStore(
     secretDocumentIO(options.store, ref),
-    envOnlyKeySource({
-      envVar: KEY_ENV,
-      env,
-      explicit: options.encryptionKey,
-      label: ref,
-      remedy: 'lanes link vault key generate',
-    }),
+    options.keySource ??
+      envOnlyKeySource({
+        envVar: KEY_ENV,
+        env,
+        explicit: options.encryptionKey,
+        label: ref,
+        remedy: 'lanes link vault key generate',
+      }),
   );
 }
 
