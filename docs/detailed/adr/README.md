@@ -88,6 +88,7 @@ Run.
 | [070](070-one-process-serves-many-workspaces.md) | One process serves many workspaces, and the boundary becomes a code path |
 | [071](071-a-managed-workspace-is-a-workspace.md) | A managed workspace is a workspace, reached over the API |
 | [072](072-an-environment-is-derived-not-assembled.md) | A deployment derives its environment, and a mismatch refuses to boot |
+| [073](073-a-managed-endpoint-carries-a-control-surface.md) | A managed endpoint carries a control surface, and is not on the internet |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 
@@ -336,3 +337,18 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
   reading production, silently; two already are. Deriving everything from one name and refusing to
   boot on a mismatch trades a container that will not start for a staging revision that reads
   somebody's mail, which is not a close call.
+
+- **ADR-073** changes a sentence ADR-007 ends on, and is worth reading for the error it corrects as
+  much as for the decision. The managed design had a second service, IAM-locked, so that the
+  endpoint could go on never mutating its own configuration. The reasoning under it — that a managed
+  endpoint must be publicly reachable, because no MCP client can mint the identity token Cloud Run
+  IAM wants — is true in every clause and does not reach its conclusion: it holds only if a client
+  connects *to the endpoint*, which was an assumption. With `api.lanes.sh` as the only front door
+  the runtime is private, IAM is the outer gate, and the control routes have somewhere safe to live
+  inside it.
+
+  What ADR-007 protects is untouched: an agent holds a token this endpoint issued and the control
+  routes take an assertion Lanes signed, so an agent still cannot widen its own access. What
+  changes is that a *managed* revision writes its own configuration where a self-hosted one still
+  cannot, and the record says which costs come with that — including an IAM condition that has to
+  widen for the managed service account alone.
