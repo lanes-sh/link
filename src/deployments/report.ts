@@ -1,5 +1,5 @@
 import type { DeployConfig } from '#profile';
-import { heading, ok, print, style, warn } from '#cli/output.ts';
+import { heading, ok, print, prose, style, warn } from '#cli/output.ts';
 
 /**
  * What a deploy tells the operator, as against what it does.
@@ -64,15 +64,19 @@ export function reportUnauthorised(warnings: readonly string[], profile: string,
   if (warnings.length === 0) return;
 
   heading('Not authorised yet');
-  for (const problem of warnings) print(warn(problem));
+  for (const problem of warnings) prose(problem, { prefix: warn('') });
   print('');
+  prose('  A browser consent per account is the one step this cannot take for you:', {
+    paint: style.dim,
+  });
+  // Printed rather than wrapped, alone among these lines: it is meant to be
+  // pasted, and a break inserted into it is a break in what somebody copies.
   print(
-    style.dim(
-      '  A browser consent per account is the one step this cannot take for you:\n' +
-        `    lanes link connect <provider> --profile ${profile} --workspace ${target}\n` +
-        '  Each is served as soon as it is authorised. There is no second deploy —\n' +
-        '  deploying is how code gets here, and authorising an account changes none.',
-    ),
+    `    ${style.dim(`lanes link connect <provider> --profile ${profile} --workspace ${target}`)}`,
+  );
+  prose(
+    '  Each is served as soon as it is authorised. There is no second deploy — deploying is how code gets here, and authorising an account changes none.',
+    { paint: style.dim },
   );
 }
 

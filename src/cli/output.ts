@@ -247,6 +247,16 @@ export interface ProseOptions {
   /** Tint the whole paragraph — a summary, or a note under a block. */
   readonly paint?: ((text: string) => string) | undefined;
   readonly to?: Sink;
+  /**
+   * Put on the first line, with continuations aligned past it.
+   *
+   * For the `ok` / `warn` / `fail` markers, which are a six-column gutter and
+   * not part of the sentence: `prose(why, { prefix: warn('') })`. Calling the
+   * marker with an empty string is what yields the gutter alone, and it has to
+   * be called rather than stored — colour resolves per call now, so a marker
+   * captured at module load would be the colourless one forever.
+   */
+  readonly prefix?: string;
 }
 
 /**
@@ -262,8 +272,11 @@ export interface ProseOptions {
  * paragraph tint claims is painted; the rest keeps the terminal's foreground.
  */
 export function prose(text: string, options: ProseOptions = {}): void {
-  const { paint: tint, to = print } = options;
-  for (const line of wrap(text, width(), { highlight: true, paint: tint })) to(line);
+  const { paint: tint, to = print, prefix = '' } = options;
+  const gutter = visibleWidth(prefix);
+  const lines = wrap(text, width() - gutter, { highlight: true, paint: tint });
+
+  lines.forEach((line, index) => to(index === 0 ? prefix + line : ' '.repeat(gutter) + line));
 }
 
 /**

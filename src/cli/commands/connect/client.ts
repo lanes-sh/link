@@ -9,7 +9,7 @@ import { CredentialOAuthProvider } from '#connectivity/auth/index.ts';
 import { hasOwnClientPath, type ProviderManifest } from '#connectivity';
 import type { SecretStore } from '#secrets';
 import { ConfigDocument } from '../../config-edit.ts';
-import { progress, style, warn } from '../../output.ts';
+import { progress, prose, style, warn } from '../../output.ts';
 import type { Prompter } from '../../prompt.ts';
 import { shortScope } from '../../scopes.ts';
 import { declareOwnClient, ensureOAuthApp } from './setup.ts';
@@ -76,12 +76,11 @@ export async function resolveOAuthClient(input: ClientChoice): Promise<OAuthClie
   const insteadOfOwn = input.client === 'hosted' && broker !== undefined && hasOwnClient;
 
   if (insteadOfOwn) {
-    progress(
-      style.dim(
-        `This profile has an OAuth client of its own, and this connection is being authorised ` +
-          `against ${broker.operator}'s instead. Existing connections are unaffected — they keep ` +
-          `refreshing against the client that issued them.`,
-      ),
+    prose(
+      `This profile has an OAuth client of its own, and this connection is being authorised ` +
+        `against ${broker.operator}'s instead. Existing connections are unaffected — they keep ` +
+        `refreshing against the client that issued them.`,
+      { paint: style.dim, to: progress },
     );
   }
 
@@ -126,11 +125,10 @@ export async function resolveOAuthClient(input: ClientChoice): Promise<OAuthClie
   // authorization code somewhere other than where the operator believes.
   const overridden = brokerOriginOverride();
   if (overridden) {
-    progress(
-      warn(
-        `${BROKER_ORIGIN_ENV} is set — the authorization code will be exchanged at ${overridden}, ` +
-          `not by ${broker.operator}.`,
-      ),
+    prose(
+      `${BROKER_ORIGIN_ENV} is set — the authorization code will be exchanged at ${overridden}, ` +
+        `not by ${broker.operator}.`,
+      { prefix: warn(''), to: progress },
     );
   }
 
@@ -185,19 +183,17 @@ export async function resolveOAuthClient(input: ClientChoice): Promise<OAuthClie
     if (left <= 10) {
       // `warn` formats; `progress` is what puts it on the stream. Called bare it
       // builds the sentence and drops it, which is how this one went unsaid.
-      progress(
-        warn(
-          `The ${broker.operator} client is near capacity (${config.capacity.accounts} of ${config.capacity.cap} accounts).`,
-        ),
+      prose(
+        `The ${broker.operator} client is near capacity (${config.capacity.accounts} of ${config.capacity.cap} accounts).`,
+        { prefix: warn(''), to: progress },
       );
     }
   }
 
-  progress(
-    style.dim(
-      `Authorising against the OAuth client ${broker.operator} operates — nothing to register.`,
-    ),
-  );
+  prose(`Authorising against the OAuth client ${broker.operator} operates — nothing to register.`, {
+    paint: style.dim,
+    to: progress,
+  });
 
   return { kind: 'brokered', url: broker.url, config };
 }
