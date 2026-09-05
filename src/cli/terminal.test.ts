@@ -19,7 +19,7 @@ afterEach(() => {
 });
 
 /** Colour at all, so a role emits something to assert on. */
-function forceColour(rung: '1' | '2' | '3'): void {
+function forceColour(rung: '1' | '2' | '3' | 'true'): void {
   delete process.env['NO_COLOR'];
   process.env['FORCE_COLOR'] = rung;
   process.env['TERM'] = 'xterm';
@@ -67,20 +67,34 @@ describe('how much colour', () => {
   });
 
   test('truecolor is claimed by COLORTERM', () => {
-    delete process.env['NO_COLOR'];
-    process.env['FORCE_COLOR'] = '1';
+    // `FORCE_COLOR=true` says there is colour without saying how much, which is
+    // what leaves the rung to be inferred.
+    forceColour('true');
     process.env['COLORTERM'] = 'truecolor';
     expect(level()).toBe(3);
   });
 
+  test('an explicit FORCE_COLOR outranks a terminal that claims more', () => {
+    // The precedence a probe caught: a shell exporting COLORTERM=truecolor made
+    // FORCE_COLOR=2 mean 3, which is the variable being ignored in the one
+    // situation somebody sets it.
+    delete process.env['NO_COLOR'];
+    process.env['COLORTERM'] = 'truecolor';
+    process.env['FORCE_COLOR'] = '2';
+    expect(level()).toBe(2);
+
+    process.env['FORCE_COLOR'] = '1';
+    expect(level()).toBe(1);
+  });
+
   test('256 is claimed by TERM', () => {
-    forceColour('1');
+    forceColour('true');
     process.env['TERM'] = 'xterm-256color';
     expect(level()).toBe(2);
   });
 
   test('a plain terminal gets the sixteen it has always had', () => {
-    forceColour('1');
+    forceColour('true');
     expect(level()).toBe(1);
     expect(paint.accent('x')).toContain('[32m');
   });

@@ -77,7 +77,9 @@ export type Level = 0 | 1 | 2 | 3;
  *
  * `FORCE_COLOR` was not honoured before. It is here because it is the only way
  * to exercise rungs 2 and 3 from a test or a CI job, and a ladder nothing can
- * climb on purpose is a ladder nobody checks.
+ * climb on purpose is a ladder nobody checks. It follows the spelling everyone
+ * else uses: `0` off, `1`/`2`/`3` a rung, and anything else — `true`, or the
+ * bare variable — meaning *on*, with the rung still inferred.
  */
 export function level(): Level {
   const force = process.env['FORCE_COLOR'];
@@ -88,8 +90,16 @@ export function level(): Level {
   if (process.env['TERM'] === 'dumb') return 0;
   if (force === undefined && process.stdout.isTTY !== true) return 0;
 
-  if (force === '3' || /truecolor|24bit/i.test(process.env['COLORTERM'] ?? '')) return 3;
-  if (force === '2' || /-256(color)?$/.test(process.env['TERM'] ?? '')) return 2;
+  // Said before inferred. `FORCE_COLOR=2` on a terminal that also exports
+  // `COLORTERM=truecolor` has to mean 256 — it is somebody overriding the
+  // guess, and a guess that outranked them would make the variable useless for
+  // the one thing it is for.
+  if (force === '3') return 3;
+  if (force === '2') return 2;
+  if (force === '1') return 1;
+
+  if (/truecolor|24bit/i.test(process.env['COLORTERM'] ?? '')) return 3;
+  if (/-256(color)?$/.test(process.env['TERM'] ?? '')) return 2;
 
   return 1;
 }
