@@ -55,6 +55,16 @@ describe('which paths the router hands over', () => {
     expect(isControlPath('/v1/connections')).toBe(true);
   });
 
+  test('claims the parameterised mutation paths too', () => {
+    // The gap that would make every mutation unreachable in production while
+    // each one passed its own test: the router asks this predicate first, and a
+    // path it does not claim never reaches `controlRoutes` at all.
+    expect(isControlPath('/v1/profiles/personal')).toBe(true);
+    expect(isControlPath('/v1/profiles/personal/grants/gmail.con1')).toBe(true);
+    expect(isControlPath('/v1/profiles/personal/policy/deny/gmail.send')).toBe(true);
+    expect(isControlPath('/v1/profiles/personal/members/lanes:xyz')).toBe(true);
+  });
+
   test('never claims the endpoint own routes', () => {
     // A wider hand-off would swallow `/mcp`, which is the failure the read
     // surface's own comment warns about.
@@ -301,5 +311,133 @@ describe('granting a connection to a profile', () => {
       }),
     );
     expect(response.status).toBe(404);
+  });
+});
+
+describe('the rest of the mutations', () => {
+  const call = (method: string, path: string, body?: unknown) =>
+    new Request(`https://runtime.internal${path}`, {
+      method,
+      headers: { authorization: 'Bearer a.b.c', 'content-type': 'application/json' },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
+
+  // A policy rule governs one connection (ADR-058), so the route requires one.
+  const POLICY = '/v1/profiles/personal/policy/deny/gmail.send_message';
+  const ON = { connection: 'gmail.con1' };
+
+  const withWriters = (over: Partial<ControlDeps> = {}) =>
+    deps({
+      agentMayManage: async () => true,
+      revoke: async () => true,
+      policy: async () => ({ profile: 'personal', capability: 'gmail.send_message', effect: 'deny' as const }),
+      addMember: async () => ({ profile: 'personal', subject: 'lanes:xyz', role: 'member' }),
+      removeMember: async () => true,
+      removeProfileNamed: async () => ({ profile: 'personal', survived: 0 }),
+      ...over,
+    });
+
+  test('revoking a grant', async () => {
+    const response = await controlRoutes(
+      call('DELETE', '/v1/profiles/personal/grants/gmail.con1'),
+      withWriters(),
+    );
+    expect(response.status).toBe(200);
+  });
+
+  test('narrowing a capability with a deny rule', async () => {
+    const response = await controlRoutes(call('PUT', POLICY, ON), withWriters());
+    expect(response.status).toBe(200);
+  });
+
+  test('a rule naming no connection is refused, because it governs one', async () => {
+    // With two mailboxes granted there is no answer to "which one" that is not
+    // a guess about which account the caller meant to narrow.
+    const response = await controlRoutes(call('PUT', POLICY, {}), withWriters());
+    expect(response.status).toBe(400);
+  });
+
+  test('an effect that is neither allow nor deny is not a route', async () => {
+    // `approval_required` is reserved in the policy model and fails closed
+    // there; it is not offered here at all rather than accepted and ignored.
+    const response = await controlRoutes(
+      call('PUT', '/v1/profiles/personal/policy/maybe/gmail.send_message', ON),
+      withWriters(),
+    );
+    expect(response.status).toBe(404);
+  });
+
+  test('adding a member', async () => {
+    const response = await controlRoutes(
+      call('PUT', '/v1/profiles/personal/members/lanes:xyz'),
+      withWriters(),
+    );
+    expect(response.status).toBe(200);
+  });
+
+  test('a subject that is not a lanes subject is refused', async () => {
+    // A profile's members: names `lanes:<uid>` and nothing else. A bare uid
+    // would look like a working delegation and reach nothing.
+    for (const bad of ['xyz', 'google:xyz', 'lanes:']) {
+      const response = await controlRoutes(
+        call('PUT', `/v1/profiles/personal/members/${encodeURIComponent(bad)}`),
+        withWriters(),
+      );
+      expect(response.status, bad).toBe(400);
+    }
+  });
+
+  test('removing a member', async () => {
+    const response = await controlRoutes(
+      call('DELETE', '/v1/profiles/personal/members/lanes:xyz'),
+      withWriters(),
+    );
+    expect(response.status).toBe(200);
+  });
+
+  test('removing a profile', async () => {
+    const response = await controlRoutes(call('DELETE', '/v1/profiles/personal'), withWriters());
+    expect(response.status).toBe(200);
+  });
+
+  test('a removal that left something behind says so rather than reporting success', async () => {
+    // `survived` non-zero means a credential is still live. Reporting 200 would
+    // tell somebody their account was cleaned up when it was not.
+    const response = await controlRoutes(
+      call('DELETE', '/v1/profiles/personal'),
+      withWriters({ removeProfileNamed: async () => ({ profile: 'personal', survived: 2 }) }),
+    );
+    expect(response.status).toBe(500);
+    expect((await response.json() as { error: string }).error).toMatch(/still/i);
+  });
+
+  test('every one of them needs admin, the scope, and an open profile', async () => {
+    const paths: [string, string, unknown?][] = [
+      ['DELETE', '/v1/profiles/personal/grants/gmail.con1'],
+      ['PUT', POLICY, ON],
+      ['PUT', '/v1/profiles/personal/members/lanes:xyz'],
+      ['DELETE', '/v1/profiles/personal/members/lanes:xyz'],
+      ['DELETE', '/v1/profiles/personal'],
+    ];
+
+    for (const [method, path, body] of paths) {
+      const editor = await controlRoutes(
+        call(method, path, body),
+        withWriters({ verifier: { async verify() { return { ...ADMIN, role: 'editor' as const }; } } }),
+      );
+      expect(editor.status, `${method} ${path} as editor`).toBe(403);
+
+      const unscoped = await controlRoutes(
+        call(method, path, body),
+        withWriters({ verifier: { async verify() { return { ...ADMIN, scopes: [] }; } } }),
+      );
+      expect(unscoped.status, `${method} ${path} without the scope`).toBe(403);
+
+      const closed = await controlRoutes(
+        call(method, path, body),
+        withWriters({ agentMayManage: async () => false }),
+      );
+      expect(closed.status, `${method} ${path} on a closed profile`).toBe(403);
+    }
   });
 });

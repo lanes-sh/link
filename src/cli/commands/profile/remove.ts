@@ -1,3 +1,8 @@
+import { renderOutcome } from './remove-render.ts';
+
+// Re-exported so a caller importing the command also gets its renderer, which
+// is where both lived before the split.
+export { renderOutcome } from './remove-render.ts';
 import type { SecretStore } from '#secrets';
 import type { BlobStore } from '#stores/blobs';
 import {
@@ -180,68 +185,6 @@ export async function executeRemoval(
   };
 }
 
-/**
- * What happened, and what is still out there.
- *
- * The exit code is the load-bearing part. Best effort means the command can
- * finish having left a live credential behind, and to a script silence is
- * indistinguishable from success — so anything that survived makes this exit
- * non-zero, and names itself with the command that finishes it.
- */
-export function renderOutcome(outcome: RemovalOutcome): void {
-  const removed = outcome.results.filter((result) => result.status === 'removed');
-  const failed = outcome.results.filter((result) => result.status === 'failed');
-  const kept = outcome.results.filter((result) => result.status === 'kept');
-
-  print();
-  if (outcome.survived === 0) {
-    print(ok(`Removed profile ${style.bold(outcome.profile)} — ${removed.length} item(s).`));
-    print();
-    return;
-  }
-
-  print(
-    fail(
-      `Removed ${removed.length} item(s) of profile ${style.bold(outcome.profile)}, and ${failed.length} refused.`,
-    ),
-  );
-  print();
-
-  for (const result of failed) {
-    print(`  ${result.item.id}`);
-    if (result.error) print(style.dim(`    ${result.error}`));
-    if (result.retry) print(style.dim(`    finish it with: ${result.retry}`));
-  }
-  print();
-
-  if (kept.length > 0) {
-    // Said plainly, because the alternative reading — that the profile is
-    // half-gone and needs unpicking by hand — is the one an operator will
-    // assume from a failure report.
-    print(
-      `The profile's config was kept, so nothing is stranded: fix the above and run the same command again.`,
-    );
-    print();
-  }
-
-  // A live credential left behind must not look like success to a script.
-  process.exitCode = 1;
-}
-
-/**
- * The confirmation, which asks for the name rather than a keystroke.
- *
- * A step up from `agreed()`, deliberately. That helper is `y/N` and is right
- * for `vault remove`, which drops one item the operator can put back. This
- * drops every live OAuth refresh token a profile holds, and putting those back
- * means visiting each vendor again — so the gesture should be one you cannot
- * make by leaning on the keyboard.
- *
- * Local rather than shared for the same reason it is not `agreed()`: the shape
- * differs, and bending the existing helper for a single caller in another
- * command folder would leave both worse. If a second consumer appears, promote
- * it then.
- */
 export async function confirmedByName(
   profile: string,
   options: { yes?: boolean | undefined; prompter?: Prompter | undefined },
@@ -291,8 +234,15 @@ export interface RemoveFlags extends GlobalFlags {
  * config, which ADR-007 keeps CLI-only, and it is the most destructive thing
  * in the tool.
  */
-export async function removeProfile(name: string, flags: RemoveFlags): Promise<void> {
-  const { selection, config, target } = await resolveProfileOnly({ ...flags, profile: name });
+export async function removeProfile(
+  name: string,
+  flags: RemoveFlags,
+  options: { env?: Record<string, string | undefined> } = {},
+): Promise<RemovalOutcome | null> {
+  const { selection, config, target } = await resolveProfileOnly(
+    { ...flags, profile: name },
+    options.env !== undefined ? { env: options.env } : {},
+  );
   announceProfile(selection);
 
   const root = selection.workspaceRoot;
@@ -306,7 +256,7 @@ export async function removeProfile(name: string, flags: RemoveFlags): Promise<v
 
   if (disposition === null) {
     print(style.dim('  cancelled — nothing was removed'));
-    return;
+    return null;
   }
 
   if (disposition.kind === 'migrate') {
@@ -340,10 +290,11 @@ export async function removeProfile(name: string, flags: RemoveFlags): Promise<v
   if (flags.dryRun) {
     print(style.dim('  --dry-run: nothing was removed, and no store was written to.'));
     print();
-    return emit(flags.json, plan, () => {});
+    emit(flags.json, plan, () => {});
+    return null;
   }
 
-  if (!(await confirmedByName(name, { yes: flags.yes, prompter: flags.prompter }))) return;
+  if (!(await confirmedByName(name, { yes: flags.yes, prompter: flags.prompter }))) return null;
 
   const outcome = await executeRemoval(plan, {
     openSecrets: (target) => openSecretStoreFor(root, target),
@@ -362,7 +313,10 @@ export async function removeProfile(name: string, flags: RemoveFlags): Promise<v
     arguments: { connections: config.grants.map((grant) => grant.connection) },
   });
 
-  return emit(flags.json, outcome, () => renderOutcome(outcome));
+  // Returned as well as rendered, so a caller that is not a terminal can read
+  // `survived` — the difference between removed and half-removed.
+  emit(flags.json, outcome, () => renderOutcome(outcome));
+  return outcome;
 }
 
 /** `profiles/<name>.yaml`, however the path was spelled for display. */

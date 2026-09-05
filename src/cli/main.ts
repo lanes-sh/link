@@ -209,7 +209,7 @@ export async function run(argv: readonly string[]): Promise<void> {
                 '[--delete-data | --migrate-to <profile>]',
             );
           }
-          return profileRemove(rest[0], {
+          await profileRemove(rest[0], {
             ...global,
             json,
             dryRun: flags['dry-run'] === true,
@@ -219,6 +219,7 @@ export async function run(argv: readonly string[]): Promise<void> {
               ? { migrateTo: flags['migrate-to'] }
               : {}),
           });
+          return;
         default:
           throw new Error(`Unknown: ${PROGRAM} profile ${second}`);
       }

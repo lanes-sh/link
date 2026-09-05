@@ -6,7 +6,14 @@ import {
   type WorkspaceReaders,
   type WorkspaceWriters,
 } from './commands.ts';
-import { environmentFor, MANAGED_TARGET } from './workspace.ts';
+import { environmentFor } from './workspace.ts';
+import { PROFILE_ROUTES } from './profile-routes.ts';
+import { json, notFound, type Route } from './routing.ts';
+
+// Re-exported so the server mounts one module rather than two: which paths
+// this surface claims and what answers them are one fact from outside.
+export { isControlPath } from './routing.ts';
+import { ACCESS_ROUTES } from './access-routes.ts';
 import { loadWorkspaceProfiles } from '#profile';
 import { READS, WIDENS, permits, workspaceRootFor } from './authorise.ts';
 import type { ControlAssertion } from './assertion.ts';
@@ -70,41 +77,23 @@ export interface ControlDeps {
   readonly create?: WorkspaceWriters['create'];
   readonly grant?: WorkspaceWriters['grant'];
   readonly agentMayManage?: WorkspaceWriters['agentMayManage'];
+  readonly revoke?: WorkspaceWriters['revoke'];
+  readonly policy?: WorkspaceWriters['policy'];
+  readonly addMember?: WorkspaceWriters['addMember'];
+  readonly removeMember?: WorkspaceWriters['removeMember'];
+  readonly removeProfileNamed?: WorkspaceWriters['removeProfileNamed'];
 }
 
-/**
- * What the config format accepts as a profile name.
- *
- * The same shape as `identifier` in `#profile/schema.ts`. Restated rather than
- * imported because this refuses *before* anything is written, and the schema's
- * copy refuses after — one is a 400 with a sentence and the other is a parse
- * failure three frames down.
- */
-const PROFILE_NAME = /^[a-z][a-z0-9_-]*$/;
 
-/** `<provider>.<id>`, the shape `connectionRefOf` produces. */
-const CONNECTION_REF = /^[a-z][a-z0-9_]*\.[a-z0-9][a-z0-9_-]*$/;
 
-/** The paths this surface claims. Everything else is the endpoint's. */
-const PATHS: readonly string[] = ['/v1/profiles', '/v1/connections'];
 
-/**
- * Whether the router should hand this path over.
- *
- * A predicate rather than an exported array, so the router owns no literal of
- * its own and cannot come to disagree with the handler about which paths these
- * are. `isReadPath` and `isAuthorizationPath` are the same shape for the same
- * reason — and the hand-off must stay narrow, because this answers everything
- * it is given and a wider one would swallow `/mcp`.
- */
-export function isControlPath(pathname: string): boolean {
-  return PATHS.includes(pathname);
-}
 
-const json = (body: unknown, status = 200): Response => Response.json(body, { status });
 
-/** One answer for a path that does not exist and for a workspace that is not this one. */
-const notFound = (): Response => json({ error: 'not_found' }, 404);
+
+
+
+
+
 
 /**
  * Answer one control request.
@@ -120,6 +109,11 @@ export async function controlRoutes(request: Request, deps: ControlDeps): Promis
     ...(deps.create ? { create: deps.create } : {}),
     ...(deps.grant ? { grant: deps.grant } : {}),
     ...(deps.agentMayManage ? { agentMayManage: deps.agentMayManage } : {}),
+    ...(deps.revoke ? { revoke: deps.revoke } : {}),
+    ...(deps.policy ? { policy: deps.policy } : {}),
+    ...(deps.addMember ? { addMember: deps.addMember } : {}),
+    ...(deps.removeMember ? { removeMember: deps.removeMember } : {}),
+    ...(deps.removeProfileNamed ? { removeProfileNamed: deps.removeProfileNamed } : {}),
   };
   const url = new URL(request.url);
 
@@ -190,25 +184,7 @@ export async function controlRoutes(request: Request, deps: ControlDeps): Promis
   }
 }
 
-interface RouteContext {
-  readonly assertion: ControlAssertion;
-  /** Path segments a parameterised route captured. */
-  readonly params: Record<string, string>;
-  readonly root: string;
-  readonly readers: WorkspaceReaders;
-  readonly writers: WorkspaceWriters;
-  /** The environment a command runs in: this workspace's root, and nothing ambient. */
-  readonly env: Record<string, string | undefined>;
-  readonly body: () => Promise<unknown>;
-}
 
-interface Route {
-  readonly method: string;
-  /** A literal path, or one carrying `:name` segments. */
-  readonly path: string;
-  readonly needs: typeof READS | typeof WIDENS;
-  run(context: RouteContext): Promise<Response>;
-}
 
 /**
  * The table, so what a route costs is declared beside what it does.
@@ -252,121 +228,8 @@ function match(
   return null;
 }
 
-const ROUTES: readonly Route[] = [
-  {
-    method: 'GET',
-    path: '/v1/connections',
-    needs: READS,
-    async run({ assertion, root, readers }) {
-      return json({
-        workspace: assertion.workspace,
-        connections: await readers.connections(root),
-      });
-    },
-  },
-  {
-    method: 'GET',
-    path: '/v1/profiles',
-    needs: READS,
-    async run({ assertion, root, readers }) {
-      const { profiles, unreadable } = await readers.profiles(root);
-      return json({ workspace: assertion.workspace, profiles, unreadable });
-    },
-  },
-  {
-    method: 'POST',
-    path: '/v1/profiles',
-    needs: WIDENS,
-    async run({ writers, env, body }) {
-      let named: unknown;
-      try {
-        named = await body();
-      } catch {
-        return json({ error: 'That request body is not JSON.' }, 400);
-      }
 
-      const name = (named as { name?: unknown } | null)?.name;
-      if (typeof name !== 'string' || !PROFILE_NAME.test(name)) {
-        // Checked here rather than left to the writer, so a malformed name is a
-        // 400 naming the rule instead of whatever a path error reads like.
-        return json(
-          {
-            error:
-              'A profile name is lowercase letters, digits, hyphens and underscores, ' +
-              'starting with a letter.',
-          },
-          400,
-        );
-      }
 
-      try {
-        const created = await writers.create(name, {
-          // A managed workspace declares exactly one target and it is not the
-          // caller's to choose (ADR-052: a workspace is a target).
-          targets: [MANAGED_TARGET],
-          // Nobody is at a terminal. A command that would prompt must refuse
-          // instead of blocking on a stdin that will never answer.
-          nonInteractive: true,
-          env,
-        });
-        return json({ profile: created.name }, 201);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        // A name already taken is the caller's to fix and the one failure here
-        // that is not ours, so it says so rather than becoming a 503.
-        if (/already exists/i.test(message)) {
-          return json({ error: `A profile called "${name}" already exists.` }, 409);
-        }
-        throw error;
-      }
-    },
-  },
-  {
-    method: 'PUT',
-    path: '/v1/profiles/:profile/grants/:connection',
-    needs: WIDENS,
-    async run({ writers, env, params }) {
-      const profile = params['profile'] ?? '';
-      const connection = params['connection'] ?? '';
 
-      if (!PROFILE_NAME.test(profile)) {
-        return json({ error: 'That is not a profile name.' }, 400);
-      }
-      if (!CONNECTION_REF.test(connection)) {
-        return json(
-          { error: 'A connection reference is "<provider>.<id>", lowercase.' },
-          400,
-        );
-      }
+const ROUTES: readonly Route[] = [...PROFILE_ROUTES, ...ACCESS_ROUTES];
 
-      // The third gate, and read before anything is written. The role says who
-      // the caller is and the scope says what they authorised this client to
-      // do; this is the profile's own answer, and a profile closed to agents
-      // refuses an admin holding every scope.
-      if (!(await writers.agentMayManage(profile, env))) {
-        return json(
-          {
-            error:
-              `The profile "${profile}" is not open to being changed by an agent. ` +
-              'Its `agent_management` is set to deny; a person can still change it from the ' +
-              'dashboard or the CLI.',
-          },
-          403,
-        );
-      }
-
-      try {
-        const granted = await writers.grant(connection, profile, env);
-        // Already granted is not a failure. Asking twice is an ordinary thing
-        // for an agent to do and the answer is the same either way.
-        return json({ connection, profile, alreadyGranted: granted === null }, 200);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (/holds no connection/i.test(message)) {
-          return json({ error: `This workspace holds no connection "${connection}".` }, 404);
-        }
-        throw error;
-      }
-    },
-  },
-];

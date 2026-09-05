@@ -176,6 +176,70 @@ export async function membersAdd(
   });
 }
 
+/**
+ * The data half. The wrapper below resolves the workspace from the process
+ * environment, which is right for a terminal with one workspace in view; a
+ * process serving many needs the half that takes an `env`.
+ */
+export async function addMemberTo(
+  subject: string,
+  role: 'owner' | 'member',
+  flags: MembersFlags,
+  options: { env?: Record<string, string | undefined> } = {},
+): Promise<{ profile: string; subject: string; role: string } | null> {
+  const { resolution, config, target } = await resolveProfile(
+    flags,
+    options.env !== undefined ? { env: options.env } : {},
+  );
+
+  if (config.members.some((member) => member.subject === subject)) return null;
+
+  // The caller's own subject is not available here — there is no session in a
+  // server. `assertDelegatable` degrades to a warning when it cannot check, and
+  // the API is the party that owns membership and validates before calling.
+  await assertDelegatable(subject, target, undefined);
+
+  const document = await ConfigDocument.open(resolution.workspaceRoot, resolution.profile);
+  document.addTo(['members'], { subject, role }, { inline: true });
+  await document.save();
+
+  await recordConfigChange(config, resolution.workspaceRoot, target, {
+    capability: 'config.member.add',
+    scope: resolution.profile,
+    arguments: { subject, role },
+  });
+
+  await publishProfileEdit({ resolution, config, target });
+  return { profile: resolution.profile, subject, role };
+}
+
+export async function removeMemberFrom(
+  subject: string,
+  flags: MembersFlags,
+  options: { env?: Record<string, string | undefined> } = {},
+): Promise<boolean> {
+  const { resolution, config, target } = await resolveProfile(
+    flags,
+    options.env !== undefined ? { env: options.env } : {},
+  );
+
+  const at = config.members.findIndex((member) => member.subject === subject);
+  if (at === -1) return false;
+
+  const document = await ConfigDocument.open(resolution.workspaceRoot, resolution.profile);
+  document.removeFrom(['members'], at);
+  await document.save();
+
+  await recordConfigChange(config, resolution.workspaceRoot, target, {
+    capability: 'config.member.remove',
+    scope: resolution.profile,
+    arguments: { subject },
+  });
+
+  await publishProfileEdit({ resolution, config, target });
+  return true;
+}
+
 export async function membersRemove(
   subject: string | undefined,
   flags: MembersFlags,

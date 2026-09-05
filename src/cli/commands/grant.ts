@@ -133,6 +133,30 @@ export async function grantConnectionTo(
  * removes the account from the workspace and every profile that named it.
  * Conflating them is how somebody loses a mailbox meaning to narrow an agent.
  */
+/**
+ * The data half. The wrapper below resolves the workspace from the process
+ * environment, which is right for a terminal with one workspace in view; a
+ * process serving many needs the half that takes an `env`.
+ */
+export async function revokeConnection(
+  key: string,
+  flags: GlobalFlags,
+  options: { env?: Record<string, string | undefined> } = {},
+): Promise<boolean> {
+  const { resolution, config } = await resolveProfile(
+    flags,
+    options.env !== undefined ? { env: options.env } : {},
+  );
+  const at = config.grants.findIndex((grant) => grant.connection === key);
+  // Not granted is an outcome rather than an error: asking twice is ordinary.
+  if (at === -1) return false;
+
+  const document = await ConfigDocument.open(resolution.workspaceRoot, resolution.profile);
+  document.removeFrom(['grants'], at);
+  await document.save();
+  return true;
+}
+
 export async function revokeConnectionFrom(
   key: string | undefined,
   flags: GlobalFlags & { json?: boolean },
@@ -144,17 +168,11 @@ export async function revokeConnectionFrom(
     );
   }
 
-  const { resolution, config, target } = await resolveProfile(flags);
-  const at = config.grants.findIndex((grant) => grant.connection === key);
-
-  if (at === -1) {
+  const { resolution, target } = await resolveProfile(flags);
+  if (!(await revokeConnection(key, flags))) {
     print(style.dim(`${resolution.profile} does not grant ${key}.`));
     return;
   }
-
-  const document = await ConfigDocument.open(resolution.workspaceRoot, resolution.profile);
-  document.removeFrom(['grants'], at);
-  await document.save();
 
   return emit(flags.json, { profile: resolution.profile, target, connection: key }, () => {
     announce(resolution);
