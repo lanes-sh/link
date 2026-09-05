@@ -133,7 +133,7 @@ The same code and the same config in all three. Only the storage adapters change
 | | **Local** | **Self-Hosted** | **Lanes Cloud** |
 |---|---|---|---|
 | Runs on | your machine | your GCP project, on Cloud Run | managed for you |
-| Needs | Bun, nothing else | a Google Cloud billing account | nothing |
+| Needs | Bun, nothing else | a Google Cloud billing account | a Lanes Pro plan |
 | Set up with | `lanes link start` | `lanes link deploy` | [join the waitlist](https://lanes.sh/forms/f/a46d8b45-4759-485b-841c-d117a823b645) |
 | Reachable from | that machine | anywhere, including your phone | anywhere |
 | Status | ready | ready | **coming soon** |
