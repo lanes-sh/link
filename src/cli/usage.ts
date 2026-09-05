@@ -1,213 +1,114 @@
 import { style } from './output.ts';
+import { width } from './terminal.ts';
+import { visibleWidth, wrap } from './typeset.ts';
+import { SECTIONS, type Entry } from './usage-data.ts';
 
 /**
  * The help text, and the name the CLI calls itself.
  *
  * `PROGRAM` is a constant rather than 59 string literals because it had been 59
- * string literals: the rename that produced `lanes link` meant editing the
- * usage text, every `Usage:` line, and every `Unknown:` line by hand, with no
- * way to tell from a green test suite whether one had been missed. The next
- * rename touches this line, and `argv.test.ts` holds the two to each other.
+ * string literals: the rename that produced `lanes link` meant editing the usage
+ * text, every `Usage:` line, and every `Unknown:` line by hand, with no way to
+ * tell from a green test suite whether one had been missed. The next rename
+ * touches this line, and `argv.test.ts` holds the two to each other.
  *
- * The text lives here rather than in `main.ts` because it is 65 lines of prose
- * that changes for entirely different reasons from the dispatch below it.
+ * **The text is data now, and the columns are computed.** It used to be one
+ * template literal with the descriptions hand-aligned, which failed in the way
+ * hand-alignment always does: descriptions started at column 40 in most of the
+ * file, 33 in the `connect custom` block, and 41, 49 and 50 elsewhere. Worse,
+ * `--non-interactive`'s description had come adrift from its command — two
+ * lines indented to column 40, sitting four entries below the flag they
+ * describe because `connect custom` was inserted between them, reading as part
+ * of *its* description instead. Nothing could catch that, because nothing knew
+ * the two belonged together. Now they are one object, and the pairing is not
+ * something a person maintains by counting spaces.
+ *
+ * Rendered rather than stored, so `--help` fits the terminal it is asked on.
+ * The longest line was 100 characters and 72 of 195 lines exceeded 80, so an
+ * eighty-column terminal shredded a third of the help.
  */
 
 /** How this CLI is invoked — the `link` area of the `lanes` command. */
 export const PROGRAM = 'lanes link';
 
-export const USAGE = `${style.bold(PROGRAM)} — a self-hostable MCP gateway for all your connections, memory, tasks, files, and secrets
+const BANNER =
+  '— a self-hostable MCP gateway for all your connections, memory, tasks, files, and secrets';
 
-${style.bold('Everyday')}
-  ${PROGRAM} setup plan [--json]        what each provider needs, and which are connected
-  ${PROGRAM} setup plan <provider>      the console steps, the values, and the command
-  ${PROGRAM} connect <provider>         authorise an account into this workspace
-                                        (once per account, not once per profile)
-  ${PROGRAM} connect <provider>.<id>    re-authorise one existing account
-  ${PROGRAM} connect <...> --replace    ask for the stored password or key again
-  ${PROGRAM} connect <...> --auth <method>  pick how, where there is a choice
-  ${PROGRAM} connect <...> --non-interactive [--json]
-  ${PROGRAM} disconnect <provider>.<id>  remove an account, and delete its credential
-  ${PROGRAM} disconnect <...> --keep-credential   leave the credential in the store
-  ${PROGRAM} relabel <provider>.<id> <name>      rename what an account is called
-  ${PROGRAM} connect custom <id> --connector <kind> --auth <method>
-                                 declare a service that is not built in, and connect it.
-                                 kinds: mcp, http, imap, dav, fs. Omit a value and it is
-                                 asked for; the manifest it writes is yours to edit
-                                        answer nothing from a terminal: take every value
-                                        from the credential store, or say what is missing
-  ${PROGRAM} connection list [--json]   every account in this workspace, and who grants it
-  ${PROGRAM} grant add <provider>.<id>   let a profile reach one, with nothing allowed yet
-  ${PROGRAM} grant remove <provider>.<id>
-  ${PROGRAM} start [--only]             reconcile and serve every profile on one endpoint
-  ${PROGRAM} outputs [--show] [--json]  the endpoint an agent needs
-  ${PROGRAM} desktop [--print] [--yes]  open the Lanes app on its Lanes Link page,
-                                        installing it first if it is not there
-  ${PROGRAM} dashboard                  the older spelling of the line above
-  ${PROGRAM} mcp add [claude|codex]     register this endpoint, and install the agent skill
-  ${PROGRAM} mcp add --no-skill         register only, leaving the agent's own files alone
-  ${PROGRAM} mcp list                   where it is registered, and whether the skill is current
-  ${PROGRAM} mcp stdio                  serve on stdin/stdout, for a client that spawns it
-  ${PROGRAM} mcp skill [--print]        the bundled skill — its path, or the document itself
-  ${PROGRAM} mcp install-instructions [--client claude|chatgpt|codex|cursor]
-                                 a block to paste where a client keeps its own
-                                 standing instructions, so it knows to look here
-  ${PROGRAM} pair [--print] [--rotate]  let the Lanes dashboard read this machine
-  ${PROGRAM} status [--json]            connections, reachable capabilities, endpoint
+const FOOTER = 'Every command prints the profile and target it is acting on, before it acts.';
 
-${style.bold('Profiles')}
-  ${PROGRAM} profile add <name> --workspace <name> [--workspace <name>] [--json]
-                                 a target per place it runs; local is derived, the
-                                 rest are copied from a sibling profile
-  ${PROGRAM} profile list [--json]
-  ${PROGRAM} profile remove <name> [--workspace <name>] [--dry-run] [--yes] [--json]
-                                 [--delete-data | --migrate-to <profile>]
-                                 Say which of --delete-data or --migrate-to for
-                                 its memory, tasks, assets and skills — there is
-                                 no default. Accounts outlive it; disconnect
-                                 removes those, and token revoke the tokens.
+/**
+ * Where a description starts.
+ *
+ * The natural column is the longest command plus a gap, capped at a share of
+ * the terminal — otherwise one seventy-character command in `profile remove`
+ * would push every description in the file off the right-hand edge. A command
+ * past the cap keeps its own line and its description begins on the next one,
+ * which is what the cap is for rather than a failure of it.
+ */
+function describeAt(rendered: readonly string[], measure: number): number {
+  const longest = Math.max(...rendered.map(visibleWidth), 0);
 
-${style.bold('Workspaces')}
-  ${PROGRAM} workspace list [--urls]   every workspace this one knows
-  ${PROGRAM} workspace show <name>     one workspace's adapters, and its address
-  ${PROGRAM} sync workspaces --workspace <name> [--from gs://bucket] [--discover]
-                                 [--prefer local|remote] [--dry-run]
-                                 reconcile this workspace with the copy the
-                                 deployment reads; recovers one a profile has lost
+  // Half, not the more usual third, because `  lanes link ` spends thirteen
+  // columns before a command has said anything. A third of eighty leaves
+  // twenty-six for the command itself, which is narrower than most of them and
+  // would push nearly every description onto a line of its own.
+  return Math.max(Math.min(longest + 2, Math.floor(measure * 0.5)), 18);
+}
 
-${style.bold('Who you are')}
-  ${PROGRAM} identity add <kind> <value> [--note text] [--json]
-                                 e.g. name, email, github — any kind you like
-  ${PROGRAM} identity list [--json]
-  ${PROGRAM} identity remove <kind> <value> [--json]
+/** One entry's line, as it is measured and as it is shown. */
+function spell(entry: Entry): string {
+  return `  ${entry.flag === true ? entry.command : `${PROGRAM} ${entry.command}`}`;
+}
 
-${style.bold('Permissions')}
-  ${PROGRAM} policy list
-  ${PROGRAM} policy allow <capability> --connection <provider>.<id>
-                                 e.g. gmail.* or gmail.send_message. A rule lands
-                                 in one grant, so two accounts can differ
-  ${PROGRAM} policy deny  <capability> --connection <provider>.<id>
-  ${PROGRAM} profile members list       who may consume this profile, and who could
-  ${PROGRAM} profile members add <subject>|--me [--role owner|member]
-  ${PROGRAM} profile members remove <subject>
-  ${PROGRAM} token list [--json]        static tokens, and what each one reaches
-  ${PROGRAM} token issue --me|--subject <id> [--label <t>]
-                                 CI only: a token for one person. It reaches
-                                 every profile whose members list them
-  ${PROGRAM} token show [--id t] [--show|--raw]   --raw prints only it, for $(…)
-  ${PROGRAM} token rotate [--id t] [--show]
-  ${PROGRAM} token revoke --id <t>
+/**
+ * The whole help text, laid out for one width.
+ *
+ * Two shapes are load-bearing and asserted on by `argv.test.ts` and
+ * `instructions.test.ts`, which read this string to find every command the CLI
+ * documents. A command is emitted at exactly two spaces, so `/^ {2}\w/` selects
+ * the entries and nothing else; a flag begins with `-`, which is not `\w`, so
+ * flags are excluded exactly as they were; and every description line is
+ * indented at least four, so none can be mistaken for a command.
+ */
+export function usage(measure: number = width()): string {
+  const lines: string[] = wrap(`${PROGRAM} ${BANNER}`, measure).map((line, index) =>
+    index === 0 ? line.replace(PROGRAM, style.bold(PROGRAM)) : line,
+  );
+  const column = describeAt(SECTIONS.flatMap((s) => s.entries).map(spell), measure);
 
-${style.bold('Your own context')}
-  ${PROGRAM} memory list [--tag t]      what you have stored
-  ${PROGRAM} memory get <id>
-  ${PROGRAM} memory write <id> --title <t> [--tag t]   body on stdin
-  ${PROGRAM} memory forget <id>
+  for (const section of SECTIONS) {
+    lines.push('', style.bold(section.title));
 
-  ${PROGRAM} tasks list [--status s]     what is outstanding; --status all for everything
-  ${PROGRAM} tasks get <id>
-  ${PROGRAM} tasks add <title> [--status s] [--due d] [--tag t]   notes on stdin
-  ${PROGRAM} tasks update <id> --status <s>   closing one is an update, not a remove
-  ${PROGRAM} tasks remove <id>
-                                 statuses: in_progress open blocked muted done dropped
+    for (const entry of section.entries) {
+      // A command may be too long for any terminal — `profile remove` with
+      // every flag spelled out is 125 characters. It wraps to a four-column
+      // hanging indent, which is deep enough that a continuation can never be
+      // mistaken for an entry by the two tests that read this string.
+      const spelled = wrap(spell(entry), measure, { hanging: '  ' });
+      const last = spelled.at(-1)!;
+      for (const line of spelled.slice(0, -1)) lines.push(line);
 
-  ${PROGRAM} assets list                files kept in this profile
-  ${PROGRAM} assets get <name>          the bytes, to stdout — redirect them
-  ${PROGRAM} assets add <file> [--name n] [--content-type t]
-  ${PROGRAM} assets remove <name>
+      if (entry.description === undefined) {
+        lines.push(last);
+        continue;
+      }
 
-  ${PROGRAM} skills list                the procedures agents can invoke
-  ${PROGRAM} skills show <name>
-  ${PROGRAM} skills add <name> [--file f]             document on stdin
-  ${PROGRAM} skills remove <name>
+      const room = Math.max(measure - column, 20);
+      const wrapped = wrap(entry.description, room);
+      const fits = visibleWidth(last) + 1 <= column;
 
-  ${PROGRAM} entities                 who and what everyone else is
-  ${PROGRAM} entities find [query] [--type t] [--tag t] [--attr kind[=value]]
-                                 [--related predicate=id]   every match, never a choice
-  ${PROGRAM} entities get <id>                   with its relationships, both ways
-  ${PROGRAM} entities write <name> [--type t] [--name id] [--alias a]
-                                 [--attr kind=value] [--related predicate=id]
-                                 notes on stdin; a flag you omit keeps what is stored
-  ${PROGRAM} entities link <from> <predicate>=<to>       one edge, written on <from> only
-  ${PROGRAM} entities forget <id>
-  ${PROGRAM} entities reindex                    rebuild the lookup index from the files
+      if (fits) {
+        lines.push(last + ' '.repeat(column - visibleWidth(last)) + style.dim(wrapped[0] ?? ''));
+      } else {
+        lines.push(last);
+        if (wrapped[0] !== undefined) lines.push(' '.repeat(column) + style.dim(wrapped[0]));
+      }
 
-  ${PROGRAM} knowledge show            where memory and skills are kept, and how many
-  ${PROGRAM} knowledge use github --repo <owner/name> [--branch b] [--path p]
-                                 keep both in a private repository, over the GitHub API
-                                 [--migrate] moves what is already stored, in one commit
-                                 [--no-migrate] switches and leaves it where it is
-                                 [--keep] moves it, and leaves the local copies unread
-  ${PROGRAM} knowledge use local [--migrate]        bring them back onto this target
+      for (const line of wrapped.slice(1)) lines.push(' '.repeat(column) + style.dim(line));
+    }
+  }
 
-  ${PROGRAM} vault list                 names only, never values
-  ${PROGRAM} vault get <id> [--show|--raw]
-  ${PROGRAM} vault set <id> [--description d]         value on stdin
-  ${PROGRAM} vault remove <id>
-  ${PROGRAM} vault key generate         a fresh LANES_LINK_VAULT_KEY, printed once
+  lines.push('', ...wrap(FOOTER, measure));
 
-${style.bold('Deploying')}
-  ${PROGRAM} deploy --workspace <name> [--dry-run]
-                                 set up, build, and roll one revision serving
-                                 every profile that declares the target
-  ${PROGRAM} deploy --workspace <name> --profile a --profile b
-                                 only these; the first is the primary
-  ${PROGRAM} deploy --non-interactive   take the stored answers, never prompt
-  ${PROGRAM} deploy --access iam|public who gets past the platform's own door
-  ${PROGRAM} secrets list               credential references in this target
-  ${PROGRAM} secrets set <ref>          store one value, read from stdin
-  ${PROGRAM} secrets push --from local --to cloud
-
-${style.bold('Inspection')}
-  ${PROGRAM} check                      static validation, no external calls
-  ${PROGRAM} doctor [--json]            credentials resolve, stores reachable
-  ${PROGRAM} doctor --fix               apply a repair it can make itself, such as
-                                        a provider this project renamed under you
-  ${PROGRAM} auth [--json]              whether each connection can still sign in
-  ${PROGRAM} auth --connection <key>    just this one
-  ${PROGRAM} tools [--json]             what the endpoint advertises to a client
-  ${PROGRAM} plan                       what reconcile would change
-  ${PROGRAM} audit tail [--limit N] [--denied-only] [--format md]
-  ${PROGRAM} audit verify           has anything in the log been altered or removed
-  ${PROGRAM} config show
-  ${PROGRAM} version                    which release this is — same as lanes --version
-  ${PROGRAM} update [--check] [--json]  install the newer release, or say what is available
-
-${style.bold('Attachments')}
-  ${PROGRAM} attach <file> --connection <provider>.<account>
-                                        stage a file, print a handle to send it by
-
-${style.bold('Naming what a command acts on')}
-  --profile <name>               required by every command that reads or writes a profile
-  --workspace <name>             required by every command that opens a workspace's
-                                 stores. "lanes set-workspace <name>" writes a default;
-                                 every command that uses it prints the name it resolved,
-                                 and deploy, sync, secrets push, profile remove,
-                                 disconnect and token rotate refuse it and want the flag.
-  --target <name>                the old spelling of --workspace. Accepted for one
-                                 minor, and it warns.
-
-${style.bold('Other flags')}
-  --connection <id>              which memory/tasks/assets/skills/vault/entities
-                                 connection, where a profile has several of one kind
-  --yes                          skip the confirmation a destructive command would ask for
-  --json                         machine-readable output, where a command offers it
-  --non-interactive              never prompt: connect refuses with what to store,
-                                 deploy takes the answers its config already holds
-  --label <text>                 what to call a connection, instead of being asked at the
-                                 end of connect. A display name only: nothing addresses
-                                 a connection by it. Use relabel to change one later
-  --accept-broad-scopes          agree in advance to scopes broader than a provider needs
-  --own-client                   register your own OAuth client instead of using the
-                                 one this project operates (connect only)
-  --auth <method>                which way in, where a provider offers two (connect
-                                 only). "oauth" is the browser; the other is named
-                                 in the choice connect prints. On connect custom it
-                                 names the credential type instead: none, bearer,
-                                 api-key, header, basic, oauth, strategy
-  --replace-manifest             rewrite a declaration that already exists and differs
-                                 (connect custom only — --replace is about the credential)
-  --port <n>                     override the configured port (start only)
-
-Every command prints the profile and target it is acting on, before it acts.
-`;
+  return lines.join('\n');
+}

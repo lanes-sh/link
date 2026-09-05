@@ -53,7 +53,7 @@ import type { GlobalFlags } from './runtime.ts';
 import type { OwnerFlags } from './commands/owner/shared.ts';
 import { assertKnownFlags } from './selection.ts';
 import { requireSelection } from './selection-require.ts';
-import { PROGRAM, USAGE } from './usage.ts';
+import { PROGRAM, usage } from './usage.ts';
 import { version } from './version.ts';
 import { print } from './output.ts';
 
@@ -87,7 +87,7 @@ export async function run(argv: readonly string[]): Promise<void> {
   const json = flags['json'] === true;
 
   if (!first || first === 'help' || flags['help'] === true) {
-    print(USAGE);
+    print(usage());
     return;
   }
 

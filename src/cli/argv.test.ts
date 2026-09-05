@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { globalFlags, normaliseWorkspace, ownerFlags, parseArgv, text } from './argv.ts';
-import { PROGRAM, USAGE } from './usage.ts';
+import { PROGRAM, usage } from './usage.ts';
 
 /**
  * The parser had no tests because it could not have any: it lived inside the
@@ -71,7 +71,11 @@ describe('the program name', () => {
   test('every command line in the usage text is spelled with it', () => {
     // The guard against a rename that edits the constant and leaves the help
     // text behind — or vice versa.
-    const commands = USAGE.split('\n').filter((line) => /^ {2}\w/.test(line));
+    // Pinned to eighty rather than the terminal's width: `usage` is rendered
+    // now, and an inherited COLUMNS would otherwise decide what this parses.
+    const commands = usage(80)
+      .split('\n')
+      .filter((line: string) => /^ {2}\w/.test(line));
     expect(commands.length).toBeGreaterThan(20);
     for (const line of commands) expect(line.trimStart().startsWith(PROGRAM)).toBe(true);
   });
@@ -80,8 +84,8 @@ describe('the program name', () => {
     // Assembled rather than written out, so the tree-wide grep that proves the
     // old name is gone does not trip over the test that forbids it.
     const runTogether = ['lanes', 'link'].join('');
-    expect(USAGE.toLowerCase()).not.toContain(runTogether);
-    expect(USAGE).not.toContain('lanes-link');
+    expect(usage(80).toLowerCase()).not.toContain(runTogether);
+    expect(usage(80)).not.toContain('lanes-link');
   });
 });
 
