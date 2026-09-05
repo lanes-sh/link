@@ -13,6 +13,16 @@ afterEach(() => {
   }
 });
 
+const indentOf = (line: string): number => line.match(/^ */)![0].length;
+
+/** Where a numbered line's text starts, past its gutter and its own lead. */
+function textColumn(head: string): number {
+  const gutter = head.match(/^\s*\d+\s\s/)![0];
+  const lead = head.slice(gutter.length).match(/^ */)![0];
+
+  return gutter.length + lead.length;
+}
+
 /** The words of a laid-out block, in order, with the colour taken back off. */
 const wordsOf = (lines: readonly string[]): string[] =>
   lines
@@ -149,6 +159,32 @@ describe('a numbered walkthrough', () => {
 
     expect(lines[0]).toStartWith('   1  ');
     expect(lines[11]).toStartWith('  12  ');
+  });
+
+  test("an embedded line is re-indented under its step, not under column zero", () => {
+    // Google's steps indent continuations by seven spaces, a depth chosen for
+    // the old fixed four-character gutter. Added to a computed gutter it landed
+    // thirteen columns in and read as unrelated to the step above it.
+    const [head, ...tail] = numbered(['Enable the APIs:\n       gcloud services enable x'], 60).map(
+      stripAnsi,
+    );
+
+    // Two columns in from where the step's own text begins, whatever the
+    // gutter happens to be — asserting the relationship rather than a column
+    // keeps this honest when a list grows past nine entries.
+    expect(indentOf(tail[0]!)).toBe(textColumn(head!) + 2);
+  });
+
+  test('a sub-item nests below its own lead, not level with its continuations', () => {
+    // `  AUDIENCE — …` already sits one level in. Flattening its embedded lines
+    // to a fixed two columns would put them level with its wrapped text, which
+    // is the difference between a nested paragraph and a wrapped one.
+    const [head, ...tail] = numbered(
+      ['  AUDIENCE — pick a type\n    INTERNAL, if it is a Workspace'],
+      60,
+    ).map(stripAnsi);
+
+    expect(tail.at(-1)).toStartWith(' '.repeat(textColumn(head!) + 2) + 'INTERNAL');
   });
 
   test('no line overflows the width it was given', () => {

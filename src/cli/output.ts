@@ -1,6 +1,6 @@
 import { wasDefaulted } from './selection-require.ts';
-import { columns, style } from './terminal.ts';
-import { visibleWidth } from './typeset.ts';
+import { columns, style, width } from './terminal.ts';
+import { numbered, rule, visibleWidth, wrap } from './typeset.ts';
 import type { Resolution } from '#profile';
 
 /**
@@ -16,7 +16,7 @@ import type { Resolution } from '#profile';
  * files and moving it would put every one of them in a diff about colour. It now
  * resolves per call instead of at module load: see `terminal.ts`.
  */
-export { style } from './terminal.ts';
+export { paint, style } from './terminal.ts';
 
 /**
  * Whether the spinner below may redraw in place.
@@ -208,9 +208,75 @@ export function emit(
   return render();
 }
 
-export function heading(text: string): void {
-  print();
-  print(style.bold(text));
+/**
+ * Where a block writes to.
+ *
+ * A parameter rather than two copies of every renderer, because the same shapes
+ * go to different streams: `setup plan` prints its walkthrough as the command's
+ * output, and `connect` narrates the identical walkthrough on stderr while
+ * stdout is reserved for a `--json` document. Defaulting to `print` is what
+ * keeps the fifty-five existing `heading` calls out of this diff.
+ */
+type Sink = (line?: string) => void;
+
+/**
+ * A section title, and a rule running out to the width of the terminal.
+ *
+ * The rule is the whole reason this is a function rather than `print(bold(x))`.
+ * A bold line alone stops separating anything once the block under it is more
+ * than a couple of lines — which is what a provider's seven-step walkthrough
+ * is — and a heading nobody sees as a heading is a blank line with extra steps.
+ *
+ * Measured with `visibleWidth` rather than `.length` because a heading may
+ * already carry colour: `mcp list` builds one as `Registered as ${bold(name)}`,
+ * and counting its escape codes as characters would shorten the rule by nine.
+ */
+export function heading(text: string, to: Sink = print): void {
+  const room = width() - visibleWidth(text) - 1;
+
+  to();
+  to(room > 0 ? `${style.bold(text)} ${style.dim(rule(room))}` : style.bold(text));
+}
+
+/** The rule that closes a block, where something follows it that is not a heading. */
+export function divider(to: Sink = print): void {
+  to(style.dim(rule(width())));
+}
+
+export interface ProseOptions {
+  /** Tint the whole paragraph — a summary, or a note under a block. */
+  readonly paint?: ((text: string) => string) | undefined;
+  readonly to?: Sink;
+}
+
+/**
+ * A sentence, wrapped to the terminal.
+ *
+ * The counterpart to `print`, which stays raw and is still correct for
+ * everything that is not prose: a value, a path, a credential ref, a pasteable
+ * command, a table row, a JSON document. Wrapping those would corrupt them, so
+ * the choice is the call site's and the function name is how it is made.
+ *
+ * URLs, `lanes link …` invocations and quoted literals are picked out inside
+ * the sentence — the three things a reader is meant to act on. Anything the
+ * paragraph tint claims is painted; the rest keeps the terminal's foreground.
+ */
+export function prose(text: string, options: ProseOptions = {}): void {
+  const { paint: tint, to = print } = options;
+  for (const line of wrap(text, width(), { highlight: true, paint: tint })) to(line);
+}
+
+/**
+ * A numbered walkthrough whose continuations align under the text.
+ *
+ * This replaces `steps.forEach((step, i) => print(`  ${i + 1}. ${step}`))`,
+ * written out four times across `connect`, `setup plan` and `deploy`. That
+ * rendering had no continuation at all: a step ran to the edge of the terminal
+ * and carried on at column zero, which is what turned a seven-step walkthrough
+ * into one paragraph.
+ */
+export function steps(items: readonly string[], to: Sink = print): void {
+  for (const line of numbered(items, width())) to(line);
 }
 
 export function table(rows: ReadonlyArray<readonly string[]>): void {

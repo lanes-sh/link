@@ -237,7 +237,27 @@ const identity: Painter = (text) => text;
  * previous rendering was `\`  ${index + 1}. ${step}\`` and had no continuation
  * at all — a step ran to the edge of the terminal and carried on at column
  * zero, which is what made a seven-step walkthrough read as one paragraph.
+ *
+ * A step's *embedded* indentation is normalised to one level before wrapping,
+ * which `relative` above does. Google's steps indent their continuations by
+ * seven spaces, a depth chosen to sit under the old fixed four-character
+ * gutter; added on top of a gutter that is now computed it came out thirteen
+ * columns in, far enough from the step text to read as unrelated. Hard-coded
+ * alignment cannot survive a gutter that varies, so the layer that owns the
+ * gutter owns this too. It is presentation, not data — the manifest strings are
+ * untouched, and `lanes_setup_provider` still serves them verbatim (ADR-019).
  */
+function relative(item: string): string {
+  const [first, ...rest] = item.split('\n');
+  // One level in from the step's *own* lead, not from column zero. A sub-item
+  // like `  AUDIENCE — …` already sits two in, and flattening its embedded
+  // lines to a fixed two would put them level with its own continuations —
+  // which is the difference between a nested paragraph and a wrapped one.
+  const under = `${(first ?? '').match(/^[ \t]*/)![0]}  `;
+
+  return [first, ...rest.map((line) => line.replace(/^[ \t]+/, under))].join('\n');
+}
+
 export function numbered(items: readonly string[], width: number): string[] {
   const gutter = String(items.length).length;
   const out: string[] = [];
@@ -246,7 +266,7 @@ export function numbered(items: readonly string[], width: number): string[] {
     const marker = String(index + 1).padStart(gutter);
     const hanging = ' '.repeat(gutter + 4);
 
-    const [head, ...tail] = wrap(item, width - gutter - 4, {
+    const [head, ...tail] = wrap(relative(item), width - gutter - 4, {
       highlight: true,
       hanging: '',
     });
