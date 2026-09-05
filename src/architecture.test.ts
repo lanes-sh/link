@@ -107,7 +107,10 @@ const MAY_IMPORT: Record<string, readonly string[]> = {
   // the control plane performs what a command performs and must call the same
   // function rather than a second copy of it — the same reason `deployments`
   // reaches `cli` for its own rollout command. `connectivity` for the logger.
-  control: ['auth', 'cli', 'connectivity', 'deployments', 'profile'],
+  // `stores` because a hosted OAuth flow spans two requests and has to write
+  // down what the CLI keeps on the stack — the PKCE verifier and the discovery
+  // state. It stays downward: `stores` is at the bottom.
+  control: ['auth', 'cli', 'connectivity', 'deployments', 'profile', 'stores'],
 };
 
 describe('dependency direction', () => {
