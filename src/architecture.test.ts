@@ -84,7 +84,10 @@ const MAY_IMPORT: Record<string, readonly string[]> = {
   // `audit` because an adapter implements the log; `cli` and `registry`
   // because a deployment owns its own rollout command.
   deployments: ['audit', 'cli', 'profile', 'registry', 'secrets', 'stores'],
-  server: ['auth', 'connectivity', 'dispatch', 'policy', 'profile', 'registry', 'cli'],
+  // `control` because a managed runtime mounts the control surface in its own
+  // router rather than beside it in a second service. It stays downward:
+  // `control` reaches `cli` and `profile`, both of which `server` already may.
+  server: ['auth', 'connectivity', 'control', 'dispatch', 'policy', 'profile', 'registry', 'cli'],
   // `audit` because the runtime carries the log and `audit tail` renders it.
   // It used to reach both through `#stores/state`, which was the RuntimeState
   // contract owning something that was never runtime state; now that the log

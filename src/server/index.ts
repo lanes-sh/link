@@ -4,7 +4,9 @@ import { capabilityIdForToolName } from '#server/mcp';
 import { ATTACHMENTS_PATH, handleAttachments } from './attachments.ts';
 import { allowedHostnamesFor, rebindingRefusal } from './rebinding.ts';
 import { ANY_ORIGIN, corsAware, type CorsPolicy } from './cors.ts';
-import { isPairedPath, readRoutes, type ReadDeps } from './read/routes.ts';
+import { isPairedPath, readRoutes } from './read/routes.ts';
+import type { ServerOptions } from './options.ts';
+import { controlRoutes, isControlPath, type ControlDeps } from '#control/routes.ts';
 import type { Generation } from './generation.ts';
 import type { Generations } from './generations.ts';
 import {
@@ -39,46 +41,7 @@ import {
  * See `./generations.ts`.
  */
 
-export interface ServerOptions {
-  /** The current profile runtimes, and the reload that replaces them. */
-  readonly generations: Generations;
-  /** Which profile's port, host, and token govern the endpoint itself. */
-  readonly primary: string;
-  readonly authenticator: Authenticator;
-  readonly log: Logger;
-  readonly version?: string;
-  /**
-   * How a remote client obtains a token, when the profile declares one.
-   *
-   * Absent means bearer-token-only: no metadata is published, the `401` carries
-   * no pointer, and the endpoint behaves exactly as it did before.
-   */
-  readonly authorization?: AuthorizationSurface | undefined;
-  /** Hostnames this endpoint answers to. See `./rebinding.ts`. */
-  readonly allowedHostnames?: readonly string[] | undefined;
-  /**
-   * Meter the surface that answers before authentication.
-   *
-   * A property of what this is bound to, exactly as `cors` and
-   * `allowedHostnames` are, and decided in the same lines of `serve()`. Off on
-   * loopback, and that is not a gap: what the ceiling protects is a
-   * credential-store call over the network and an object written to a bucket,
-   * and on loopback both are a local file belonging to whoever is already
-   * standing at the machine. `./rebinding.ts` refuses the one caller that is not
-   * — a page the owner happens to be visiting — before this would be reached.
-   */
-  readonly meterUnauthenticated?: boolean | undefined;
-  /**
-   * The dashboard's read surface, when this bind may serve it (ADR-064).
-   *
-   * Another property of the bind address, decided in the same lines of
-   * `serve()` as `cors` and the meter. Absent on loopback, where the TLS
-   * listener in `./read/open.ts` serves it on its own port instead — a
-   * cross-origin grant on `127.0.0.1` is what `./rebinding.ts` refuses
-   * outright, and ADR-039's rule is not being relaxed to fit this in.
-   */
-  readonly read?: ReadDeps | undefined;
-}
+export type { ServerOptions } from './options.ts';
 
 export const MCP_PATH = '/mcp';
 export const RELOAD_PATH = '/reload';
@@ -210,6 +173,15 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
       // it is given, so a wider hand-off would swallow `/mcp`.
       if (options.read && isPairedPath(url.pathname)) {
         return await readRoutes(request, options.read);
+      }
+
+      // The managed control surface, on the same terms as the read one above: a
+      // different credential for a different caller, never through
+      // `options.authenticator`, and only what `isControlPath` matched handed
+      // over. Absent unless this runtime is the managed one, so a self-hosted
+      // endpoint reaches none of it.
+      if (options.control && isControlPath(url.pathname)) {
+        return await controlRoutes(request, options.control);
       }
 
       if (

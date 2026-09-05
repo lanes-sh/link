@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { createControlRoutes } from './routes.ts';
+import { controlRoutes } from './routes.ts';
 import type { ControlAssertion } from './assertion.ts';
 
 /**
@@ -23,11 +23,15 @@ const silent = { debug() {}, info() {}, warn() {}, error() {} };
 
 function routes(verified: ControlAssertion | null = ADMIN) {
   const roots: string[] = [];
-  const handler = createControlRoutes({
+  const deps = {
+    // The router resolves the same workspace the assertion names. Their
+    // *disagreement* is a different subject, covered in `mount.test.ts`; here
+    // they agree so the routes themselves are what is under test.
+    workspace: verified?.workspace ?? 'ws-aaa',
     verifier: { async verify() { return verified; } },
     log: silent,
     readers: {
-      async connections(root) {
+      async connections(root: string) {
         roots.push(root);
         return [
           {
@@ -40,12 +44,13 @@ function routes(verified: ControlAssertion | null = ADMIN) {
           },
         ];
       },
-      async profiles(root) {
+      async profiles(root: string) {
         roots.push(root);
         return { profiles: [{ name: 'personal', grants: 1, members: 1 }], unreadable: [] };
       },
     },
-  });
+  };
+  const handler = { fetch: (request: Request) => controlRoutes(request, deps) };
   return { handler, roots };
 }
 
