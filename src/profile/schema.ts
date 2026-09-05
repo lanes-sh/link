@@ -91,12 +91,32 @@ export const credentialsTargetSchema = z.object({
   adapter: z.enum(['file', 'gcp-secret-manager']),
   path: z.string().optional(),
   project: z.string().optional(),
+  /**
+   * Which workspace's secrets these are, when the project holds more than one.
+   *
+   * A self-hosted deploy gets a project per workspace, so a reference is unique
+   * by construction and this is absent. A Lanes-hosted runtime serves many
+   * workspaces from one project and every one of them stores `tokens/tok1`, so
+   * without this the second write adds a version to the first workspace's
+   * secret and both read one refresh token.
+   */
+  namespace: z.string().optional(),
 });
 
 export const storageTargetSchema = z.object({
-  adapter: z.enum(['filesystem', 'gcs', 's3']),
+  adapter: z.enum(['filesystem', 'gcs', 's3', 'lanes']),
   path: z.string().optional(),
   bucket: z.string().optional(),
+  /**
+   * Which workspace, for the `lanes` adapter.
+   *
+   * The bucket adapters name a bucket and a prefix; a managed workspace names
+   * itself, because the API resolves where its bytes are and refuses a caller
+   * who is not a member. Declared rather than derived from the root so a
+   * pointer and a declaration cannot disagree about which workspace is being
+   * opened.
+   */
+  workspace: z.string().optional(),
   /**
    * The S3-compatible service endpoint. Named for the protocol rather than a
    * vendor (ADR-013) — Supabase Storage, R2, MinIO, and AWS differ only in this

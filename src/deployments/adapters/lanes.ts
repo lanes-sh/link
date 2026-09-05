@@ -24,6 +24,14 @@ import { containedKey, type BlobKey, type BlobMetadata, type BlobStore } from '#
 
 export const LANES_SCHEME = 'lanes://';
 
+/** Where a managed workspace is read from, when nothing overrides it. */
+export const DEFAULT_LANES_API_URL = 'https://api.lanes.sh';
+
+/** The API this process talks to. `LANES_API_URL` is what a stage deployment sets. */
+export function lanesApiUrl(env: Record<string, string | undefined> = process.env): string {
+  return env['LANES_API_URL'] ?? DEFAULT_LANES_API_URL;
+}
+
 /**
  * A `fetch` this adapter can be handed.
  *

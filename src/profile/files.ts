@@ -3,6 +3,7 @@ import { createGcsBlobStore } from '#deployments/adapters/gcs.ts';
 import {
   LANES_SCHEME,
   createLanesBlobStore,
+  lanesApiUrl,
   lanesWorkspaceFrom,
 } from '#deployments/adapters/lanes.ts';
 import type { BlobStore } from '#stores/blobs';
@@ -36,14 +37,6 @@ import type { BlobStore } from '#stores/blobs';
 
 const GCS_SCHEME = 'gs://';
 
-/**
- * Where a managed workspace is read from, when nothing overrides it.
- *
- * Spelled here rather than imported from `#auth/lanes/login.ts`, which holds
- * the same default: `profile` may not import `auth`. The override is the same
- * variable both sides read, so a stage deployment points both at one place.
- */
-const DEFAULT_API_URL = 'https://api.lanes.sh';
 
 /**
  * Whether a workspace root is somewhere other than this filesystem.
@@ -74,7 +67,7 @@ export function workspaceFiles(root: string): BlobStore {
   // Credentials from the environment.
   if (root.startsWith(LANES_SCHEME)) {
     return createLanesBlobStore({
-      apiUrl: process.env['LANES_API_URL'] ?? DEFAULT_API_URL,
+      apiUrl: lanesApiUrl(),
       workspace: lanesWorkspaceFrom(root),
     });
   }
