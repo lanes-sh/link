@@ -27,6 +27,12 @@ export const box = defineProvider({
     token_url: 'https://api.box.com/oauth2/token',
     redirect_uri: BOX_REDIRECT_URI,
   },
+  /**
+   * `login` is Box's name for the primary email address, and the token here is
+   * an ordinary Box one — the operator registered the client and the flow
+   * redeems at `api.box.com`, so the API accepts it without question.
+   */
+  identity: { kind: 'http', url: 'https://api.box.com/2.0/users/me', field: 'login' },
   setup: {
     summary:
       'Box needs an OAuth app of your own. On a managed account an administrator can instead add ' +

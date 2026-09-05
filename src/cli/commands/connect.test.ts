@@ -307,4 +307,96 @@ describe('resolveAccount', () => {
 
     expect(account).toBeNull();
   });
+
+  /**
+   * The version header, and why a probe needs to be able to send one.
+   *
+   * Notion's REST API refuses a request that carries no `Notion-Version` — not
+   * with a 401 a reader would trace to the credential, but with a 400 about a
+   * header nobody declared. An `identity: { kind: 'http' }` block could only
+   * send `Authorization`, so every API that pins its version in a header was
+   * silently outside what a manifest could express.
+   */
+  test('sends the headers the manifest declares, with the credential over them', async () => {
+    let sent: Record<string, string> = {};
+
+    const account = await resolveAccount(
+      manifest({
+        kind: 'http',
+        url: 'https://api.example.com/v1/users/me',
+        field: 'email',
+        headers: { 'notion-version': '2022-06-28' },
+      }),
+      {
+        accessToken: async () => 'tok',
+        fetch: (async (_url: string, init?: RequestInit) => {
+          sent = init?.headers as Record<string, string>;
+          return new Response(JSON.stringify({ email: 'me@example.com' }));
+        }) as unknown as typeof fetch,
+      },
+    );
+
+    expect(sent['notion-version']).toBe('2022-06-28');
+    expect(sent['authorization']).toBe('Bearer tok');
+    expect(account).toBe('me@example.com');
+  });
+
+  /**
+   * The same tenancy problem Slack has, one transport over.
+   *
+   * Notion answers `notion-fetch` with the person's email, which is the same
+   * email in every workspace they belong to. Only `http` carried a qualifier,
+   * so a tool-kind identity could name the person and had no way to say which
+   * workspace was authorised — and the reconnect match is on that one string.
+   */
+  test('a tool identity qualifies its field the way an http one does', async () => {
+    const self = (workspace: string) =>
+      resolveAccount(
+        manifest({
+          kind: 'tool',
+          tool: 'notion-fetch',
+          field: 'self.user.email',
+          qualifier: 'self.workspace.name',
+          arguments: { id: 'self' },
+        }),
+        {
+          accessToken: async () => null,
+          callTool: async () => ({
+            content: [
+              {
+                text: JSON.stringify({
+                  self: { workspace: { name: workspace }, user: { email: 'ada@example.com' } },
+                }),
+              },
+            ],
+          }),
+        },
+      );
+
+    expect(await self('Personal')).toBe('ada@example.com (Personal)');
+    expect(await self('Personal')).not.toBe(await self('Acme'));
+  });
+
+  test('and passes the arguments the tool needs to answer at all', async () => {
+    let received: Record<string, unknown> = {};
+
+    await resolveAccount(
+      manifest({
+        kind: 'tool',
+        tool: 'notion-fetch',
+        field: 'self.user.email',
+        arguments: { id: 'self' },
+      }),
+      {
+        accessToken: async () => null,
+        callTool: async (_name, args) => {
+          received = args;
+          return { content: [{ text: '{}' }] };
+        },
+      },
+    );
+
+    // `notion-fetch` with no id fetches nothing; `self` is the whole call.
+    expect(received).toEqual({ id: 'self' });
+  });
 });

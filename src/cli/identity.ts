@@ -11,8 +11,8 @@ import type { IdentityDeclaration, ProviderManifest } from '#connectivity';
  * exist.
  *
  * Everything here is best-effort. A provider that declares no identity, or
- * whose probe fails, falls back to asking the operator: a label is worth
- * having, never worth failing a connect over.
+ * whose probe fails, falls back to `introspectAccount` and then to asking the
+ * operator: a label is worth having, never worth failing a connect over.
  */
 
 /** Walk a dotted path, tolerating the first array element on the way. */
@@ -29,10 +29,37 @@ export function pluck(value: unknown, path: string): string | null {
   return typeof current === 'string' && current.length > 0 ? current : null;
 }
 
-/** The header an OAuth or bearer provider's probe carries. */
-async function bearerHeaders(probe: IdentityProbe): Promise<RequestInit> {
+/**
+ * `alice (Acme)` rather than `alice`.
+ *
+ * The bracketed half is what makes two workspaces two accounts instead of one
+ * overwritten twice: the reconnect match in `settleIdentity` is on the account,
+ * so without it the second connect repairs the first row rather than adding
+ * one. It used to reach the id as well, back when the id was slugified from
+ * this.
+ *
+ * One helper for both probe kinds. `http` had it first, for Slack; `tool` needs
+ * the same for Notion, whose `self` is an email that says nothing about which
+ * of the person's workspaces was authorised.
+ */
+function qualified(
+  body: unknown,
+  declaration: { field: string; qualifier?: string | undefined },
+): string | null {
+  const primary = pluck(body, declaration.field);
+  if (!primary || !declaration.qualifier) return primary;
+
+  const qualifier = pluck(body, declaration.qualifier);
+  return qualifier ? `${primary} (${qualifier})` : primary;
+}
+
+/** The header an OAuth or bearer provider's probe carries, over the declared ones. */
+async function bearerHeaders(
+  probe: IdentityProbe,
+  declared: Record<string, string>,
+): Promise<RequestInit> {
   const token = await probe.accessToken();
-  return { headers: token ? { authorization: `Bearer ${token}` } : {} };
+  return { headers: { ...declared, ...(token ? { authorization: `Bearer ${token}` } : {}) } };
 }
 
 export interface IdentityProbe {
@@ -74,26 +101,23 @@ export async function resolveAccount(
     if (identity.kind === 'http') {
       const send = probe.fetch ?? globalThis.fetch;
 
+      // The manifest's own headers, for an API that answers nothing without
+      // one: Notion refuses a request carrying no `Notion-Version`, and it is
+      // not the only vendor that pins its version in a header. The credential
+      // goes on top of them either way — `requestAuthorizer` copies the headers
+      // it is handed, so a declared one survives `authorize` too.
+      const declared = identity.headers ?? {};
+
       // `authorize` where the caller supplied one, because it is the same
       // switch the dispatch path uses and knows every method. The token is the
       // fallback rather than the other way round only because the OAuth
       // providers reached here first; both end at the same header for them.
       const response = probe.authorize
-        ? await send(await probe.authorize(new Request(identity.url)))
-        : await send(identity.url, await bearerHeaders(probe));
+        ? await send(await probe.authorize(new Request(identity.url, { headers: declared })))
+        : await send(identity.url, await bearerHeaders(probe, declared));
       if (!response.ok) return null;
 
-      const body = await response.json();
-      const primary = pluck(body, identity.field);
-      if (!primary || !identity.qualifier) return primary;
-
-      // `alice (Acme)` rather than `alice`. The bracketed half is what makes
-      // two workspaces two accounts instead of one overwritten twice: the
-      // reconnect match below is on the account, so without it the second
-      // connect repairs the first row rather than adding one. It used to reach
-      // the id as well, back when the id was slugified from this.
-      const qualifier = pluck(body, identity.qualifier);
-      return qualifier ? `${primary} (${qualifier})` : primary;
+      return qualified(await response.json(), identity);
     }
 
     if (!probe.callTool) return null;
@@ -104,12 +128,12 @@ export async function resolveAccount(
     const text = pluck(result, 'content.text');
     if (text) {
       try {
-        return pluck(JSON.parse(text), identity.field) ?? text;
+        return qualified(JSON.parse(text), identity) ?? text;
       } catch {
         return text;
       }
     }
-    return pluck(result, identity.field);
+    return qualified(result, identity);
   } catch {
     return null;
   }
