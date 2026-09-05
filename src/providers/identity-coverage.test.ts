@@ -47,7 +47,8 @@ const NO_IDENTITY: Readonly<Record<string, string>> = {
   sentry: UNSWEPT,
   supabase:
     'Verified, not unswept: `GET /v1/profile` refuses an OAuth token ("does not support oauth access yet"), there is no userinfo, `/v1/user` or `/v1/me`, and what OAuth does reach — organizations, projects — is a collection.',
-  figma: UNSWEPT,
+  figma:
+    'Verified, not unswept: Figma admits only the MCP clients in its own catalogue and refuses registration with a bare 403 whatever is sent, so there is no connection here whose account there would be to name.',
   canva: UNSWEPT,
   dropbox: UNSWEPT,
   todoist: UNSWEPT,
