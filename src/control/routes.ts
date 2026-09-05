@@ -1,10 +1,14 @@
 import type { Logger } from '#connectivity';
-import { connectionSummaries, type ConnectionSummary } from '#cli/commands/connection-list.ts';
-import { createProfile } from '#cli/commands/profile.ts';
-import { environmentFor } from './workspace.ts';
+import {
+  liveReaders,
+  liveWriters,
+  type ProfilesResult,
+  type WorkspaceReaders,
+  type WorkspaceWriters,
+} from './commands.ts';
+import { environmentFor, MANAGED_TARGET } from './workspace.ts';
 import { loadWorkspaceProfiles } from '#profile';
 import { READS, WIDENS, permits, workspaceRootFor } from './authorise.ts';
-import { MANAGED_TARGET } from './workspace.ts';
 import type { ControlAssertion } from './assertion.ts';
 
 /**
@@ -49,64 +53,6 @@ import type { ControlAssertion } from './assertion.ts';
  * assertion.
  */
 
-/** A profile as the control plane reports it: shape, never content. */
-export interface ProfileSummary {
-  readonly name: string;
-  readonly grants: number;
-  readonly members: number;
-}
-
-export interface ProfilesResult {
-  readonly profiles: readonly ProfileSummary[];
-  /** Named rather than dropped: a profile that will not parse is the answer. */
-  readonly unreadable: readonly { profile: string; reason: string }[];
-}
-
-/**
- * What a route needs from a workspace, injectable at the composition root.
- *
- * The defaults are the real readers. They are parameters because a route test
- * is about the gate — who is turned away, and which root the reader was handed
- * — and standing a workspace up on disk to assert a 403 would test the fixture.
- */
-export interface WorkspaceReaders {
-  connections(root: string): Promise<readonly ConnectionSummary[]>;
-  profiles(root: string): Promise<ProfilesResult>;
-}
-
-/**
- * What a mutation needs, injectable for the same reason the readers are.
- *
- * A route test is about the gate — who is refused, and which workspace the
- * writer was pointed at. Standing a real workspace up on disk to assert a 403
- * would be testing the fixture.
- */
-export interface WorkspaceWriters {
-  create(
-    name: string,
-    options: { targets: readonly string[]; nonInteractive?: boolean; env?: Record<string, string | undefined> },
-  ): Promise<{ name: string; path: string }>;
-}
-
-export const liveWriters: WorkspaceWriters = {
-  create: (name, options) => createProfile(name, options),
-};
-
-export const liveReaders: WorkspaceReaders = {
-  connections: (root) => connectionSummaries(root),
-  async profiles(root) {
-    const { loaded, unreadable } = await loadWorkspaceProfiles(root);
-    return {
-      profiles: loaded.map((one) => ({
-        name: one.profile,
-        grants: one.config.grants.length,
-        members: one.config.members.length,
-      })),
-      unreadable,
-    };
-  },
-};
-
 export interface ControlDeps {
   /**
    * The workspace this runtime's router resolved for the request.
@@ -120,8 +66,10 @@ export interface ControlDeps {
   readonly log: Logger;
   readonly readers?: WorkspaceReaders;
   readonly writers?: WorkspaceWriters;
-  /** Test seam for `create`, so a route test needs no workspace on disk. */
+  /** Test seams, so a route test needs no workspace on disk. */
   readonly create?: WorkspaceWriters['create'];
+  readonly grant?: WorkspaceWriters['grant'];
+  readonly agentMayManage?: WorkspaceWriters['agentMayManage'];
 }
 
 /**
@@ -133,6 +81,9 @@ export interface ControlDeps {
  * failure three frames down.
  */
 const PROFILE_NAME = /^[a-z][a-z0-9_-]*$/;
+
+/** `<provider>.<id>`, the shape `connectionRefOf` produces. */
+const CONNECTION_REF = /^[a-z][a-z0-9_]*\.[a-z0-9][a-z0-9_-]*$/;
 
 /** The paths this surface claims. Everything else is the endpoint's. */
 const PATHS: readonly string[] = ['/v1/profiles', '/v1/connections'];
@@ -164,16 +115,20 @@ const notFound = (): Response => json({ error: 'not_found' }, 404);
  */
 export async function controlRoutes(request: Request, deps: ControlDeps): Promise<Response> {
   const readers = deps.readers ?? liveReaders;
-  const writers: WorkspaceWriters = deps.create
-    ? { ...(deps.writers ?? liveWriters), create: deps.create }
-    : (deps.writers ?? liveWriters);
+  const writers: WorkspaceWriters = {
+    ...(deps.writers ?? liveWriters),
+    ...(deps.create ? { create: deps.create } : {}),
+    ...(deps.grant ? { grant: deps.grant } : {}),
+    ...(deps.agentMayManage ? { agentMayManage: deps.agentMayManage } : {}),
+  };
   const url = new URL(request.url);
 
   // Unknown paths are refused before the credential is looked at. A caller
   // probing for routes should not be able to tell a path that exists from one
   // that does not by which of them costs a signature verification.
-  const route = ROUTES.find((one) => one.method === request.method && one.path === url.pathname);
-  if (!route) return notFound();
+  const matched = match(request.method, url.pathname);
+  if (!matched) return notFound();
+  const { route, params } = matched;
 
   const header = request.headers.get('authorization') ?? '';
   const [scheme, token] = header.split(' ');
@@ -215,6 +170,7 @@ export async function controlRoutes(request: Request, deps: ControlDeps): Promis
       root,
       readers,
       writers,
+      params,
       // From the assertion, exactly as `root` is. A command reads its workspace
       // out of this rather than out of `process.env`, which one process serving
       // many workspaces cannot use.
@@ -236,6 +192,8 @@ export async function controlRoutes(request: Request, deps: ControlDeps): Promis
 
 interface RouteContext {
   readonly assertion: ControlAssertion;
+  /** Path segments a parameterised route captured. */
+  readonly params: Record<string, string>;
   readonly root: string;
   readonly readers: WorkspaceReaders;
   readonly writers: WorkspaceWriters;
@@ -246,6 +204,7 @@ interface RouteContext {
 
 interface Route {
   readonly method: string;
+  /** A literal path, or one carrying `:name` segments. */
   readonly path: string;
   readonly needs: typeof READS | typeof WIDENS;
   run(context: RouteContext): Promise<Response>;
@@ -259,6 +218,40 @@ interface Route {
  * and this component is the one place where forgetting that is somebody else's
  * mailbox.
  */
+/**
+ * Which route answers this request, and what its path captured.
+ *
+ * Hand-written rather than a router dependency: there are four routes, the
+ * shapes are `/a/b` and `/a/:x/b/:y`, and a matcher is fifteen lines against a
+ * dependency this repository would have to justify holding while it holds live
+ * OAuth tokens.
+ */
+function match(
+  method: string,
+  pathname: string,
+): { route: Route; params: Record<string, string> } | null {
+  const parts = pathname.split('/').filter((one) => one.length > 0);
+
+  for (const route of ROUTES) {
+    if (route.method !== method) continue;
+    const shape = route.path.split('/').filter((one) => one.length > 0);
+    if (shape.length !== parts.length) continue;
+
+    const params: Record<string, string> = {};
+    let matched = true;
+    for (const [at, segment] of shape.entries()) {
+      const given = parts[at]!;
+      if (segment.startsWith(':')) params[segment.slice(1)] = decodeURIComponent(given);
+      else if (segment !== given) {
+        matched = false;
+        break;
+      }
+    }
+    if (matched) return { route, params };
+  }
+  return null;
+}
+
 const ROUTES: readonly Route[] = [
   {
     method: 'GET',
@@ -323,6 +316,54 @@ const ROUTES: readonly Route[] = [
         // that is not ours, so it says so rather than becoming a 503.
         if (/already exists/i.test(message)) {
           return json({ error: `A profile called "${name}" already exists.` }, 409);
+        }
+        throw error;
+      }
+    },
+  },
+  {
+    method: 'PUT',
+    path: '/v1/profiles/:profile/grants/:connection',
+    needs: WIDENS,
+    async run({ writers, env, params }) {
+      const profile = params['profile'] ?? '';
+      const connection = params['connection'] ?? '';
+
+      if (!PROFILE_NAME.test(profile)) {
+        return json({ error: 'That is not a profile name.' }, 400);
+      }
+      if (!CONNECTION_REF.test(connection)) {
+        return json(
+          { error: 'A connection reference is "<provider>.<id>", lowercase.' },
+          400,
+        );
+      }
+
+      // The third gate, and read before anything is written. The role says who
+      // the caller is and the scope says what they authorised this client to
+      // do; this is the profile's own answer, and a profile closed to agents
+      // refuses an admin holding every scope.
+      if (!(await writers.agentMayManage(profile, env))) {
+        return json(
+          {
+            error:
+              `The profile "${profile}" is not open to being changed by an agent. ` +
+              'Its `agent_management` is set to deny; a person can still change it from the ' +
+              'dashboard or the CLI.',
+          },
+          403,
+        );
+      }
+
+      try {
+        const granted = await writers.grant(connection, profile, env);
+        // Already granted is not a failure. Asking twice is an ordinary thing
+        // for an agent to do and the answer is the same either way.
+        return json({ connection, profile, alreadyGranted: granted === null }, 200);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (/holds no connection/i.test(message)) {
+          return json({ error: `This workspace holds no connection "${connection}".` }, 404);
         }
         throw error;
       }

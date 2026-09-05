@@ -31,18 +31,28 @@ export interface Granted {
   readonly published: string;
 }
 
-export async function grantConnectionTo(
-  key: string | undefined,
-  flags: GlobalFlags & { json?: boolean },
-): Promise<void> {
-  if (!key) {
-    throw new ConfigError(
-      'Which connection? Run: lanes link connection list\n' +
-        '  e.g. lanes link grant gmail.personal --profile assistant',
-    );
-  }
-
-  const { resolution, config, target } = await resolveProfile(flags);
+/**
+ * Grant one connection to one profile, and say what it granted.
+ *
+ * The data half. `grantConnectionTo` below is the printing wrapper and resolves
+ * the workspace from the process environment, which is right for a terminal
+ * with one workspace in view. A process serving many needs the half that takes
+ * an `env`, and copying this would be a second answer to what a fresh grant
+ * allows.
+ *
+ * Returns `null` when the profile already grants it — an outcome rather than an
+ * error, because asking twice is not a failure and the caller decides whether
+ * to say so.
+ */
+export async function grantConnection(
+  key: string,
+  flags: GlobalFlags,
+  options: { env?: Record<string, string | undefined> } = {},
+): Promise<Granted | null> {
+  const { resolution, config, target } = await resolveProfile(
+    flags,
+    options.env !== undefined ? { env: options.env } : {},
+  );
   const root = resolution.workspaceRoot;
 
   const held = (await readConnections(root)).connections;
@@ -62,10 +72,7 @@ export async function grantConnectionTo(
     );
   }
 
-  if (config.grants.some((grant) => grant.connection === key)) {
-    print(style.dim(`${resolution.profile} already grants ${key}.`));
-    return;
-  }
+  if (config.grants.some((grant) => grant.connection === key)) return null;
 
   const rule = `${connection.provider}.*`;
   const document = await ConfigDocument.open(root, resolution.profile);
@@ -81,7 +88,29 @@ export async function grantConnectionTo(
     published: nextAfterEdit(await publishProfileEdit({ resolution, config, target })),
   };
 
+  return granted;
+}
+
+export async function grantConnectionTo(
+  key: string | undefined,
+  flags: GlobalFlags & { json?: boolean },
+): Promise<void> {
+  if (!key) {
+    throw new ConfigError(
+      'Which connection? Run: lanes link connection list\n' +
+        '  e.g. lanes link grant gmail.personal --profile assistant',
+    );
+  }
+
+  const granted = await grantConnection(key, flags);
+  if (granted === null) {
+    const { resolution } = await resolveProfile(flags);
+    print(style.dim(`${resolution.profile} already grants ${key}.`));
+    return;
+  }
+
   return emit(flags.json, granted, () => {
+    const resolution = { profile: granted.profile } as Parameters<typeof announce>[0];
     announce(resolution);
     print(ok(`granted ${style.bold(key)} to ${style.bold(granted.profile)}`));
     print(`      account     ${style.dim(granted.account)}`);

@@ -212,3 +212,94 @@ describe('creating a profile', () => {
     expect(response.status).toBe(409);
   });
 });
+
+describe('granting a connection to a profile', () => {
+  const put = (profile: string, connection: string) =>
+    new Request(`https://runtime.internal/v1/profiles/${profile}/grants/${connection}`, {
+      method: 'PUT',
+      headers: { authorization: 'Bearer a.b.c' },
+    });
+
+  const withGrant = (over: Partial<ControlDeps> = {}, closed = false) =>
+    deps({
+      grant: async (connection: string) => ({
+        profile: 'personal',
+        target: 'managed',
+        connection,
+        account: 'someone@example.com',
+        allowed: [`${connection.split('.')[0]}.*`],
+        published: '',
+      }),
+      // Whether the *target profile* is open to being changed by an agent.
+      agentMayManage: async () => !closed,
+      ...over,
+    });
+
+  test('an admin holding the scope grants one', async () => {
+    const response = await controlRoutes(put('personal', 'gmail.con1'), withGrant());
+    expect(response.status).toBe(200);
+    expect((await response.json() as { connection: string }).connection).toBe('gmail.con1');
+  });
+
+  test('an editor may not: a grant is what widens reach', async () => {
+    const response = await controlRoutes(
+      put('personal', 'gmail.con1'),
+      withGrant({ verifier: { async verify() { return { ...ADMIN, role: 'editor' as const }; } } }),
+    );
+    expect(response.status).toBe(403);
+  });
+
+  test('a profile closed to agents refuses, whatever the caller may do elsewhere', async () => {
+    // The third gate, and the only one belonging to the thing being changed.
+    // The caller here is an admin holding every scope.
+    const response = await controlRoutes(put('personal', 'gmail.con1'), withGrant({}, true));
+    expect(response.status).toBe(403);
+    expect((await response.json() as { error: string }).error).toMatch(/agent/i);
+  });
+
+  test('the switch is read before anything is written', async () => {
+    const wrote: string[] = [];
+    await controlRoutes(
+      put('personal', 'gmail.con1'),
+      withGrant(
+        {
+          grant: async (connection: string) => {
+            wrote.push(connection);
+            return { profile: 'personal', target: 'managed', connection, account: '', allowed: [], published: '' };
+          },
+        },
+        true,
+      ),
+    );
+
+    expect(wrote).toEqual([]);
+  });
+
+  test('refuses a connection reference the format would not accept', async () => {
+    // Shapes that reach the route and fail its check.
+    for (const bad of ['nodot', 'UPPER.x', 'gmail.']) {
+      expect((await controlRoutes(put('personal', bad), withGrant())).status, bad).toBe(400);
+    }
+  });
+
+  test('a traversal never reaches a route at all', async () => {
+    // `new URL` normalises `..` out before the matcher runs, so the path loses
+    // segments and matches nothing. Asserted rather than assumed: it is the
+    // reason the matcher needs no traversal check of its own, and if URL
+    // parsing ever stopped doing it this is what would say so.
+    const response = await controlRoutes(put('personal', '../../escape'), withGrant());
+    expect(response.status).toBe(404);
+  });
+
+  test('reports a connection the workspace does not hold as the caller fault it is', async () => {
+    const response = await controlRoutes(
+      put('personal', 'gmail.nope'),
+      withGrant({
+        grant: async () => {
+          throw new Error('This workspace holds no connection "gmail.nope".');
+        },
+      }),
+    );
+    expect(response.status).toBe(404);
+  });
+});
