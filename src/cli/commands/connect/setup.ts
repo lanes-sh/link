@@ -90,8 +90,8 @@ export async function askForSetup(
   const answers = new Map<string, string>();
   for (const prompt of prompts) {
     const value = prompt.secret
-      ? await prompter.askSecret(`  ${prompt.label}`)
-      : await prompter.ask(`  ${prompt.label}`);
+      ? await prompter.askSecret(prompt.label)
+      : await prompter.ask(prompt.label);
     if (!value) throw new Error(`${prompt.label} is required.`);
     answers.set(prompt.key, value);
   }

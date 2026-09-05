@@ -78,14 +78,14 @@ export async function settleDisposition(
   const answer = (
     await prompter.ask(
       `What becomes of ${profile}'s memory, tasks, assets and skills?\n` +
-        `  [d] delete them   [m] move them into another profile   [anything else] stop: `,
+        `  [d] delete them   [m] move them into another profile   [anything else] stop`,
     )
   ).trim().toLowerCase();
 
   if (answer === 'd') return { kind: 'delete' };
   if (answer !== 'm') return null;
 
-  const into = (await prompter.ask('  Move them into which profile? ')).trim();
+  const into = (await prompter.ask('Move them into which profile?')).trim();
   return into.length === 0 ? null : { kind: 'migrate', into };
 }
 

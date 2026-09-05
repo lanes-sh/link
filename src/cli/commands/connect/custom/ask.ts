@@ -1,4 +1,4 @@
-import { style } from '../../../output.ts';
+import { progress, style } from '../../../output.ts';
 import type { Prompter } from '../../../prompt.ts';
 import { parseAuthMethod, parseConnectorKind, refuseIllegalPair } from './derive.ts';
 import {
@@ -123,13 +123,13 @@ const EXTRA: readonly FieldSpec[] = [
 ];
 
 async function askFor(prompter: Prompter, field: FieldSpec): Promise<string> {
-  if (field.hint) print(style.dim(`  ${field.hint}`));
-  return (await prompter.ask(`${field.label}: `)).trim();
+  if (field.hint) progress(style.dim(`  ${field.hint}`));
+  return (await prompter.ask(field.label)).trim();
 }
 
 async function askName(prompter: Prompter, id: string): Promise<string> {
   const suggested = titleCase(id);
-  const answer = (await prompter.ask(`Display name [${suggested}]: `)).trim();
+  const answer = (await prompter.ask(`Display name [${suggested}]`)).trim();
   return answer.length > 0 ? answer : suggested;
 }
 
@@ -146,11 +146,11 @@ async function choose(
   question: string,
   options: readonly string[],
 ): Promise<string> {
-  print('');
-  print(question);
-  options.forEach((option, index) => print(`  ${index + 1}. ${option}`));
+  progress();
+  progress(question);
+  options.forEach((option, index) => progress(`  ${index + 1}. ${option}`));
 
-  const answer = (await prompter.ask(`Choose 1-${options.length}: `)).trim();
+  const answer = (await prompter.ask(`Choose 1-${options.length}`)).trim();
   const index = Number(answer);
 
   // A name is accepted too. Somebody who already knows it should not have to
@@ -159,9 +159,4 @@ async function choose(
   if (Number.isInteger(index) && index >= 1 && index <= options.length) return options[index - 1]!;
 
   throw new Error(`"${answer}" is not one of: ${options.join(', ')}.`);
-}
-
-/** Prompts and their hints go to stderr, so `--json` leaves stdout clean. */
-function print(line: string): void {
-  process.stderr.write(`${line}\n`);
 }

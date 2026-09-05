@@ -110,7 +110,7 @@ export async function surveyCloudRun(input: SurveyInput): Promise<SurveyResult> 
 
   const project = await askProject(current.project);
   const billing = await askBilling(project, current.billing_account);
-  const region = await askWithDefault('  Region', current.region ?? DEFAULT_REGION);
+  const region = await askWithDefault('Region', current.region ?? DEFAULT_REGION);
   const service = await askWithDefault(
     '  Cloud Run service name',
     current.service ?? defaultServiceName(profile),
@@ -193,7 +193,7 @@ async function askProject(current: string | undefined): Promise<string> {
     ),
   );
 
-  return askWithDefault('  Google Cloud project', current ?? proposedName());
+  return askWithDefault('Google Cloud project', current ?? proposedName());
 }
 
 /**
@@ -228,7 +228,7 @@ async function askBilling(project: string, current: string | undefined): Promise
   }
 
   for (const account of accounts) print(style.dim(`    ${account.id}  ${account.name}`));
-  return askWithDefault('  Billing account', accounts[0]!.id);
+  return askWithDefault('Billing account', accounts[0]!.id);
 }
 
 /**
@@ -248,7 +248,7 @@ async function askBucket(project: string): Promise<string> {
         '    globally unique, so this one may be taken even when the project was not.',
     ),
   );
-  return askWithDefault('  Bucket', project);
+  return askWithDefault('Bucket', project);
 }
 
 /**
@@ -275,7 +275,7 @@ async function askRemoteClients(): Promise<boolean> {
         '         registration needs. Add it later under auth.authorization.',
     ),
   );
-  return confirm('  Issue tokens for remote clients?');
+  return confirm('Issue tokens for remote clients?');
 }
 
 /**
@@ -311,7 +311,7 @@ async function askAccess(
     );
   }
 
-  const answer = (await askWithDefault('  Access', proposed)).toLowerCase();
+  const answer = (await askWithDefault('Access', proposed)).toLowerCase();
   return answer === 'public' ? 'public' : 'iam';
 }
 

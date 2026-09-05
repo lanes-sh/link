@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { nonInteractivePrompter, terminalPrompter } from './prompt.ts';
+import { chrome, nonInteractivePrompter, terminalPrompter } from './prompt.ts';
+import { stripAnsi } from './typeset.ts';
 
 /**
  * Where a command collects an answer from.
@@ -51,5 +52,38 @@ describe('terminalPrompter', () => {
     expect(terminalPrompter.askSecret('  App password')).rejects.toThrow(
       /write the credentials to the store first and re-run/,
     );
+  });
+});
+
+describe('the chrome around a question', () => {
+  test('carries a marker and a caret, so a prompt is not read as another step', () => {
+    // The block above a prompt ends in seven numbered steps. Without a marker
+    // the question was an eighth.
+    const { prompt } = chrome('GitHub personal access token');
+
+    expect(stripAnsi(prompt)).toBe('? GitHub personal access token › ');
+  });
+
+  test('does not double the punctuation five call sites used to append', () => {
+    // `ask` added `: ` and so did the call site, so this came out as
+    // `Display name [foo]: : `. It shipped, which is the argument for the
+    // punctuation living here rather than at every question.
+    expect(stripAnsi(chrome('Display name [foo]').prompt)).not.toContain(':');
+  });
+
+  test('an indent a call site no longer needs is absorbed rather than shown', () => {
+    // The thirteen sites that indented their own questions are swept in this
+    // change; trimming here is what stops a missed one rendering as `?   Foo`.
+    expect(stripAnsi(chrome('  Region').prompt)).toBe('? Region › ');
+  });
+
+  test('everything before the last line is narration, not part of the question', () => {
+    // A variable's description is a sentence nobody can guess, and `ask` takes
+    // one string. Decorating the whole thing would put the caret two lines
+    // above the cursor.
+    const { lead, prompt } = chrome('Where the server lives.\nHostname [example.com]');
+
+    expect(lead).toEqual(['Where the server lives.']);
+    expect(stripAnsi(prompt)).toBe('? Hostname [example.com] › ');
   });
 });

@@ -82,7 +82,7 @@ export async function resolveToken(
   }
 
   printSetupSteps(repo);
-  const token = await askSecret('  GitHub personal access token');
+  const token = await askSecret('GitHub personal access token');
   if (!token) throw new ConfigError('No token given, so nothing was changed.');
   return token;
 }
