@@ -11,7 +11,7 @@ import {
 } from '#profile';
 import { oneProfile, visibleCapabilities } from '#server/mcp';
 import { toPolicyDocument } from '#registry';
-import { announce, emit, heading, print, style, table } from '../../output.ts';
+import { announce, emit, heading, print, prose, style, table } from '../../output.ts';
 import { grantedConnections, openRuntime, ownerPrincipal, type GlobalFlags } from '../../runtime.ts';
 import { deploymentIdentity } from '../../endpoint-url.ts';
 
@@ -140,12 +140,8 @@ export async function status(flags: StatusFlags): Promise<void> {
         } else {
           const { platform, service, region } = deployment;
           print(`  ${platform} service ${style.bold(service)} in ${region}`);
-          print(
-            style.dim(
-              '  the address is the platform\'s to assign — run: ' +
-                `lanes link outputs --workspace ${runtime.target}`,
-            ),
-          );
+          prose("  the address is the platform's to assign — run:", { paint: style.dim });
+          print(style.dim(`    lanes link outputs --workspace ${runtime.target}`));
         }
       },
     );
@@ -262,10 +258,10 @@ async function workspaceStatus(flags: StatusFlags): Promise<void> {
       }
 
       print(`  ${deployment.platform} service ${style.bold(deployment.service)} in ${deployment.region}`);
+      prose("  the address is the platform's to assign — run:", { paint: style.dim });
       print(
         style.dim(
-          "  the address is the platform's to assign — run: " +
-            `lanes link outputs --workspace ${target} --profile ${profiles[0]?.name ?? '<name>'}`,
+          `    lanes link outputs --workspace ${target} --profile ${profiles[0]?.name ?? '<name>'}`,
         ),
       );
     },

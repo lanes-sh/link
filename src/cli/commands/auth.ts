@@ -1,7 +1,7 @@
 import { clearSession, isFresh, readSession } from '#auth/lanes/session.ts';
 import { DEFAULT_API_URL, currentIdToken, login } from '#auth/lanes/login.ts';
 import { completionPage } from '../callback-page.ts';
-import { print, ok, style, warn } from '../output.ts';
+import { print, ok, prose, style, warn } from '../output.ts';
 
 /**
  * `lanes auth` — who this machine is signed in as.
@@ -62,12 +62,10 @@ export async function authLogin(flags: AuthFlags = {}): Promise<void> {
   print(ok(`signed in as ${style.bold(session.email ?? session.subject)}`));
   print(style.dim(`      subject  ${session.subject}`));
   print('');
-  print(
-    style.dim(
-      '      A profile reaches you only where its members list that subject:\n' +
-        '        lanes link profile members add <subject> --profile <name>',
-    ),
-  );
+  prose('      A profile reaches you only where its members list that subject:', {
+    paint: style.dim,
+  });
+  print(style.dim('        lanes link profile members add <subject> --profile <name>'));
   void opened;
 }
 
@@ -89,12 +87,11 @@ export async function authLogout(flags: AuthFlags = {}): Promise<void> {
   // Said out loud, because it is the surprising half. Signing out removes the
   // identity this machine presents; it does not touch a profile's members list,
   // and it does not revoke a token an agent already holds.
-  print(
-    style.dim(
-      '      Profiles still list you, and a client holding a token still holds it.\n' +
-        '      To take a token back: lanes link token rotate --workspace <name>',
-    ),
-  );
+  prose('      Profiles still list you, and a client holding a token still holds it.', {
+    paint: style.dim,
+  });
+  prose('      To take a token back:', { paint: style.dim });
+  print(style.dim('        lanes link token rotate --workspace <name>'));
 }
 
 export async function authStatus(flags: AuthFlags = {}): Promise<void> {
@@ -204,11 +201,9 @@ export async function authWorkspaces(flags: AuthFlags = {}): Promise<void> {
   }
 
   print('');
-  print(
-    style.dim(
-      'A remote lanes link workspace binds to one of these with `lanes_workspace:`\n' +
-        'in lanes-link.yaml, which is whose members a profile may delegate to.',
-    ),
+  prose(
+    'A remote lanes link workspace binds to one of these with `lanes_workspace:` in lanes-link.yaml, which is whose members a profile may delegate to.',
+    { paint: style.dim },
   );
 }
 

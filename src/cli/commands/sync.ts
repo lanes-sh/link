@@ -103,7 +103,7 @@ async function locateRemote(
     );
   }
 
-  if (!(await confirm(`  Point "${target}" at ${first.workspace}?`))) {
+  if (!(await confirm(`Point "${target}" at ${first.workspace}?`))) {
     throw new ConfigError('Nothing was read or written.');
   }
 

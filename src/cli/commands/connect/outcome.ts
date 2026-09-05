@@ -1,5 +1,5 @@
 import type { SetupRequirement } from '#connectivity';
-import { fail, ok, print, progress, style } from '../../output.ts';
+import { fail, ok, print, progress, prose, style } from '../../output.ts';
 import type { Blocked } from './requirements.ts';
 
 /**
@@ -124,8 +124,9 @@ export function renderOutcome(outcome: ConnectOutcome): void {
 
     if ((outcome.writable ?? 0) > 0) {
       const provider = outcome.key?.split('.')[0] ?? '';
-      print(
-        `      ${style.dim(`${outcome.writable} of them write — lanes link policy deny ${provider}.<capability> to withhold one`)}`,
+      prose(
+        `      ${outcome.writable} of them write — lanes link policy deny ${provider}.<capability> to withhold one`,
+        { paint: style.dim },
       );
     }
   }

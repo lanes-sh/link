@@ -1,5 +1,5 @@
 import { planAll, planFor, type ProviderPlan } from '#providers/setup/plan.ts';
-import { announce, emit, heading, print, style, table } from '../output.ts';
+import { announce, emit, heading, paint, print, prose, steps, style, table } from '../output.ts';
 import { missingRequirements } from './connect/requirements.ts';
 import { openRuntime, type GlobalFlags } from '../runtime.ts';
 
@@ -95,9 +95,9 @@ export async function setupPlan(provider: string | undefined, flags: SetupFlags)
 
 function renderOne(plan: ProviderPlan, missing: ReadonlySet<string>): void {
   heading(plan.name);
-  print(`  ${plan.description}`);
-  if (plan.summary) print(`  ${plan.summary}`);
-  if (plan.docsUrl) print(`  ${style.dim(plan.docsUrl)}`);
+  prose(`  ${plan.description}`);
+  if (plan.summary) prose(`  ${plan.summary}`, { paint: paint.muted });
+  if (plan.docsUrl) print(`  ${paint.link(plan.docsUrl)}`);
 
   if (plan.connected.length > 0) {
     print();
@@ -106,13 +106,14 @@ function renderOne(plan: ProviderPlan, missing: ReadonlySet<string>): void {
 
   if (plan.steps.length > 0 && !plan.brokered) {
     heading('First, in the vendor’s console');
-    plan.steps.forEach((step, index) => print(`  ${index + 1}. ${step}`));
+    steps(plan.steps);
   }
 
   if (plan.brokered) {
     heading('Values it needs');
-    print(
-      `  ${style.dim(`none — the OAuth client is operated by ${plan.clientOperator}, and its secret never reaches this machine.`)}`,
+    prose(
+      `  none — the OAuth client is operated by ${plan.clientOperator}, and its secret never reaches this machine.`,
+      { paint: paint.muted },
     );
   }
 
@@ -136,7 +137,7 @@ function renderOne(plan: ProviderPlan, missing: ReadonlySet<string>): void {
     heading('Where it is');
     for (const variable of plan.variables) {
       print(`  ${style.bold(variable.label)}  ${style.dim(`e.g. ${variable.example}`)}`);
-      print(`    ${style.dim(variable.description)}`);
+      prose(`    ${variable.description}`, { paint: paint.muted });
     }
   }
 
@@ -152,7 +153,7 @@ function renderOne(plan: ProviderPlan, missing: ReadonlySet<string>): void {
     print(`  ${plan.ownClientCommand}`);
     if (plan.steps.length > 0) {
       print();
-      plan.steps.forEach((step, index) => print(`  ${index + 1}. ${step}`));
+      steps(plan.steps);
     }
   }
 
@@ -161,18 +162,17 @@ function renderOne(plan: ProviderPlan, missing: ReadonlySet<string>): void {
   if (plan.tokenCommand && plan.pastedCredential) {
     heading('Or paste a token you already hold');
     print(`  ${plan.tokenCommand}`);
-    print(`  ${style.dim(`Asks for the ${plan.pastedCredential}.`)}`);
+    prose(`  Asks for the ${plan.pastedCredential}.`, { paint: paint.muted });
     if (plan.steps.length > 0 && !plan.ownClientCommand) {
       print();
-      plan.steps.forEach((step, index) => print(`  ${index + 1}. ${step}`));
+      steps(plan.steps);
     }
   }
   if (plan.browser) {
     print();
-    print(
-      style.dim(
-        '  This one authorises in a browser, so it has to be run by whoever owns the account.',
-      ),
+    prose(
+      '  This one authorises in a browser, so it has to be run by whoever owns the account.',
+      { paint: paint.muted },
     );
   }
 }

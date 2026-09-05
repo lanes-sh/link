@@ -2,7 +2,7 @@ import type { SecretStore } from '#secrets';
 import type { ProviderManifest, SetupDeclaration, SetupPrompt } from '#connectivity';
 import { credentialRefForConnection } from '#connectivity';
 import { ConfigDocument } from '../../config-edit.ts';
-import { ok, progress, style } from '../../output.ts';
+import { divider, heading, ok, paint, progress, prose, steps, style } from '../../output.ts';
 import { terminalPrompter, type Prompter } from '../../prompt.ts';
 
 /**
@@ -41,15 +41,26 @@ export function printSetup(
   const setup = declaration;
   if (!setup) return;
 
+  // Every line of this goes to stderr, which is why each block is handed
+  // `progress`. The instructions are narration; stdout belongs to whatever the
+  // command returns, and a `--json` connect must still be parseable.
+  heading(`Setting up ${manifest.name}`, progress);
   progress();
-  progress(style.bold(`Setting up ${manifest.name}`));
-  if (setup.summary) progress(setup.summary);
-  if (setup.docs_url) progress(style.dim(setup.docs_url));
+
+  if (setup.summary) prose(setup.summary, { paint: paint.muted, to: progress });
+  if (setup.docs_url) progress(paint.link(setup.docs_url));
+
+  if (setup.steps.length > 0) {
+    progress();
+    steps(setup.steps, progress);
+  }
+
   progress();
-  setup.steps.forEach((step, index) => progress(`  ${index + 1}. ${step}`));
-  progress();
-  progress(style.dim(note));
-  progress();
+  prose(note, { paint: paint.muted, to: progress });
+
+  // Closed rather than left open, because what follows is a prompt. Without a
+  // rule the question reads as an eighth step.
+  divider(progress);
 }
 
 /**
@@ -79,8 +90,8 @@ export async function askForSetup(
   const answers = new Map<string, string>();
   for (const prompt of prompts) {
     const value = prompt.secret
-      ? await prompter.askSecret(`  ${prompt.label}`)
-      : await prompter.ask(`  ${prompt.label}`);
+      ? await prompter.askSecret(prompt.label)
+      : await prompter.ask(prompt.label);
     if (!value) throw new Error(`${prompt.label} is required.`);
     answers.set(prompt.key, value);
   }

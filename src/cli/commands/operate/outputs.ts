@@ -1,7 +1,7 @@
 import { anyIssuedToken, listProfiles } from '#profile';
 import { fileURLToPath } from 'node:url';
 import { deployedUrl, endpointHealth, localUrl } from '../../endpoint-url.ts';
-import { announceWorkspace, heading, print, style, warn } from '../../output.ts';
+import { announceWorkspace, heading, print, prose, style, warn } from '../../output.ts';
 import { openWorkspaceRuntime, type GlobalFlags } from '../../runtime.ts';
 
 export interface OutputsFlags extends GlobalFlags {
@@ -80,17 +80,16 @@ export async function outputs(flags: OutputsFlags): Promise<void> {
       // The URL is the platform's, not the configured host and port: those
       // govern where `lanes link start` listens locally and mean nothing to a
       // deployed revision, which listens on whatever $PORT it was given.
-      print(style.dim(`  ${declared.platform} service "${declared.service}" for target "${runtime.target}".`));
+      prose(`  ${declared.platform} service "${declared.service}" for target "${runtime.target}".`, {
+        paint: style.dim,
+      });
     }
 
     heading(`Profiles served by it (${profiles.length})`);
     for (const profile of profiles) print(`  ${profile}`);
-    print(
-      style.dim(
-        '  Each call names one, in its `profile` argument. Which of these a client\n' +
-          '  actually reaches is decided by who signs in — every profile whose members\n' +
-          '  list them, and no others.',
-      ),
+    prose(
+      '  Each call names one, in its `profile` argument. Which of these a client actually reaches is decided by who signs in — every profile whose members list them, and no others.',
+      { paint: style.dim },
     );
 
     if (flags.show && token !== undefined) {
@@ -99,11 +98,9 @@ export async function outputs(flags: OutputsFlags): Promise<void> {
     }
 
     heading('Register with your agent');
-    print(
-      style.dim(
-        '  Not run for you: which config file an agent reads is its business, not ours.',
-      ),
-    );
+    prose('  Not run for you: which config file an agent reads is its business, not ours.', {
+      paint: style.dim,
+    });
     print('');
 
     // **The bare URL, and no header** (ADR-062). This printed the
@@ -115,24 +112,18 @@ export async function outputs(flags: OutputsFlags): Promise<void> {
     // in instead.
     print(`  claude mcp add --transport http lanes-link ${url}`);
     print('');
-    print(
-      style.dim(
-        '  No credential goes into that command. The client reads this endpoint\'s\n' +
-          '  protected-resource document, sends its owner to sign in, and comes back\n' +
-          '  holding a token of its own — so a config file synced to a dotfiles repo\n' +
-          '  is not a leak, and rotating a static token does not invalidate it.',
-      ),
+    prose(
+      "  No credential goes into that command. The client reads this endpoint's protected-resource document, sends its owner to sign in, and comes back holding a token of its own — so a config file synced to a dotfiles repo is not a leak, and rotating a static token does not invalidate it.",
+      { paint: style.dim },
     );
 
     heading('For a machine with no browser');
     if (token === undefined) {
       print(style.dim('  No static token is issued in this workspace.'));
-      print(
-        style.dim(
-          `      lanes link token issue --me --workspace ${runtime.target}\n` +
-            '  It reaches the profiles that list your subject as a member, and nothing else.',
-        ),
-      );
+      print(style.dim(`      lanes link token issue --me --workspace ${runtime.target}`));
+      prose('  It reaches the profiles that list your subject as a member, and nothing else.', {
+        paint: style.dim,
+      });
     } else {
       const invocation = await tokenInvocation(runtime.resolution.target);
       print(
@@ -146,17 +137,15 @@ export async function outputs(flags: OutputsFlags): Promise<void> {
         // the only symptom is a 401 that looks like a bad token rather than a
         // missing binary.
         print(warn('lanes is not on your PATH, so the short form would substitute to nothing.'));
-        print(style.dim('  The command above uses this checkout instead. To shorten it permanently:'));
+        prose('  The command above uses this checkout instead. To shorten it permanently:', {
+          paint: style.dim,
+        });
         print(`      cd ${process.cwd()} && bun link`);
         print('');
       }
-      print(
-        style.dim(
-          '  CI only, and it is narrower than it looks: the token reaches the profiles\n' +
-            '  its subject is a member of. The $(…) keeps it out of your agent\'s context\n' +
-            '  and out of the transcript, but it resolves once and is stored as a literal —\n' +
-            '  so a rotate means registering again.',
-        ),
+      prose(
+        "  CI only, and it is narrower than it looks: the token reaches the profiles its subject is a member of. The $(…) keeps it out of your agent's context and out of the transcript, but it resolves once and is stored as a literal — so a rotate means registering again.",
+        { paint: style.dim },
       );
     }
   } finally {
