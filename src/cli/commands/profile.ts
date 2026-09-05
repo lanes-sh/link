@@ -71,9 +71,28 @@ export interface ProfileListing {
  */
 export async function createProfile(
   name: string,
-  options: { targets: readonly string[]; nonInteractive?: boolean },
+  options: {
+    targets: readonly string[];
+    nonInteractive?: boolean;
+    /**
+     * Where to look for the workspace, when the process environment is not the
+     * answer.
+     *
+     * A terminal has one workspace in view, so reading `process.env` is right
+     * for every CLI caller and this stays absent for all of them. A process
+     * serving many workspaces concurrently cannot use it: setting the variable
+     * per request has the second request overwrite the first mid-flight.
+     *
+     * `resolveWorkspaceRoot` has taken an `env` all along; what was missing was
+     * this command passing one through. Threaded rather than defaulted, so a
+     * caller that forgets it gets the terminal behaviour instead of writing
+     * into whichever workspace the process happened to boot with.
+     */
+    env?: Record<string, string | undefined>;
+  },
 ): Promise<ProfileCreated> {
-  const local = resolveWorkspaceRoot();
+  const env = options.env !== undefined ? { env: options.env } : {};
+  const local = resolveWorkspaceRoot(env);
   const target = options.targets[0]!;
 
   // The workspace file before the target is resolved, not after. `profile add

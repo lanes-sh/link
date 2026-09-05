@@ -1,7 +1,10 @@
 import type { Logger } from '#connectivity';
 import { connectionSummaries, type ConnectionSummary } from '#cli/commands/connection-list.ts';
+import { createProfile } from '#cli/commands/profile.ts';
+import { environmentFor } from './workspace.ts';
 import { loadWorkspaceProfiles } from '#profile';
 import { READS, WIDENS, permits, workspaceRootFor } from './authorise.ts';
+import { MANAGED_TARGET } from './workspace.ts';
 import type { ControlAssertion } from './assertion.ts';
 
 /**
@@ -71,6 +74,24 @@ export interface WorkspaceReaders {
   profiles(root: string): Promise<ProfilesResult>;
 }
 
+/**
+ * What a mutation needs, injectable for the same reason the readers are.
+ *
+ * A route test is about the gate — who is refused, and which workspace the
+ * writer was pointed at. Standing a real workspace up on disk to assert a 403
+ * would be testing the fixture.
+ */
+export interface WorkspaceWriters {
+  create(
+    name: string,
+    options: { targets: readonly string[]; nonInteractive?: boolean; env?: Record<string, string | undefined> },
+  ): Promise<{ name: string; path: string }>;
+}
+
+export const liveWriters: WorkspaceWriters = {
+  create: (name, options) => createProfile(name, options),
+};
+
 export const liveReaders: WorkspaceReaders = {
   connections: (root) => connectionSummaries(root),
   async profiles(root) {
@@ -98,7 +119,20 @@ export interface ControlDeps {
   readonly verifier: { verify(token: string): Promise<ControlAssertion | null> };
   readonly log: Logger;
   readonly readers?: WorkspaceReaders;
+  readonly writers?: WorkspaceWriters;
+  /** Test seam for `create`, so a route test needs no workspace on disk. */
+  readonly create?: WorkspaceWriters['create'];
 }
+
+/**
+ * What the config format accepts as a profile name.
+ *
+ * The same shape as `identifier` in `#profile/schema.ts`. Restated rather than
+ * imported because this refuses *before* anything is written, and the schema's
+ * copy refuses after — one is a 400 with a sentence and the other is a parse
+ * failure three frames down.
+ */
+const PROFILE_NAME = /^[a-z][a-z0-9_-]*$/;
 
 /** The paths this surface claims. Everything else is the endpoint's. */
 const PATHS: readonly string[] = ['/v1/profiles', '/v1/connections'];
@@ -130,6 +164,9 @@ const notFound = (): Response => json({ error: 'not_found' }, 404);
  */
 export async function controlRoutes(request: Request, deps: ControlDeps): Promise<Response> {
   const readers = deps.readers ?? liveReaders;
+  const writers: WorkspaceWriters = deps.create
+    ? { ...(deps.writers ?? liveWriters), create: deps.create }
+    : (deps.writers ?? liveWriters);
   const url = new URL(request.url);
 
   // Unknown paths are refused before the credential is looked at. A caller
@@ -173,7 +210,17 @@ export async function controlRoutes(request: Request, deps: ControlDeps): Promis
   const root = workspaceRootFor(assertion);
 
   try {
-    return await route.run({ assertion, root, readers });
+    return await route.run({
+      assertion,
+      root,
+      readers,
+      writers,
+      // From the assertion, exactly as `root` is. A command reads its workspace
+      // out of this rather than out of `process.env`, which one process serving
+      // many workspaces cannot use.
+      env: environmentFor(assertion),
+      body: () => request.json(),
+    });
   } catch (error) {
     // The workspace, not the caller: a bucket that would not answer, a profile
     // mid-write. Reported without its message, which can carry a path or a
@@ -191,6 +238,10 @@ interface RouteContext {
   readonly assertion: ControlAssertion;
   readonly root: string;
   readonly readers: WorkspaceReaders;
+  readonly writers: WorkspaceWriters;
+  /** The environment a command runs in: this workspace's root, and nothing ambient. */
+  readonly env: Record<string, string | undefined>;
+  readonly body: () => Promise<unknown>;
 }
 
 interface Route {
@@ -233,11 +284,48 @@ const ROUTES: readonly Route[] = [
     method: 'POST',
     path: '/v1/profiles',
     needs: WIDENS,
-    async run() {
-      // Reserved so the gate above it is exercised and reviewed before it does
-      // anything. Adding a profile writes configuration, which is what WIDENS
-      // is for, and it lands with the rest of the mutations.
-      return json({ error: 'not_implemented' }, 501);
+    async run({ writers, env, body }) {
+      let named: unknown;
+      try {
+        named = await body();
+      } catch {
+        return json({ error: 'That request body is not JSON.' }, 400);
+      }
+
+      const name = (named as { name?: unknown } | null)?.name;
+      if (typeof name !== 'string' || !PROFILE_NAME.test(name)) {
+        // Checked here rather than left to the writer, so a malformed name is a
+        // 400 naming the rule instead of whatever a path error reads like.
+        return json(
+          {
+            error:
+              'A profile name is lowercase letters, digits, hyphens and underscores, ' +
+              'starting with a letter.',
+          },
+          400,
+        );
+      }
+
+      try {
+        const created = await writers.create(name, {
+          // A managed workspace declares exactly one target and it is not the
+          // caller's to choose (ADR-052: a workspace is a target).
+          targets: [MANAGED_TARGET],
+          // Nobody is at a terminal. A command that would prompt must refuse
+          // instead of blocking on a stdin that will never answer.
+          nonInteractive: true,
+          env,
+        });
+        return json({ profile: created.name }, 201);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        // A name already taken is the caller's to fix and the one failure here
+        // that is not ours, so it says so rather than becoming a 503.
+        if (/already exists/i.test(message)) {
+          return json({ error: `A profile called "${name}" already exists.` }, 409);
+        }
+        throw error;
+      }
     },
   },
 ];

@@ -123,3 +123,92 @@ describe('the credential', () => {
     expect(response.status).toBe(401);
   });
 });
+
+describe('creating a profile', () => {
+  const post = (body: unknown) =>
+    new Request('https://runtime.internal/v1/profiles', {
+      method: 'POST',
+      headers: { authorization: 'Bearer a.b.c', 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+  const withCreate = (over: Partial<ControlDeps> = {}) =>
+    deps({
+      create: async (name: string) => ({
+        name,
+        path: `/w/profiles/${name}/profile.yaml`,
+        port: 7337,
+        targets: ['managed'],
+        copiedFrom: {},
+      }),
+      ...over,
+    });
+
+  test('an admin holding the scope creates one', async () => {
+    const response = await controlRoutes(post({ name: 'work' }), withCreate());
+    expect(response.status).toBe(201);
+    expect((await response.json() as { profile: string }).profile).toBe('work');
+  });
+
+  test('an editor may not, because creating one widens what an agent reaches', async () => {
+    const response = await controlRoutes(
+      post({ name: 'work' }),
+      withCreate({ verifier: { async verify() { return { ...ADMIN, role: 'editor' as const }; } } }),
+    );
+    expect(response.status).toBe(403);
+  });
+
+  test('an admin without the scope may not, and is told which box to tick', async () => {
+    const response = await controlRoutes(
+      post({ name: 'work' }),
+      withCreate({ verifier: { async verify() { return { ...ADMIN, scopes: [] }; } } }),
+    );
+    expect(response.status).toBe(403);
+    expect((await response.json() as { error: string }).error).toMatch(/link:admin/);
+  });
+
+  test('refuses a name the config format would not accept', async () => {
+    // Rejected here rather than by the writer, so a malformed name is a 400
+    // naming the rule instead of whatever a YAML path error looks like.
+    for (const name of ['', 'Has Spaces', '../escape', 'UPPER']) {
+      const response = await controlRoutes(post({ name }), withCreate());
+      expect(response.status, name).toBe(400);
+    }
+  });
+
+  test('refuses a body that is not what it says it is', async () => {
+    const bad = new Request('https://runtime.internal/v1/profiles', {
+      method: 'POST',
+      headers: { authorization: 'Bearer a.b.c', 'content-type': 'application/json' },
+      body: 'not json',
+    });
+    expect((await controlRoutes(bad, withCreate())).status).toBe(400);
+  });
+
+  test('creates it in the workspace the assertion named, and nowhere else', async () => {
+    const seen: (Record<string, string | undefined> | undefined)[] = [];
+    await controlRoutes(
+      post({ name: 'work' }),
+      withCreate({
+        create: async (name: string, options) => {
+          seen.push(options.env);
+          return { name, path: '/w/x', port: 7337, targets: ['managed'], copiedFrom: {} };
+        },
+      }),
+    );
+
+    expect(seen[0]?.['LANES_LINK_HOME']).toBe('lanes://ws-aaa');
+  });
+
+  test('reports a name already taken as a conflict rather than a failure', async () => {
+    const response = await controlRoutes(
+      post({ name: 'work' }),
+      withCreate({
+        create: async () => {
+          throw new Error('Profile "work" already exists at /w/profiles/work/profile.yaml');
+        },
+      }),
+    );
+    expect(response.status).toBe(409);
+  });
+});

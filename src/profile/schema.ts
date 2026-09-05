@@ -571,6 +571,27 @@ export const configSchema = z.object({
    * refused by `assertReferentialIntegrity` rather than loading and reaching
    * nothing.
    */
+  /**
+   * Whether this profile's own configuration may be changed by an agent.
+   *
+   * The role says who you are and a scope says what you authorised a client to
+   * do on your behalf. Neither says anything about *this* profile, and that is
+   * the gap: somebody keeping personal mail in one profile and work in another
+   * wants the first closed to agents whatever their own role is.
+   *
+   * `allow` by default, because a workspace that can be run without the
+   * dashboard is the point rather than a concession. `deny` is what you set on
+   * the profile you would not want an agent widening.
+   *
+   * A person in the CLI or the dashboard is not an agent and is unaffected —
+   * this is read by the control surface, which is the only path an agent has.
+   *
+   * Two spellings and no third. Not a boolean, so a later `approval_required`
+   * has somewhere to go without changing the type; not free text, so a value
+   * from a newer release fails here rather than being read as permission.
+   */
+  agent_management: z.enum(['allow', 'deny']).default('allow'),
+
   grants: z.array(grantSchema).default([]),
 
   /**

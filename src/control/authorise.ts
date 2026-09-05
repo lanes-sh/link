@@ -1,4 +1,5 @@
 import { LANES_SCHEME } from '#deployments/adapters/lanes.ts';
+import type { Config } from '#profile';
 import { CONTROL_ROLES, type ControlAssertion, type ControlRole } from './assertion.ts';
 
 /**
@@ -67,6 +68,24 @@ export interface Refusal {
  */
 export function workspaceRootFor(assertion: ControlAssertion): string {
   return `${LANES_SCHEME}${assertion.workspace}`;
+}
+
+/**
+ * Whether this profile is open to being changed by an agent.
+ *
+ * The third gate, and the only one that belongs to the *thing being changed*
+ * rather than to the caller. Checked after the role and the scope, because
+ * those decide whether anybody may act at all and this decides whether this
+ * particular profile is in scope.
+ *
+ * Considered and rejected: expressing it through the profile's `lanes_setup`
+ * grant. That capability is read-only description (ADR-019), and giving one key
+ * two meanings — "may read setup guidance" and "may be reconfigured" — is
+ * exactly the two-spellings-of-one-thing this repository refuses everywhere
+ * else.
+ */
+export function agentMayManage(config: Config): boolean {
+  return config.agent_management !== 'deny';
 }
 
 const RANK: Record<ControlRole, number> = { editor: 1, admin: 2 };
