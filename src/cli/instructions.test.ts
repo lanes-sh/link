@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { Flags } from './argv.ts';
 import { ASSETS, readAsset } from './commands/mcp/assets.ts';
 import { assertKnownFlags, requirementFor, selectionKey } from './selection.ts';
-import { PROGRAM, USAGE } from './usage.ts';
+import { PROGRAM, usage } from './usage.ts';
 import { RESERVED_PROVIDER_IDS } from '#connectivity/manifest/provider.ts';
 
 /**
@@ -28,7 +28,8 @@ function commandsNamedIn(text: string): string[] {
 
 /** The command paths `USAGE` documents, as `"mcp add"` and `"start"`. */
 const documented = new Set(
-  USAGE.split('\n')
+  usage(80)
+    .split('\n')
     .map((line) => line.trim())
     // The title line spells PROGRAM in bold, so it carries ANSI codes and does
     // not match — which is right: it is a heading, not a command.

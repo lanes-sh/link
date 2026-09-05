@@ -172,7 +172,7 @@ async function askForSubject(
 
   progress();
   const answer = await prompter.ask(
-    `  ${assertion.subject_label}${optional ? style.dim(' [none]') : ''}`,
+    `${assertion.subject_label}${optional ? style.dim(' [none]') : ''}`,
   );
 
   if (answer.length > 0) return answer;

@@ -53,7 +53,7 @@ import type { GlobalFlags } from './runtime.ts';
 import type { OwnerFlags } from './commands/owner/shared.ts';
 import { assertKnownFlags } from './selection.ts';
 import { requireSelection } from './selection-require.ts';
-import { PROGRAM, USAGE } from './usage.ts';
+import { PROGRAM, usage } from './usage.ts';
 import { version } from './version.ts';
 import { print } from './output.ts';
 
@@ -87,7 +87,7 @@ export async function run(argv: readonly string[]): Promise<void> {
   const json = flags['json'] === true;
 
   if (!first || first === 'help' || flags['help'] === true) {
-    print(USAGE);
+    print(usage());
     return;
   }
 
@@ -246,18 +246,21 @@ export async function run(argv: readonly string[]): Promise<void> {
       // Both subcommands take the same two positionals, so the usage line is
       // built once rather than written twice with one of them going stale.
       const [kind, value] = rest;
-      const usage = (form: string): string =>
+      // Named `identityUsage` rather than `usage`, which is now the imported
+      // help renderer: a local shadowing it would hand a later edit in this
+      // block the wrong function, or a TDZ error if it were placed above.
+      const identityUsage = (form: string): string =>
         `Usage: ${PROGRAM} identity ${form}\n  e.g. ${PROGRAM} identity add name "Your Name" --note "for open-source work"`;
 
       switch (second) {
         case 'add':
-          if (!kind || !value) throw new Error(usage('add <kind> <value> [--note text]'));
+          if (!kind || !value) throw new Error(identityUsage('add <kind> <value> [--note text]'));
           return identityAdd(kind, value, { ...global, note: text(flags, 'note'), json });
         case 'list':
         case undefined:
           return identityList({ ...global, json });
         case 'remove':
-          if (!kind || !value) throw new Error(usage('remove <kind> <value>'));
+          if (!kind || !value) throw new Error(identityUsage('remove <kind> <value>'));
           return identityRemove(kind, value, { ...global, json });
         default:
           throw new Error(`Unknown: ${PROGRAM} identity ${second}`);

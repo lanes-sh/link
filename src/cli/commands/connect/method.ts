@@ -219,7 +219,7 @@ async function ask(
   );
   progress();
 
-  const answer = await prompter.ask(`  Which ${style.dim(`[${preferred}]`)}`);
+  const answer = await prompter.ask(`Which ${style.dim(`[${preferred}]`)}`);
   const picked = answer.length === 0 ? preferred : answer;
 
   const byNumber = available[Number(picked) - 1];

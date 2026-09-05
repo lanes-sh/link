@@ -1,4 +1,6 @@
 import { wasDefaulted } from './selection-require.ts';
+import { columns, style, width } from './terminal.ts';
+import { numbered, rule, truncate, visibleWidth, wrap } from './typeset.ts';
 import type { Resolution } from '#profile';
 
 /**
@@ -9,18 +11,23 @@ import type { Resolution } from '#profile';
  * pipe into other tools, and a log line interleaved into a token corrupts it.
  */
 
-const isTTY = process.stdout.isTTY === true && !process.env['NO_COLOR'];
+/**
+ * Re-exported rather than moved away, because `style` is imported by sixty-five
+ * files and moving it would put every one of them in a diff about colour. It now
+ * resolves per call instead of at module load: see `terminal.ts`.
+ */
+export { paint, style } from './terminal.ts';
 
-const paint = (code: string) => (text: string) => (isTTY ? `[${code}m${text}[0m` : text);
-
-export const style = {
-  bold: paint('1'),
-  dim: paint('2'),
-  green: paint('32'),
-  yellow: paint('33'),
-  red: paint('31'),
-  cyan: paint('36'),
-};
+/**
+ * Whether the spinner below may redraw in place.
+ *
+ * Deliberately the predicate `isTTY` was before this file grew a colour ladder,
+ * rather than `level() > 0`. The two agree today, but they answer different
+ * questions — one is "can I erase a line", the other "may I paint it" — and a
+ * `FORCE_COLOR` that animated a spinner into a log file would be the ladder
+ * answering the wrong one.
+ */
+const animated = (): boolean => process.stdout.isTTY === true && !process.env['NO_COLOR'];
 
 export function print(line = ''): void {
   process.stdout.write(`${line}\n`);
@@ -69,7 +76,7 @@ const SPINNER = ['\u280b', '\u2819', '\u2839', '\u2838', '\u283c', '\u2834', '\u
 const CLEAR = '\r\u001b[2K';
 
 export async function waiting<T>(label: string, work: () => Promise<T>): Promise<T> {
-  if (!isTTY) {
+  if (!animated()) {
     progress(style.dim(`  ${label}\u2026`));
     return work();
   }
@@ -84,7 +91,14 @@ export async function waiting<T>(label: string, work: () => Promise<T>): Promise
     const elapsed = seconds >= 3 ? ` (${seconds}s)` : '';
     const mark = SPINNER[frame % SPINNER.length];
 
-    process.stderr.write(`${CLEAR}${style.dim(`  ${mark} ${label}\u2026${elapsed}`)}`);
+    // `\u001b[2K` erases one *physical* row. A label that outruns the terminal
+    // wraps onto a second, and the erase then leaves the first on screen for the
+    // rest of the run with nothing to explain it.
+    const text = `  ${mark} ${label}\u2026${elapsed}`;
+    const room = Math.max(columns() - 1, 1);
+    const shown = visibleWidth(text) > room ? `${truncate(text, room - 1)}\u2026` : text;
+
+    process.stderr.write(`${CLEAR}${style.dim(shown)}`);
     frame += 1;
   };
 
@@ -194,9 +208,88 @@ export function emit(
   return render();
 }
 
-export function heading(text: string): void {
-  print();
-  print(style.bold(text));
+/**
+ * Where a block writes to.
+ *
+ * A parameter rather than two copies of every renderer, because the same shapes
+ * go to different streams: `setup plan` prints its walkthrough as the command's
+ * output, and `connect` narrates the identical walkthrough on stderr while
+ * stdout is reserved for a `--json` document. Defaulting to `print` is what
+ * keeps the fifty-five existing `heading` calls out of this diff.
+ */
+type Sink = (line?: string) => void;
+
+/**
+ * A section title, and a rule running out to the width of the terminal.
+ *
+ * The rule is the whole reason this is a function rather than `print(bold(x))`.
+ * A bold line alone stops separating anything once the block under it is more
+ * than a couple of lines — which is what a provider's seven-step walkthrough
+ * is — and a heading nobody sees as a heading is a blank line with extra steps.
+ *
+ * Measured with `visibleWidth` rather than `.length` because a heading may
+ * already carry colour: `mcp list` builds one as `Registered as ${bold(name)}`,
+ * and counting its escape codes as characters would shorten the rule by nine.
+ */
+export function heading(text: string, to: Sink = print): void {
+  const room = width() - visibleWidth(text) - 1;
+
+  to();
+  to(room > 0 ? `${style.bold(text)} ${style.dim(rule(room))}` : style.bold(text));
+}
+
+/** The rule that closes a block, where something follows it that is not a heading. */
+export function divider(to: Sink = print): void {
+  to(style.dim(rule(width())));
+}
+
+export interface ProseOptions {
+  /** Tint the whole paragraph — a summary, or a note under a block. */
+  readonly paint?: ((text: string) => string) | undefined;
+  readonly to?: Sink;
+  /**
+   * Put on the first line, with continuations aligned past it.
+   *
+   * For the `ok` / `warn` / `fail` markers, which are a six-column gutter and
+   * not part of the sentence: `prose(why, { prefix: warn('') })`. Calling the
+   * marker with an empty string is what yields the gutter alone, and it has to
+   * be called rather than stored — colour resolves per call now, so a marker
+   * captured at module load would be the colourless one forever.
+   */
+  readonly prefix?: string;
+}
+
+/**
+ * A sentence, wrapped to the terminal.
+ *
+ * The counterpart to `print`, which stays raw and is still correct for
+ * everything that is not prose: a value, a path, a credential ref, a pasteable
+ * command, a table row, a JSON document. Wrapping those would corrupt them, so
+ * the choice is the call site's and the function name is how it is made.
+ *
+ * URLs, `lanes link …` invocations and quoted literals are picked out inside
+ * the sentence — the three things a reader is meant to act on. Anything the
+ * paragraph tint claims is painted; the rest keeps the terminal's foreground.
+ */
+export function prose(text: string, options: ProseOptions = {}): void {
+  const { paint: tint, to = print, prefix = '' } = options;
+  const gutter = visibleWidth(prefix);
+  const lines = wrap(text, width() - gutter, { highlight: true, paint: tint });
+
+  lines.forEach((line, index) => to(index === 0 ? prefix + line : ' '.repeat(gutter) + line));
+}
+
+/**
+ * A numbered walkthrough whose continuations align under the text.
+ *
+ * This replaces `steps.forEach((step, i) => print(`  ${i + 1}. ${step}`))`,
+ * written out four times across `connect`, `setup plan` and `deploy`. That
+ * rendering had no continuation at all: a step ran to the edge of the terminal
+ * and carried on at column zero, which is what turned a seven-step walkthrough
+ * into one paragraph.
+ */
+export function steps(items: readonly string[], to: Sink = print): void {
+  for (const line of numbered(items, width())) to(line);
 }
 
 export function table(rows: ReadonlyArray<readonly string[]>): void {
@@ -205,7 +298,7 @@ export function table(rows: ReadonlyArray<readonly string[]>): void {
   const widths: number[] = [];
   for (const row of rows) {
     row.forEach((cell, index) => {
-      widths[index] = Math.max(widths[index] ?? 0, stripAnsi(cell).length);
+      widths[index] = Math.max(widths[index] ?? 0, visibleWidth(cell));
     });
   }
 
@@ -215,7 +308,7 @@ export function table(rows: ReadonlyArray<readonly string[]>): void {
         .map((cell, index) =>
           index === row.length - 1
             ? cell
-            : cell + ' '.repeat((widths[index] ?? 0) - stripAnsi(cell).length),
+            : cell + ' '.repeat((widths[index] ?? 0) - visibleWidth(cell)),
         )
         .join('  ')
         .trimEnd(),
@@ -223,10 +316,6 @@ export function table(rows: ReadonlyArray<readonly string[]>): void {
   }
 }
 
-function stripAnsi(text: string): string {
-  // eslint-disable-next-line no-control-regex
-  return text.replace(/\[[0-9;]*m/g, '');
-}
 
 export const ok = (text: string) => `${style.green('ok')}    ${text}`;
 export const warn = (text: string) => `${style.yellow('warn')}  ${text}`;

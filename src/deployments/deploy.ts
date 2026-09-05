@@ -223,7 +223,7 @@ export async function deploy(flags: DeployFlags): Promise<void> {
     // the same run already took its setup answers from the config rather than
     // asking. `--yes` remains the way to skip it with a terminal attached.
     const assumed = flags.yes === true || flags.nonInteractive === true || !isInteractive();
-    if (!assumed && !(await confirm('  Create these now?'))) {
+    if (!assumed && !(await confirm('Create these now?'))) {
       throw new ConfigError('Stopped before creating anything. Nothing was changed.');
     }
     await runSteps(driver, provision);
