@@ -166,6 +166,69 @@ export function assertConnectionsUnique(connections: readonly ConnectionConfig[]
 }
 
 /**
+ * Two accounts are the same account, for the purpose of finding a row again.
+ *
+ * Trimmed as well as lower-cased. The match this serves used to lower-case
+ * inline and stop there, and nothing trims on the way in either — so a probe
+ * that returned `" ada@example.com"`, or an operator who typed a trailing
+ * space, matched no row and got a second one beside the first.
+ */
+export function sameAccount(one: string, other: string): boolean {
+  return one.trim().toLowerCase() === other.trim().toLowerCase();
+}
+
+/**
+ * The row this provider already holds for this account, if it holds one.
+ *
+ * **The uniqueness rule, in the one place both callers ask it.** A connection is
+ * unique on its provider and its account: the label is displayed and addressed
+ * by nothing, and the id is opaque and allocated. So connecting an account a
+ * second time is not a new connection, it is the same one — a rotated password,
+ * an expired token, an attempt that failed halfway — and it overwrites the row
+ * that is already there.
+ *
+ * It is a function rather than two comparisons because the two comparisons
+ * disagreed. `settleIdentity` chose the id by matching the account across a
+ * whole vendor, `declareConnection` found the row to write by `<provider>.<id>`,
+ * and where those resolved differently the writer appended: an iCloud mailbox
+ * reconnected onto the calendar's id, found no mail row under it, and left the
+ * old row stale beside the new one.
+ */
+export function connectionForAccount(
+  connections: readonly ConnectionConfig[],
+  providerId: string,
+  account: string,
+): ConnectionConfig | undefined {
+  return connections.find(
+    (connection) => connection.provider === providerId && sameAccount(connection.account, account),
+  );
+}
+
+/**
+ * Rows that are the same connection twice, for a reader who already has some.
+ *
+ * Reported rather than refused, and the distinction is the whole reason this is
+ * not part of `assertConnectionsUnique` above. Two rows at one `<provider>.<id>`
+ * are unresolvable, so that one throws at load. Two rows for one account both
+ * work — one is merely stale — and refusing those at load would run on every
+ * read and on every `ConfigDocument.open`, which would take a workspace that
+ * already holds a pair off the air and refuse `disconnect` the very file that
+ * fixes it.
+ */
+export function duplicateAccountRows(
+  connections: readonly ConnectionConfig[],
+): ConnectionConfig[][] {
+  const groups = new Map<string, ConnectionConfig[]>();
+
+  for (const connection of connections) {
+    const key = `${connection.provider} ${connection.account.trim().toLowerCase()}`;
+    groups.set(key, [...(groups.get(key) ?? []), connection]);
+  }
+
+  return [...groups.values()].filter((group) => group.length > 1);
+}
+
+/**
  * The one connection this profile grants for a single-instance provider.
  *
  * `undefined` when it grants none, which is a legitimate state: a profile that

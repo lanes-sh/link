@@ -6,7 +6,7 @@ import { staleNudge } from '../../release.ts';
 import { openRuntime, resolveProfileOnly, type GlobalFlags, type Runtime } from '../../runtime.ts';
 import type { FetchLike } from '#deployments/knowledge.ts';
 import { unboundRotatableRefs } from '#deployments/bind.ts';
-import { reportCapabilityDrift } from './findings.ts';
+import { duplicateAccountFindings, reportCapabilityDrift } from './findings.ts';
 import { probeConnections } from './auth.ts';
 import { migratedContract, migratedRenamedProviders } from './migrate.ts';
 
@@ -143,6 +143,8 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
         fix: `lanes link token rotate --id ${id} --workspace ${runtime.resolution.target}`,
       });
     }
+
+    warnings.push(...duplicateAccountFindings(runtime.workspaceConnections));
 
     // Whether each credential still works, asked rather than dated.
     //

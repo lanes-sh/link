@@ -1,7 +1,7 @@
 import { createMcpConnector } from '#connectivity/transports';
 import { bearerTokenAsStored, CredentialOAuthProvider } from '#connectivity/auth/index.ts';
 import type { SecretStore } from '#secrets';
-import { defaultConnectionLabel } from '#profile';
+import { connectionForAccount, defaultConnectionLabel, sameAccount } from '#profile';
 import type { ConnectionConfig, Config } from '#profile';
 import type { AnyConnector, ProviderManifest } from '#connectivity';
 import { nextConnectionId, resolveAccount } from '../../identity.ts';
@@ -204,20 +204,36 @@ export async function settleIdentity(input: {
   // without it a failed attempt appends rather than repairs, which is how
   // `Gmail main3` came to exist.
   //
+  // **This provider's own row first, a sibling's id only after.** Both steps
+  // are needed and they answer different questions. A sibling match is how one
+  // Apple Account ends up as one id across three providers, sharing one
+  // password — but it is an id for a row this provider does not have yet, and
+  // `declareConnection` writes by `<provider>.<id>`. Asked as a single search
+  // across the vendor it returned whichever row came first in the file, so
+  // reconnecting a mailbox settled on the calendar's id, found no mail row
+  // under it, and appended a second one beside the stale first.
+  //
   // A bypassed row is excluded from that match on purpose. `unnamed` is not an
   // identity, so two of them are not evidence of the same account — matching
   // them would hand the second connect the first one's credential ref and
   // overwrite it. A fresh id says the only true thing available: these are two
   // rows, and nobody could say whether they are two accounts.
+  const own = connectionForAccount(siblings, manifest.id, account)?.id;
+
   const connectionId =
     explicitId ??
     (unaccounted
-      ? nextConnectionId(taken, true)
+      ? // A surface that authenticates to nothing still has one row per
+        // provider. Its account is the provider's own name, so every connect of
+        // it resolves the same string — and allocating regardless made a second
+        // `connect example` a second row, `lan8` and `lan9` describing one
+        // surface, which is the same duplicate under a different branch.
+        (own ?? nextConnectionId(taken, true))
       : bypassed
         ? nextConnectionId(taken, false)
-        : (siblings.find(
-            (candidate) => candidate.account.toLowerCase() === account!.toLowerCase(),
-          )?.id ?? nextConnectionId(taken, false)));
+        : (own ??
+          siblings.find((candidate) => sameAccount(candidate.account, account!))?.id ??
+          nextConnectionId(taken, false)));
 
   const defaultLabel = defaultConnectionLabel(manifest.name, account);
 
@@ -232,7 +248,16 @@ export async function settleIdentity(input: {
       // across the whole vendor account rather than this provider alone, for the
       // reason `accountSiblings` exists: `connect icloud_calendar` adopts iCloud
       // Mail's id, and should adopt the name that goes with it too.
-      declared: siblings.find((candidate) => candidate.id === connectionId)?.label,
+      //
+      // This provider's own row first, for the reason the id above prefers one:
+      // an id is shared across a family, so a bare search by id offers whichever
+      // service is written first in the file — the calendar's name suggested for
+      // the mailbox being reconnected.
+      declared: (
+        siblings.find(
+          (candidate) => candidate.id === connectionId && candidate.provider === manifest.id,
+        ) ?? siblings.find((candidate) => candidate.id === connectionId)
+      )?.label,
       typed,
       prompter,
     }),
