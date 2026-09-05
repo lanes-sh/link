@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { numbered, rule, stripAnsi, visibleWidth, wrap } from './typeset.ts';
+import { numbered, rule, stripAnsi, truncate, visibleWidth, wrap } from './typeset.ts';
 import { PROVIDER_MANIFESTS } from '#providers/index.ts';
 
 const before = new Map(
@@ -131,6 +131,40 @@ describe('picking things out of prose', () => {
     expect([...line!.matchAll(/\u001b\[0m/g)]).toHaveLength(1);
   });
 
+  test('the program name used as a noun is not painted as a command', () => {
+    // The tail is greedy over lowercase words, because a command is mostly
+    // lowercase words. `A remote lanes link workspace binds to one of these…`
+    // came out with seven words of English in link cyan, so position decides:
+    // a command is given at the start of a line or after a colon.
+    process.env['FORCE_COLOR'] = '1';
+    delete process.env['NO_COLOR'];
+
+    const [prose] = wrap('A remote lanes link workspace binds to one of these', 90, {
+      highlight: true,
+    });
+
+    expect(prose).not.toContain('\u001b');
+  });
+
+  test('the same words after a colon, or at the start of a line, are painted', () => {
+    process.env['FORCE_COLOR'] = '1';
+    delete process.env['NO_COLOR'];
+
+    expect(wrap('run: lanes link connect github --replace', 90, { highlight: true })[0]).toContain(
+      '\u001b',
+    );
+    expect(wrap('  lanes link token issue --me', 90, { highlight: true })[0]).toContain('\u001b');
+  });
+
+  test('a span that starts inside a word still paints it', () => {
+    // `(https://example.com)` is one word whose first character carries no
+    // mark, and keying on index zero left the URL in it unpainted.
+    process.env['FORCE_COLOR'] = '1';
+    delete process.env['NO_COLOR'];
+
+    expect(wrap('See (https://example.com) now', 90, { highlight: true })[0]).toContain('\u001b');
+  });
+
   test('a value is not prose, so nothing in it is picked out', () => {
     process.env['NO_COLOR'] = '1';
     const [line] = wrap('github/pending', 40);
@@ -224,5 +258,19 @@ describe('every step of every provider fits', () => {
     }
 
     expect(overflowing).toEqual([]);
+  });
+});
+
+describe('cutting to a width', () => {
+  test('counts columns, not UTF-16 units', () => {
+    // `slice` cut a CJK label at the wrong column and could split a surrogate
+    // pair, handing the terminal half a character.
+    expect(truncate('日本語です', 4)).toBe('日本');
+    expect(visibleWidth(truncate('日本語です', 5))).toBeLessThanOrEqual(5);
+  });
+
+  test('leaves a string that already fits, and copes with no room', () => {
+    expect(truncate('short', 40)).toBe('short');
+    expect(truncate('short', 0)).toBe('');
   });
 });

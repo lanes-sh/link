@@ -17,6 +17,15 @@ export interface Entry {
   readonly description?: string;
   /** A bare flag rather than a command, so `PROGRAM` is not prefixed. */
   readonly flag?: boolean;
+  /**
+   * Start a new group, with a blank line before it.
+   *
+   * `Your own context` is seven surfaces — memory, tasks, assets, skills,
+   * entities, knowledge, vault — and the template literal separated them with
+   * blank lines it could spell and this shape could not. Forty entries in one
+   * run is a list nobody reads to the end of.
+   */
+  readonly gap?: boolean;
 }
 
 export interface Section {
@@ -191,6 +200,7 @@ export const SECTIONS: readonly Section[] = [
       { command: 'memory write <id> --title <t> [--tag t]', description: 'body on stdin' },
       { command: 'memory forget <id>' },
       {
+        gap: true,
         command: 'tasks list [--status s]',
         description: 'what is outstanding; --status all for everything',
       },
@@ -207,15 +217,15 @@ export const SECTIONS: readonly Section[] = [
         command: 'tasks remove <id>',
         description: 'statuses: in_progress open blocked muted done dropped',
       },
-      { command: 'assets list', description: 'files kept in this profile' },
+      { gap: true, command: 'assets list', description: 'files kept in this profile' },
       { command: 'assets get <name>', description: 'the bytes, to stdout — redirect them' },
       { command: 'assets add <file> [--name n] [--content-type t]' },
       { command: 'assets remove <name>' },
-      { command: 'skills list', description: 'the procedures agents can invoke' },
+      { gap: true, command: 'skills list', description: 'the procedures agents can invoke' },
       { command: 'skills show <name>' },
       { command: 'skills add <name> [--file f]', description: 'document on stdin' },
       { command: 'skills remove <name>' },
-      { command: 'entities', description: 'who and what everyone else is' },
+      { gap: true, command: 'entities', description: 'who and what everyone else is' },
       {
         command: 'entities find [query] [--type t] [--tag t] [--attr kind[=value]] [--related predicate=id]',
         description: 'every match, never a choice',
@@ -231,7 +241,7 @@ export const SECTIONS: readonly Section[] = [
       },
       { command: 'entities forget <id>' },
       { command: 'entities reindex', description: 'rebuild the lookup index from the files' },
-      { command: 'knowledge show', description: 'where memory and skills are kept, and how many' },
+      { gap: true, command: 'knowledge show', description: 'where memory and skills are kept, and how many' },
       {
         command: 'knowledge use github --repo <owner/name> [--branch b] [--path p]',
         description: 'keep both in a private repository, over the GitHub API [--migrate] moves what is already stored, in one commit [--no-migrate] switches and leaves it where it is [--keep] moves it, and leaves the local copies unread',
@@ -240,7 +250,7 @@ export const SECTIONS: readonly Section[] = [
         command: 'knowledge use local [--migrate]',
         description: 'bring them back onto this target',
       },
-      { command: 'vault list', description: 'names only, never values' },
+      { gap: true, command: 'vault list', description: 'names only, never values' },
       { command: 'vault get <id> [--show|--raw]' },
       { command: 'vault set <id> [--description d]', description: 'value on stdin' },
       { command: 'vault remove <id>' },
@@ -259,7 +269,10 @@ export const SECTIONS: readonly Section[] = [
         description: 'only these; the first is the primary',
       },
       { command: 'deploy --non-interactive', description: 'take the stored answers, never prompt' },
-      { command: "deploy --access iam|public who gets past the platform's own door" },
+      {
+        command: 'deploy --access iam|public',
+        description: "who gets past the platform's own door",
+      },
       { command: 'secrets list', description: 'credential references in this target' },
       { command: 'secrets set <ref>', description: 'store one value, read from stdin' },
       { command: 'secrets push --from local --to cloud' },

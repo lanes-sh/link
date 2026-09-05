@@ -2,10 +2,10 @@
  * What this terminal can do, and what Lanes looks like on it.
  *
  * Two questions with one answer each — how wide, and how much colour — and both
- * are read from the environment on every call rather than captured once. That is
- * not a style preference: `style` used to close over a module-load constant,
- * which made colour impossible to test without a pty and made a terminal resize
- * invisible for the life of the process.
+ * are read on every call rather than captured once. That is not a style
+ * preference: `style` used to close over a module-load constant, which made
+ * colour impossible to test without a pty, and a width captured at startup
+ * cannot follow a terminal that is resized under a long-running `start`.
  *
  * The seam to cut on if this file outgrows the budget is palette versus
  * capability: `level()` and `columns()` describe the terminal, `paint` describes
@@ -34,11 +34,16 @@ const MIN_MEASURE = 40;
 /**
  * How wide the terminal says it is.
  *
- * `COLUMNS` first because it is the conventional override and the only knob a
- * test, a CI job, or `script` has. `process.stdout.columns` is only ever set on a
- * TTY, and stderr is consulted after it because the setup block narrates there —
- * a run with stdout piped and stderr on the terminal still knows the width of
- * the thing a person is reading.
+ * `COLUMNS` first because it is the conventional override — `git` reads it the
+ * same way — and because it is the only knob a test, a CI job, or `script` has.
+ * The cost is worth stating rather than discovering: a shell that *exports*
+ * COLUMNS pins the width for the life of the child, so a resize under a
+ * long-running `start` is not followed. Most shells set it without exporting it,
+ * which is why the override is worth more than the case it costs.
+ *
+ * `process.stdout.columns` is only ever set on a TTY, and stderr is consulted
+ * after it because the setup block narrates there — a run with stdout piped and
+ * stderr on the terminal still knows the width of the thing a person reads.
  */
 export function columns(): number {
   const declared = Number(process.env['COLUMNS']);
@@ -86,7 +91,10 @@ export function level(): Level {
   const noColor = process.env['NO_COLOR'];
 
   if (noColor !== undefined && noColor !== '') return 0;
-  if (force === '0') return 0;
+  // Every falsy spelling, not just the digit. `FORCE_COLOR=false` and an empty
+  // `FORCE_COLOR=` both used to skip this *and* the TTY gate below, so the one
+  // variable somebody reaches for to turn colour off turned it on in a pipe.
+  if (force === '0' || force === 'false' || force === '') return 0;
   if (process.env['TERM'] === 'dumb') return 0;
   if (force === undefined && process.stdout.isTTY !== true) return 0;
 

@@ -92,3 +92,52 @@ describe('a description stays with its command', () => {
     }
   });
 });
+
+describe('the layout the review found', () => {
+  test('a description is never set against a wrapped command\'s last fragment', () => {
+    // `  lanes link deploy --workspace <name>` / `    [--dry-run]  set up, build…`
+    // read as the description of `[--dry-run]` rather than of the entry.
+    for (const measure of [40, 60, 80, 90]) {
+      const lines = usage(measure).split('\n');
+
+      for (const [index, line] of lines.entries()) {
+        // A continuation of a wrapped command: indented past an entry, and
+        // still part of the invocation rather than prose.
+        if (!/^ {4}[[<-]/.test(line)) continue;
+        const previous = lines[index - 1] ?? '';
+        if (!previous.startsWith('  lanes link')) continue;
+
+        // No run of two or more spaces inside the content: that gap is what a
+        // description set beside it would look like.
+        const body = line.trimEnd().replace(/^ +/, '');
+        expect(body).toBe(body.split(/ {2,}/)[0] ?? '');
+      }
+    }
+  });
+
+  test('a narrow terminal stacks instead of wasting half of itself', () => {
+    // At sixty the column landed at thirty and left thirty for the text, so
+    // most entries printed a paragraph in a half-width gutter.
+    const narrow = usage(60).split('\n').filter((line) => line.startsWith('    '));
+
+    expect(narrow.length).toBeGreaterThan(20);
+    for (const line of narrow) expect(line.startsWith('     ')).toBe(false);
+  });
+
+  test('the owner surfaces are grouped, not one run of forty', () => {
+    const lines = usage(80).split('\n');
+    const at = lines.findIndex((line) => line.startsWith('  lanes link tasks list'));
+
+    expect(at).toBeGreaterThan(0);
+    expect(lines[at - 1]).toBe('');
+  });
+
+  test('deploy --access carries a description rather than swallowing it', () => {
+    const entry = SECTIONS.flatMap((section) => section.entries).find((candidate) =>
+      candidate.command.startsWith('deploy --access'),
+    );
+
+    expect(entry?.command).toBe('deploy --access iam|public');
+    expect(entry?.description).toContain('who gets past');
+  });
+});

@@ -60,6 +60,19 @@ describe('how much colour', () => {
     expect(paint.accent('x')).toBe('x');
   });
 
+  test('every falsy spelling of FORCE_COLOR turns colour off, not on', () => {
+    // Only the digit was checked, so `FORCE_COLOR=false` skipped both this and
+    // the non-TTY gate — the one variable somebody reaches for to turn colour
+    // off turned it on in a pipe.
+    delete process.env['NO_COLOR'];
+    process.env['COLORTERM'] = 'truecolor';
+
+    for (const spelling of ['0', 'false', '']) {
+      process.env['FORCE_COLOR'] = spelling;
+      expect(level()).toBe(0);
+    }
+  });
+
   test('a dumb terminal is not argued with', () => {
     process.env['FORCE_COLOR'] = '3';
     process.env['TERM'] = 'dumb';

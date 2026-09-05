@@ -75,12 +75,16 @@ export async function ask(question: string): Promise<string> {
   // middle of the document. `connect/custom/ask.ts` had already reached this
   // conclusion and applied it to its own prompts only.
   //
-  // `terminal` is set rather than inferred from `output.isTTY`, so redirecting
-  // stderr alone cannot silently take line editing away from someone typing.
+  // `terminal` keys off the stream readline *echoes to*, not off stdin. With
+  // `terminal: true` readline puts stdin in raw mode and does the echo itself —
+  // so keying it off stdin meant `connect 2>connect.log` sent every keystroke
+  // to the file and the operator typed a token blind. Keyed off stderr, a
+  // redirect degrades to canonical mode and the tty does the echo, which is the
+  // behaviour this had before the stream moved.
   const rl = createInterface({
     input: process.stdin,
     output: process.stderr,
-    terminal: process.stdin.isTTY === true,
+    terminal: process.stderr.isTTY === true,
   });
   try {
     const answer = await new Promise<string>((resolve, reject) => {

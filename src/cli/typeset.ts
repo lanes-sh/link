@@ -62,6 +62,30 @@ function isWide(code: number): boolean {
   );
 }
 
+/**
+ * Cut to a number of columns, counting what a terminal counts.
+ *
+ * `slice` counts UTF-16 units, so a label carrying a CJK name or an emoji was
+ * cut at the wrong column — and a cut landing between a surrogate pair hands
+ * the terminal half a character.
+ */
+export function truncate(text: string, columns: number): string {
+  if (columns <= 0) return '';
+  if (visibleWidth(text) <= columns) return text;
+
+  let out = '';
+  let used = 0;
+
+  for (const character of text) {
+    const size = visibleWidth(character);
+    if (used + size > columns) break;
+    out += character;
+    used += size;
+  }
+
+  return out;
+}
+
 /** A run of horizontal rule, or nothing at all where there is no room. */
 export function rule(count: number): string {
   return count > 0 ? '─'.repeat(count) : '';
@@ -91,11 +115,25 @@ type Painter = (text: string) => string;
  * justification for colour inside a sentence. A fourth pattern for emphasis
  * would make the first three mean less.
  */
-const SPANS: ReadonlyArray<{ pattern: RegExp; paint: Painter }> = [
+const SPANS: ReadonlyArray<{ pattern: RegExp; paint: Painter; group?: number }> = [
   // A URL, minus the punctuation that ends the sentence it sits in.
   { pattern: /https?:\/\/[^\s]+?(?=[.,;:)]*(?:\s|$))/g, paint: paint.link },
-  // An invocation of this CLI: the command words, then any flags and values.
-  { pattern: /\blanes link(?:\s+(?:--?[\w-]+|<[^>\s]+>|[a-z][\w.-]*))*/g, paint: paint.link },
+  /**
+   * An invocation of this CLI — but only where one is being *given*, not where
+   * the name is used as a noun.
+   *
+   * The tail is greedy over lowercase words, because a command is mostly
+   * lowercase words, and nothing in a regular expression can tell `connect
+   * github` from `workspace binds to one of these`. So position decides
+   * instead: a command appears at the start of its line or after a colon, and
+   * `A remote lanes link workspace binds to…` — which this painted as a
+   * runnable command, seven words of English in link cyan — appears in neither.
+   */
+  {
+    pattern: /(^\s*|:\s+)(lanes link(?:\s+(?:--?[\w-]+|<[^>\s]+>|[a-z][\w.-]*))*)/g,
+    paint: paint.link,
+    group: 2,
+  },
   // Something the vendor's console calls a thing, which is what to click.
   { pattern: /"[^"]+"/g, paint: paint.accent },
 ];
@@ -104,12 +142,18 @@ const SPANS: ReadonlyArray<{ pattern: RegExp; paint: Painter }> = [
 function spansOf(line: string): Array<Painter | undefined> {
   const marks: Array<Painter | undefined> = new Array(line.length).fill(undefined);
 
-  for (const { pattern, paint: role } of SPANS) {
-    for (const match of line.matchAll(new RegExp(pattern.source, pattern.flags))) {
-      const from = match.index!;
-      for (let at = from; at < from + match[0].length; at += 1) {
-        marks[at] ??= role;
-      }
+  for (const { pattern, paint: role, group } of SPANS) {
+    // `matchAll` clones its argument and never touches `lastIndex`, so the
+    // pattern is used directly rather than rebuilt for every line of every
+    // paragraph — `usage()` alone wraps some three hundred of them.
+    for (const match of line.matchAll(pattern)) {
+      // A pattern may match more than it paints: the invocation above matches
+      // the colon that introduces a command so that it can require one, and
+      // colouring that colon would be colouring the sentence.
+      const painted = group === undefined ? match[0] : match[group]!;
+      const from = match.index! + match[0].indexOf(painted);
+
+      for (let at = from; at < from + painted.length; at += 1) marks[at] ??= role;
     }
   }
 
@@ -129,7 +173,16 @@ function wordsOf(line: string, highlight: boolean): Word[] {
 
   for (const match of line.matchAll(/\S+/g)) {
     const at = match.index!;
-    words.push({ text: match[0], paint: marks[at] });
+    // The first *marked* character in the word, rather than the word's first
+    // character. A span may begin inside one: `(https://example.com)` is a
+    // single word whose opening bracket carries no mark, and keying on index
+    // zero left the URL in it unpainted.
+    let role: Painter | undefined;
+    for (let index = at; index < at + match[0].length && role === undefined; index += 1) {
+      role = marks[index];
+    }
+
+    words.push({ text: match[0], paint: role });
   }
 
   return words;

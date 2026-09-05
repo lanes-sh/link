@@ -52,8 +52,25 @@ function describeAt(rendered: readonly string[], measure: number): number {
   // columns before a command has said anything. A third of eighty leaves
   // twenty-six for the command itself, which is narrower than most of them and
   // would push nearly every description onto a line of its own.
+  //
+  // The cap is what decides this in practice: the longest entry spells to 128
+  // columns and `width()` is clamped to 90, so `longest` only ever wins on a
+  // hypothetical narrow set. It is still computed rather than assumed, because
+  // a future help text with no long commands should not indent to half the
+  // screen for nothing.
   return Math.max(Math.min(longest + 2, Math.floor(measure * 0.5)), 18);
 }
+
+/**
+ * Below this, two columns stop being worth it.
+ *
+ * At sixty columns the description column lands at thirty and leaves thirty for
+ * the text — so three quarters of the entries print a wrapped paragraph in a
+ * half-width gutter with the left half blank. Stacking them under their command
+ * gives the description the whole width back, which is the thing a narrow pane
+ * has least of.
+ */
+const TWO_COLUMN_FROM = 72;
 
 /** One entry's line, as it is measured and as it is shown. */
 function spell(entry: Entry): string {
@@ -75,6 +92,7 @@ export function usage(measure: number = width()): string {
     index === 0 ? line.replace(PROGRAM, style.bold(PROGRAM)) : line,
   );
   const column = describeAt(SECTIONS.flatMap((s) => s.entries).map(spell), measure);
+  const stacked = measure < TWO_COLUMN_FROM;
 
   for (const section of SECTIONS) {
     lines.push('', style.bold(section.title));
@@ -84,6 +102,8 @@ export function usage(measure: number = width()): string {
       // every flag spelled out is 125 characters. It wraps to a four-column
       // hanging indent, which is deep enough that a continuation can never be
       // mistaken for an entry by the two tests that read this string.
+      if (entry.gap === true) lines.push('');
+
       const spelled = wrap(spell(entry), measure, { hanging: '  ' });
       const last = spelled.at(-1)!;
       for (const line of spelled.slice(0, -1)) lines.push(line);
@@ -93,18 +113,23 @@ export function usage(measure: number = width()): string {
         continue;
       }
 
-      const room = Math.max(measure - column, 20);
-      const wrapped = wrap(entry.description, room);
-      const fits = visibleWidth(last) + 1 <= column;
+      const gutter = stacked ? 4 : column;
+      const wrapped = wrap(entry.description, Math.max(measure - gutter, 20));
 
-      if (fits) {
-        lines.push(last + ' '.repeat(column - visibleWidth(last)) + style.dim(wrapped[0] ?? ''));
+      // Beside the command only when it is one line and there is room for it.
+      // A wrapped command's last line is a fragment — `[--dry-run]` — and a
+      // description set against that reads as belonging to the fragment rather
+      // than to the entry.
+      const beside = !stacked && spelled.length === 1 && visibleWidth(last) + 1 <= gutter;
+
+      if (beside) {
+        lines.push(last + ' '.repeat(gutter - visibleWidth(last)) + style.dim(wrapped[0] ?? ''));
       } else {
         lines.push(last);
-        if (wrapped[0] !== undefined) lines.push(' '.repeat(column) + style.dim(wrapped[0]));
+        if (wrapped[0] !== undefined) lines.push(' '.repeat(gutter) + style.dim(wrapped[0]));
       }
 
-      for (const line of wrapped.slice(1)) lines.push(' '.repeat(column) + style.dim(line));
+      for (const line of wrapped.slice(1)) lines.push(' '.repeat(gutter) + style.dim(line));
     }
   }
 

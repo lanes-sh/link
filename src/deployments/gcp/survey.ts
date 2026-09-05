@@ -1,5 +1,5 @@
 import { ConfigError, DEPLOY_DEFAULTS, type DeployConfig, type TargetConfig } from '#profile';
-import { heading, print, style, waiting } from '#cli/output.ts';
+import { heading, progress, prose, style, waiting } from '#cli/output.ts';
 import { ask, confirm } from '#cli/prompt.ts';
 import type { SurveyInput, SurveyResult } from '../driver.ts';
 import { activeProject, openBillingAccounts, projectExists } from './gcloud.ts';
@@ -104,15 +104,15 @@ export function accountId(service: string): string {
 export async function surveyCloudRun(input: SurveyInput): Promise<SurveyResult> {
   const { current, profile, gated, adapters } = input;
 
-  heading('Where should this deploy?');
-  print(style.dim('  Answers are written into your profile, so this is asked once.'));
-  print('');
+  heading('Where should this deploy?', progress);
+  progress(style.dim('  Answers are written into your profile, so this is asked once.'));
+  progress('');
 
   const project = await askProject(current.project);
   const billing = await askBilling(project, current.billing_account);
   const region = await askWithDefault('Region', current.region ?? DEFAULT_REGION);
   const service = await askWithDefault(
-    '  Cloud Run service name',
+    'Cloud Run service name',
     current.service ?? defaultServiceName(profile),
   );
 
@@ -185,12 +185,11 @@ export async function surveyCloudRun(input: SurveyInput): Promise<SurveyResult> 
 async function askProject(current: string | undefined): Promise<string> {
   const active = await waiting('reading your gcloud configuration', activeProject);
 
-  print('  A project of its own is the cleanest home for this — it holds the bucket,');
-  print(
-    style.dim(
-      '  the credential store, and nothing else. A new id is proposed; type the name\n' +
-        `  of an existing project to deploy into that instead${active ? ` (yours is ${active})` : ''}.`,
-    ),
+  progress('  A project of its own is the cleanest home for this — it holds the bucket,');
+  prose(
+    '  the credential store, and nothing else. A new id is proposed; type the name ' +
+      `of an existing project to deploy into that instead${active ? ` (yours is ${active})` : ''}.`,
+    { paint: style.dim, to: progress },
   );
 
   return askWithDefault('Google Cloud project', current ?? proposedName());
@@ -215,9 +214,9 @@ async function askBilling(project: string, current: string | undefined): Promise
   }
 
   const accounts = await waiting('listing your billing accounts', openBillingAccounts);
-  print('');
-  print(`  ${style.bold(project)} does not exist yet, so this deploy will create it.`);
-  print(style.dim('    A new project needs a billing account before any API can be enabled.'));
+  progress('');
+  progress(`  ${style.bold(project)} does not exist yet, so this deploy will create it.`);
+  progress(style.dim('    A new project needs a billing account before any API can be enabled.'));
 
   if (accounts.length === 0) {
     throw new ConfigError(
@@ -227,7 +226,7 @@ async function askBilling(project: string, current: string | undefined): Promise
     );
   }
 
-  for (const account of accounts) print(style.dim(`    ${account.id}  ${account.name}`));
+  for (const account of accounts) progress(style.dim(`    ${account.id}  ${account.name}`));
   return askWithDefault('Billing account', accounts[0]!.id);
 }
 
@@ -239,14 +238,13 @@ async function askBilling(project: string, current: string | undefined): Promise
  * not a failure worth a stack trace three steps later.
  */
 async function askBucket(project: string): Promise<string> {
-  print('');
-  print('  A bucket holds everything this endpoint remembers:');
-  print(
-    style.dim(
-      '    its config, its connection state, the audit log, memory, skills and\n' +
-        '    attachments. Named after the project by default; bucket names are\n' +
-        '    globally unique, so this one may be taken even when the project was not.',
-    ),
+  progress('');
+  progress('  A bucket holds everything this endpoint remembers:');
+  prose(
+    '    its config, its connection state, the audit log, memory, skills and ' +
+      'attachments. Named after the project by default; bucket names are globally ' +
+      'unique, so this one may be taken even when the project was not.',
+    { paint: style.dim, to: progress },
   );
   return askWithDefault('Bucket', project);
 }
@@ -264,16 +262,15 @@ async function askBucket(project: string): Promise<string> {
  * message anywhere said why.
  */
 async function askRemoteClients(): Promise<boolean> {
-  print('');
-  print('  Will you add this to Claude or ChatGPT, including on a phone?');
-  print(
-    style.dim(
-      '    yes  this endpoint issues its own tokens — the client registers itself,\n' +
-        '         a browser opens on its approval page, you paste the token once.\n' +
-        '         Nothing to set up: no OAuth client, no console, no redirect URI.\n' +
-        '    no   the bearer token is the only way in, which is all a local\n' +
-        '         registration needs. Add it later under auth.authorization.',
-    ),
+  progress('');
+  progress('  Will you add this to Claude or ChatGPT, including on a phone?');
+  prose(
+    '    yes  this endpoint issues its own tokens — the client registers itself, a ' +
+      'browser opens on its approval page, you paste the token once. Nothing to set ' +
+      'up: no OAuth client, no console, no redirect URI.\n' +
+      '    no   the bearer token is the only way in, which is all a local ' +
+      'registration needs. Add it later under auth.authorization.',
+    { paint: style.dim, to: progress },
   );
   return confirm('Issue tokens for remote clients?');
 }
@@ -293,21 +290,19 @@ async function askAccess(
 ): Promise<DeployConfig['access']> {
   const proposed = current ?? (gated ? 'public' : 'iam');
 
-  print('');
-  print('  Who may reach the service?');
-  print(
-    style.dim(
-      '    iam     the platform checks a Google identity token first. Nothing that\n' +
-        '            cannot mint one gets through — which includes every agent harness.\n' +
-        '    public  the platform lets the request in and this endpoint authenticates it.',
-    ),
+  progress('');
+  progress('  Who may reach the service?');
+  prose(
+    '    iam     the platform checks a Google identity token first. Nothing that ' +
+      'cannot mint one gets through — which includes every agent harness.\n' +
+      '    public  the platform lets the request in and this endpoint authenticates it.',
+    { paint: style.dim, to: progress },
   );
   if (gated) {
-    print(
-      style.dim(
-        '    This profile authenticates requests itself, so "public" is the working\n' +
-          '    choice — "iam" in front of it would lock out the clients it exists for.',
-      ),
+    prose(
+      '    This profile authenticates requests itself, so "public" is the working ' +
+        'choice — "iam" in front of it would lock out the clients it exists for.',
+      { paint: style.dim, to: progress },
     );
   }
 
@@ -328,6 +323,6 @@ async function askWithDefault(question: string, fallback: string | null | undefi
     const answer = (await ask(shown)).trim();
     if (answer) return answer;
     if (fallback) return fallback;
-    print(style.dim('    Required.'));
+    progress(style.dim('    Required.'));
   }
 }

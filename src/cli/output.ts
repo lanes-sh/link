@@ -1,6 +1,6 @@
 import { wasDefaulted } from './selection-require.ts';
 import { columns, style, width } from './terminal.ts';
-import { numbered, rule, visibleWidth, wrap } from './typeset.ts';
+import { numbered, rule, truncate, visibleWidth, wrap } from './typeset.ts';
 import type { Resolution } from '#profile';
 
 /**
@@ -96,7 +96,7 @@ export async function waiting<T>(label: string, work: () => Promise<T>): Promise
     // rest of the run with nothing to explain it.
     const text = `  ${mark} ${label}\u2026${elapsed}`;
     const room = Math.max(columns() - 1, 1);
-    const shown = visibleWidth(text) > room ? `${text.slice(0, Math.max(room - 1, 1))}\u2026` : text;
+    const shown = visibleWidth(text) > room ? `${truncate(text, room - 1)}\u2026` : text;
 
     process.stderr.write(`${CLEAR}${style.dim(shown)}`);
     frame += 1;

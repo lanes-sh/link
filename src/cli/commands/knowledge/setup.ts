@@ -2,7 +2,7 @@ import { ConfigError, type KnowledgeConfig } from '#profile';
 import type { SecretStore } from '#secrets';
 import { GithubRepository, type RepositoryFacts } from '#deployments/adapters/github-repo.ts';
 import type { FetchLike } from '#deployments/knowledge.ts';
-import { heading, print, style } from '../../output.ts';
+import { heading, print, prose, steps, style } from '../../output.ts';
 import { askSecret, isInteractive } from '../../prompt.ts';
 
 /**
@@ -36,11 +36,13 @@ const STEPS = [
 
 export function printSetupSteps(repo: string): void {
   heading('A token for this repository');
-  print(style.dim(`  Storing memory and skills in ${repo} needs a token that may write to it.`));
+  prose(`  Storing memory and skills in ${repo} needs a token that may write to it.`, {
+    paint: style.dim,
+  });
   print('');
-  for (const [index, step] of STEPS.entries()) {
-    print(`  ${style.dim(`${index + 1}.`)} ${step.replace(/\*\*(.+?)\*\*/g, (_, inner: string) => style.bold(inner))}`);
-  }
+  // The emphasis is resolved before `steps` sees it, because the markers are
+  // this file's convention rather than something the layout should know about.
+  steps(STEPS.map((step) => step.replace(/\*\*(.+?)\*\*/g, (_, inner: string) => style.bold(inner))));
   print('');
 }
 
