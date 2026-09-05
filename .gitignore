@@ -80,3 +80,6 @@ coverage/
 .vscode/
 !.vscode/extensions.json
 .worktrees/
+
+# Handles a contributor must never commit — see the identifier check in src/architecture.test.ts
+.private-identifiers

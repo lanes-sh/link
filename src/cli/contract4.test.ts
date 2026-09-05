@@ -402,7 +402,7 @@ describe('the credentials, which the rename would otherwise orphan', () => {
     // It warned and carried on once. The rehearsal that found it showed why
     // that is the wrong shape: the warning was printed, the rows were renamed
     // anyway, and the workspace came out naming `gmail.con1` with the secret
-    // still at `gmail/wjj_andrews`. A rerun cannot repair that — the rows are
+    // still at `gmail/ada_lovelace`. A rerun cannot repair that — the rows are
     // renamed, so the second pass computes no rename and the old ref is
     // orphaned with nothing left that knows what it belonged to.
     //

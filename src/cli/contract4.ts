@@ -210,7 +210,7 @@ export async function migrateToContract4(
  * warned once, and the rehearsal that found it showed why it must not: the
  * warning was printed, `renameConnections` ran anyway, and the workspace came
  * out with rows naming `gmail.con1` while the secret sat at
- * `gmail/wjj_andrews`. A rerun cannot repair that — the rows are renamed, so
+ * `gmail/ada_lovelace`. A rerun cannot repair that — the rows are renamed, so
  * the second run computes no rename for them and the old ref is orphaned with
  * nothing left that knows what it belonged to.
  *
