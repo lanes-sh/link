@@ -10,7 +10,12 @@ import { terminalPrompter, type Prompter } from '../../prompt.ts';
 import { describeScopes, shortScope } from '../../scopes.ts';
 import { BROKERED, BrokerError } from '#connectivity/auth/index.ts';
 import { brokerExchangeVia } from '../../oauth-exchange.ts';
-import { brokeredScopes, hostedClientRefusal, resolveOAuthClient } from './client.ts';
+import {
+  brokeredScopes,
+  hostedClientRefusal,
+  registeredCallbackPort,
+  resolveOAuthClient,
+} from './client.ts';
 import { confirmScopes } from './scopes-gate.ts';
 import { ensureOAuthApp } from './setup.ts';
 
@@ -116,7 +121,10 @@ export async function authorise(input: {
 
   const serverUrl = manifest.connector.endpoint;
 
-  const callback = captureOAuthCallback({ label: manifest.name });
+  const callback = captureOAuthCallback({
+    label: manifest.name,
+    port: await registeredCallbackPort(manifest, connectionId, credentials),
+  });
 
   try {
     const provider = oauthProviderFor(

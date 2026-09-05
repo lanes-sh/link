@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { execFileSync } from 'node:child_process';
 import { readdir, readFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
 
@@ -486,6 +487,90 @@ describe('no real identifiers', () => {
           const domain = address.slice(address.indexOf('@') + 1);
           if (RESERVED_DOMAIN.test(domain) || MACHINE_DOMAIN.test(domain)) continue;
           violations.push(`${shown}:${index + 1} — ${address} is at a registrable domain`);
+        }
+      }
+    }
+
+    expect(violations).toEqual([]);
+  });
+
+  /**
+   * The one the address rule could not express: a contributor's own handle.
+   *
+   * A credential ref built from a real person's mailbox sat in two comments
+   * here for months. It is not an address, so the check above had nothing to
+   * say about it; it is not a bucket or a project, so neither did the one
+   * below. It was a real handle in a public repository, written while
+   * narrating a real rehearsal — which is exactly how the forty-five
+   * occurrences scrubbed before the first push got there. Prose about what
+   * actually happened is where this always comes from, and it is the one place
+   * nobody thinks to look. (Naming it here would repeat it, which is the joke
+   * this check played on its own first draft.)
+   *
+   * **A denylist in the repository cannot work**, because writing the name into
+   * a checked-in list is the thing being prevented. Two sources that are not:
+   *
+   * - **git.** `user.email` on a forge commit is
+   *   `<id>+<handle>@users.noreply.github.com`, so the handle *is* there and
+   *   discarding the address for being a noreply throws away the one name a
+   *   commit reliably carries. That was this check's first draft and it caught
+   *   nothing.
+   * - **`.private-identifiers`**, gitignored, one token per line. git only ever
+   *   knows the address someone commits under, and the handle that leaked here
+   *   came from a personal mailbox git has never seen. Nothing can infer that,
+   *   so there is a file to say it, and it stays out of the tree by definition.
+   *
+   * Tokens shorter than five characters are ignored, and a `user.name` with a
+   * space in it is skipped entirely: splitting a display name into words would
+   * fail the build for anyone called Mark the moment a comment mentioned a mark.
+   */
+  test('a contributor has not written their own handle into the tree', async () => {
+    const config = (key: string): string => {
+      try {
+        return execFileSync('git', ['config', '--get', key], { encoding: 'utf8' }).trim();
+      } catch {
+        return '';
+      }
+    };
+
+    // `<id>+<handle>@users.noreply.github.com` → `handle`, and a plain address
+    // → its local part. One expression covers both.
+    const local = (config('user.email').split('@')[0] ?? '').split('+').pop() ?? '';
+    const name = config('user.name');
+
+    let declared: string[] = [];
+    try {
+      declared = (await readFile(join(SRC, '..', '.private-identifiers'), 'utf8'))
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0 && !line.startsWith('#'));
+    } catch {
+      // Absent is the ordinary case. The rule is in CLAUDE.md either way.
+    }
+
+    const handles = new Set<string>();
+    for (const candidate of [local, /\s/.test(name) ? '' : name, ...declared]) {
+      if (candidate.length < 5) continue;
+      // A handle also appears slugified, which is how one reached a credential
+      // ref: `ada.lovelace` became `ada_lovelace`.
+      handles.add(candidate.toLowerCase());
+      handles.add(candidate.replace(/[.\-]/g, '_').toLowerCase());
+      handles.add(candidate.replace(/[._\-]/g, '').toLowerCase());
+    }
+
+    if (handles.size === 0) return;
+
+    const violations: string[] = [];
+
+    for (const path of await publishedFiles()) {
+      const shown = relative(SRC, path);
+      if (shown.includes(NOT_OURS)) continue;
+
+      for (const [index, line] of (await readFile(path, 'utf8')).split('\n').entries()) {
+        const haystack = line.toLowerCase();
+        for (const handle of handles) {
+          if (!haystack.includes(handle)) continue;
+          violations.push(`${shown}:${index + 1} — names a contributor (${handle})`);
         }
       }
     }

@@ -538,6 +538,54 @@ describe('a redirect the vendor matches exactly', () => {
     return port;
   }
 
+  /**
+   * The same problem one flow over, and the one that actually bit.
+   *
+   * `--auth` aside, a dynamically registered client hits this too. The first
+   * connect binds whatever the kernel hands out and registers a client
+   * declaring *that* URL; the registration is then kept deliberately, because
+   * re-registering orphans the grant the operator just approved. Every later
+   * connect asked for a new port and sent a URL that client never declared, so
+   * a vendor matching literally refused it before the consent page rendered —
+   * `redirect_uri not allowed`, seen against Supabase.
+   *
+   * Notion hid it: RFC 8252 §7.3 says a loopback redirect is matched without
+   * its port, and Notion follows that.
+   */
+  test('the listener asks for the port a kept registration already declared', async () => {
+    const first = captureOAuthCallback();
+    const port = Number(new URL(first.redirectUri).port);
+    await first.close();
+
+    const again = captureOAuthCallback({ port });
+
+    expect(new URL(again.redirectUri).port).toBe(String(port));
+    await again.close();
+  });
+
+  test('and takes a free one rather than failing when that port is held', async () => {
+    // Another connect in flight, or something else on it. Falling back beats
+    // failing: a fresh port still works against every server that follows
+    // §7.3, and the one that does not is no worse off than it was.
+    const holding = captureOAuthCallback();
+    const taken = Number(new URL(holding.redirectUri).port);
+
+    const second = captureOAuthCallback({ port: taken });
+
+    expect(new URL(second.redirectUri).port).not.toBe(String(taken));
+    expect(Number(new URL(second.redirectUri).port)).toBeGreaterThan(0);
+
+    await holding.close();
+    await second.close();
+  });
+
+  test('with no port asked for, it binds any free one as it always did', async () => {
+    const capture = captureOAuthCallback();
+
+    expect(Number(new URL(capture.redirectUri).port)).toBeGreaterThan(0);
+    await capture.close();
+  });
+
   test('the declared URL is what the vendor is told, verbatim', async () => {
     const port = freePort();
     const fixedRedirect = `http://127.0.0.1:${port}/callback`;

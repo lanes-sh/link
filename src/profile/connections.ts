@@ -45,11 +45,20 @@ export function defaultConnectionLabel(
 ): string {
   if (!account || account === providerName) return providerName;
 
+  // A qualified account — `ada (Acme)`, the shape an identity block writes when
+  // one name spans two tenants — is shortened on the name and keeps the
+  // bracket. Without this, two Notion workspaces resolve to the same address
+  // and shorten to the same label, so the field that exists to tell them apart
+  // is the one the reader never sees.
+  const qualified = /^(.*?)\s+(\([^()]*\))$/.exec(account);
+  const identity = qualified?.[1] ?? account;
+  const qualifier = qualified?.[2] ? ` ${qualified[2]}` : '';
+
   // Split on `@` and nothing else. A handle, an IBAN or a workspace name has no
   // "first part" that is safe to guess at: `Lanes HQ` cut at the space is
   // `Lanes`, which is a different workspace's name as often as not.
-  const local = account.split('@')[0];
-  return `${providerName} (${local || account})`;
+  const local = identity.split('@')[0];
+  return `${providerName} (${local || identity}${qualifier})`;
 }
 
 /**

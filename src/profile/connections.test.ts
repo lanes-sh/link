@@ -35,6 +35,30 @@ describe('defaultConnectionLabel', () => {
     expect(defaultConnectionLabel('Setup', undefined)).toBe('Setup');
   });
 
+  /**
+   * A qualified account keeps the half that tells it from its twin.
+   *
+   * `ada@example.com (Personal)` is what an identity block writes when one name
+   * spans two tenants — Notion's email is the same email in every workspace the
+   * person belongs to. Shortening on the `@` alone cut the bracket off, so both
+   * workspaces read `Notion (ada)` and the field that exists to tell them apart
+   * was the one nobody saw.
+   */
+  test('keeps the qualifier that makes two tenants two names', () => {
+    expect(defaultConnectionLabel('Notion', 'ada@example.com (Personal)')).toBe(
+      'Notion (ada (Personal))',
+    );
+    expect(defaultConnectionLabel('Notion', 'ada@example.com (Personal)')).not.toBe(
+      defaultConnectionLabel('Notion', 'ada@example.com (Acme)'),
+    );
+  });
+
+  test('and leaves a handle that was already qualified exactly as it was', () => {
+    // Slack's shape, unchanged: its `user` is a handle, so there is no `@` to
+    // shorten on and the whole string was already kept.
+    expect(defaultConnectionLabel('Slack', 'ada (Acme)')).toBe('Slack (ada (Acme))');
+  });
+
   test('an empty account is no account', () => {
     expect(defaultConnectionLabel('Gmail', '')).toBe('Gmail');
     // And an address with nothing before the `@` falls back to the whole of it
