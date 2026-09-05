@@ -81,6 +81,23 @@ function prompter(answer = ''): Prompter & { asked: string[] } {
   };
 }
 
+/** A terminal that works through a script of answers, then answers nothing. */
+function scripted(...answers: string[]): Prompter & { asked: string[] } {
+  const asked: string[] = [];
+  let next = 0;
+
+  return {
+    asked,
+    interactive: true,
+    ask: async (question) => {
+      asked.push(question);
+      return answers[next++] ?? '';
+    },
+    askSecret: async () => '',
+    confirm: async () => true,
+  };
+}
+
 const silent: Prompter = {
   interactive: false,
   ask: async () => '',
@@ -219,5 +236,65 @@ describe('the label a connection is given at connect time', () => {
     expect(asking.asked).toHaveLength(1);
     expect(settled.account).toBe('Ada at Acme');
     expect(settled.label).toBe('Acme Mail (Ada at Acme)');
+  });
+});
+
+/**
+ * The account question, when there is nothing to answer it with.
+ *
+ * An empty answer used to be taken and stored `Acme Mail pending` — the
+ * provider's name beside the *provisional* connection id, an internal token
+ * meaning "no id yet". That string then became the account, the default label,
+ * and the key a reconnect matches on. Nobody chose it, and a row named after it
+ * can answer none of the questions an account exists to answer.
+ */
+describe('an account nobody could report', () => {
+  const unnamable = { manifest: anonymous, runtime: runtime([], null) };
+
+  test('re-asks rather than taking silence for an answer', async () => {
+    const asking = scripted('', '', 'ada@example.com');
+
+    const settled = await settle({ ...unnamable, prompter: asking });
+
+    expect(asking.asked).toHaveLength(3);
+    expect(settled.account).toBe('ada@example.com');
+  });
+
+  test('takes "blank" from someone who meant it, and says so honestly', async () => {
+    const asking = scripted('', 'blank');
+
+    const settled = await settle({ ...unnamable, prompter: asking });
+
+    // Not `Acme Mail pending`. `unnamed` is visibly not an address, and reads
+    // through `defaultConnectionLabel` as a name rather than an internal token.
+    expect(settled.account).toBe('unnamed');
+    expect(settled.label).toBe('Acme Mail (unnamed)');
+  });
+
+  test('and does not match a row that was also left unnamed', async () => {
+    // `unnamed` is not an identity, so two of them are not evidence of one
+    // account. Matching them would hand the second connect the first row's
+    // credential ref and overwrite it; a fresh id says the only true thing
+    // available, which is that these are two rows.
+    const declared = [
+      { id: 'con1', provider: 'acme_mail', account: 'unnamed' },
+    ] as ConnectionConfig[];
+
+    const settled = await settle({
+      manifest: anonymous,
+      runtime: runtime(declared, null),
+      prompter: scripted('blank'),
+    });
+
+    expect(settled.connectionId).toBe('con2');
+  });
+
+  test('refuses in the end rather than asking forever', async () => {
+    // A prompter that reports itself interactive and returns nothing forever is
+    // not hypothetical — a closed pipe does it — and a connect that hangs is
+    // worse than one that refuses in the words the non-interactive path uses.
+    const asking = scripted();
+
+    expect(settle({ ...unnamable, prompter: asking })).rejects.toThrow(/Nothing was written/);
   });
 });

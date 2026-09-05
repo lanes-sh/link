@@ -85,6 +85,7 @@ Run.
 | [067](067-one-directory-per-profile.md) | One directory per profile, `data/` goes, and a connection id becomes opaque |
 | [068](068-a-credential-names-a-person.md) | A credential names a person, and the profiles follow from that; the endpoint token becomes the workspace's |
 | [069](069-a-pairing-token-may-write-the-owners-own-data.md) | A pairing token may write the owner's own data; the control plane is unmoved |
+| [073](073-a-connection-names-its-own-account.md) | A connection names its own account; the operator is asked last, and never handed a uuid to live with |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 
@@ -312,3 +313,9 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
   these five stores. What genuinely changes is that a credential which could read every memory
   entry can now delete them, including one minted before this release, which is why the cost is
   named in the CLI's own prompt rather than only here.
+
+- **ADR-073** makes the "which account is this?" prompt a last resort in fact rather than only in
+  its doc comment. Identity is resolved from the caller, the connector, the manifest, and then the
+  authorization server itself; a probe that cannot name a person human-readably falls through to
+  the question rather than labelling a row with a uuid. The remaining gap is a ledger the build
+  checks in both directions, not a total.

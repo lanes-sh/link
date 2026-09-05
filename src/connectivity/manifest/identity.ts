@@ -23,7 +23,28 @@ import { z } from 'zod';
  * `field` is a dotted path. Resolution is best-effort by design: a provider with
  * no identity block, or one whose probe fails, falls back to asking the
  * operator. A connection is worth labelling, never worth blocking on.
+ *
+ * **A `field` must name one value, never a collection.** `pluck` walks into the
+ * first element of an array on the way past, so a path through a list resolves
+ * to whoever happens to be first and reads exactly like a working probe. That
+ * is the mistake `notion-get-users` would have made — the integration bot leads
+ * the list, not the person — and a confident wrong label is worse than the
+ * question it saves.
  */
+
+/**
+ * A second path, shown in brackets, where `field` alone is not unique.
+ *
+ * Almost no provider needs one: an address identifies a Google or iCloud
+ * account globally, and a GitHub login is unique across GitHub. The exceptions
+ * are the vendors whose "user" is scoped to a tenant — the same person in two
+ * Slack workspaces answers `auth.test` with the same `user`, and the same
+ * person in two Notion workspaces is the same email. One account string is how
+ * `settleIdentity` decides a connect is a *reconnect*, so without this,
+ * connecting a second tenant matches the first and overwrites its credential.
+ */
+const qualifier = z.string().min(1).optional();
+
 export const identitySchema = z.discriminatedUnion('kind', [
   z.object({
     kind: z.literal('http'),
@@ -31,23 +52,23 @@ export const identitySchema = z.discriminatedUnion('kind', [
     /** Dotted path into the JSON body, e.g. `emailAddress` or `user.emailAddress`. */
     field: z.string().min(1),
     /**
-     * A second path, shown in brackets, where `field` alone is not unique.
+     * Sent alongside the credential.
      *
-     * Almost no provider needs one: an address identifies a Google or iCloud
-     * account globally, and a GitHub login is unique across GitHub. Slack is
-     * the exception, because the thing it calls a user is scoped to a
-     * workspace — the same person in two workspaces answers `auth.test` with
-     * the same `user`, and one account string is how `settleIdentity` decides a
-     * connect is a *reconnect*. Without this, connecting a second workspace
-     * matches the first and overwrites its credential.
+     * For the APIs that answer nothing without one: Notion refuses a request
+     * carrying no `Notion-Version`, and it is not the only vendor that pins its
+     * version in a header rather than the path. The credential is added by the
+     * probe and cannot be set here — a manifest naming its own `authorization`
+     * would be a second, unaudited way to send one.
      */
-    qualifier: z.string().min(1).optional(),
+    headers: z.record(z.string(), z.string()).optional(),
+    qualifier,
   }),
   z.object({
     kind: z.literal('tool'),
     tool: z.string().min(1),
     field: z.string().min(1),
     arguments: z.record(z.string(), z.unknown()).default({}),
+    qualifier,
   }),
   z.object({ kind: z.literal('connector') }),
 ]);
