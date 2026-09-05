@@ -99,7 +99,9 @@ const MAY_IMPORT: Record<string, readonly string[]> = {
   // (ADR-007), the other exists to write it — and folding them into one
   // component would make that separation a convention rather than a rule.
   // Narrow on purpose: each widening is a decision somebody makes here.
-  control: ['auth'],
+  // `deployments` for the `lanes://` scheme it composes a workspace root from,
+  // which is the one thing a route may not take from a request.
+  control: ['auth', 'deployments'],
 };
 
 describe('dependency direction', () => {
