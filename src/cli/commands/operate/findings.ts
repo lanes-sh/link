@@ -1,10 +1,12 @@
 import { grantedConnections } from '../../runtime.ts';
+import { connectionRefOf, duplicateAccountRows, type ConnectionConfig } from '#profile';
 import { ownerPrincipal } from '#auth';
 import type { DiscoveredCapability } from '#connectivity';
 import { allowedConnections } from '#policy';
 import { toPolicyDocument } from '#registry';
 import { capabilityDiff, discoveryProbe } from '../../runtime/discovery.ts';
 import type { openRuntime } from '../../runtime.ts';
+import type { DoctorFinding } from './inspect.ts';
 
 /**
  * The one thing `doctor` has to work out rather than simply read.
@@ -120,4 +122,38 @@ export async function reportCapabilityDrift(
       );
     }
   }
+}
+
+/**
+ * One account declared twice under one provider — the same connection, twice.
+ *
+ * Reported rather than refused, which is why this is a finding and not a rule
+ * in `assertConnectionsUnique`. That one runs at load and on every
+ * `ConfigDocument.open`, so making this an error would take a workspace that
+ * already holds a pair off the air — and refuse `disconnect` the very file that
+ * fixes it. Both rows resolve and both work; what is wrong is that only one of
+ * them holds a credential anybody has re-entered lately.
+ *
+ * A `<provider>.<id>` is unique by construction, so this is the only shape the
+ * duplicate can take, and until `connect` preferred a provider's own row over a
+ * vendor sibling's it is the shape a reconnect left behind.
+ *
+ * **No `fix` command, deliberately.** Which row to keep is not in the file: the
+ * one to remove is the one whose credential is stale, and a `disconnect`
+ * suggested from here would name the wrong one about half the time — which
+ * `--fix` would then run.
+ */
+export function duplicateAccountFindings(
+  connections: readonly ConnectionConfig[],
+): DoctorFinding[] {
+  return duplicateAccountRows(connections).map((group) => {
+    const refs = group.map(connectionRefOf);
+    return {
+      kind: 'duplicate_account',
+      key: refs[0]!,
+      message:
+        `${refs.join(' and ')} are one account declared twice (${group[0]!.account}) — ` +
+        `remove whichever no longer holds a working credential with "lanes link disconnect <ref>"`,
+    };
+  });
 }
