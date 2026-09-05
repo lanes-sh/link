@@ -235,7 +235,7 @@ export class AssertionVerifier {
   }
 }
 
-function base64url(value: string): ArrayBuffer | null {
+export function base64url(value: string): ArrayBuffer | null {
   try {
     const bytes = Buffer.from(value, 'base64url');
     return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
@@ -244,7 +244,7 @@ function base64url(value: string): ArrayBuffer | null {
   }
 }
 
-function decodeJson(value: string): Record<string, unknown> | null {
+export function decodeJson(value: string): Record<string, unknown> | null {
   const bytes = base64url(value);
   if (bytes === null) return null;
   try {

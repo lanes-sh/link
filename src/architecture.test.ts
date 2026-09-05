@@ -94,9 +94,37 @@ const MAY_IMPORT: Record<string, readonly string[]> = {
     'audit', 'auth', 'connectivity', 'deployments', 'dispatch', 'policy',
     'profile', 'providers', 'registry', 'secrets', 'server', 'stores',
   ],
+  // The control plane is deliberately not part of `server`. They answer
+  // opposite questions — one serves an endpoint that writes no configuration
+  // (ADR-007), the other exists to write it — and folding them into one
+  // component would make that separation a convention rather than a rule.
+  // Narrow on purpose: each widening is a decision somebody makes here.
+  control: ['auth'],
 };
 
 describe('dependency direction', () => {
+  /**
+   * A component nobody listed used to be a component with no rules.
+   *
+   * `MAY_IMPORT[from]` returning undefined meant the loop below skipped the
+   * file, so adding `src/<new>/` bought an exemption from the whole rule and
+   * nothing said so. Found by adding one: `src/control/` passed this suite on
+   * its first run while importing whatever it liked.
+   */
+  test('every component declares what it may import', async () => {
+    // A component is a directory under `src/`. The two suites that sit beside
+    // them — this one and `readme.test.ts` — are files, and `componentOf`
+    // answers with a filename for those.
+    const components = new Set(
+      (await sourceFiles())
+        .filter((path) => relative(SRC, path).includes('/'))
+        .map(componentOf),
+    );
+    const undeclared = [...components].filter((name) => MAY_IMPORT[name] === undefined);
+
+    expect(undeclared.sort()).toEqual([]);
+  });
+
   test('no component imports one it is not allowed to', async () => {
     const violations: string[] = [];
 
