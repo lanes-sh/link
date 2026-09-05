@@ -4,6 +4,15 @@ import { grantConnection, revokeConnection, type Granted } from '#cli/commands/g
 import { applyPolicyRule } from '#cli/commands/operate/policy.ts';
 import { addMemberTo, removeMemberFrom } from '#cli/commands/members.ts';
 import { removeProfile } from '#cli/commands/profile/remove.ts';
+import { declareConnection } from '#cli/commands/connect/declare.ts';
+import { ConfigDocument } from '#cli/config-edit.ts';
+import { openSecretStoreFor } from '#cli/runtime.ts';
+import {
+  CONNECTIONS_FILE,
+  readConnections,
+  resolveTargetWorkspace,
+  resolveWorkspaceRoot,
+} from '#profile';
 import { loadProfileConfig, loadWorkspaceProfiles } from '#profile';
 import { agentMayManage } from './authorise.ts';
 import { MANAGED_TARGET } from './workspace.ts';
@@ -104,6 +113,13 @@ export interface WorkspaceWriters {
     profile: string,
     env: Record<string, string | undefined>,
   ): Promise<{ profile: string; survived: number }>;
+  storeConnection(
+    provider: string,
+    account: string,
+    credential: string,
+    profile: string,
+    env: Record<string, string | undefined>,
+  ): Promise<{ connection: string; account: string }>;
 }
 
 export const liveWriters: WorkspaceWriters = {
@@ -155,6 +171,56 @@ export const liveWriters: WorkspaceWriters = {
     return { profile: outcome.profile, survived: outcome.survived };
   },
 
+  /**
+   * Store an account somebody just authorised, and grant it to a profile.
+   *
+   * The end of connecting rather than the whole of it. The api ran the
+   * exchange — it holds the broker client secrets, it is the only party with a
+   * browser session, and it is where the callback lands. What arrives here is
+   * the result.
+   *
+   * The credential goes in before the row. A row naming a credential that is
+   * not there is a connection that loads and then fails on its first call,
+   * which reads as a broken account rather than an interrupted setup; the
+   * reverse leaves an orphaned secret, which is invisible and harmless.
+   */
+  async storeConnection(provider, account, credential, profile, env) {
+    const local = resolveWorkspaceRoot({ env });
+    const root = await resolveTargetWorkspace(local, MANAGED_TARGET);
+
+    const held = (await readConnections(root)).connections;
+    // The id derives from the account, so reconnecting the same one repairs the
+    // row rather than adding a second (ADR-068: a credential names a person).
+    const existing = held.find((one) => one.provider === provider && one.account === account);
+    const id = existing?.id ?? nextConnectionId(held, provider);
+
+    // `<provider>/<id>` is where the provider already looks, which is why no
+    // `credential_ref` is written beside the row.
+    const secrets = await openSecretStoreFor(root, MANAGED_TARGET);
+    await secrets.set(`${provider}/${id}`, credential);
+
+    const document = await ConfigDocument.openKey(root, CONNECTIONS_FILE);
+    declareConnection({
+      document,
+      connections: held,
+      providerId: provider,
+      connectionId: id,
+      account,
+      label: account,
+      defaultLabel: account,
+      method: undefined,
+      config: {},
+    });
+    await document.save();
+
+    // Connecting authorises the account *and* grants it to the profile that
+    // asked, which is what `lanes link connect --profile` does. Reaching it
+    // from a second profile is then a grant rather than a second consent.
+    await grantConnection(`${provider}.${id}`, { profile, target: MANAGED_TARGET }, { env });
+
+    return { connection: `${provider}.${id}`, account };
+  },
+
   async agentMayManage(profile, env) {
     const root = env['LANES_LINK_HOME'];
     if (root === undefined) throw new Error('No workspace root for this request.');
@@ -177,3 +243,22 @@ export const liveReaders: WorkspaceReaders = {
     };
   },
 };
+
+/**
+ * The next free id for a provider, as a number rather than a name.
+ *
+ * An id is opaque since ADR-067 and derives from nothing the operator types, so
+ * the only property that matters is that it is free. Counting up rather than
+ * hashing the account keeps it short and keeps two accounts at the same address
+ * from colliding.
+ */
+function nextConnectionId(
+  held: readonly { provider: string; id: string }[],
+  provider: string,
+): string {
+  const taken = new Set(held.filter((one) => one.provider === provider).map((one) => one.id));
+  for (let at = 1; ; at += 1) {
+    const candidate = `con${at}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}

@@ -3,6 +3,7 @@ import { MANAGED_TARGET } from './workspace.ts';
 import {
   CAPABILITY,
   CONNECTION_REF,
+  PROVIDER_ID,
   PROFILE_NAME,
   SUBJECT,
   json,
@@ -201,6 +202,57 @@ export const ACCESS_ROUTES: readonly Route[] = [
         );
       }
       return json({ profile, removed: true }, 200);
+    },
+  },
+  {
+    method: 'POST',
+    path: '/v1/connections',
+    needs: WIDENS,
+    async run({ writers, env, body }) {
+      let named: unknown;
+      try {
+        named = await body();
+      } catch {
+        return json({ error: 'That request body is not JSON.' }, 400);
+      }
+
+      const given = (named ?? {}) as Record<string, unknown>;
+      const provider = given['provider'];
+      const account = given['account'];
+      const credential = given['credential'];
+      const profile = given['profile'];
+
+      // Four things this route cannot invent. A missing credential in
+      // particular would write a row naming a secret that is not there, which
+      // loads and then fails on its first call — a broken account rather than
+      // an interrupted setup.
+      if (
+        typeof provider !== 'string' ||
+        typeof account !== 'string' ||
+        typeof credential !== 'string' ||
+        typeof profile !== 'string' ||
+        account.length === 0 ||
+        credential.length === 0
+      ) {
+        return json(
+          { error: 'A connection needs a provider, an account, a credential and a profile.' },
+          400,
+        );
+      }
+      if (!PROVIDER_ID.test(provider)) {
+        // Never echoing what was sent: the body carries a credential, and a
+        // refusal quoting its input is how one reaches a log.
+        return json({ error: 'That is not a provider id.' }, 400);
+      }
+      if (!PROFILE_NAME.test(profile)) {
+        return json({ error: 'That is not a profile name.' }, 400);
+      }
+
+      const closed = await profileOpenToAgents(profile, writers, env);
+      if (closed) return closed;
+
+      const stored = await writers.storeConnection(provider, account, credential, profile, env);
+      return json({ connection: stored.connection, account: stored.account, profile }, 201);
     },
   },
 ];

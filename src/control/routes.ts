@@ -82,6 +82,7 @@ export interface ControlDeps {
   readonly addMember?: WorkspaceWriters['addMember'];
   readonly removeMember?: WorkspaceWriters['removeMember'];
   readonly removeProfileNamed?: WorkspaceWriters['removeProfileNamed'];
+  readonly storeConnection?: WorkspaceWriters['storeConnection'];
 }
 
 
@@ -114,6 +115,7 @@ export async function controlRoutes(request: Request, deps: ControlDeps): Promis
     ...(deps.addMember ? { addMember: deps.addMember } : {}),
     ...(deps.removeMember ? { removeMember: deps.removeMember } : {}),
     ...(deps.removeProfileNamed ? { removeProfileNamed: deps.removeProfileNamed } : {}),
+    ...(deps.storeConnection ? { storeConnection: deps.storeConnection } : {}),
   };
   const url = new URL(request.url);
 

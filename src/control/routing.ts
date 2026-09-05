@@ -66,6 +66,15 @@ export const CONNECTION_REF = /^[a-z][a-z0-9_]*\.[a-z0-9][a-z0-9_-]*$/;
 /** A capability id, or a trailing `.*` — the only operator policy allows. */
 export const CAPABILITY = /^[a-z][a-z0-9_]*(\.[a-z0-9_*]+)*$/;
 
+/**
+ * A provider id, as a manifest declares one.
+ *
+ * `[a-z][a-z0-9_]*`, which is also why `layout.ts` can namespace a provider's
+ * blobs under a directory: a name carrying a dot or a slash is one no provider
+ * can be scoped into.
+ */
+export const PROVIDER_ID = /^[a-z][a-z0-9_]*$/;
+
 /** `lanes:<uid>` and nothing else — the spelling a profile's `members:` uses. */
 export const SUBJECT = /^lanes:[A-Za-z0-9_-]+$/;
 
