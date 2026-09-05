@@ -108,6 +108,15 @@ const silent: Prompter = {
 function runtime(
   connections: readonly ConnectionConfig[] = [],
   identity: string | null = 'ada@example.com',
+  /**
+   * What the registry knows, for the sibling half of the match.
+   *
+   * Empty by default, which is what every test asserting one provider wants —
+   * `accountSiblings` then answers from the provider id alone. A test about a
+   * *vendor* has to fill it in: `app: 'acme'` is a manifest field, so two
+   * providers are one account only if the registry can be asked.
+   */
+  known: readonly ProviderManifest[] = [],
 ) {
   return {
     config: { grants: [] } as unknown as Config,
@@ -115,7 +124,7 @@ function runtime(
     // them from there rather than from the profile being connected into.
     workspaceConnections: connections,
     credentials: memoryStore(),
-    registry: { manifest: () => undefined },
+    registry: { manifest: (id: string) => known.find((candidate) => candidate.id === id) },
     connectorFor: () =>
       (identity === null ? undefined : { identify: async () => identity }) as
         | AnyConnector
@@ -296,5 +305,118 @@ describe('an account nobody could report', () => {
     const asking = scripted();
 
     expect(settle({ ...unnamable, prompter: asking })).rejects.toThrow(/Nothing was written/);
+  });
+});
+
+/**
+ * The other half of one vendor account.
+ *
+ * A second provider declaring the same `app`, which is what makes the two one
+ * Apple Account rather than two: `credentialApp` reads the manifest field, so
+ * `acme_calendar` and `acme_mail` derive `acme/<id>` and share a password.
+ */
+const acmeCalendar: ProviderManifest = { ...acme, id: 'acme_calendar', name: 'Acme Calendar' };
+
+const vendor = [acme, acmeCalendar];
+
+describe('connecting an account this provider already holds', () => {
+  test('lands on its own row rather than a sibling that shares the account', async () => {
+    // The reported shape: three services on one Apple Account whose ids had
+    // drifted apart, the calendar written first. Matching the account across
+    // the vendor found the calendar, settled on `con3`, and left the mail row
+    // at `con5` stale while a second one was appended beside it.
+    const declared = [
+      { id: 'con3', provider: 'acme_calendar', account: 'ada@example.com' },
+      { id: 'con5', provider: 'acme_mail', account: 'ada@example.com' },
+    ] as ConnectionConfig[];
+
+    const settled = await settle({ prompter: silent, runtime: runtime(declared, undefined, vendor) });
+
+    expect(settled.connectionId).toBe('con5');
+  });
+
+  test('adopts a sibling id where this provider has no row for the account', async () => {
+    // The reason the sibling half of the match exists, and it has to survive
+    // the fix: one authorisation for a vendor is one id across its services,
+    // which is what makes them share the one password rather than ask for it
+    // once per service.
+    const declared = [
+      { id: 'con3', provider: 'acme_calendar', account: 'ada@example.com' },
+    ] as ConnectionConfig[];
+
+    const settled = await settle({ prompter: silent, runtime: runtime(declared, undefined, vendor) });
+
+    expect(settled.connectionId).toBe('con3');
+  });
+
+  test('recognises the account through case and surrounding space', async () => {
+    // Nothing trims on the way in, so a probe that answers with a space around
+    // the address writes one — and a row nothing can match again is a row the
+    // next connect duplicates.
+    const declared = [
+      { id: 'con5', provider: 'acme_mail', account: '  Ada@Example.com ' },
+    ] as ConnectionConfig[];
+
+    const settled = await settle({ prompter: silent, runtime: runtime(declared, undefined, vendor) });
+
+    expect(settled.connectionId).toBe('con5');
+  });
+
+  test('offers its own label, not the one a sibling sharing the id carries', async () => {
+    // An id is shared across a vendor by design, so looking a label up by id
+    // alone answers with whichever service is written first.
+    const declared = [
+      {
+        id: 'con3',
+        provider: 'acme_calendar',
+        account: 'ada@example.com',
+        label: 'Family calendar',
+      },
+      { id: 'con3', provider: 'acme_mail', account: 'ada@example.com', label: 'Work mail' },
+    ] as ConnectionConfig[];
+    const asking = prompter('');
+
+    const settled = await settle({ prompter: asking, runtime: runtime(declared, undefined, vendor) });
+
+    expect(settled.connectionId).toBe('con3');
+    expect(asking.asked[0]).toContain('Work mail');
+    expect(settled.label).toBe('Work mail');
+  });
+});
+
+/**
+ * A surface that authenticates to nothing: the owner layer's shape.
+ *
+ * There is no account to ask about, so `settleIdentity` names it after the
+ * provider and takes an `lan` id rather than a `con` one.
+ */
+const unauthenticated: ProviderManifest = {
+  ...acme,
+  auth: { kind: 'none' },
+  identity: undefined,
+};
+
+describe('connecting a surface that has no account to name', () => {
+  const settleUnauthenticated = (declared: readonly ConnectionConfig[]) =>
+    settle({
+      manifest: unauthenticated,
+      prompter: silent,
+      runtime: runtime(declared, null),
+    });
+
+  test('takes a fresh owner id the first time', async () => {
+    expect((await settleUnauthenticated([])).connectionId).toBe('lan1');
+  });
+
+  test('lands on the row it already has rather than a second one', async () => {
+    // Its account is the provider's own name, so every connect of it resolves
+    // the same string and there is never a second one to describe. Allocating
+    // regardless made `connect example` twice into `lan8` and `lan9` — one
+    // surface, two rows, the same duplicate the vendor case produced.
+    const declared = [
+      { id: 'lan8', provider: 'acme_mail', account: 'Acme Mail' },
+    ] as ConnectionConfig[];
+
+    expect((await settleUnauthenticated(declared)).connectionId).toBe('lan8');
   });
 });
