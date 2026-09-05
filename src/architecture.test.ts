@@ -100,8 +100,11 @@ const MAY_IMPORT: Record<string, readonly string[]> = {
   // component would make that separation a convention rather than a rule.
   // Narrow on purpose: each widening is a decision somebody makes here.
   // `deployments` for the `lanes://` scheme it composes a workspace root from,
-  // which is the one thing a route may not take from a request.
-  control: ['auth', 'deployments'],
+  // which is the one thing a route may not take from a request. `cli` because
+  // the control plane performs what a command performs and must call the same
+  // function rather than a second copy of it — the same reason `deployments`
+  // reaches `cli` for its own rollout command. `connectivity` for the logger.
+  control: ['auth', 'cli', 'connectivity', 'deployments', 'profile'],
 };
 
 describe('dependency direction', () => {
