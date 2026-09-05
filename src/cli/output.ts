@@ -1,4 +1,6 @@
 import { wasDefaulted } from './selection-require.ts';
+import { columns, style } from './terminal.ts';
+import { visibleWidth } from './typeset.ts';
 import type { Resolution } from '#profile';
 
 /**
@@ -9,18 +11,23 @@ import type { Resolution } from '#profile';
  * pipe into other tools, and a log line interleaved into a token corrupts it.
  */
 
-const isTTY = process.stdout.isTTY === true && !process.env['NO_COLOR'];
+/**
+ * Re-exported rather than moved away, because `style` is imported by sixty-five
+ * files and moving it would put every one of them in a diff about colour. It now
+ * resolves per call instead of at module load: see `terminal.ts`.
+ */
+export { style } from './terminal.ts';
 
-const paint = (code: string) => (text: string) => (isTTY ? `[${code}m${text}[0m` : text);
-
-export const style = {
-  bold: paint('1'),
-  dim: paint('2'),
-  green: paint('32'),
-  yellow: paint('33'),
-  red: paint('31'),
-  cyan: paint('36'),
-};
+/**
+ * Whether the spinner below may redraw in place.
+ *
+ * Deliberately the predicate `isTTY` was before this file grew a colour ladder,
+ * rather than `level() > 0`. The two agree today, but they answer different
+ * questions — one is "can I erase a line", the other "may I paint it" — and a
+ * `FORCE_COLOR` that animated a spinner into a log file would be the ladder
+ * answering the wrong one.
+ */
+const animated = (): boolean => process.stdout.isTTY === true && !process.env['NO_COLOR'];
 
 export function print(line = ''): void {
   process.stdout.write(`${line}\n`);
@@ -69,7 +76,7 @@ const SPINNER = ['\u280b', '\u2819', '\u2839', '\u2838', '\u283c', '\u2834', '\u
 const CLEAR = '\r\u001b[2K';
 
 export async function waiting<T>(label: string, work: () => Promise<T>): Promise<T> {
-  if (!isTTY) {
+  if (!animated()) {
     progress(style.dim(`  ${label}\u2026`));
     return work();
   }
@@ -84,7 +91,14 @@ export async function waiting<T>(label: string, work: () => Promise<T>): Promise
     const elapsed = seconds >= 3 ? ` (${seconds}s)` : '';
     const mark = SPINNER[frame % SPINNER.length];
 
-    process.stderr.write(`${CLEAR}${style.dim(`  ${mark} ${label}\u2026${elapsed}`)}`);
+    // `\u001b[2K` erases one *physical* row. A label that outruns the terminal
+    // wraps onto a second, and the erase then leaves the first on screen for the
+    // rest of the run with nothing to explain it.
+    const text = `  ${mark} ${label}\u2026${elapsed}`;
+    const room = Math.max(columns() - 1, 1);
+    const shown = visibleWidth(text) > room ? `${text.slice(0, Math.max(room - 1, 1))}\u2026` : text;
+
+    process.stderr.write(`${CLEAR}${style.dim(shown)}`);
     frame += 1;
   };
 
@@ -205,7 +219,7 @@ export function table(rows: ReadonlyArray<readonly string[]>): void {
   const widths: number[] = [];
   for (const row of rows) {
     row.forEach((cell, index) => {
-      widths[index] = Math.max(widths[index] ?? 0, stripAnsi(cell).length);
+      widths[index] = Math.max(widths[index] ?? 0, visibleWidth(cell));
     });
   }
 
@@ -215,7 +229,7 @@ export function table(rows: ReadonlyArray<readonly string[]>): void {
         .map((cell, index) =>
           index === row.length - 1
             ? cell
-            : cell + ' '.repeat((widths[index] ?? 0) - stripAnsi(cell).length),
+            : cell + ' '.repeat((widths[index] ?? 0) - visibleWidth(cell)),
         )
         .join('  ')
         .trimEnd(),
@@ -223,10 +237,6 @@ export function table(rows: ReadonlyArray<readonly string[]>): void {
   }
 }
 
-function stripAnsi(text: string): string {
-  // eslint-disable-next-line no-control-regex
-  return text.replace(/\[[0-9;]*m/g, '');
-}
 
 export const ok = (text: string) => `${style.green('ok')}    ${text}`;
 export const warn = (text: string) => `${style.yellow('warn')}  ${text}`;
