@@ -19,8 +19,10 @@ Every page is also served as plain Markdown: add `.md` to the path, for example
 |---|---|
 | [`detailed/adr/`](detailed/adr/) | The architecture decision records: why each choice was made, and what it cost |
 | [`detailed/init.md`](detailed/init.md) | The original specification, amended to match what was built |
+| [`detailed/admission.md`](detailed/admission.md) | Where a vendor admits the client rather than the operator: programmes, catalogues, and waitlists |
 
-Those are engineering history rather than documentation, so they stay with the source.
+Those are engineering history and standing constraints rather than documentation, so they stay
+with the source.
 
 ## Editing the docs
 

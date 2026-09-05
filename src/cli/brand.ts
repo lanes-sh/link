@@ -61,9 +61,10 @@ export const FONTS =
   '<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500' +
   '&amp;family=Geist:wght@400;500&amp;family=Lora:wght@400;500&amp;display=swap" rel="stylesheet">';
 
-/** The one-row footer, identical to the one the Lanes API's own pages carry. */
+/** The one-row footer, identical to the one every other Lanes surface carries:
+ * the API's pages and emails, and the desktop app's OAuth success page. */
 export const FOOTER =
-  '<div class="footer"><p>Run many agents at once. Connect them to your tools once - ' +
+  '<div class="footer"><p>Power up your agentic fleet with ' +
   '<a href="https://lanes.sh/">lanes.sh</a></p></div>';
 
 /**

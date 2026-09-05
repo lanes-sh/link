@@ -88,7 +88,8 @@ Run.
 | [070](070-one-process-serves-many-workspaces.md) | One process serves many workspaces, and the boundary becomes a code path |
 | [071](071-a-managed-workspace-is-a-workspace.md) | A managed workspace is a workspace, reached over the API |
 | [072](072-an-environment-is-derived-not-assembled.md) | A deployment derives its environment, and a mismatch refuses to boot |
-| [073](073-a-managed-endpoint-carries-a-control-surface.md) | A managed endpoint carries a control surface, and is not on the internet |
+| [073](073-a-connection-names-its-own-account.md) | A connection names its own account; the operator is asked last, and never handed a uuid to live with |
+| [074](074-a-managed-endpoint-carries-a-control-surface.md) | A managed endpoint carries a control surface, and is not on the internet |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 
@@ -338,7 +339,7 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
   boot on a mismatch trades a container that will not start for a staging revision that reads
   somebody's mail, which is not a close call.
 
-- **ADR-073** changes a sentence ADR-007 ends on, and is worth reading for the error it corrects as
+- **ADR-074** changes a sentence ADR-007 ends on, and is worth reading for the error it corrects as
   much as for the decision. The managed design had a second service, IAM-locked, so that the
   endpoint could go on never mutating its own configuration. The reasoning under it — that a managed
   endpoint must be publicly reachable, because no MCP client can mint the identity token Cloud Run
@@ -352,3 +353,9 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
   changes is that a *managed* revision writes its own configuration where a self-hosted one still
   cannot, and the record says which costs come with that — including an IAM condition that has to
   widen for the managed service account alone.
+
+- **ADR-073** makes the "which account is this?" prompt a last resort in fact rather than only in
+  its doc comment. Identity is resolved from the caller, the connector, the manifest, and then the
+  authorization server itself; a probe that cannot name a person human-readably falls through to
+  the question rather than labelling a row with a uuid. The remaining gap is a ledger the build
+  checks in both directions, not a total.

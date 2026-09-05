@@ -1,11 +1,12 @@
 import { createMcpConnector } from '#connectivity/transports';
-import { bearerTokenAsStored } from '#connectivity/auth/index.ts';
+import { bearerTokenAsStored, CredentialOAuthProvider } from '#connectivity/auth/index.ts';
 import type { SecretStore } from '#secrets';
 import { defaultConnectionLabel } from '#profile';
 import type { ConnectionConfig, Config } from '#profile';
 import type { AnyConnector, ProviderManifest } from '#connectivity';
 import { nextConnectionId, resolveAccount } from '../../identity.ts';
-import { style } from '../../output.ts';
+import { introspectAccount } from '../../introspection.ts';
+import { progress, style } from '../../output.ts';
 import { PromptCancelled, terminalPrompter, type Prompter } from '../../prompt.ts';
 import { accountSiblings } from './accounts.ts';
 
@@ -132,6 +133,28 @@ export async function settleIdentity(input: {
     });
   }
 
+  // Nothing declared, or what was declared came back empty. Before asking, ask
+  // the authorization server: RFC 7662 introspection needs no per-vendor
+  // configuration, and it is the only automatic answer available to the
+  // remote-MCP family, which is 75 of the 105 manifests and every one of them a
+  // question the operator has been answering by hand. See `introspection.ts`
+  // for why asking the server is allowed where reading the stored token is not.
+  if (!account && manifest.auth.kind === 'oauth' && manifest.connector.kind === 'mcp') {
+    const endpoint = manifest.connector.endpoint;
+    const scopes = manifest.auth.scopes;
+    account = await introspectAccount({
+      resourceUrl: endpoint,
+      accessToken: () => bearerTokenAsStored(manifest, provisionalId, runtime.credentials),
+      clientInformation: () =>
+        new CredentialOAuthProvider({
+          manifest,
+          connectionId: provisionalId,
+          credentials: runtime.credentials,
+          scopes,
+        }).clientInformation(),
+    });
+  }
+
   // A provider that authenticates to nothing has no account to name, so asking
   // is a question with no answer — and one that needs a terminal, which makes an
   // otherwise scriptable connect interactive for no reason.
@@ -148,6 +171,10 @@ export async function settleIdentity(input: {
   // second ago does not need confirming against itself.
   let typed = false;
 
+  // Whether they declined to name it at all. It reaches the id below: a row
+  // nobody could name must not match another row nobody could name.
+  let bypassed = false;
+
   if (!account) {
     // Nothing to go on. Asking beats inventing `main2`, and the answer is the
     // one piece of information the file cannot reconstruct later — which is
@@ -160,9 +187,9 @@ export async function settleIdentity(input: {
       );
     }
 
-    account =
-      (await prompter.ask(`Which account is this? ${style.dim('(the address or handle)')}`)) ||
-      `${manifest.name} ${provisionalId}`;
+    const answer = await askForAccount(manifest, prompter);
+    account = answer.account;
+    bypassed = answer.bypassed;
     typed = true;
   }
 
@@ -176,13 +203,21 @@ export async function settleIdentity(input: {
   // a second row. That is the whole reason `resolveAccount` runs before this:
   // without it a failed attempt appends rather than repairs, which is how
   // `Gmail main3` came to exist.
+  //
+  // A bypassed row is excluded from that match on purpose. `unnamed` is not an
+  // identity, so two of them are not evidence of the same account — matching
+  // them would hand the second connect the first one's credential ref and
+  // overwrite it. A fresh id says the only true thing available: these are two
+  // rows, and nobody could say whether they are two accounts.
   const connectionId =
     explicitId ??
     (unaccounted
       ? nextConnectionId(taken, true)
-      : (siblings.find(
-          (candidate) => candidate.account.toLowerCase() === account!.toLowerCase(),
-        )?.id ?? nextConnectionId(taken, false)));
+      : bypassed
+        ? nextConnectionId(taken, false)
+        : (siblings.find(
+            (candidate) => candidate.account.toLowerCase() === account!.toLowerCase(),
+          )?.id ?? nextConnectionId(taken, false)));
 
   const defaultLabel = defaultConnectionLabel(manifest.name, account);
 
@@ -202,6 +237,54 @@ export async function settleIdentity(input: {
       prompter,
     }),
   };
+}
+
+/** The literal answer that skips the question, and what it stores instead. */
+const BYPASS_ANSWER = 'blank';
+const UNNAMED_ACCOUNT = 'unnamed';
+
+/**
+ * The one thing the file cannot reconstruct later, asked until it is answered.
+ *
+ * An empty answer used to be taken, and stored `${manifest.name} ${provisionalId}`
+ * — the provider's name beside `pending`, an internal token for "no id yet".
+ * That string then became the account, the default label, and the key a
+ * reconnect matches on. Nobody chose it and nothing can be done with it.
+ *
+ * So an empty answer re-asks, and there is a way past for someone who meant it:
+ * typing `blank`. That row is `unnamed` — honest, visibly not an address, and
+ * `defaultConnectionLabel` reads it as `Notion (unnamed)`.
+ *
+ * Bounded rather than unbounded. A prompter that reports itself interactive and
+ * then returns nothing forever is not hypothetical — a closed pipe does it —
+ * and a connect that hangs is worse than one that refuses in the words the
+ * non-interactive path already uses.
+ */
+async function askForAccount(
+  manifest: ProviderManifest,
+  prompter: Prompter,
+): Promise<{ account: string; bypassed: boolean }> {
+  const question = `Which account is this? ${style.dim('(the address or handle)')}`;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const answer = (await prompter.ask(question)).trim();
+
+    if (answer.toLowerCase() === BYPASS_ANSWER) return { account: UNNAMED_ACCOUNT, bypassed: true };
+    if (answer) return { account: answer, bypassed: false };
+
+    progress(
+      style.dim(
+        `  It is how a reconnect finds this row again, and what every list shows it as.`,
+      ),
+    );
+    progress(style.dim(`  Type "${BYPASS_ANSWER}" to go without one.`));
+  }
+
+  throw new Error(
+    `${manifest.name} could not report whose account this is, and none was given.\n` +
+      `  Nothing was written. Answer the question, type "${BYPASS_ANSWER}" to go without a name, ` +
+      `or pass --display-name "<name>".`,
+  );
 }
 
 /**

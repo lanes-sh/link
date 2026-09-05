@@ -1,4 +1,4 @@
-# ADR-073: A managed endpoint carries a control surface, and is not on the internet
+# ADR-074: A managed endpoint carries a control surface, and is not on the internet
 
 **Status:** accepted · **Amends** [ADR-007](007-control-plane-exclusions.md),
 [ADR-018](018-the-gate-is-in-the-application.md) ·

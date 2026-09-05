@@ -89,7 +89,7 @@ paths `release.yml` takes, and the verification that a release shipped. What an 
 - **Never tag or `npm publish` by hand.** The workflow owns both, in that order, for a reason a
   manual run reverses.
 
-## Never write a real address, project, or bucket into this repository
+## Never write a real address, name, project, or bucket into this repository
 
 This repository is public. The shortest path to a passing test or a convincing doc example is
 to paste the account you are actually working with, and that account is the operator's — a
@@ -106,8 +106,24 @@ example, use a name that reads as a placeholder: `my-project`, `your-bucket`, `<
 Prose about a domain is fine (`a personal @gmail.com cannot enrol`) — it is an address *at* one
 that is not.
 
-`src/architecture.test.ts` fails the build on both. It reads every `.ts`, `.md`, `.json`, and
+**A person's name or handle is the same rule, and it is the one that gets missed.** Not just
+an address — a bare handle, a username, a slug derived from either. It reaches the repository
+through *prose about what actually happened*: a comment narrating a real rehearsal, an ADR
+recounting a real incident, a test fixture copied from a real workspace. A credential ref built
+from the operator's own mailbox sat in two comments here for months precisely because it was not
+an address, so nothing flagged it and nobody reading the sentence was looking for it.
+
+Write the rehearsal, not the person. `ada.lovelace@example.com` and `ada_lovelace` are the
+house example; use them. If a sentence only makes sense with the real handle in it, the sentence
+is wrong, not the rule.
+
+`src/architecture.test.ts` fails the build on all of it. It reads every `.ts`, `.md`, `.json`, and
 `.yaml` file in the repository, so there is nowhere to put one where the check does not look.
+Handles are checked against the committer's git identity — including the `<id>+<handle>@…`
+form a forge commits under — and against `.private-identifiers`, a gitignored file of one token
+per line. Keep your own handles there: git only knows the address you commit under, and the one
+that leaked here came from a personal mailbox git had never seen. A denylist inside the repository
+cannot work, because writing the name into it is the thing being prevented.
 
 ## Where things are
 
