@@ -44,6 +44,8 @@ const NO_IDENTITY: Readonly<Record<string, string>> = {
   bunq: 'Not swept. bunq authenticates through its own handshake rather than OAuth, so neither generic route applies, and its `/v1/user` shape has not been checked against what the strategy stores.',
   stripe: UNSWEPT,
   sentry: UNSWEPT,
+  supabase:
+    'Verified, not unswept: `GET /v1/profile` refuses an OAuth token ("does not support oauth access yet"), there is no userinfo, `/v1/user` or `/v1/me`, and what OAuth does reach — organizations, projects — is a collection.',
   figma: UNSWEPT,
   canva: UNSWEPT,
   dropbox: UNSWEPT,
@@ -60,7 +62,6 @@ const NO_IDENTITY: Readonly<Record<string, string>> = {
   mercury: UNSWEPT,
   vercel: UNSWEPT,
   netlify: UNSWEPT,
-  supabase: UNSWEPT,
   neon: UNSWEPT,
   prisma: UNSWEPT,
   sanity: UNSWEPT,
