@@ -97,6 +97,10 @@ export const SELECTION: Record<string, Requires> = {
   target: 'none',
   'workspace list': 'none',
   'target list': 'none',
+  // Renaming a target is an edit to the registry, which is the workspace-level
+  // file — both names are positionals, so there is no `--workspace` to require.
+  'workspace rename': 'none',
+  'target rename': 'none',
 
   // A profile lives in one target's workspace, so listing or creating one names
   // which workspace. `target show` follows the pointer, which `list` does not.

@@ -1,5 +1,11 @@
 import { createFilesystemBlobStore } from '#deployments/adapters/filesystem.ts';
 import { createGcsBlobStore } from '#deployments/adapters/gcs.ts';
+import {
+  LANES_SCHEME,
+  createLanesBlobStore,
+  lanesApiUrl,
+  lanesWorkspaceFrom,
+} from '#deployments/adapters/lanes.ts';
 import type { BlobStore } from '#stores/blobs';
 
 /**
@@ -31,9 +37,18 @@ import type { BlobStore } from '#stores/blobs';
 
 const GCS_SCHEME = 'gs://';
 
-/** Whether a workspace root names a bucket rather than a directory. */
+
+/**
+ * Whether a workspace root is somewhere other than this filesystem.
+ *
+ * Every caller is really asking "may I treat this as a path". Two schemes
+ * answer no: a bucket the operator owns, and a workspace Lanes hosts. Getting a
+ * managed root wrong here does not fail loudly — `join` would produce a
+ * directory named `lanes:` beside the process's working directory, and the
+ * config would read as absent rather than as unreachable.
+ */
 export function isRemoteWorkspace(root: string): boolean {
-  return root.startsWith(GCS_SCHEME);
+  return root.startsWith(GCS_SCHEME) || root.startsWith(LANES_SCHEME);
 }
 
 /**
@@ -44,6 +59,18 @@ export function isRemoteWorkspace(root: string): boolean {
  */
 export function workspaceFiles(root: string): BlobStore {
   if (!isRemoteWorkspace(root)) return createFilesystemBlobStore({ root });
+
+  // A managed workspace is addressed through the API, which already knows who
+  // is calling and which workspaces they belong to. It takes no credential
+  // here: the process registers one (ADR: a managed workspace is a workspace),
+  // exactly as a `gs://` root takes none and resolves Application Default
+  // Credentials from the environment.
+  if (root.startsWith(LANES_SCHEME)) {
+    return createLanesBlobStore({
+      apiUrl: lanesApiUrl(),
+      workspace: lanesWorkspaceFrom(root),
+    });
+  }
 
   const withoutScheme = root.slice(GCS_SCHEME.length);
   const slash = withoutScheme.indexOf('/');

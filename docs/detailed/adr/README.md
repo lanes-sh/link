@@ -85,7 +85,11 @@ Run.
 | [067](067-one-directory-per-profile.md) | One directory per profile, `data/` goes, and a connection id becomes opaque |
 | [068](068-a-credential-names-a-person.md) | A credential names a person, and the profiles follow from that; the endpoint token becomes the workspace's |
 | [069](069-a-pairing-token-may-write-the-owners-own-data.md) | A pairing token may write the owner's own data; the control plane is unmoved |
+| [070](070-one-process-serves-many-workspaces.md) | One process serves many workspaces, and the boundary becomes a code path |
+| [071](071-a-managed-workspace-is-a-workspace.md) | A managed workspace is a workspace, reached over the API |
+| [072](072-an-environment-is-derived-not-assembled.md) | A deployment derives its environment, and a mismatch refuses to boot |
 | [073](073-a-connection-names-its-own-account.md) | A connection names its own account; the operator is asked last, and never handed a uuid to live with |
+| [074](074-a-managed-endpoint-carries-a-control-surface.md) | A managed endpoint carries a control surface, and is not on the internet |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 
@@ -313,6 +317,42 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
   these five stores. What genuinely changes is that a credential which could read every memory
   entry can now delete them, including one minted before this release, which is why the cost is
   named in the CLI's own prompt rather than only here.
+
+- **ADR-070** is the one to read before the other two. Everything Lanes Cloud is rests on one
+  process serving many workspaces, and the honest way to state that is not "multi-tenancy was
+  added" but "the boundary that used to be a process is now a code path". The record says what
+  holds it up — a router above the generations, a credential namespace, a vault key source — and
+  says plainly that a bug in any of the three is a cross-tenant leak, which is a severity this
+  repository has not had to reason about before. `container.ts` is untouched: a self-hosted deploy
+  runs what it ran.
+
+- **ADR-071** is why a third root exists at all. A `gs://` root is opened with the caller's own
+  Google credentials, which is right for a bucket the operator owns and impossible for one of
+  ours. The better reason is the second one: "may this person read this workspace" already has an
+  answer, on the API, and asking it again inside a storage adapter would be a second place to
+  decide one thing. The cost named in it is real — Lanes is now in the path of a managed
+  workspace's configuration, and a credential written from a laptop cannot be read back.
+
+- **ADR-072** exists because the API's own staging mechanism is a trap, and this is the record of
+  choosing not to copy it. Overriding each secret individually means a forgotten one leaves staging
+  reading production, silently; two already are. Deriving everything from one name and refusing to
+  boot on a mismatch trades a container that will not start for a staging revision that reads
+  somebody's mail, which is not a close call.
+
+- **ADR-074** changes a sentence ADR-007 ends on, and is worth reading for the error it corrects as
+  much as for the decision. The managed design had a second service, IAM-locked, so that the
+  endpoint could go on never mutating its own configuration. The reasoning under it — that a managed
+  endpoint must be publicly reachable, because no MCP client can mint the identity token Cloud Run
+  IAM wants — is true in every clause and does not reach its conclusion: it holds only if a client
+  connects *to the endpoint*, which was an assumption. With `api.lanes.sh` as the only front door
+  the runtime is private, IAM is the outer gate, and the control routes have somewhere safe to live
+  inside it.
+
+  What ADR-007 protects is untouched: an agent holds a token this endpoint issued and the control
+  routes take an assertion Lanes signed, so an agent still cannot widen its own access. What
+  changes is that a *managed* revision writes its own configuration where a self-hosted one still
+  cannot, and the record says which costs come with that — including an IAM condition that has to
+  widen for the managed service account alone.
 
 - **ADR-073** makes the "which account is this?" prompt a last resort in fact rather than only in
   its doc comment. Identity is resolved from the caller, the connector, the manifest, and then the

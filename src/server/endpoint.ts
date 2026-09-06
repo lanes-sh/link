@@ -10,6 +10,7 @@ import { deployedReadDeps } from './read/deployed.ts';
 import { version } from '#cli/version.ts';
 import type { Logger } from '#connectivity';
 import { silentLogger } from './logging.ts';
+import type { ControlDeps } from '#control/routes.ts';
 import { listProfiles, readConnections } from '#profile';
 import {
   applyReconcile,
@@ -66,6 +67,14 @@ export interface EndpointOptions {
   readonly reporter?: EndpointReporter | undefined;
   /** Operational events. Silent when absent, which is what the tests want. */
   readonly log?: Logger | undefined;
+  /**
+   * The managed control surface, when this runtime serves one.
+   *
+   * Built by `controlDepsFrom` in the container entrypoint and passed through
+   * rather than resolved here: whether a bind carries a control surface is a
+   * deployment fact, and `startEndpoint` is also what `lanes link start` calls.
+   */
+  readonly control?: Omit<ControlDeps, 'log'> | undefined;
 }
 
 export interface RunningEndpoint {
@@ -275,6 +284,10 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
         : primary.authenticator,
       log,
       ...(gate ? { authorization: gate.surface } : {}),
+      // Absent on every local and self-hosted bind, which is what keeps those
+      // endpoints exactly as they were — no control routes, and ADR-007
+      // literally true for them.
+      ...(options.control ? { control: { ...options.control, log } } : {}),
       ...(options.port !== undefined ? { port: options.port } : {}),
       ...(options.host !== undefined ? { host: options.host } : {}),
       // Offered unconditionally and discarded by `serve()` on a loopback bind,

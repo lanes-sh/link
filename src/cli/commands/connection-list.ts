@@ -43,10 +43,17 @@ export interface ConnectionSummary {
   readonly grantedTo: readonly string[];
 }
 
-export async function connectionList(flags: GlobalFlags & { json?: boolean }): Promise<void> {
-  const local = resolveWorkspaceRoot();
-  const root = await resolveTargetWorkspace(local, flags.target ?? 'local');
-
+/**
+ * Every connection in one workspace, and which profiles grant each.
+ *
+ * The data half, taking a root rather than resolving one. `connectionList`
+ * below is the printing wrapper and resolves the root from the environment,
+ * which is right for a terminal because a terminal has exactly one workspace in
+ * view. A process serving many does not, so it needs the half that takes the
+ * root as an argument — and copying this loop into it would be a second answer
+ * to "which profiles grant this account".
+ */
+export async function connectionSummaries(root: string): Promise<ConnectionSummary[]> {
   const held = (await readConnections(root)).connections;
 
   // Read once, ahead of the loop. The alternative is a file read per connection
@@ -66,7 +73,7 @@ export async function connectionList(flags: GlobalFlags & { json?: boolean }): P
     }
   }
 
-  const summaries: ConnectionSummary[] = held.map((connection) => {
+  return held.map((connection) => {
     const key = connectionRefOf(connection);
     return {
       key,
@@ -77,6 +84,12 @@ export async function connectionList(flags: GlobalFlags & { json?: boolean }): P
       grantedTo: grants.get(key) ?? [],
     };
   });
+}
+
+export async function connectionList(flags: GlobalFlags & { json?: boolean }): Promise<void> {
+  const local = resolveWorkspaceRoot();
+  const root = await resolveTargetWorkspace(local, flags.target ?? 'local');
+  const summaries = await connectionSummaries(root);
 
   return emit(flags.json, { workspace: flags.target ?? 'local', connections: summaries }, () => {
     print(style.dim(`workspace ${style.bold(flags.target ?? 'local')}  ${root}`));

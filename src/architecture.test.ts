@@ -85,7 +85,10 @@ const MAY_IMPORT: Record<string, readonly string[]> = {
   // `audit` because an adapter implements the log; `cli` and `registry`
   // because a deployment owns its own rollout command.
   deployments: ['audit', 'cli', 'profile', 'registry', 'secrets', 'stores'],
-  server: ['auth', 'connectivity', 'dispatch', 'policy', 'profile', 'registry', 'cli'],
+  // `control` because a managed runtime mounts the control surface in its own
+  // router rather than beside it in a second service. It stays downward:
+  // `control` reaches `cli` and `profile`, both of which `server` already may.
+  server: ['auth', 'connectivity', 'control', 'dispatch', 'policy', 'profile', 'registry', 'cli'],
   // `audit` because the runtime carries the log and `audit tail` renders it.
   // It used to reach both through `#stores/state`, which was the RuntimeState
   // contract owning something that was never runtime state; now that the log
@@ -95,9 +98,45 @@ const MAY_IMPORT: Record<string, readonly string[]> = {
     'audit', 'auth', 'connectivity', 'deployments', 'dispatch', 'policy',
     'profile', 'providers', 'registry', 'secrets', 'server', 'stores',
   ],
+  // The control plane is deliberately not part of `server`. They answer
+  // opposite questions — one serves an endpoint that writes no configuration
+  // (ADR-007), the other exists to write it — and folding them into one
+  // component would make that separation a convention rather than a rule.
+  // Narrow on purpose: each widening is a decision somebody makes here.
+  // `deployments` for the `lanes://` scheme it composes a workspace root from,
+  // which is the one thing a route may not take from a request. `cli` because
+  // the control plane performs what a command performs and must call the same
+  // function rather than a second copy of it — the same reason `deployments`
+  // reaches `cli` for its own rollout command. `connectivity` for the logger.
+  // `stores` because a hosted OAuth flow spans two requests and has to write
+  // down what the CLI keeps on the stack — the PKCE verifier and the discovery
+  // state. It stays downward: `stores` is at the bottom.
+  control: ['auth', 'cli', 'connectivity', 'deployments', 'profile', 'stores'],
 };
 
 describe('dependency direction', () => {
+  /**
+   * A component nobody listed used to be a component with no rules.
+   *
+   * `MAY_IMPORT[from]` returning undefined meant the loop below skipped the
+   * file, so adding `src/<new>/` bought an exemption from the whole rule and
+   * nothing said so. Found by adding one: `src/control/` passed this suite on
+   * its first run while importing whatever it liked.
+   */
+  test('every component declares what it may import', async () => {
+    // A component is a directory under `src/`. The two suites that sit beside
+    // them — this one and `readme.test.ts` — are files, and `componentOf`
+    // answers with a filename for those.
+    const components = new Set(
+      (await sourceFiles())
+        .filter((path) => relative(SRC, path).includes('/'))
+        .map(componentOf),
+    );
+    const undeclared = [...components].filter((name) => MAY_IMPORT[name] === undefined);
+
+    expect(undeclared.sort()).toEqual([]);
+  });
+
   test('no component imports one it is not allowed to', async () => {
     const violations: string[] = [];
 

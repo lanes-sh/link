@@ -2,7 +2,7 @@ import type { AuditReader, AuditSink, AuditStore } from '#audit';
 import { ConfigError, layout, workspacePath, type Config, type TargetConfig } from '#profile';
 import type { SecretStore } from '#secrets';
 import { createFileSecretStore } from '#secrets';
-import type { BlobStore } from '#stores/blobs';
+import { scopeBlobStore, type BlobStore } from '#stores/blobs';
 import { createRuntimeState, type RuntimeState } from '#stores/state';
 import { createBlobAuditStore } from './adapters/audit-blob.ts';
 
@@ -93,7 +93,15 @@ export async function openSecrets(input: {
         );
       }
       const { GcpSecretManagerStore } = await import('./adapters/gcp-secret-manager.ts');
-      return new GcpSecretManagerStore({ project: declared.credentials.project });
+      return new GcpSecretManagerStore({
+        project: declared.credentials.project,
+        // Absent for a self-hosted deploy, which owns its project. Present for
+        // a Lanes-hosted one, where every workspace stores `tokens/tok1` into
+        // the same namespace and the collision is somebody else's token.
+        ...(declared.credentials.namespace !== undefined
+          ? { namespace: declared.credentials.namespace }
+          : {}),
+      });
     }
   }
 }
@@ -247,6 +255,32 @@ export async function openStorage(
           bucket,
           prefix: `${base}${area ?? root}/`,
         });
+    }
+
+    case 'lanes': {
+      // No bucket and no key pair: a managed workspace names itself, and the
+      // API resolves where its bytes live and refuses a caller who is not a
+      // member. The credential is the process's, registered rather than
+      // declared, for the reason `adapters/lanes.ts` gives.
+      const { workspace } = declared.storage;
+      if (!workspace) {
+        throw new ConfigError(
+          `workspaces.${target}.storage.workspace is required for the lanes adapter.`,
+        );
+      }
+
+      const { createLanesBlobStore, lanesApiUrl } = await import('./adapters/lanes.ts');
+      const apiUrl = lanesApiUrl();
+      const base = layout.blobs(config.instance.profile);
+
+      // Scoped exactly as the bucket adapters scope: the profile's own area by
+      // default, or whichever area the caller asked for. A managed workspace
+      // that laid its bytes out differently would be a fourth layout for the
+      // same tree.
+      return (area) => {
+        const store = createLanesBlobStore({ apiUrl, workspace });
+        return scopeBlobStore(store, area ?? base);
+      };
     }
 
     case 's3': {

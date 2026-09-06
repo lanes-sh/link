@@ -91,12 +91,32 @@ export const credentialsTargetSchema = z.object({
   adapter: z.enum(['file', 'gcp-secret-manager']),
   path: z.string().optional(),
   project: z.string().optional(),
+  /**
+   * Which workspace's secrets these are, when the project holds more than one.
+   *
+   * A self-hosted deploy gets a project per workspace, so a reference is unique
+   * by construction and this is absent. A Lanes-hosted runtime serves many
+   * workspaces from one project and every one of them stores `tokens/tok1`, so
+   * without this the second write adds a version to the first workspace's
+   * secret and both read one refresh token.
+   */
+  namespace: z.string().optional(),
 });
 
 export const storageTargetSchema = z.object({
-  adapter: z.enum(['filesystem', 'gcs', 's3']),
+  adapter: z.enum(['filesystem', 'gcs', 's3', 'lanes']),
   path: z.string().optional(),
   bucket: z.string().optional(),
+  /**
+   * Which workspace, for the `lanes` adapter.
+   *
+   * The bucket adapters name a bucket and a prefix; a managed workspace names
+   * itself, because the API resolves where its bytes are and refuses a caller
+   * who is not a member. Declared rather than derived from the root so a
+   * pointer and a declaration cannot disagree about which workspace is being
+   * opened.
+   */
+  workspace: z.string().optional(),
   /**
    * The S3-compatible service endpoint. Named for the protocol rather than a
    * vendor (ADR-013) — Supabase Storage, R2, MinIO, and AWS differ only in this
@@ -551,6 +571,27 @@ export const configSchema = z.object({
    * refused by `assertReferentialIntegrity` rather than loading and reaching
    * nothing.
    */
+  /**
+   * Whether this profile's own configuration may be changed by an agent.
+   *
+   * The role says who you are and a scope says what you authorised a client to
+   * do on your behalf. Neither says anything about *this* profile, and that is
+   * the gap: somebody keeping personal mail in one profile and work in another
+   * wants the first closed to agents whatever their own role is.
+   *
+   * `allow` by default, because a workspace that can be run without the
+   * dashboard is the point rather than a concession. `deny` is what you set on
+   * the profile you would not want an agent widening.
+   *
+   * A person in the CLI or the dashboard is not an agent and is unaffected —
+   * this is read by the control surface, which is the only path an agent has.
+   *
+   * Two spellings and no third. Not a boolean, so a later `approval_required`
+   * has somewhere to go without changing the type; not free text, so a value
+   * from a newer release fails here rather than being read as permission.
+   */
+  agent_management: z.enum(['allow', 'deny']).default('allow'),
+
   grants: z.array(grantSchema).default([]),
 
   /**
