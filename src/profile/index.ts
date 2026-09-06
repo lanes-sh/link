@@ -101,6 +101,7 @@ export {
 } from './workspace.ts';
 export {
   LEGACY_TARGET_ENV,
+  MANAGED_TARGET,
   noTargetNamed,
   notInRegistry,
   requireTarget,

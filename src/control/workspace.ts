@@ -33,7 +33,7 @@ import type { ControlAssertion } from './assertion.ts';
  * how Lanes provisions the workspace, and a second spelling would be a second
  * answer to which adapters a request opens.
  */
-export const MANAGED_TARGET = 'managed';
+export { MANAGED_TARGET } from '#profile';
 
 /**
  * The environment one request runs in.

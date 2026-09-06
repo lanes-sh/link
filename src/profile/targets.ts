@@ -28,6 +28,22 @@ import { isPointer, type WorkspaceTarget } from './schema.ts';
  * is read, which is what lets `--target` be chosen first.
  */
 
+/**
+ * The one target name the operator does not choose.
+ *
+ * Every other name is a local label — `local`, `self-hosted-acme`, whatever
+ * somebody typed. This one is fixed, because the managed control routes resolve
+ * it by name: an assertion carries a workspace, `workspaceRootFor` derives
+ * `lanes://<workspace>` from it, and the writers then look this key up in that
+ * workspace's registry. Rename it and the lookup misses, so every control call
+ * starts failing while the CLI still looks perfectly healthy.
+ *
+ * It lives here rather than in `#control` because the CLI has to know it is
+ * reserved and cannot import that component — and because a name two components
+ * must agree on belongs to neither of them.
+ */
+export const MANAGED_TARGET = 'managed';
+
 export type Registry = Record<string, WorkspaceTarget>;
 
 /**

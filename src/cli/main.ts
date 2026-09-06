@@ -32,6 +32,7 @@ import { profileAdd, profileDefault, profileList } from './commands/profile.ts';
 import { removeProfile as profileRemove } from './commands/profile/remove.ts';
 import { syncTargets } from './commands/sync.ts';
 import { targetList, targetShow, targetUse } from './commands/target.ts';
+import { targetRename } from './commands/target-rename.ts';
 import { identityAdd, identityList, identityRemove } from './commands/identity.ts';
 import { setupPlan } from './commands/setup.ts';
 import { installInstructions, mcpAdd, mcpList, mcpStdio, skillDocument } from './commands/mcp.ts';
@@ -238,6 +239,8 @@ export async function run(argv: readonly string[]): Promise<void> {
           return targetUse(rest[0]);
         case 'show':
           return targetShow(rest[0], { ...global, json });
+        case 'rename':
+          return targetRename(rest[0], rest[1], { ...global, json });
         default:
           throw new Error(`Unknown: ${PROGRAM} workspace ${second}`);
       }
