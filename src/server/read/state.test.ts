@@ -20,7 +20,16 @@ import type { ProfileRuntime } from '../mcp/visibility.ts';
 
 const ROWS: ConnectionRow[] = [
   { provider: 'lanes_memory', id: 'main', account: 'Memory' },
-  { provider: 'gmail', id: 'ada', account: 'ada@example.com', label: 'Work mail' },
+  {
+    provider: 'gmail',
+    id: 'ada',
+    account: 'ada@example.com',
+    label: 'Work mail',
+    createdAt: '2026-01-02T03:04:05.000Z',
+    updatedAt: '2026-03-04T05:06:07.000Z',
+  },
+  // No dates: a row the state store has not caught up with, which is the
+  // ordinary case for a connection added since the last reconcile pass.
   { provider: 'gmail', id: 'rin', account: 'rin@example.com' },
 ];
 
@@ -147,5 +156,44 @@ describe('who can reach one', () => {
     expect(state.connections.find((one) => one.ref === 'ghost.one')?.profiles).toEqual([
       'personal',
     ]);
+  });
+});
+
+/**
+ * When a connection arrived, and when it last moved.
+ *
+ * `connections.yaml` has never carried a date, so these come from the state
+ * store and `connectionRows` attaches them. Two things matter here: a row the
+ * store has no record of still appears, and the row nothing holds but a grant
+ * says null rather than borrowing a date from somewhere else.
+ */
+describe('when a connection arrived', () => {
+  test('the dates the store had are passed through', () => {
+    const state = readState('acme', new Map(), ROWS, ENDPOINT, NAMES);
+    const ada = state.connections.find((one) => one.ref === 'gmail.ada');
+
+    expect(ada?.createdAt).toBe('2026-01-02T03:04:05.000Z');
+    expect(ada?.updatedAt).toBe('2026-03-04T05:06:07.000Z');
+  });
+
+  test('a row the store has no record of is still listed, and says so', () => {
+    // The state store is rebuilt from the file and can be deleted at any time.
+    // Missing dates must cost a reader the dates, never the row.
+    const state = readState('acme', new Map(), ROWS, ENDPOINT, NAMES);
+    const rin = state.connections.find((one) => one.ref === 'gmail.rin');
+
+    expect(rin).toBeDefined();
+    expect(rin?.createdAt).toBeNull();
+    expect(rin?.updatedAt).toBeNull();
+  });
+
+  test('a grant naming a connection the workspace no longer holds has no dates', () => {
+    const profiles = new Map([['personal', profile(['slack.vanished'])]]);
+    const state = readState('acme', profiles, ROWS, ENDPOINT, NAMES);
+    const orphan = state.connections.find((one) => one.ref === 'slack.vanished');
+
+    expect(orphan).toBeDefined();
+    expect(orphan?.createdAt).toBeNull();
+    expect(orphan?.updatedAt).toBeNull();
   });
 });
