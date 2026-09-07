@@ -83,6 +83,10 @@ export const SECTIONS: readonly Section[] = [
         description: 'every account in this workspace, and who grants it',
       },
       {
+        command: 'connection declare <provider> --account <address>',
+        description: 'name an account before authorising it, so its tools are advertised now and a client registered today does not have to be re-added after you connect it',
+      },
+      {
         command: 'grant add <provider>.<id>',
         description: 'let a profile reach one, with nothing allowed yet',
       },
