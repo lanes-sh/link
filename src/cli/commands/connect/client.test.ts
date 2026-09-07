@@ -1,4 +1,4 @@
-import { newProfileTemplate } from '../../config-templates.ts';
+import { newProfileTemplate, TEMPLATE_SURFACES } from '../../config-templates.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -77,7 +77,7 @@ async function document(body?: string): Promise<ConfigDocument> {
   const root = await mkdtemp(join(tmpdir(), 'lanes-link-client-'));
   roots.push(root);
   await mkdir(join(root, 'profiles', 'personal'), { recursive: true });
-  await writeFile(join(root, 'profiles', 'personal', 'profile.yaml'), body ?? newProfileTemplate('personal', 7337));
+  await writeFile(join(root, 'profiles', 'personal', 'profile.yaml'), body ?? newProfileTemplate('personal', 7337, TEMPLATE_SURFACES));
   return await ConfigDocument.open(root, 'personal');
 }
 

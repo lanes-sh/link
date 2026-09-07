@@ -1,9 +1,11 @@
 import { newConnectionsTemplate, newProfileTemplate, newWorkspaceTemplate } from '../config-templates.ts';
+import { DEFAULT_SURFACES } from '../config-repair.ts';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   CONNECTIONS_FILE,
+  readConnections,
   ConfigError,
   WORKSPACE_FILE,
   LEGACY_WORKSPACE_FILE,
@@ -85,6 +87,41 @@ export interface ProfileListing {
  * until the revision restarted. `profileAdd` notifies for the same reason every
  * other config edit does; see below.
  */
+/**
+ * Which connection each owner-layer surface sits under, in this workspace.
+ *
+ * Read from `connections.yaml` rather than assumed, because the ids in that
+ * file are assigned in creation order and a workspace whose owner layer arrived
+ * in a different order holds them under different ones. A profile written
+ * against the wrong ids is refused by `assertGrantsResolve` and then *skipped*
+ * by `openReconciled`, so it exists, is never served, and says so only in the
+ * endpoint's log.
+ *
+ * **The first row per provider**, which is the rule `ensureReservedConnection`
+ * already applies and states: any instance will do, and taking the first means
+ * an operator who renamed theirs does not get a second one bolted on beside it.
+ *
+ * A surface with no row at all is absent from the map and therefore ungranted.
+ * That is the honest outcome: `ensureOwnerLayer` writes both halves on the next
+ * `start`, where inventing a ref here would produce a profile that never loads.
+ */
+async function ownedSurfaces(workspaceRoot: string): Promise<Map<string, string>> {
+  const owned = new Map<string, string>();
+
+  // Absent or unreadable is not a failure. `createProfile` seeds the file just
+  // above this when the workspace has none, and a workspace holding one that
+  // cannot be parsed is a problem for `doctor` rather than a reason to refuse a
+  // profile.
+  const held = await readConnections(workspaceRoot).catch(() => null);
+
+  for (const surface of DEFAULT_SURFACES) {
+    const row = held?.connections.find((one) => one.provider === surface);
+    if (row) owned.set(surface, `${surface}.${row.id}`);
+  }
+
+  return owned;
+}
+
 export async function createProfile(
   name: string,
   options: { targets: readonly string[]; nonInteractive?: boolean },
@@ -171,7 +208,7 @@ export async function createProfile(
   await writeWorkspaceFile(
     workspaceFiles(root),
     layout.profileConfig(name),
-    newProfileTemplate(name, port, session?.subject),
+    newProfileTemplate(name, port, await ownedSurfaces(root), session?.subject),
   );
 
   return { name, path, port, targets: options.targets, copiedFrom: {} };
