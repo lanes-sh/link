@@ -6,6 +6,7 @@ import type { Dispatcher } from '#dispatch';
 import type { PolicyDocument, ProfilePolicy } from '#policy';
 import { allowedConnections } from '#policy';
 import { mayReach } from '#auth';
+import { SURFACE_TOOL_NAMES } from './naming.ts';
 
 /**
  * What this principal can see, and therefore what gets registered at all.
@@ -159,7 +160,10 @@ export function visibleCapabilities(options: BuildServerOptions): string[] {
  * it — a discovered capability is always a tool, an authored one is asked.
  */
 export function visibleToolCount(options: BuildServerOptions): number {
-  let count = 0;
+  // The stable-name pair is advertised unconditionally and is not a
+  // capability, so it is in `tools/list` and not in `merged` — see
+  // `SURFACE_TOOL_NAMES`.
+  let count = SURFACE_TOOL_NAMES.length;
 
   for (const entry of mergeCapabilities(options).values()) {
     if (entry.discovered) count += 1;

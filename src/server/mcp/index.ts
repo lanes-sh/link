@@ -19,7 +19,7 @@
 
 export { buildMcpServer } from './build.ts';
 export { serverInstructions } from './instructions.ts';
-export { SERVER_NAME, capabilityIdForToolName, toolNameFor } from './naming.ts';
+export { SERVER_NAME, SURFACE_TOOL_NAMES, capabilityIdForToolName, toolNameFor } from './naming.ts';
 export { scopeResourceUri } from './routing.ts';
 export { sanitizeSchema } from './schema.ts';
 export {

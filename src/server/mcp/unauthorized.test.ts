@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { ownerPrincipal } from '#auth';
 import { toPolicyDocument } from '#registry';
 import { parseConfig } from '#profile';
+import { SURFACE_TOOL_NAMES } from './naming.ts';
 import { oneProfile, visibleCapabilities, visibleToolCount } from './visibility.ts';
 import type { BuildServerOptions, ProfileRuntime } from './visibility.ts';
 
@@ -94,7 +95,10 @@ describe('a declared account with no credential', () => {
   });
 
   test('counts toward what tools/list carries', () => {
-    expect(visibleToolCount(options)).toBe(2);
+    // Written as the arithmetic rather than as `4`, because the number is two
+    // separate claims: the capabilities the grant makes reachable, and the
+    // stable-name pair that is advertised whatever policy says (ADR-075).
+    expect(visibleToolCount(options)).toBe(2 + SURFACE_TOOL_NAMES.length);
   });
 
   /**
@@ -108,6 +112,8 @@ describe('a declared account with no credential', () => {
     const ungranted = profileGranting('vendor_mail.main', ['vendor_chat.messages.list']);
 
     expect(visibleCapabilities(ungranted)).toEqual([]);
-    expect(visibleToolCount(ungranted)).toBe(0);
+    // No capability, and therefore only the pair — which reaches nothing,
+    // because it can only reach what is in the merged set.
+    expect(visibleToolCount(ungranted)).toBe(SURFACE_TOOL_NAMES.length);
   });
 });
