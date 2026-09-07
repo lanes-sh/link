@@ -121,6 +121,16 @@ export const layout = {
    * and there is one endpoint.
    */
   state: (): string => 'state.kv',
+  /**
+   * Where `lanes link start` bound, written by the control plane only.
+   *
+   * Not config and not data: a fact about a process that is running right now,
+   * which is why it is JSON beside the YAML rather than a key inside it. One
+   * endpoint serves the whole workspace (ADR-009), so there is one of these per
+   * workspace and it belongs at the root. `endpoint-record.ts` is the whole of
+   * what it means, and ADR-074 is why it exists.
+   */
+  endpointRecord: (): string => 'endpoint.json',
 
   /** Every profile's directory sits under here. */
   profilesRoot: (): string => PROFILES_DIR,

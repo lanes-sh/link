@@ -20,7 +20,6 @@ Needs [Bun](https://bun.com) 1.3.11+ and a Lanes sign-in.
 $ bun install -g @lanes-sh/link
 $ lanes auth login
 $ lanes link profile add personal
-$ lanes link profile members add --me --profile personal
 $ lanes link start
 ok    serving http://127.0.0.1:7337/mcp
       profiles: personal
@@ -168,8 +167,10 @@ To report a vulnerability, see [`SECURITY.md`](SECURITY.md). Please do not open 
 against anything if it does not know who is asking. The network is needed to sign in and to
 refresh, not per call, so a machine offline for a day keeps serving.
 
-**Why members is not optional.** An empty members list means nobody, not everybody. The profile
-you just created reaches no caller until you are on it.
+**Who reaches a profile.** An empty members list means nobody, not everybody. `profile add` puts
+you on the profile it creates, so a profile you made while signed in already reaches you. One
+created before you signed in has nobody on it: add yourself with `lanes link profile members add
+--me --profile <name>`.
 
 **Why `mcp add` names no profile.** One endpoint serves every profile in the workspace, and each
 call names one in its `profile` argument, so registering is about the endpoint. Which profiles a

@@ -89,7 +89,8 @@ Run.
 | [071](071-a-managed-workspace-is-a-workspace.md) | A managed workspace is a workspace, reached over the API |
 | [072](072-an-environment-is-derived-not-assembled.md) | A deployment derives its environment, and a mismatch refuses to boot |
 | [073](073-a-connection-names-its-own-account.md) | A connection names its own account; the operator is asked last, and never handed a uuid to live with |
-| [074](074-a-managed-endpoint-carries-a-control-surface.md) | A managed endpoint carries a control surface, and is not on the internet |
+| [074](074-the-endpoint-records-where-it-bound.md) | The endpoint records where it bound, so an edit reaches the one that is running rather than a port derived from the profile it edited |
+| [075](075-a-managed-endpoint-carries-a-control-surface.md) | A managed endpoint carries a control surface, and is not on the internet |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 

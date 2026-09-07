@@ -160,7 +160,6 @@ Needs Bun 1.3.11+.
 $ bun install -g @lanes-sh/link
 $ lanes auth login
 $ lanes link profile add personal
-$ lanes link profile members add --me --profile personal
 $ lanes link start
 ok  serving http://127.0.0.1:7337/mcp
 

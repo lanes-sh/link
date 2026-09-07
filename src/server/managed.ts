@@ -22,7 +22,7 @@ import { createDataPlane } from './managed-data.ts';
  * and it is why the Data tab stopped saying "not reachable from here yet".
  *
  * Neither is on the internet. This service is `--no-allow-unauthenticated` with
- * the API's service account as the only caller IAM admits (ADR-074), so `/mcp`
+ * the API's service account as the only caller IAM admits (ADR-075), so `/mcp`
  * here is not a URL any client connects to — `api.lanes.sh/mcp` is the only
  * front door and it forwards.
  *
@@ -154,7 +154,7 @@ const verifier = await (async () => {
  * would be.
  *
  * The alternative was a hostname per workspace, which is what
- * `createWorkspaceRouter` was written against. ADR-074 made this service
+ * `createWorkspaceRouter` was written against. ADR-075 made this service
  * private with no hostname anybody resolves, so that statement no longer
  * exists to be had. The agreement check stays anyway: it costs nothing and it
  * still catches the case where routing and verification disagree.

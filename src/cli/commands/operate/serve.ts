@@ -1,5 +1,5 @@
 import { readSession } from '#auth/lanes/session.ts';
-import { ConfigError } from '#profile';
+import { clearEndpointRecord, ConfigError, writeEndpointRecord } from '#profile';
 import { startEndpoint } from '#server/endpoint.ts';
 import { streamLogger } from '#server/logging.ts';
 import { repairOwnerLayer } from '../../config-repair-sweep.ts';
@@ -77,6 +77,17 @@ export async function start(
   print(ok(`serving ${style.bold(endpoint.url)}`));
   print(style.dim(`      profiles: ${endpoint.profiles.join(', ')}`));
 
+  // Written here rather than inside `startEndpoint`, for the reason the owner
+  // repair above gives: the container entrypoint calls that too, and a deployed
+  // revision must not write into its own workspace (ADR-007). A deployment's
+  // address comes from the platform anyway. This is the control plane, on a
+  // local root, recording the one fact no other command can work out — see
+  // `endpoint-record.ts` and ADR-074.
+  await writeEndpointRecord(resolution.workspaceRoot, {
+    url: endpoint.url,
+    profiles: endpoint.profiles,
+  });
+
   // Last, not first: the endpoint is what someone ran this for, and a version
   // note in front of it would be the first thing they read and the least useful.
   const stale = await staleNudge();
@@ -85,6 +96,11 @@ export async function start(
   print(style.dim('Ctrl-C to stop.'));
 
   const shutdown = async (): Promise<void> => {
+    // Before the socket closes, so the window in which the record names a live
+    // pid and a dead listener is as small as this can make it. A `kill -9`
+    // leaves it behind regardless, which is what the pid check on the read side
+    // is for.
+    await clearEndpointRecord(resolution.workspaceRoot);
     await endpoint.stop();
     process.exit(0);
   };

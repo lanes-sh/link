@@ -1,7 +1,8 @@
-import { PAIR_TOKEN_REF, readConnections } from '#profile';
+import { PAIR_TOKEN_REF } from '#profile';
 import type { Runtime } from '#cli/runtime.ts';
 import type { Logger } from '#connectivity';
 import type { ProfileRuntime } from '../mcp/visibility.ts';
+import { connectionRows } from './connections.ts';
 import { cachedPairingCredential } from './credential.ts';
 import type { ReadDeps } from './routes.ts';
 import type { DataSurface } from '#cli/owner-data/surface.ts';
@@ -41,8 +42,7 @@ export function deployedReadDeps(input: {
     workspace: primary.target,
     profiles: input.profiles,
     audit: primary.audit,
-    connections: async () =>
-      (await readConnections(primary.resolution.workspaceRoot)).connections,
+    connections: () => connectionRows(primary),
     // The names the dashboard shows for a row nobody has labelled. From the
     // registry rather than a catalogue, so the owner layer, the vendors and a
     // workspace's own manifests are all named the same way.

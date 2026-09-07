@@ -18,7 +18,9 @@ import {
 import { parseDocument } from 'yaml';
 import { rm } from 'node:fs/promises';
 import { terminalPrompter, type Prompter } from '../../prompt.ts';
+import { confirmedByName } from './confirm.ts';
 import { recordConfigChange } from '../../audit-change.ts';
+import { nextAfterEdit, publishProfileEdit } from '../../publish.ts';
 import { announceProfile, emit, fail, ok, print, style } from '../../output.ts';
 import {
   buildRegistryWithWorkspace,
@@ -185,35 +187,6 @@ export async function executeRemoval(
   };
 }
 
-export async function confirmedByName(
-  profile: string,
-  options: { yes?: boolean | undefined; prompter?: Prompter | undefined },
-): Promise<boolean> {
-  if (options.yes) return true;
-
-  // A prompter that was passed in is the caller's answer to "is there anyone
-  // to ask" — the console passes one that replays a form. Only the default
-  // needs stdin consulted, and conflating the two makes an injected prompter
-  // untestable and a real terminal the only place this works.
-  const prompter = options.prompter ?? terminalPrompter;
-  const someoneToAsk = options.prompter ? prompter.interactive : process.stdin.isTTY;
-
-  if (!someoneToAsk) {
-    throw new ConfigError(
-      `Removing "${profile}" cannot be undone, and stdin is not a terminal, so there is nobody to ask. Pass --yes to proceed.`,
-    );
-  }
-
-  const typed = (await prompter.ask(`Type ${profile} to remove it, or anything else to stop`))
-    .trim();
-
-  if (typed !== profile) {
-    print(style.dim('  cancelled — nothing was removed'));
-    return false;
-  }
-  return true;
-}
-
 export interface RemoveFlags extends GlobalFlags {
   readonly dryRun?: boolean | undefined;
   readonly yes?: boolean | undefined;
@@ -313,10 +286,34 @@ export async function removeProfile(
     arguments: { connections: config.grants.map((grant) => grant.connection) },
   });
 
+  // And the endpoint is told, as it is told about every other config edit
+  // (ADR-074) — but more urgently than any of them. It holds the profiles it
+  // listed at boot, so without this a profile that has been *removed*, with its
+  // credentials and its stores deleted, stayed reachable until the revision
+  // happened to restart: the operator believing they had revoked something they
+  // had not. Wrapped because the removal has already happened and a failure to
+  // announce it cannot undo it; `publishWorkspace` copies what the local store
+  // has, which no longer includes this profile, so nothing here can put the
+  // file back. A throw is reported as nothing — `renderOutcome` owns the exit
+  // code, derived from what survived on the stores.
+  let published: string | undefined;
+  try {
+    const resolution = { workspaceRoot: root, profile: name };
+    published = nextAfterEdit(await publishProfileEdit({ resolution, config, target }));
+  } catch {
+    // See above.
+  }
+
   // Returned as well as rendered, so a caller that is not a terminal can read
-  // `survived` — the difference between removed and half-removed.
-  emit(flags.json, outcome, () => renderOutcome(outcome));
-  return outcome;
+  // `survived` — the difference between removed and half-removed. `emit`
+  // answers `void`, so the value has to be built here and handed back; the
+  // control plane reports a survivor as a failure and cannot see one otherwise.
+  const answer = { ...outcome, ...(published ? { published } : {}) };
+  await emit(flags.json, answer, () => {
+    renderOutcome(outcome);
+    if (published) print(style.dim(`  ${published}`));
+  });
+  return answer;
 }
 
 /** `profiles/<name>.yaml`, however the path was spelled for display. */

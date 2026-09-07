@@ -402,11 +402,14 @@ refresh, not per call, so a machine offline for a day keeps serving.
 
 `lanes link start` refuses without a session, and names the command.
 
-A profile declares who may consume it, and **empty means nobody**:
+A profile declares who may consume it, and **empty means nobody**. `profile add`
+puts the signed-in subject on the profile it creates, so there is no step to
+suggest after creating one. A profile made before anyone signed in has nobody on
+it, and that is what the first command below is for:
 
 ```
-lanes link profile members add --me --profile assistant --workspace local
 lanes link profile members list --profile assistant --workspace local
+lanes link profile members add --me --profile assistant --workspace local
 ```
 
 That list is a selection from the Lanes workspace rather than a second list
