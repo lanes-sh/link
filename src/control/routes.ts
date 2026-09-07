@@ -15,6 +15,7 @@ import { json, notFound, type Route } from './routing.ts';
 // this surface claims and what answers them are one fact from outside.
 export { isControlPath } from './routing.ts';
 import { ACCESS_ROUTES } from './access-routes.ts';
+import { CONNECT_ROUTES } from './connect-routes.ts';
 import { loadWorkspaceProfiles } from '#profile';
 import { READS, WIDENS, permits, workspaceRootFor } from './authorise.ts';
 import type { ControlAssertion } from './assertion.ts';
@@ -261,5 +262,5 @@ function match(
 
 
 
-const ROUTES: readonly Route[] = [...PROFILE_ROUTES, ...ACCESS_ROUTES];
+const ROUTES: readonly Route[] = [...PROFILE_ROUTES, ...ACCESS_ROUTES, ...CONNECT_ROUTES];
 
