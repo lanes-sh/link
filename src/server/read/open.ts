@@ -1,10 +1,11 @@
 import { X509Certificate } from 'node:crypto';
-import { PAIR_CERT_REF, PAIR_KEY_REF, PAIR_TOKEN_REF, readConnections } from '#profile';
+import { PAIR_CERT_REF, PAIR_KEY_REF, PAIR_TOKEN_REF } from '#profile';
 import type { Runtime } from '#cli/runtime.ts';
 import type { Logger } from '#connectivity';
 import type { RunningServer } from '../index.ts';
 import type { ProfileRuntime } from '../mcp/visibility.ts';
 import type { DataSurface } from '#cli/owner-data/surface.ts';
+import { connectionRows } from './connections.ts';
 import { directPairingCredential } from './credential.ts';
 import { serveRead, type RunningReadListener } from './listener.ts';
 
@@ -62,8 +63,7 @@ export async function openReadListener(
       workspace: primary.target,
       profiles,
       audit: primary.audit,
-      connections: async () =>
-        (await readConnections(primary.resolution.workspaceRoot)).connections,
+      connections: () => connectionRows(primary),
       // The names the dashboard shows for a row nobody has labelled. From the
       // registry rather than a catalogue, so the owner layer, the vendors and a
       // workspace's own manifests are all named the same way.
