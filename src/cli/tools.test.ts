@@ -162,6 +162,57 @@ describe('vendored specs yield registrable tools', () => {
   );
 
   /**
+   * The size neither budget above measures: every vendored provider at once.
+   *
+   * `BUDGET_KB` is a floor under one runaway schema and `SURFACE_BUDGET_KB` a
+   * floor under one runaway provider. Both are per-something, so both stay green
+   * while the number that actually reaches a client grows one comfortable
+   * provider at a time — which is the only way this has ever grown. Nothing was
+   * watching the sum, and the sum is what decides whether a hosted client
+   * accepts the response and whether a client defers the tools behind a search
+   * of its own (ADR-075).
+   *
+   * Not a per-profile figure, because there is no such thing to assert: what one
+   * endpoint serves depends on which accounts are connected and what policy
+   * allows. This is the ceiling the vendored specs can contribute, which is the
+   * part a change to this repository can move.
+   *
+   * The headroom is deliberate and narrower than the two above. Those are set to
+   * catch an order of magnitude — an un-`opaque`d union, a `$ref` fan-out — and
+   * a single tool going wrong is already caught by them. What this catches is
+   * accumulation, so it is set close enough that adding a provider is noticed
+   * and raised on purpose rather than absorbed. Raising it is the normal
+   * outcome; doing so silently is not.
+   */
+  const ENDPOINT_BUDGET_KB = 512;
+
+  test('every vendored provider together stays inside the endpoint budget', async () => {
+    const measured = await Promise.all(
+      httpProviders.map(async (manifest) => {
+        const connector = manifest.connector as { base_url: string; openapi: string };
+        const capabilities = await createHttpConnector({
+          baseUrl: connector.base_url,
+          openapi: connector.openapi,
+        }).discover({ manifest });
+
+        return capabilities.reduce(
+          (total, { title, description, inputSchema }) =>
+            total + JSON.stringify({ title, description, inputSchema }).length,
+          0,
+        );
+      }),
+    );
+
+    const kb = Math.round(measured.reduce((total, bytes) => total + bytes, 0) / 1024);
+
+    // Reported rather than merely compared: raising this should be an informed
+    // decision, and the number to raise it to is the one the failure is holding.
+    expect(`${kb}KB of ${ENDPOINT_BUDGET_KB}KB`).toBe(
+      `${Math.min(kb, ENDPOINT_BUDGET_KB)}KB of ${ENDPOINT_BUDGET_KB}KB`,
+    );
+  });
+
+  /**
    * A hint that is declared but not delivered.
    *
    * `specs.test.ts` checks that a `hints` key names a real capability. This
