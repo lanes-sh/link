@@ -5,6 +5,7 @@ export const paddle = defineProvider({
   id: 'paddle',
   name: 'Paddle',
   description: 'Products, prices, subscriptions, and transactions, via Paddle\'s official MCP server.',
+  keywords: ['payment', 'subscription', 'invoice', 'billing', 'checkout'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.paddle.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

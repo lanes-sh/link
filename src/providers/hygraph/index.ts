@@ -5,6 +5,7 @@ export const hygraph = defineProvider({
   id: 'hygraph',
   name: 'Hygraph',
   description: 'Content entries, models, and schema, via Hygraph\'s official MCP server.',
+  keywords: ['cms', 'content', 'graphql', 'schema', 'publishing'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.hygraph.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

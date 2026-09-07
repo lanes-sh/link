@@ -172,13 +172,37 @@ const invoke = (
 const parsed = (result: ToolResult): Record<string, unknown> =>
   JSON.parse((result.content[0] as { text?: string }).text!);
 
+const CONTEXT = {
+  manifest: { id: 'icloud_calendar', name: 'iCloud Calendar', keywords: ['meeting', 'invite'] },
+} as unknown as DiscoveryContext;
+
+
+/**
+ * The searchable fields, applied by the connector rather than by the caller.
+ *
+ * `titleFor` and `withKeywords` are unit-tested in `../searchability.test.ts`,
+ * and that was the whole of it for a while — which missed the actual defect,
+ * because the helpers were right and this connector was not calling them. A
+ * fixed capability set is written here and returned from `discover` as it
+ * stands, so there was no rewriting step to apply them in.
+ */
 describe('discovery', () => {
+  test('the searchable fields are applied to a fixed capability set', async () => {
+    const capabilities = await calendarConnector(harness().doFetch).discover(CONTEXT);
+
+    expect(capabilities.every((capability) => capability.title !== undefined)).toBe(true);
+    expect(capabilities.every((capability) => capability.description.includes('Also:'))).toBe(true);
+    expect(capabilities.find((capability) => capability.name === 'list_calendars')?.title).toBe(
+      'iCloud Calendar: list calendars',
+    );
+  });
+
   test('capabilities carry no account-specific routing', async () => {
     // The discovery cache is keyed by provider, so a partition host in `target`
     // would point a second Apple Account at the first one's calendars.
     const connector = calendarConnector(harness().doFetch);
 
-    for (const capability of await connector.discover({} as DiscoveryContext)) {
+    for (const capability of await connector.discover(CONTEXT)) {
       expect(Object.keys(capability.target ?? {})).toEqual(['operation']);
       expect(JSON.stringify(capability.target)).not.toContain('icloud.com');
     }
@@ -191,10 +215,10 @@ describe('discovery', () => {
       fetch: harness().doFetch,
     });
 
-    const calendarNames = (await calendarConnector(harness().doFetch).discover({} as DiscoveryContext)).map(
+    const calendarNames = (await calendarConnector(harness().doFetch).discover(CONTEXT)).map(
       (c) => c.name,
     );
-    const contactNames = (await contacts.discover({} as DiscoveryContext)).map((c) => c.name);
+    const contactNames = (await contacts.discover(CONTEXT)).map((c) => c.name);
 
     expect(calendarNames).toEqual([
       'list_calendars',

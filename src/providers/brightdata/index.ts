@@ -5,6 +5,7 @@ export const brightdata = defineProvider({
   id: 'brightdata',
   name: 'Bright Data',
   description: 'Web scraping, search results, and datasets, via Bright Data\'s official MCP server.',
+  keywords: ['scraping', 'proxy', 'web data', 'crawler', 'dataset'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.brightdata.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

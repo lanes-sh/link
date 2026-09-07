@@ -5,6 +5,7 @@ export const netlify = defineProvider({
   id: 'netlify',
   name: 'Netlify',
   description: 'Sites, deploys, functions, and environment variables, via Netlify\'s official MCP server.',
+  keywords: ['deployment', 'hosting', 'build', 'domain', 'site'],
   connector: { kind: 'mcp', endpoint: 'https://netlify-mcp.netlify.app/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

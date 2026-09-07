@@ -5,6 +5,7 @@ export const dropbox = defineProvider({
   id: 'dropbox',
   name: 'Dropbox',
   description: 'Files, folders, shared links, and file requests, via Dropbox\'s official MCP server.',
+  keywords: ['file', 'folder', 'upload', 'download', 'storage'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.dropbox.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

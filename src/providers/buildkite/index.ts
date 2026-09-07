@@ -5,6 +5,7 @@ export const buildkite = defineProvider({
   id: 'buildkite',
   name: 'Buildkite',
   description: 'Pipelines, builds, jobs, and artifacts, via Buildkite\'s official MCP server.',
+  keywords: ['ci', 'pipeline', 'build', 'deployment', 'agent'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.buildkite.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

@@ -9,6 +9,7 @@ export { createLocalConnector } from './local/index.ts';
 export {
   createMcpConnector,
   inferBundle,
+  searchableCapabilities,
   shortenName,
   titleFor,
   withKeywords,

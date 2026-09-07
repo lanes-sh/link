@@ -5,6 +5,7 @@ export const riverside = defineProvider({
   id: 'riverside',
   name: 'Riverside',
   description: 'Recordings, transcripts, and clips, via Riverside\'s official MCP server.',
+  keywords: ['recording', 'podcast', 'video', 'transcript', 'studio'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.riverside.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

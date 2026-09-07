@@ -14,6 +14,7 @@ export const atlassian = defineProvider({
   name: 'Atlassian',
   description:
     'Jira issues, Confluence pages, and Compass components, via Atlassian\'s official MCP server.',
+  keywords: ['jira', 'confluence', 'issue', 'ticket', 'wiki'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.atlassian.com/v1/mcp/authv2' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

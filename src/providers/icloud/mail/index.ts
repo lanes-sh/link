@@ -5,6 +5,7 @@ export const icloudMail = defineProvider({
   id: 'icloud_mail',
   name: 'iCloud Mail',
   description: 'Read, search, and send mail in an iCloud mailbox over IMAP and SMTP.',
+  keywords: ['email', 'message', 'inbox', 'reply', 'correspondence'],
   connector: {
     kind: 'imap',
     host: 'imap.mail.me.com',

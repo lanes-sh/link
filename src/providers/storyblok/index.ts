@@ -5,6 +5,7 @@ export const storyblok = defineProvider({
   id: 'storyblok',
   name: 'Storyblok',
   description: 'Stories, components, assets, and spaces, via Storyblok\'s official MCP server.',
+  keywords: ['cms', 'content', 'story', 'publishing', 'component'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.storyblok.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

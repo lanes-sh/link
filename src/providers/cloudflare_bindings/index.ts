@@ -9,6 +9,7 @@ export const cloudflareBindings = defineProvider({
   id: 'cloudflare_bindings',
   name: 'Cloudflare Bindings',
   description: 'Workers KV, R2, D1, and Durable Objects, via Cloudflare\'s official MCP server.',
+  keywords: ['worker', 'kv', 'r2', 'd1', 'edge'],
   connector: { kind: 'mcp', endpoint: 'https://bindings.mcp.cloudflare.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

@@ -5,6 +5,7 @@ export const tavily = defineProvider({
   id: 'tavily',
   name: 'Tavily',
   description: 'Web search and page content extraction, via Tavily\'s official MCP server.',
+  keywords: ['search', 'web search', 'research', 'query', 'answer'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.tavily.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

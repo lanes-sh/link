@@ -5,6 +5,7 @@ export const klaviyo = defineProvider({
   id: 'klaviyo',
   name: 'Klaviyo',
   description: 'Profiles, lists, segments, campaigns, and flows, via Klaviyo\'s official MCP server.',
+  keywords: ['email marketing', 'campaign', 'segment', 'subscriber', 'flow'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.klaviyo.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

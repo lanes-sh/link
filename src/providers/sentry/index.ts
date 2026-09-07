@@ -5,6 +5,7 @@ export const sentry = defineProvider({
   id: 'sentry',
   name: 'Sentry',
   description: 'Issues, events, stack traces, and releases, via Sentry\'s official MCP server.',
+  keywords: ['error', 'exception', 'crash', 'stack trace', 'monitoring'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.sentry.dev/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

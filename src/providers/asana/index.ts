@@ -5,6 +5,7 @@ export const asana = defineProvider({
   id: 'asana',
   name: 'Asana',
   description: 'Tasks, projects, portfolios, and workspaces, via Asana\'s official MCP server.',
+  keywords: ['task', 'project', 'todo', 'assignment', 'workflow'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.asana.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
   /**

@@ -5,6 +5,7 @@ export const airtable = defineProvider({
   id: 'airtable',
   name: 'Airtable',
   description: 'Bases, tables, records, fields, and schema, via Airtable\'s official MCP server.',
+  keywords: ['table', 'record', 'database', 'spreadsheet', 'base'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.airtable.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

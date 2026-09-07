@@ -13,6 +13,7 @@ export const yahooMail = defineProvider({
   name: 'Yahoo Mail',
   description:
     'Read, search, and send mail in a Yahoo mailbox over IMAP and SMTP, with an app password.',
+  keywords: ['email', 'message', 'inbox', 'reply', 'correspondence'],
   connector: {
     kind: 'imap',
     host: 'imap.mail.yahoo.com',

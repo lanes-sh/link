@@ -5,6 +5,7 @@ export const fastmailCalendar = defineProvider({
   id: 'fastmail_calendar',
   name: 'Fastmail Calendar',
   description: 'Read and create events in Fastmail calendars over CalDAV.',
+  keywords: ['meeting', 'invite', 'appointment', 'schedule', 'availability'],
   connector: { kind: 'dav', base_url: 'https://caldav.fastmail.com', service: 'caldav' },
   auth: { kind: 'basic', app: FASTMAIL_APP },
   identity: { kind: 'connector' },

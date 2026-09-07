@@ -5,6 +5,7 @@ export const icloudContacts = defineProvider({
   id: 'icloud_contacts',
   name: 'iCloud Contacts',
   description: 'Search and read contacts in an iCloud address book over CardDAV.',
+  keywords: ['address book', 'directory', 'people', 'email address'],
   connector: { kind: 'dav', base_url: 'https://contacts.icloud.com', service: 'carddav' },
   auth: { kind: 'basic', app: ICLOUD_APP },
   identity: { kind: 'connector' },

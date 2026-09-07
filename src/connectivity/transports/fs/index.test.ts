@@ -226,9 +226,33 @@ describe('writing', () => {
   });
 });
 
+const CONTEXT = {
+  manifest: { id: 'icloud_drive', name: 'iCloud Drive', keywords: ['document', 'storage'] },
+} as unknown as DiscoveryContext;
+
+
+/**
+ * The searchable fields, applied by the connector rather than by the caller.
+ *
+ * `titleFor` and `withKeywords` are unit-tested in `../searchability.test.ts`,
+ * and that was the whole of it for a while — which missed the actual defect,
+ * because the helpers were right and this connector was not calling them. A
+ * fixed capability set is written here and returned from `discover` as it
+ * stands, so there was no rewriting step to apply them in.
+ */
 describe('discovery', () => {
+  test('the searchable fields are applied to a fixed capability set', async () => {
+    const capabilities = await connector().discover(CONTEXT);
+
+    expect(capabilities.every((capability) => capability.title !== undefined)).toBe(true);
+    expect(capabilities.every((capability) => capability.description.includes('Also:'))).toBe(true);
+    expect(capabilities.find((capability) => capability.name === 'list_files')?.title).toBe(
+      'iCloud Drive: list files',
+    );
+  });
+
   test('the capability set, and no account-specific routing', async () => {
-    const capabilities = await connector().discover({} as DiscoveryContext);
+    const capabilities = await connector().discover(CONTEXT);
 
     expect(capabilities.map((capability) => capability.name).sort()).toEqual([
       'create_folder',
@@ -246,7 +270,7 @@ describe('discovery', () => {
   });
 
   test('nothing offers a permanent delete', async () => {
-    const capabilities = await connector().discover({} as DiscoveryContext);
+    const capabilities = await connector().discover(CONTEXT);
     const names = capabilities.map((capability) => capability.name);
 
     // The only removal on offer moves to the Trash, which is recoverable.
@@ -262,6 +286,6 @@ describe('discovery', () => {
       exclude: [],
     });
 
-    expect(elsewhere.discover({} as DiscoveryContext)).rejects.toThrow(/only works where they are/);
+    expect(elsewhere.discover(CONTEXT)).rejects.toThrow(/only works where they are/);
   });
 });

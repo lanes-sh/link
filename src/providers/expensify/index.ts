@@ -5,6 +5,7 @@ export const expensify = defineProvider({
   id: 'expensify',
   name: 'Expensify',
   description: 'Expenses, reports, and receipts, via Expensify\'s official MCP server.',
+  keywords: ['expense', 'receipt', 'reimbursement', 'report', 'spending'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.expensify.com/mcp/' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

@@ -143,6 +143,35 @@ export function withKeywords(description: string, keywords: readonly string[] = 
 }
 
 /**
+ * Both of the above, over a capability set a connector already holds.
+ *
+ * `http` and `mcp` apply the two helpers as they build each tool, because both
+ * are turning something foreign — an OpenAPI operation, an upstream tool — into
+ * ours and are already rewriting every field. `dav`, `imap` and `fs` are not:
+ * their capability sets are fixed in code, written here, and returned from
+ * `discover` as they stand. So they had no rewriting step to apply this in, and
+ * for the same reason nobody noticed they were skipping it.
+ *
+ * The result was a whole class of provider with no `title` at all and no way to
+ * benefit from `keywords` even once its manifest declared some: thirteen
+ * providers, every mailbox that is not Gmail among them. This is the rewriting
+ * step, so that a fixed set is as findable as a discovered one.
+ *
+ * A `title` already on the capability wins, on the same principle `titleFor`
+ * states for an upstream one: whoever wrote it knew more than a synthesis does.
+ */
+export function searchableCapabilities(
+  capabilities: readonly DiscoveredCapability[],
+  manifest: { readonly name: string; readonly keywords?: readonly string[] | undefined },
+): DiscoveredCapability[] {
+  return capabilities.map((capability) => ({
+    ...capability,
+    title: capability.title ?? titleFor(manifest.name, capability.name),
+    description: withKeywords(capability.description, manifest.keywords),
+  }));
+}
+
+/**
  * Turn an upstream transport error into something readable.
  *
  * The SDK reports a bad HTTP status by appending the whole response body,
