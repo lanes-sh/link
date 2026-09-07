@@ -50,6 +50,7 @@ export const sheets = defineProvider({
   name: 'Google Sheets',
   description:
     'Read and edit spreadsheet cells — ranges, appends, and structural changes like tabs, formatting, and frozen rows — via the Sheets REST API.',
+  keywords: ['table', 'csv', 'row', 'column', 'formula'],
   connector: {
     kind: 'http',
     base_url: 'https://sheets.googleapis.com',

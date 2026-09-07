@@ -43,6 +43,7 @@ export const calendar = defineProvider({
   name: 'Google Calendar',
   description:
     'Read and write calendar events — list, search, create, reschedule, and cancel — and answer when you are free, via the Calendar REST API.',
+  keywords: ['meeting', 'invite', 'appointment', 'schedule', 'availability'],
   connector: {
     kind: 'http',
     base_url: 'https://www.googleapis.com/calendar/v3',
