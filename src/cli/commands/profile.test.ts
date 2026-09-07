@@ -5,7 +5,7 @@ import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { emit } from '../output.ts';
-import { createProfile, profileList, readProfiles } from './profile.ts';
+import { createProfile, profileAdd, profileList, publishedAfterCreate, readProfiles } from './profile.ts';
 
 /**
  * `lanes link profile`, and the `--json` guard every machine-readable command
@@ -244,5 +244,77 @@ describe('profile list --json', () => {
     const written = await captureStdout(() => profileList('local', { json: true }));
 
     expect(JSON.parse(written)).toMatchObject({ profiles: [] });
+  });
+});
+
+/**
+ * A new profile has to reach the endpoint that will serve it.
+ *
+ * `profile add` was the one config-writing command that wrote its file and told
+ * nobody, while `connect`, `grant`, `members`, `policy`, `identity`, `relabel`
+ * and `connection` all end on `publishProfileEdit`. On a deployed workspace
+ * that made a profile durable and invisible: a running endpoint lists the
+ * profiles at boot and at a reload and at no other time, so the bucket held it
+ * and `/state` — and so the dashboard, and every client — did not, until the
+ * revision happened to restart.
+ *
+ * These sit on `profileAdd` rather than `createProfile` deliberately. The split
+ * between the two is what hid the gap in the first place: every existing test
+ * here drives the data function, and the publish belongs to the wrapper.
+ */
+describe('a created profile is published to the endpoint that serves it', () => {
+  test('a served edit says so, and says how a client picks it up', () => {
+    const line = publishedAfterCreate({ served: true, tools: 26 });
+
+    expect(line).toContain('Serving it now');
+    expect(line).toContain('26 tools');
+  });
+
+  test('a deployed target reports even when nothing answered', () => {
+    // The case this whole change exists for. The config is in the bucket, so
+    // the next boot serves it — but the revision running *now* does not, and
+    // silence is precisely what made that a surprise worth debugging.
+    const line = publishedAfterCreate({
+      served: false,
+      published: 'gs://bucket-name',
+      url: 'https://service.example.com/reload',
+      reason: 'no endpoint answered',
+    });
+
+    expect(line).toContain('no endpoint answered');
+    expect(line).toContain('when it next starts');
+  });
+
+  test('a workspace that publishes nowhere and answers nothing says nothing', () => {
+    // `profile add` is the first command anybody runs. Reporting that an
+    // endpoint could not be notified, as the first sentence this CLI prints,
+    // describes an endpoint they have not set up yet — and nothing is holding a
+    // stale view of a profile that did not exist a moment ago.
+    expect(
+      publishedAfterCreate({
+        served: false,
+        url: 'http://127.0.0.1:7337/reload',
+        reason: 'no static token is issued in this workspace, so the endpoint cannot be notified',
+      }),
+    ).toBeUndefined();
+  });
+
+  test('a fresh workspace still creates the profile, and stays quiet about it', async () => {
+    // The regression guard for the wrapping. `profile add` is the command that
+    // may have *just written* the workspace it publishes to, so the credential
+    // store the notify authenticates with can be opened before one exists — and
+    // a creation that succeeded must never report failure.
+    const root = join(await mkdtemp(join(tmpdir(), 'lanes-link-publish-')), 'workspace');
+    roots.push(root);
+    process.env['LANES_LINK_HOME'] = root;
+
+    const printed = await captureStdout(async () => {
+      await profileAdd('personal', { targets: ['local'], nonInteractive: true, json: true });
+    });
+
+    const parsed = JSON.parse(printed) as { name: string; published?: string };
+    expect(parsed.name).toBe('personal');
+    expect(parsed.published).toBeUndefined();
+    expect(existsSync(join(root, 'profiles', 'personal', 'profile.yaml'))).toBe(true);
   });
 });

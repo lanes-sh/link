@@ -86,6 +86,7 @@ Run.
 | [068](068-a-credential-names-a-person.md) | A credential names a person, and the profiles follow from that; the endpoint token becomes the workspace's |
 | [069](069-a-pairing-token-may-write-the-owners-own-data.md) | A pairing token may write the owner's own data; the control plane is unmoved |
 | [073](073-a-connection-names-its-own-account.md) | A connection names its own account; the operator is asked last, and never handed a uuid to live with |
+| [074](074-the-endpoint-records-where-it-bound.md) | The endpoint records where it bound, so an edit reaches the one that is running rather than a port derived from the profile it edited |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 

@@ -154,3 +154,10 @@ export {
   legacyProfileConfig,
   layout,
 } from './layout.ts';
+
+export {
+  clearEndpointRecord,
+  readEndpointRecord,
+  writeEndpointRecord,
+  type EndpointRecord,
+} from './endpoint-record.ts';
