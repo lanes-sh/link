@@ -66,6 +66,39 @@ talking to their server.
 writes credentials. Running it changes something outside the repository that a `git checkout`
 cannot undo. Get to a green `bun test` unattended, then stop and ask.
 
+## Prove a fix against a real deployment before releasing it
+
+A release publishes to npm, and npm does not take a version back. So a fix whose whole point is
+how a *deployed* endpoint behaves gets tested on one first, from the branch, and is released only
+once that worked.
+
+It works because `installRoot` walks up from the running module to the nearest `package.json`,
+so running the CLI out of a worktree makes the worktree the thing `gcloud builds submit` tarballs:
+
+```console
+$ cd .worktrees/<name>
+$ bun run ./src/cli/lanes.ts link deploy --workspace <target>
+```
+
+That builds an image from the branch and rolls a revision on a real target. Three things about it:
+
+- **`LANES_LINK_HOME` stays unset for this, deliberately** — the opposite of the rule above,
+  because the point is to reach a real deployment. So the target is the operator's, the deploy is
+  theirs to authorise, and a broken revision is theirs to live with until the next one. Ask.
+- **A previous revision is still there.** Cloud Run keeps them and traffic can be moved back, which
+  is what makes this recoverable and a bad npm publish not.
+- **Verify against the endpoint, not the command's exit code.** `POST /reload` returns the
+  generation it now serves — `{reloaded, epoch, profiles, tools}` — which is the only surface that
+  answers "what is this instance actually holding" without a pairing token. `/health` answers the
+  same question filtered to the caller's own member profiles, so a profile missing from it may be a
+  membership problem rather than a serving one. Check both before believing either.
+
+A profile is the case that keeps proving this. `deploy` binds one secret per profile into the
+revision, so a profile created *since* the last deploy cannot be opened by the running one however
+many times it re-reads its config — and `openReconciled` skips a profile it cannot open rather
+than failing the endpoint for its siblings. Adding a profile to a deployed target is therefore two
+steps, and the second one is a deploy.
+
 ## A release publishes, and npm does not give a version back
 
 [The development lifecycle](https://lanes.sh/docs/link/releasing) is the lifecycle end to end — the two
