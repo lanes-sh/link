@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { workspaceYaml } from '#profile/testing.ts';
+import { assertGrantsResolve, loadProfileConfig, readConnections } from '#profile';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -316,5 +317,97 @@ describe('a created profile is published to the endpoint that serves it', () => 
     expect(parsed.name).toBe('personal');
     expect(parsed.published).toBeUndefined();
     expect(existsSync(join(root, 'profiles', 'personal', 'profile.yaml'))).toBe(true);
+  });
+});
+
+/**
+ * A new profile grants the connections this workspace holds.
+ *
+ * The template used to pair each owner-layer surface with a fixed id, which is
+ * true only of a workspace the same template seeded. `connections.yaml` numbers
+ * its rows in creation order, so a workspace whose owner layer arrived in a
+ * different order holds `lanes_memory` somewhere other than `lan1` — and a
+ * profile added to it named seven connections that were not there.
+ *
+ * What made that expensive to find is what happens next. `assertGrantsResolve`
+ * refuses the profile at load, and `openReconciled` skips a profile it cannot
+ * open rather than failing the endpoint for its siblings. So the profile was
+ * written, refused and skipped: it listed under `profile list`, which reads the
+ * directory, and appeared in nothing that reads config. On a deployed workspace
+ * the only trace was one line in the endpoint's log.
+ */
+describe('the owner layer is granted by id, not by assumption', () => {
+  /** A workspace whose owner layer is numbered in a different order. */
+  async function shuffled(): Promise<string> {
+    const root = await workspace();
+    await writeFile(
+      join(root, 'connections.yaml'),
+      [
+        'contract: 5',
+        '',
+        'connections:',
+        '  - { id: lan1, provider: lanes_setup, account: Setup }',
+        '  - { id: lan2, provider: lanes_memory, account: Memory }',
+        '  - { id: lan3, provider: lanes_skills, account: Skills }',
+        '  - { id: lan4, provider: lanes_tasks, account: Tasks }',
+        '  - { id: lan5, provider: lanes_assets, account: Assets }',
+        '  - { id: lan6, provider: lanes_vault, account: Vault }',
+        '  - { id: lan7, provider: lanes_entities, account: Entities }',
+        '',
+        'oauth_apps: {}',
+        'tokens: []',
+        '',
+      ].join('\n'),
+    );
+    return root;
+  }
+
+  test('every grant names a connection the workspace actually holds', async () => {
+    const root = await shuffled();
+    await createProfile('projects', { targets: ['local'] });
+
+    const written = await readFile(join(root, 'profiles', 'projects', 'profile.yaml'), 'utf8');
+
+    // The shuffled ids, not the template's. `lanes_memory` is lan2 here.
+    expect(written).toContain('connection: lanes_memory.lan2');
+    expect(written).toContain('connection: lanes_setup.lan1');
+    expect(written).not.toContain('connection: lanes_memory.lan1');
+  });
+
+  test('the profile it writes actually loads', async () => {
+    // The assertion that matters, because the grants resolving is only the
+    // mechanism. `resolveSelection` plus a load is what the endpoint does, and
+    // what silently skipped this profile before.
+    const root = await shuffled();
+    await createProfile('projects', { targets: ['local'] });
+
+    const { config } = await loadProfileConfig(root, 'projects');
+    const held = await readConnections(root);
+
+    expect(config.grants.map((grant) => grant.connection)).toContain('lanes_memory.lan2');
+    expect(() => assertGrantsResolve(config, held.connections)).not.toThrow();
+  });
+
+  test('a surface the workspace does not hold is left ungranted, not invented', async () => {
+    // Inventing a ref produces a profile that never loads. Leaving it out
+    // produces one that loads and is missing a surface, which `ensureOwnerLayer`
+    // repairs on the next `start` by writing both halves.
+    const root = await workspace();
+    await writeFile(
+      join(root, 'connections.yaml'),
+      ['contract: 5', '', 'connections:', '  - { id: lan1, provider: lanes_memory, account: Memory }', '', 'oauth_apps: {}', 'tokens: []', ''].join('\n'),
+    );
+
+    await createProfile('sparse', { targets: ['local'] });
+
+    // The parsed grants, not the file's text: the template's own header explains
+    // the surfaces by name, so a substring search finds `lanes_vault.` in a
+    // comment and says the grant is there.
+    const { config } = await loadProfileConfig(root, 'sparse');
+    const held = await readConnections(root);
+    const granted = config.grants.map((grant) => grant.connection);
+
+    expect(granted).toEqual(['lanes_memory.lan1']);
+    expect(() => assertGrantsResolve(config, held.connections)).not.toThrow();
   });
 });

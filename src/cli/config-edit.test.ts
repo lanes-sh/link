@@ -1,4 +1,4 @@
-import { newConnectionsTemplate, newProfileTemplate } from './config-templates.ts';
+import { newConnectionsTemplate, newProfileTemplate, TEMPLATE_SURFACES } from './config-templates.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { readdir } from 'node:fs/promises';
@@ -31,7 +31,7 @@ async function profileFile(contents?: string): Promise<{ root: string; path: str
   roots.push(root);
   await mkdir(join(root, 'profiles', 'personal'), { recursive: true });
   const path = join(root, 'profiles', 'personal', 'profile.yaml');
-  await writeFile(path, contents ?? newProfileTemplate('personal', 7337));
+  await writeFile(path, contents ?? newProfileTemplate('personal', 7337, TEMPLATE_SURFACES));
   return { root, path };
 }
 
@@ -490,7 +490,7 @@ oauth_apps: {}
   test('a fresh profile and workspace need no repair at all', async () => {
     // The check that keeps the template and the repair in one spelling. Two
     // spellings of one row is how they drift apart, and this is what notices.
-    const p = await pair(newProfileTemplate('personal', 7337), newConnectionsTemplate());
+    const p = await pair(newProfileTemplate('personal', 7337, TEMPLATE_SURFACES), newConnectionsTemplate());
 
     expect(repairLines(ensureOwnerLayer(p.connections, p.profile))).toEqual([]);
   });

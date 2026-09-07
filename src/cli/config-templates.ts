@@ -14,7 +14,78 @@ import { SUPPORTED_CONTRACT } from '#profile';
  * that catches it (ADR-050).
  */
 
-export function newProfileTemplate(profile: string, port: number, subject?: string): string {
+/**
+ * The owner layer a fresh workspace is seeded with, in one place.
+ *
+ * Both halves are generated from this: the rows `newConnectionsTemplate` writes
+ * into `connections.yaml`, and the refs `TEMPLATE_SURFACES` below hands a fresh
+ * profile. They were two literal lists, and `config-edit.test.ts` asserts a
+ * fresh profile needs no repair precisely because two spellings of one row is
+ * how they drift — so the assertion stays and the second spelling goes.
+ */
+const SEEDED_OWNER_LAYER: readonly { id: string; provider: string; account: string }[] = [
+  { id: 'lan1', provider: 'lanes_memory', account: 'Memory' },
+  { id: 'lan2', provider: 'lanes_tasks', account: 'Tasks' },
+  { id: 'lan3', provider: 'lanes_assets', account: 'Assets' },
+  { id: 'lan4', provider: 'lanes_skills', account: 'Skills' },
+  { id: 'lan5', provider: 'lanes_vault', account: 'Vault' },
+  { id: 'lan6', provider: 'lanes_setup', account: 'Setup' },
+  { id: 'lan7', provider: 'lanes_entities', account: 'Entities' },
+];
+
+/**
+ * What a workspace this template just seeded holds each surface under.
+ *
+ * For a caller creating the workspace and the profile in one go, and for the
+ * tests that pair the two templates. A caller adding a profile to a workspace
+ * that already exists must read that workspace instead: see `ownedSurfaces` in
+ * `commands/profile.ts`.
+ */
+export const TEMPLATE_SURFACES: OwnedSurfaces = new Map(
+  SEEDED_OWNER_LAYER.map(({ provider, id }) => [provider, `${provider}.${id}`]),
+);
+
+/**
+ * The owner-layer grants, against the ids this workspace actually holds.
+ *
+ * These used to be seven literal lines pairing each surface with a fixed id —
+ * `lanes_memory.lan1`, `lanes_tasks.lan2`, and so on — which is true only of a
+ * workspace this same template seeded. `connections.yaml` numbers its rows in
+ * the order they were created, so a workspace whose owner layer arrived in a
+ * different order holds `lanes_memory` under a different id, and a profile
+ * added to it named seven connections that were not there.
+ *
+ * `assertGrantsResolve` then refuses the profile at load, and `openReconciled`
+ * skips a profile it cannot open rather than failing the endpoint for its
+ * siblings — so the profile was written, refused, and skipped, and the only
+ * trace was a line in the endpoint's log. It listed under `profile list`,
+ * because that reads the directory, and appeared nowhere that reads config.
+ *
+ * So the caller resolves each surface against the target workspace and passes
+ * what it found. A surface with no row is left ungranted rather than guessed
+ * at: `ensureOwnerLayer` adds the row *and* the grant on the next `start`,
+ * which is a repair that works, where an unresolvable ref is a profile that
+ * never loads.
+ */
+export type OwnedSurfaces = ReadonlyMap<string, string>;
+
+function ownerGrantLines(owned: OwnedSurfaces): string {
+  const lines = [...owned].map(
+    ([provider, ref]) => `  - { connection: ${ref}, allow: [${provider}.*], deny: [] }`,
+  );
+
+  // `[]` rather than an absent key. The schema wants the field, and a profile
+  // with no owner layer is a real state on a workspace that has no
+  // `connections.yaml` rows yet.
+  return lines.length > 0 ? lines.join('\n') : '  []';
+}
+
+export function newProfileTemplate(
+  profile: string,
+  port: number,
+  owned: OwnedSurfaces,
+  subject?: string,
+): string {
   return `# Lanes Link profile: ${profile}
 #
 # A profile is a *selection*: which of the workspace's accounts this agent may
@@ -95,13 +166,7 @@ limits:
 #   deny: [lanes_skills.manage.*]  invoke procedures, do not write them
 #   deny: [lanes_vault.put, lanes_vault.remove]
 grants:
-  - { connection: lanes_memory.lan1, allow: [lanes_memory.*], deny: [] }
-  - { connection: lanes_tasks.lan2, allow: [lanes_tasks.*], deny: [] }
-  - { connection: lanes_assets.lan3, allow: [lanes_assets.*], deny: [] }
-  - { connection: lanes_skills.lan4, allow: [lanes_skills.*], deny: [] }
-  - { connection: lanes_vault.lan5, allow: [lanes_vault.*], deny: [] }
-  - { connection: lanes_setup.lan6, allow: [lanes_setup.*], deny: [] }
-  - { connection: lanes_entities.lan7, allow: [lanes_entities.*], deny: [] }
+${ownerGrantLines(owned)}
 
 # Who may consume this profile (ADR-060).
 #
@@ -186,13 +251,7 @@ export function newConnectionsTemplate(): string {
 contract: 5
 
 connections:
-  - { id: lan1, provider: lanes_memory, account: Memory }
-  - { id: lan2, provider: lanes_tasks, account: Tasks }
-  - { id: lan3, provider: lanes_assets, account: Assets }
-  - { id: lan4, provider: lanes_skills, account: Skills }
-  - { id: lan5, provider: lanes_vault, account: Vault }
-  - { id: lan6, provider: lanes_setup, account: Setup }
-  - { id: lan7, provider: lanes_entities, account: Entities }
+${SEEDED_OWNER_LAYER.map((row) => `  - { id: ${row.id}, provider: ${row.provider}, account: ${row.account} }`).join('\n')}
 
 # App registrations, shared by every connection of that vendor.
 oauth_apps: {}

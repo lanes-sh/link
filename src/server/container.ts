@@ -85,6 +85,21 @@ try {
         // into an image that will be replaced.
         log(`reconciled ${profile}\n${plan}`);
       },
+      // **A skipped profile was silent here, and that is what cost the time.**
+      // `openReconciled` skips a sibling it cannot open rather than failing the
+      // endpoint for the rest, which is right — but this reporter declared only
+      // `reconciled`, so the optional hook was a no-op and a deployed endpoint
+      // served a set smaller than its workspace with nothing anywhere saying
+      // which profile was missing or why.
+      //
+      // Two ways in, both real. A profile whose grants name a connection this
+      // workspace does not hold is refused at load. And a profile created since
+      // the last deploy has no per-profile secret bound into this revision, so
+      // opening its runtime fails until a deploy binds one — which reads,
+      // from outside, exactly like a profile that does not exist.
+      skipped({ profile, reason }) {
+        log(`not serving ${profile}: ${reason}`);
+      },
     },
   });
 
