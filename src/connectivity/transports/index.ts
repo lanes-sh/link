@@ -6,7 +6,15 @@
  */
 
 export { createLocalConnector } from './local/index.ts';
-export { createMcpConnector, inferBundle, type McpConnectorOptions } from './mcp/index.ts';
+export {
+  createMcpConnector,
+  inferBundle,
+  searchableCapabilities,
+  shortenName,
+  titleFor,
+  withKeywords,
+  type McpConnectorOptions,
+} from './mcp/index.ts';
 export {
   createHttpConnector,
   bundleForMethod,

@@ -13,7 +13,7 @@ import type { Generation } from './generation.ts';
  * unreadable since it shipped. Profiles, grants and members all worked, and an
  * agent could not reach a single thing behind them, because the only MCP
  * surface a hosted workspace had was one nobody could connect to: the runtime
- * is `--no-allow-unauthenticated` (ADR-075) and has no URL a client could be
+ * is `--no-allow-unauthenticated` (ADR-076) and has no URL a client could be
  * pointed at. The Data and Audit tabs said "not reachable from here yet" and
  * they were right.
  *

@@ -11,6 +11,25 @@
 
 export const SERVER_NAME = 'lanes-link';
 
+/**
+ * The tools this endpoint advertises that are not capabilities.
+ *
+ * Registered by `search.ts` rather than by the loop over what policy decided,
+ * so they are absent from `mergeCapabilities` and every count derived from it.
+ * They live here rather than there because three places need the names and one
+ * of them is `visibility.ts`, which `search.ts` imports — the constant moving
+ * up is what stops that being a cycle.
+ *
+ * Both of the places that add these are load-bearing rather than cosmetic.
+ * `visibleToolCount` is what `/reload` returns and what the endpoint logs, and
+ * ADR-032 exists because an operator compares that number against what their
+ * client shows. And `Generation.visible()` decides whether a `tools/call` is
+ * recorded as a refusal — so a name missing from it means every successful call
+ * to that tool triggers a config re-probe and writes an audit row saying the
+ * agent tried something that was not advertised.
+ */
+export const SURFACE_TOOL_NAMES: readonly string[] = ['lanes_tools_search', 'lanes_tools_call'];
+
 export function toolNameFor(capabilityId: string): string {
   return capabilityId.replace(/\./g, '_');
 }

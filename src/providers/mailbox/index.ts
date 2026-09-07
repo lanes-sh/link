@@ -22,6 +22,7 @@ export const mailbox = defineProvider({
   name: 'Mailbox (any IMAP server)',
   description:
     'Read, search, and send mail in any IMAP mailbox — a company server, or a host with no provider of its own.',
+  keywords: ['email', 'message', 'inbox', 'reply', 'correspondence'],
   connector: {
     kind: 'imap',
     host: '{imap_host}',

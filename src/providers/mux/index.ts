@@ -5,6 +5,7 @@ export const mux = defineProvider({
   id: 'mux',
   name: 'Mux',
   description: 'Video assets, live streams, and playback analytics, via Mux\'s official MCP server.',
+  keywords: ['video', 'streaming', 'encoding', 'playback', 'asset'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.mux.com' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

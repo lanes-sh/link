@@ -22,7 +22,7 @@ import { PROFILE_NAME, json, type Route } from './routing.ts';
  * in memory is written down — and `./oauth.ts` is the whole of that difference.
  *
  * **The API drives both legs and the browser never comes here.** This service is
- * not on the internet (ADR-075). The API holds the session that binds a callback
+ * not on the internet (ADR-076). The API holds the session that binds a callback
  * to the person who asked for it, holds the broker client secrets, and is where
  * the vendor's redirect lands. What arrives here is "start one" and "here is the
  * code".

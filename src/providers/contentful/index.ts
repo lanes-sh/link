@@ -5,6 +5,7 @@ export const contentful = defineProvider({
   id: 'contentful',
   name: 'Contentful',
   description: 'Entries, assets, content types, and spaces, via Contentful\'s official MCP server.',
+  keywords: ['cms', 'content', 'entry', 'publishing', 'model'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.contentful.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

@@ -162,6 +162,57 @@ describe('vendored specs yield registrable tools', () => {
   );
 
   /**
+   * The size neither budget above measures: every vendored provider at once.
+   *
+   * `BUDGET_KB` is a floor under one runaway schema and `SURFACE_BUDGET_KB` a
+   * floor under one runaway provider. Both are per-something, so both stay green
+   * while the number that actually reaches a client grows one comfortable
+   * provider at a time — which is the only way this has ever grown. Nothing was
+   * watching the sum, and the sum is what decides whether a hosted client
+   * accepts the response and whether a client defers the tools behind a search
+   * of its own (ADR-075).
+   *
+   * Not a per-profile figure, because there is no such thing to assert: what one
+   * endpoint serves depends on which accounts are connected and what policy
+   * allows. This is the ceiling the vendored specs can contribute, which is the
+   * part a change to this repository can move.
+   *
+   * The headroom is deliberate and narrower than the two above. Those are set to
+   * catch an order of magnitude — an un-`opaque`d union, a `$ref` fan-out — and
+   * a single tool going wrong is already caught by them. What this catches is
+   * accumulation, so it is set close enough that adding a provider is noticed
+   * and raised on purpose rather than absorbed. Raising it is the normal
+   * outcome; doing so silently is not.
+   */
+  const ENDPOINT_BUDGET_KB = 512;
+
+  test('every vendored provider together stays inside the endpoint budget', async () => {
+    const measured = await Promise.all(
+      httpProviders.map(async (manifest) => {
+        const connector = manifest.connector as { base_url: string; openapi: string };
+        const capabilities = await createHttpConnector({
+          baseUrl: connector.base_url,
+          openapi: connector.openapi,
+        }).discover({ manifest });
+
+        return capabilities.reduce(
+          (total, { title, description, inputSchema }) =>
+            total + JSON.stringify({ title, description, inputSchema }).length,
+          0,
+        );
+      }),
+    );
+
+    const kb = Math.round(measured.reduce((total, bytes) => total + bytes, 0) / 1024);
+
+    // Reported rather than merely compared: raising this should be an informed
+    // decision, and the number to raise it to is the one the failure is holding.
+    expect(`${kb}KB of ${ENDPOINT_BUDGET_KB}KB`).toBe(
+      `${Math.min(kb, ENDPOINT_BUDGET_KB)}KB of ${ENDPOINT_BUDGET_KB}KB`,
+    );
+  });
+
+  /**
    * A hint that is declared but not delivered.
    *
    * `specs.test.ts` checks that a `hints` key names a real capability. This
@@ -196,6 +247,101 @@ describe('vendored specs yield registrable tools', () => {
       expect(undelivered).toEqual([]);
     },
   );
+
+  /**
+   * Every capability of a provider carries that provider's search vocabulary.
+   *
+   * The same shape as the hint check above and a different failure. A `hints`
+   * entry names one capability, so a missed one costs that capability its
+   * sentence. `keywords` is provider-wide and appended per capability, so a
+   * transport that stopped consulting `manifest.keywords` would take the whole
+   * provider out of the index at once — and, exactly as with hints, would go on
+   * serving descriptions that look correct.
+   */
+  test.each(httpProviders.map((m) => [m.id, m] as const))(
+    '%s delivers its keywords on every capability',
+    async (_id, manifest) => {
+      const declared = manifest.keywords ?? [];
+      if (declared.length === 0) return;
+
+      const connector = manifest.connector as { base_url: string; openapi: string };
+      const capabilities = await createHttpConnector({
+        baseUrl: connector.base_url,
+        openapi: connector.openapi,
+      }).discover({ manifest });
+
+      // Present, not appended: a term the vendor's own wording already uses is
+      // deliberately not repeated, so this asserts the weaker and correct thing.
+      const missing = capabilities
+        .filter((capability) =>
+          declared.some((term) => !capability.description.toLowerCase().includes(term.toLowerCase())),
+        )
+        .map((capability) => capability.name);
+
+      expect(missing).toEqual([]);
+    },
+  );
+
+  /**
+   * The regression the two fields above exist for: the obvious word finds the
+   * provider that answers to it.
+   *
+   * Measured before `title` and `keywords` were added, over the same text a
+   * client's tool search ranks on — the wire name, the title, and the
+   * description. A search for *email* returned two Google Contacts tools and
+   * nothing from either mail provider. *meeting*, *calendar invite*, *todo list*,
+   * *reminder* and *file upload* returned nothing at all, from any provider.
+   *
+   * The cause is that a vendor writes their own document in their own
+   * vocabulary: Gmail's operations say "mail" and "mailbox" and never "email",
+   * Calendar's say "events" and never "meeting", Tasks' say "tasks" and never
+   * "todo". Every one of those tools was in the list the whole time, and an
+   * agent searching for the word a person would use could not reach it.
+   *
+   * Deliberately not a ranking test — there is no ranker here to assert against,
+   * and which of a provider's tools scores highest is the client's business.
+   * This is the weaker claim that was actually false: that the terms appear at
+   * all, on the provider they should.
+   */
+  const FINDABLE: [query: string, provider: string][] = [
+    ['email', 'gmail'],
+    ['send email', 'gmail'],
+    ['email', 'outlook_mail'],
+    ['inbox', 'gmail'],
+    ['meeting', 'calendar'],
+    ['calendar invite', 'calendar'],
+    ['meeting', 'outlook_calendar'],
+    ['todo list', 'google_tasks'],
+    ['reminder', 'google_tasks'],
+    ['reminder', 'microsoft_todo'],
+    ['file upload', 'drive'],
+    ['document', 'drive'],
+    ['spreadsheet formula', 'sheets'],
+    ['address book', 'contacts'],
+  ];
+
+  test.each(FINDABLE)('a search for "%s" reaches %s', async (query, providerId) => {
+    const manifest = httpProviders.find((one) => one.id === providerId);
+    expect(manifest).toBeDefined();
+
+    const connector = manifest!.connector as { base_url: string; openapi: string };
+    const capabilities = await createHttpConnector({
+      baseUrl: connector.base_url,
+      openapi: connector.openapi,
+    }).discover({ manifest: manifest! });
+
+    // The fields a client indexes, and only those. The manifest's own name and
+    // description are not among them — that is the whole reason `title` and
+    // `keywords` had to put the vocabulary onto the tools.
+    const indexed = capabilities.map((capability) =>
+      `${providerId} ${capability.name} ${capability.title ?? ''} ${capability.description}`.toLowerCase(),
+    );
+
+    const terms = query.split(' ');
+    const reachable = indexed.filter((text) => terms.every((term) => text.includes(term)));
+
+    expect(reachable.length).toBeGreaterThan(0);
+  });
 
   /**
    * A redaction key that names no argument keeps nothing, and says nothing.

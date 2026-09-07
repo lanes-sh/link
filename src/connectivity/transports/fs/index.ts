@@ -46,6 +46,7 @@ export interface FsConnectorOptions {
 
 
 import { fsCapabilities } from './capabilities.ts';
+import { searchableCapabilities } from '../mcp/index.ts';
 import { ALWAYS_EXCLUDED, OPERATIONS } from './operations.ts';
 import { rootOf } from './paths.ts';
 import { error } from './result.ts';
@@ -66,13 +67,13 @@ export function createFsConnector(options: FsConnectorOptions): Connector {
   return {
     kind: 'fs',
 
-    async discover(): Promise<DiscoveredCapability[]> {
+    async discover(context): Promise<DiscoveredCapability[]> {
       // The root has to exist and be readable. On a machine that is not the one
       // holding the files this fails here, at `connect`, rather than as a
       // puzzling empty listing later.
       await rootOf(options);
 
-      return fsCapabilities();
+      return searchableCapabilities(fsCapabilities(), context.manifest);
     },
 
     /**

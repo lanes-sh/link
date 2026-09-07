@@ -5,6 +5,7 @@ export const workable = defineProvider({
   id: 'workable',
   name: 'Workable',
   description: 'Jobs, candidates, and interviews, via Workable\'s official MCP server.',
+  keywords: ['hiring', 'candidate', 'job', 'recruiting', 'applicant'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.workable.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

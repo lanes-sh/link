@@ -5,6 +5,7 @@ export const canva = defineProvider({
   id: 'canva',
   name: 'Canva',
   description: 'Designs, folders, brand templates, assets, and exports, via Canva\'s official MCP server.',
+  keywords: ['design', 'graphic', 'template', 'poster', 'presentation'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.canva.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

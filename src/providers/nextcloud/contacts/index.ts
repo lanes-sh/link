@@ -5,6 +5,7 @@ export const nextcloudContacts = defineProvider({
   id: 'nextcloud_contacts',
   name: 'Nextcloud Contacts',
   description: 'Search and read contacts in a Nextcloud address book over CardDAV, on your own server.',
+  keywords: ['address book', 'directory', 'people', 'email address'],
   connector: { kind: 'dav', base_url: 'https://{host}', service: 'carddav' },
   auth: { kind: 'basic', app: NEXTCLOUD_APP },
   identity: { kind: 'connector' },

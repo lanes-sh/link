@@ -6,6 +6,7 @@ import { createSkillsProvider } from '#providers/owner.ts';
 import { createMemoryBlobStore } from '#stores/blobs/testing.ts';
 import type { BlobStore } from '#stores/blobs';
 import { allocatePort, rpc, startHarness } from './harness.ts';
+import { SURFACE_TOOL_NAMES } from './mcp/index.ts';
 
 /**
  * Authoring a skill over MCP, end to end — ADR-014.
@@ -244,7 +245,15 @@ describe('authoring is a separate grant', () => {
     const result = listed.body['result'] as { tools?: unknown[] } | undefined;
 
     expect(listed.body['error']).toBeUndefined();
-    expect(result?.tools).toEqual([]);
+    // The stable-name pair and nothing else. They are advertised to every
+    // caller regardless of policy (ADR-075) and reach only what is in the
+    // merged capability set — which for this profile is empty, so both refuse
+    // everything. What this test is about is unchanged: the four
+    // `lanes_skills.manage.*` capabilities were never advertised, rather than
+    // being withheld at call time.
+    expect((result?.tools ?? []).map((tool) => (tool as { name: string }).name).sort()).toEqual(
+      [...SURFACE_TOOL_NAMES].sort(),
+    );
   });
 
   test('it can still invoke the skills it has', async () => {

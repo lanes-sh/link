@@ -64,6 +64,19 @@ export const providerManifestSchema = z.object({
    */
   hints: z.record(z.string(), z.string()).optional(),
   /**
+   * The words a person would search for that the vendor never writes.
+   *
+   * Provider-wide, unlike `hints`, because tool search is client-side and ranks
+   * on names and descriptions — so those are the whole index, and a vendor
+   * documents their product in their own vocabulary: Gmail's operations say
+   * "mail" and never "email". ADR-075 has what that measured, `cli/tools.test.ts`
+   * holds it. Write synonyms and the plain noun for what the provider *is*, not
+   * a restatement of the operations the names already carry — the line is
+   * appended to every one of the provider's descriptions, so it stays short.
+   */
+  keywords: z.array(z.string()).optional(),
+
+  /**
    * What this connection has to say about *where* the service is.
    *
    * Absent for every provider whose address is the same for everybody, which is

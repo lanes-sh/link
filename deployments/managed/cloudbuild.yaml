@@ -68,7 +68,7 @@ steps:
         # treat this as an address, and a name that cannot be dialled says so.
         AUDIENCE="https://${_SERVICE}.lanes.internal"
 
-        # **`--no-allow-unauthenticated` is the outer gate** (ADR-075). This
+        # **`--no-allow-unauthenticated` is the outer gate** (ADR-076). This
         # service holds live refresh tokens for other people's accounts and has
         # no business being reachable from the internet: the API's service
         # account is admitted by IAM and nobody else is. The assertion check

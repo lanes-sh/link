@@ -5,6 +5,7 @@ export const betterstack = defineProvider({
   id: 'betterstack',
   name: 'Better Stack',
   description: 'Incidents, monitors, heartbeats, and logs, via Better Stack\'s official MCP server.',
+  keywords: ['uptime', 'monitoring', 'incident', 'logs', 'alert'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.betterstack.com' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

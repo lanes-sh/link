@@ -5,6 +5,7 @@ export const miro = defineProvider({
   id: 'miro',
   name: 'Miro',
   description: 'Boards, frames, sticky notes, and shapes, via Miro\'s official MCP server.',
+  keywords: ['whiteboard', 'diagram', 'sticky note', 'canvas', 'brainstorm'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.miro.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

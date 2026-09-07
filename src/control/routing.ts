@@ -128,7 +128,7 @@ export interface Route {
  * The header the control assertion arrives in.
  *
  * Not `authorization`, and the reason is the outer gate. A managed runtime is
- * `--no-allow-unauthenticated` (ADR-075), so Cloud Run's IAM check reads
+ * `--no-allow-unauthenticated` (ADR-076), so Cloud Run's IAM check reads
  * `authorization` and expects a Google-signed identity token there — the two
  * cannot share one header, and IAM is the one that has to win because it
  * refuses before the request reaches this process at all.

@@ -5,6 +5,7 @@ export const vimeo = defineProvider({
   id: 'vimeo',
   name: 'Vimeo',
   description: 'Videos, folders, showcases, and analytics, via Vimeo\'s official MCP server.',
+  keywords: ['video', 'upload', 'streaming', 'player', 'library'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.vimeo.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

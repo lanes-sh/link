@@ -5,6 +5,7 @@ export const salesloft = defineProvider({
   id: 'salesloft',
   name: 'Salesloft',
   description: 'Cadences, people, and sales activity, via Salesloft\'s official MCP server.',
+  keywords: ['sales', 'cadence', 'outreach', 'prospect', 'crm'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.salesloft.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

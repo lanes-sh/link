@@ -5,6 +5,7 @@ export const navan = defineProvider({
   id: 'navan',
   name: 'Navan',
   description: 'Trips, bookings, and travel expenses, via Navan\'s official MCP server.',
+  keywords: ['travel', 'booking', 'expense', 'trip', 'flight'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.navan.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

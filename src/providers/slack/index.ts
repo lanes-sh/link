@@ -28,6 +28,7 @@ export const slack = defineProvider({
   id: 'slack',
   name: 'Slack',
   description: 'Messages, threads, channels, files, and canvases, via Slack\'s official MCP server.',
+  keywords: ['chat', 'channel', 'message', 'direct message', 'team'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.slack.com/mcp' },
   /**
    * An mcp connector that names its own endpoints, which is what takes it off

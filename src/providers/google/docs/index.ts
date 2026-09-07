@@ -22,6 +22,7 @@ export const docs = defineProvider({
   name: 'Google Docs',
   description:
     'Read a document\'s structure and edit its content — insert, replace, and format text — via the Docs REST API.',
+  keywords: ['word processor', 'text', 'writing', 'prose'],
   connector: {
     kind: 'http',
     base_url: 'https://docs.googleapis.com',

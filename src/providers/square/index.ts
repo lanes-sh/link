@@ -5,6 +5,7 @@ export const square = defineProvider({
   id: 'square',
   name: 'Square',
   description: 'Payments, orders, catalog, inventory, and customers, via Square\'s official MCP server.',
+  keywords: ['payment', 'point of sale', 'invoice', 'transaction', 'merchant'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.squareup.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

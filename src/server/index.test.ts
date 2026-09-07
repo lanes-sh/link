@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import type { Icon } from '@modelcontextprotocol/server';
 import { allocatePort, rpc, startHarness, wireProfiles, TEST_TOKEN } from './harness.ts';
 import { isLoopback } from './index.ts';
+import { SURFACE_TOOL_NAMES } from './mcp/index.ts';
 import { parseConfig, type Config } from '#profile';
 import manifest from '../../package.json' with { type: 'json' };
 
@@ -43,6 +44,20 @@ afterAll(async () => {
 interface ToolDefinition {
   name: string;
   inputSchema: { properties?: { connection?: { enum?: string[] }; profile?: { enum?: string[] } } };
+}
+
+/**
+ * The advertised tools that came from a capability.
+ *
+ * `lanes_tools_search` and `lanes_tools_call` are advertised to every caller
+ * regardless of policy, because their value is being present in a list a client
+ * has already cached (ADR-075). Every assertion about *what policy permitted*
+ * therefore has to exclude them — and excluding them by filter rather than by
+ * adding them to the expectation keeps the assertion able to fail when a
+ * capability appears that policy did not permit.
+ */
+function capabilityTools(tools: readonly ToolDefinition[]): string[] {
+  return tools.map((tool) => tool.name).filter((name) => !SURFACE_TOOL_NAMES.includes(name));
 }
 
 async function listTools(url: string, token?: string): Promise<ToolDefinition[]> {
@@ -238,7 +253,14 @@ describe('discovery is filtered by policy', () => {
   test('a narrower profile sees a smaller tool list', async () => {
     const names = (await listTools(work.server.url, 'llk_work_token_value')).map((t) => t.name);
 
-    expect(names.sort()).toEqual(['example_get_note', 'example_list_notes']);
+    // The stable-name pair is advertised to every caller regardless of policy
+    // (ADR-075), so what this test is about is the capabilities beside them.
+    // Filtered rather than added to the expectation, so the assertion still
+    // fails if a capability appears that policy did not permit.
+    expect(names.filter((name) => !SURFACE_TOOL_NAMES.includes(name)).sort()).toEqual([
+      'example_get_note',
+      'example_list_notes',
+    ]);
     // The tool is not merely refused on call — it is not advertised at all.
     expect(names).not.toContain('example_set_note');
     expect(names).not.toContain('example_echo');
@@ -973,7 +995,7 @@ members: []
     );
 
     try {
-      expect((await listTools(harness.server.url)).map((tool) => tool.name)).toEqual([
+      expect(capabilityTools(await listTools(harness.server.url))).toEqual([
         'example_get_note',
       ]);
 
@@ -1011,9 +1033,7 @@ members: []
       expect(body['reloaded']).toBe(false);
       expect(body['reason']).toContain('could not parse YAML');
 
-      expect((await listTools(harness.server.url)).map((tool) => tool.name)).toEqual([
-        'example_get_note',
-      ]);
+      expect(capabilityTools(await listTools(harness.server.url))).toEqual(['example_get_note']);
     } finally {
       await harness.stop();
     }

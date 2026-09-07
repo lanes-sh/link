@@ -5,6 +5,7 @@ export const amplitude = defineProvider({
   id: 'amplitude',
   name: 'Amplitude',
   description: 'Events, charts, cohorts, and user activity, via Amplitude\'s official MCP server.',
+  keywords: ['analytics', 'event', 'funnel', 'cohort', 'product analytics'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.amplitude.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

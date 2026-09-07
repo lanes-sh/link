@@ -5,6 +5,7 @@ export const whimsical = defineProvider({
   id: 'whimsical',
   name: 'Whimsical',
   description: 'Boards, flowcharts, wireframes, and mind maps, via Whimsical\'s official MCP server.',
+  keywords: ['diagram', 'flowchart', 'wireframe', 'mind map', 'canvas'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.whimsical.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

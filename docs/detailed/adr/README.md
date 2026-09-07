@@ -90,7 +90,8 @@ Run.
 | [072](072-an-environment-is-derived-not-assembled.md) | A deployment derives its environment, and a mismatch refuses to boot |
 | [073](073-a-connection-names-its-own-account.md) | A connection names its own account; the operator is asked last, and never handed a uuid to live with |
 | [074](074-the-endpoint-records-where-it-bound.md) | The endpoint records where it bound, so an edit reaches the one that is running rather than a port derived from the profile it edited |
-| [075](075-a-managed-endpoint-carries-a-control-surface.md) | A managed endpoint carries a control surface, and is not on the internet |
+| [075](075-the-list-a-client-caches-must-stop-changing.md) | The typed tool list stays and gains a search beside it, so a client that never re-reads can still reach a new connection |
+| [076](076-a-managed-endpoint-carries-a-control-surface.md) | A managed endpoint carries a control surface, and is not on the internet |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 
@@ -360,3 +361,10 @@ Where an ADR departs from init.md, it says so at the top. Three are significant:
   authorization server itself; a probe that cannot name a person human-readably falls through to
   the question rather than labelling a row with a uuid. The remaining gap is a ledger the build
   checks in both directions, not a total.
+
+- **ADR-075** adds to ADR-032 rather than revisiting it. A stateless endpoint still cannot make a
+  client re-read its tool list, so the surface gains a way in that does not depend on the list being
+  current: the typed tools stay, and `lanes_tools_search` / `lanes_tools_call` sit beside them,
+  present in every list any client has ever fetched. The part worth reading is why this is not the
+  duplication issue #162 rejected — the search names the typed tool to prefer, so the model choosing
+  between the two paths is told which one it is on, by the only party that can see its tool list.

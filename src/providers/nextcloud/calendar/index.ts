@@ -13,6 +13,7 @@ export const nextcloudCalendar = defineProvider({
   id: 'nextcloud_calendar',
   name: 'Nextcloud Calendar',
   description: 'Read and create events in Nextcloud calendars over CalDAV, on your own server.',
+  keywords: ['meeting', 'invite', 'appointment', 'schedule', 'availability'],
   connector: { kind: 'dav', base_url: 'https://{host}', service: 'caldav' },
   auth: { kind: 'basic', app: NEXTCLOUD_APP },
   identity: { kind: 'connector' },

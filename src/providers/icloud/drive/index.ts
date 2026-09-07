@@ -14,6 +14,7 @@ export const icloudDrive = defineProvider({
   id: 'icloud_drive',
   name: 'iCloud Drive',
   description: 'Read and organise files in iCloud Drive, on the Mac that syncs them.',
+  keywords: ['document', 'upload', 'download', 'attachment', 'storage'],
   connector: {
     kind: 'fs',
     root: '~/Library/Mobile Documents/com~apple~CloudDocs',

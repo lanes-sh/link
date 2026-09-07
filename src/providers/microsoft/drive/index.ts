@@ -32,6 +32,7 @@ export const onedrive = defineProvider({
   id: 'onedrive',
   name: 'OneDrive',
   description: 'Browse, search, read, and organise files in OneDrive, via Microsoft Graph.',
+  keywords: ['document', 'upload', 'download', 'attachment', 'storage'],
   connector: { kind: 'http', base_url: GRAPH_BASE_URL, openapi: specPath('onedrive.v1.json') },
   auth: {
     kind: 'oauth',

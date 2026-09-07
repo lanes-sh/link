@@ -133,6 +133,9 @@ export const SELECTION: Record<string, Requires> = {
   // profile would narrow the column rather than the rows.
   connection: 'workspace',
   'connection list': 'workspace',
+  // Declaring names the workspace the connection lands in; `--profile` is what
+  // *also* grants it there, exactly as on `connect`.
+  'connection declare': 'workspace',
   grant: 'profile+workspace',
   revoke: 'profile+workspace',
   // Both act on a connection, which belongs to the workspace (ADR-057).

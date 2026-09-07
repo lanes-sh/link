@@ -5,6 +5,7 @@ export const jam = defineProvider({
   id: 'jam',
   name: 'Jam',
   description: 'Bug reports, with their console logs, network calls, and repro steps, via Jam\'s official MCP server.',
+  keywords: ['bug report', 'screen recording', 'issue', 'feedback', 'replay'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.jam.dev/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

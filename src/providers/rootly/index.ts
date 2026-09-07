@@ -5,6 +5,7 @@ export const rootly = defineProvider({
   id: 'rootly',
   name: 'Rootly',
   description: 'Incidents, alerts, retrospectives, and on-call schedules, via Rootly\'s official MCP server.',
+  keywords: ['incident', 'on call', 'postmortem', 'alert', 'response'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.rootly.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

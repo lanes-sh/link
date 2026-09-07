@@ -34,6 +34,7 @@ export const outlookMail = defineProvider({
   name: 'Outlook Mail',
   description:
     'Read, search, file, and send mail in an Outlook or Microsoft 365 mailbox, via Microsoft Graph.',
+  keywords: ['email', 'message', 'inbox', 'reply', 'correspondence'],
   connector: {
     kind: 'http',
     // Graph carries its version in the path of the server URL, like Drive and

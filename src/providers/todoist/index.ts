@@ -5,6 +5,7 @@ export const todoist = defineProvider({
   id: 'todoist',
   name: 'Todoist',
   description: 'Tasks, projects, sections, labels, and filters, via Todoist\'s official MCP server.',
+  keywords: ['todo', 'task', 'reminder', 'checklist', 'due date'],
   connector: { kind: 'mcp', endpoint: 'https://ai.todoist.net/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

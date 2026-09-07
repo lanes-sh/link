@@ -19,6 +19,7 @@ export const outlookCalendar = defineProvider({
   name: 'Outlook Calendar',
   description:
     'Read and write events in Outlook calendars — list, search, create, reschedule, and cancel — via Microsoft Graph.',
+  keywords: ['meeting', 'invite', 'appointment', 'schedule', 'availability'],
   connector: { kind: 'http', base_url: GRAPH_BASE_URL, openapi: specPath('outlook-calendar.v1.json') },
   auth: {
     kind: 'oauth',
