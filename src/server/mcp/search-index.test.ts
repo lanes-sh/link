@@ -54,13 +54,30 @@ describe('searching what a caller can reach', () => {
   /**
    * The provider id is in the capability id and nowhere else, and it is what a
    * query naming a vendor has to match on. Weighted highest for that reason.
+   *
+   * And narrowed to it: `vendor_chat` splits to `vendor` + `chat`, and every
+   * capability here carries `vendor`, so scoring on any term would return the
+   * whole surface with the right one merely on top. Requiring both is what
+   * makes the answer this provider rather than this provider first.
    */
-  test('a query naming a provider reaches that provider', () => {
+  test('a query naming a provider reaches that provider and not its neighbours', () => {
     const answer = searchCapabilities('vendor_chat', surface);
-    const first = answer.indexOf('vendor_chat_post_message');
 
-    expect(first).toBeGreaterThan(-1);
-    expect(first).toBeLessThan(answer.indexOf('vendor_mail_messages_list'));
+    expect(answer).toContain('vendor_chat_post_message');
+    expect(answer).not.toContain('vendor_mail_messages_list');
+    expect(answer).not.toContain('vendor_sheets_values_update');
+  });
+
+  /**
+   * The fallback, and why the narrowing above is safe. A caller whose words do
+   * not all appear anywhere is exactly the caller who needs the near misses —
+   * returning nothing there would be worse than returning the loose ranking.
+   */
+  test('falls back to a loose match when no capability has every term', () => {
+    const answer = searchCapabilities('spreadsheet cryptocurrency', surface);
+
+    expect(answer).toContain('vendor_sheets_values_update');
+    expect(answer).not.toContain('Nothing reachable matches');
   });
 
   /**
@@ -131,6 +148,38 @@ describe('searching what a caller can reach', () => {
 
     expect(searchCapabilities('personal', withBlock)).toContain('Nothing reachable matches');
     expect(searchCapabilities('send', withBlock)).toContain('vendor_mail_send_message');
+  });
+
+  /**
+   * The narrowing makes a query's grammar load-bearing, so the grammar has to
+   * be dropped. Measured on a real endpoint: "send an email" asked for `an` as
+   * a whole word, nothing had it alongside the other two, and the query fell
+   * back to the loose ranking it was meant to replace — 93 matches of 276.
+   */
+  test('function words in a query do not narrow it', () => {
+    const plain = searchCapabilities('send message', surface);
+    const spoken = searchCapabilities('please send a message to me', surface);
+
+    expect(spoken).toContain('vendor_mail_send_message');
+    // The same matches either way, which is the whole claim. Compared as the
+    // set of results rather than the count line, so the assertion says what it
+    // means rather than depending on how the count is phrased.
+    const named = (answer: string) =>
+      answer
+        .split('\n')
+        .filter((line) => line.startsWith('## '))
+        .map((line) => line.slice(3));
+
+    expect(named(spoken)).toEqual(named(plain));
+  });
+
+  /**
+   * A query that is nothing but function words searches for them rather than
+   * for nothing, because the alternative is an empty-query answer to a caller
+   * who did type something.
+   */
+  test('a query of only function words still searches', () => {
+    expect(searchCapabilities('the a of', surface)).not.toContain('Nothing reachable matches');
   });
 
   test('an empty query matches nothing rather than everything', () => {

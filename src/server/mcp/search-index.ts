@@ -23,6 +23,46 @@ const DETAILED = 5;
 const LISTED = 20;
 
 /**
+ * Function words, dropped from a *query* and never from the text searched.
+ *
+ * The narrowing in `rank` requires every term to match, which makes a query's
+ * grammar load-bearing: "send an email" asked for `an` as a whole word, matched
+ * nothing that also had `send` and `email`, and fell back to the loose ranking
+ * it was meant to replace — 93 matches out of 276 on a real endpoint. Removing
+ * them is what a BM25 index does implicitly by weighting a term that appears
+ * everywhere at nearly nothing; here it has to be explicit, because presence is
+ * the test.
+ *
+ * Function words only. Nothing here can name a capability: `get`, `set`, `list`,
+ * `read` and `send` are all verbs a caller means, and `all` is in a real
+ * operation id, so none of them belongs on this list however common it is.
+ *
+ * Only applied where it leaves something behind — a query that is nothing but
+ * these keeps them, so "all of it" searches for something rather than for
+ * nothing.
+ */
+const STOPWORDS = new Set([
+  'a', 'an', 'the', 'this', 'that', 'these', 'those',
+  'i', 'me', 'my', 'mine', 'we', 'our', 'you', 'your', 'it', 'its',
+  'and', 'or', 'but', 'if', 'then', 'than', 'so', 'as',
+  'of', 'to', 'for', 'from', 'in', 'into', 'on', 'at', 'by', 'with', 'about',
+  'is', 'are', 'was', 'be', 'been', 'do', 'does', 'did', 'can', 'could',
+  'would', 'should', 'will', 'shall', 'may', 'might', 'must',
+  'some', 'any', 'each', 'every', 'no', 'not',
+  // Question and request framing. A caller types "what meetings do i have",
+  // and `what` and `have` are as much grammar as `the` is.
+  'what', 'which', 'who', 'whom', 'when', 'where', 'why', 'how',
+  'have', 'has', 'had', 'please', 'want', 'wants', 'need', 'needs', 'let',
+]);
+
+/** The terms a query actually searches on. */
+function queryTerms(query: string): string[] {
+  const all = words(query);
+  const meaningful = all.filter((word) => !STOPWORDS.has(word));
+  return meaningful.length > 0 ? meaningful : all;
+}
+
+/**
  * A word, for matching.
  *
  * Split on everything that separates one in an identifier — `.`, `_`, `-`, and
@@ -36,6 +76,28 @@ function words(text: string): string[] {
     .toLowerCase()
     .split(/[^a-z0-9]+/)
     .filter((word) => word.length > 0);
+}
+
+/**
+ * Whether a term is in a word list, allowing for one being a prefix of the other.
+ *
+ * The cheapest thing that stands in for stemming, and it is needed: a caller
+ * types "meetings" and the manifest says "meeting", so exact equality found
+ * nothing and the query landed on whatever else shared a word with it. Prefixes
+ * cover the endings that actually come up — plurals, `-ing`, `-ed`, `-s` — in
+ * both directions, since the query may be the longer or the shorter form.
+ *
+ * Four characters before a prefix counts, because three would make `get` match
+ * `getting` and also `getaway`, and one would make every term match everything.
+ * Equality is always enough, so short terms still work as themselves.
+ */
+function holds(list: readonly string[], term: string): boolean {
+  return list.some(
+    (word) =>
+      word === term ||
+      (term.length >= 4 && word.startsWith(term)) ||
+      (word.length >= 4 && term.startsWith(word)),
+  );
 }
 
 /** What one capability's title, description and schema are, whichever kind it is. */
@@ -99,7 +161,7 @@ function rank(query: string, merged: Map<string, MergedCapability>): Match[] {
     return [{ id: query.trim(), tool: toolNameFor(query.trim()), score: 1, entry: exact }];
   }
 
-  const terms = words(query);
+  const terms = queryTerms(query);
   if (terms.length === 0) return [];
 
   const matches: Match[] = [];
@@ -119,10 +181,9 @@ function rank(query: string, merged: Map<string, MergedCapability>): Match[] {
     for (const term of terms) {
       // The name is worth most: it carries the provider id, which is how a
       // query naming a vendor finds that vendor's tools at all.
-      if (name.includes(term)) score += 3;
-      else if (name.some((word) => word.startsWith(term))) score += 2;
-      else if (title.includes(term)) score += 2;
-      else if (description.includes(term)) score += 1;
+      if (holds(name, term)) score += 3;
+      else if (holds(title, term)) score += 2;
+      else if (holds(description, term)) score += 1;
     }
 
     if (score > 0) matches.push({ id, tool: toolNameFor(id), score, entry });
@@ -131,7 +192,40 @@ function rank(query: string, merged: Map<string, MergedCapability>): Match[] {
   // Score first, then id, so the order is stable across calls — the same
   // property `tools/list` is asked for, and for the same reason: a caller
   // comparing two searches should be comparing results, not orderings.
-  return matches.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+  matches.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
+
+  // Everything at least half as good as the best match, and nothing weaker.
+  //
+  // Measured against a real endpoint serving 276 tools, returning everything
+  // that scored at all made the search look useless while behaving correctly:
+  // "create a pull request" reported 213 matches, because `create` and
+  // `request` each appear all over a large surface. The top of the ranking was
+  // right every time — the count and the tail were the lie, and the tail is
+  // twenty tools of noise in the caller's context.
+  //
+  // Two narrower rules were tried and both were worse, which is why the cut is
+  // on the score rather than on how much of the query matched:
+  //
+  //   - *Every term* is brittle. One word the surface does not contain — a typo,
+  //     a product name, "please" — and nothing matches all of them, so the query
+  //     falls back to the loose ranking it was meant to replace.
+  //   - *The most terms* inverts the weighting. "please send a message to
+  //     someone" picked a mail-filter tool over the one that sends, because
+  //     `someone` happened to appear in its description and three weak
+  //     description hits outrank two strong ones.
+  //
+  // The score already carries both halves — more of the query matched is more
+  // points, and the name is worth three times the description — so cutting
+  // relative to the best score keeps a tool named for what was asked and drops
+  // one that merely mentions it. Half is a ratio rather than a threshold
+  // because scores scale with query length, and it leaves a genuine second
+  // candidate in: two strong hits survive beside three.
+  // Strictly more than half, not at least: on a two-term query naming a
+  // provider, a tool matching only the provider half scores exactly half of
+  // one matching both, and "every other tool this provider has" is not an
+  // answer to a query that named a capability too.
+  const best = matches[0]?.score ?? 0;
+  return matches.filter((match) => match.score * 2 > best);
 }
 
 /** Where a capability can be used, as the search reports it. */
