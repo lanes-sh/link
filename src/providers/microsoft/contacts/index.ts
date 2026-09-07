@@ -26,6 +26,7 @@ export const outlookContacts = defineProvider({
   id: 'outlook_contacts',
   name: 'Outlook Contacts',
   description: 'Look up an address in Outlook contacts, so "email Bob" resolves. Read-only.',
+  keywords: ['address book', 'directory', 'people', 'email address'],
   connector: { kind: 'http', base_url: GRAPH_BASE_URL, openapi: specPath('outlook-contacts.v1.json') },
   auth: {
     kind: 'oauth',

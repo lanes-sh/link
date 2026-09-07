@@ -7,6 +7,7 @@ import { SERVER_NAME } from './naming.ts';
 import { registerPrompt } from './prompts.ts';
 import { registerResource } from './resources.ts';
 import { registerDiscoveredTool, registerLocalTool } from './tools.ts';
+import { registerSearchSurface } from './search.ts';
 import { mergeCapabilities, type BuildServerOptions } from './visibility.ts';
 
 /**
@@ -101,6 +102,12 @@ export function buildMcpServer(options: BuildServerOptions): McpServer {
       contents: [{ uri: uri.href, mimeType: 'text/markdown', text: guideDocument() }],
     }),
   );
+
+  // The two stable-name tools, for the same reason and in the same place as
+  // the resource above: they describe this surface rather than being part of
+  // what policy decided, and their whole value is that a client which fetched
+  // any tool list from this endpoint has them. See `search.ts`.
+  registerSearchSurface(server, options);
 
   for (const [id, entry] of merged) {
     // Discovered first: an upstream MCP server or an OpenAPI document supplies

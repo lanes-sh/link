@@ -1,6 +1,6 @@
 import type { McpOpenAPITool, ParameterMapper } from 'mcp-from-openapi';
 import { withLegalKeys } from './keys.ts';
-import { shortenName } from '../mcp/index.ts';
+import { shortenName, titleFor, withKeywords } from '../mcp/index.ts';
 import {
   READ_BUNDLE,
   WRITE_BUNDLE,
@@ -194,7 +194,13 @@ export function createHttpConnector(options: HttpConnectorOptions): Connector {
 
         return {
           name,
-          description: hint ? `${described}\n\n${hint}` : described,
+          // An OpenAPI document has no display name to offer, so this is
+          // synthesised rather than passed through — see `titleFor`.
+          title: titleFor(context.manifest.name, name),
+          description: withKeywords(
+            hint ? `${described}\n\n${hint}` : described,
+            context.manifest.keywords,
+          ),
           inputSchema: legal.schema,
           bundle: bundleForMethod(tool.metadata.method),
           // Everything needed to rebuild the request without re-reading the spec,

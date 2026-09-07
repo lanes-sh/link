@@ -174,6 +174,18 @@ const FILES = `**Files are named, not carried.** Where a tool takes attachments,
 HTTPS URL, or an attachment already on another message; the endpoint reads the
 bytes. Never encode a file into a call — that is the thing this replaces.`;
 
+/**
+ * The paragraph for the client that never re-reads its tool list.
+ *
+ * Unconditional, because the pair it names is (`search.ts`) — and because the
+ * mistake it prevents is available to every caller, not only to one holding some
+ * particular surface.
+ */
+const SEARCH = `**A tool you cannot see may still be reachable.** Your tool list is a snapshot
+from when your client connected, and a connection made since is missing from it. Before
+concluding you cannot do something, call \`lanes_tools_search\` — then \`lanes_tools_call\` to
+invoke what it names, under the permissions the named tool would have had.`;
+
 const REFUSAL = `**A refused call is the permission system working**, not an obstacle to route
 around. Report what was refused and let the owner decide whether to widen it.
 Every call, including a refused one, is recorded.`;
@@ -274,6 +286,28 @@ function habitsFor(reachable: readonly string[]): string[] {
  * no error on an ambiguous result, so between "two candidates" and an agent
  * using the first there is only prose.
  *
+ * Raised a fifth time, to 3300, for `SEARCH` (ADR-075), and the skill question
+ * gets `AVAILABILITY`'s answer rather than a new one. The paragraph exists for a
+ * client that pinned its tool list when it connected and never re-reads — which
+ * is the same client that holds no skills directory, so the skill is not a place
+ * it can go. And the mistake is a refusal: an agent that says it cannot do
+ * something has ended the turn, so there is no later moment at which a skill
+ * loaded when relevant would have helped.
+ *
+ * That raise also corrected the figure below rather than only adding to it. The
+ * measured maximum was **2878**, not the 2800 this recorded — `entities`, tasks
+ * and assets each landed while the arithmetic stayed as it was, so the ceiling
+ * had 22 characters of real headroom while claiming 100. Which is this
+ * docstring's own warning happening to it: the widest case was recertified
+ * whenever the number moved and never when the prose did. The figures below are
+ * now taken from what the test measures rather than composed by hand, so the
+ * next paragraph cannot be certified against a case nothing serves:
+ *
+ *   the paired branch, every owner provider, remote clients   3102
+ *   the unpaired branch, which is the real maximum            3216
+ *
+ * `SEARCH` costs 338 of that — 336 of prose and the two characters `join` adds.
+ *
  * The arithmetic, because the number is a measurement and not a round figure.
  * Twenty profiles, twenty connections each, every owner provider reachable,
  * remote clients:
@@ -300,7 +334,7 @@ function habitsFor(reachable: readonly string[]): string[] {
  * exactly the final length, because `join` adds the same two characters the
  * reduce already counted.
  */
-export const MAX_INSTRUCTIONS = 2900;
+export const MAX_INSTRUCTIONS = 3300;
 
 /** Which of the owner-layer providers this principal can actually reach. */
 function ownerProviders(merged: ReadonlyMap<string, MergedCapability>): string[] {
@@ -369,6 +403,9 @@ export function serverInstructions(
     ROUTING,
     ...habitsFor(owner),
     FILES,
+    // Between "the tool is not there" and "the call was refused", which is the
+    // order a caller meets them in: absent, then present and denied.
+    SEARCH,
     REFUSAL,
     ...(remoteClients ? [AVAILABILITY] : []),
   ];

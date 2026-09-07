@@ -37,6 +37,7 @@ export const googleTasks = defineProvider({
   name: 'Google Tasks',
   description:
     'Read and write task lists and tasks — create, edit, complete, reorder, and delete — via the Tasks REST API.',
+  keywords: ['todo', 'reminder', 'checklist'],
   connector: {
     kind: 'http',
     base_url: 'https://tasks.googleapis.com',

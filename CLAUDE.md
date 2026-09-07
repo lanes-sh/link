@@ -208,6 +208,18 @@ question for the owner into a silent pick. Its derived `_index.json` is a cache 
 `key:size` fingerprint of the entity files — not `key:size:mtime`, because the GitHub adapter
 reports the branch tip for every file and the stamp would never match twice.
 
+**`lanes_tools_search` and `lanes_tools_call` are not owner providers, and there is no
+`lanes_tools` id.** They are registered by `src/server/mcp/search.ts` beside `lanes://instructions`,
+outside the loop over what policy decided, so they are advertised to every caller and are absent
+from `mergeCapabilities`. Do not "fix" that by making them a ninth provider: `ProviderContext`
+guarantees "no way to reach another connection", `#providers` may not import `#dispatch` or
+`#policy`, and the merged set and the dispatcher both already live in `#server/mcp`. ADR-075 has the
+argument. What this costs is that every count derived from the merged set has to add
+`SURFACE_TOOL_NAMES` — `visibleToolCount`, which `/reload` returns and the endpoint logs, and
+`Generation.visible()`, which decides whether a `tools/call` is *recorded as a refusal*. A name
+missing from the second one means every successful call to that tool writes an audit row saying the
+agent tried something that was not advertised.
+
 `src/architecture.test.ts` asserts the four rules the layout expresses: dependency
 direction between components, no vendor name in the code a request passes through, a
 file-size budget, and no real identifiers anywhere a reader can see. It replaces what

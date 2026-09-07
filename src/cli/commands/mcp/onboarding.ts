@@ -79,6 +79,10 @@ and my contacts. It is an MCP endpoint, and it is already connected.
 - Before telling me something cannot be reached or that an account is missing,
   ask the setup surface. It reports what exists and gives the exact command for
   what does not. Run nothing yourself: every change here is mine to make.
+- If the tool you need is not in your list, search for it before concluding it
+  is not there. Your list is a snapshot from when you connected, and an account
+  I added since is reachable through the search and by id even when no tool of
+  its own appears.
 - Read \`lanes://instructions\` before your first call for the full account of
   how routing, profiles and refusals work.
 

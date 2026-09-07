@@ -25,6 +25,7 @@ export const microsoftTodo = defineProvider({
   id: 'microsoft_todo',
   name: 'Microsoft To Do',
   description: 'Create, edit, complete, and organise tasks and lists in Microsoft To Do.',
+  keywords: ['todo', 'reminder', 'checklist'],
   connector: { kind: 'http', base_url: GRAPH_BASE_URL, openapi: specPath('microsoft-todo.v1.json') },
   auth: {
     kind: 'oauth',

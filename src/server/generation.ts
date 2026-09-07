@@ -3,6 +3,7 @@ import { ownerPrincipal, type Principal } from '#auth';
 import {
   buildMcpServer,
   toolNameFor,
+  SURFACE_TOOL_NAMES,
   visibleCapabilities,
   visibleToolCount,
   type ProfileRuntime,
@@ -81,10 +82,16 @@ export class Generation {
     this.visible = this.#memo(
       () =>
         new Set(
-          visibleCapabilities({
-            profiles: this.profiles,
-            principal: ownerPrincipal(deps.primary),
-          }).map(toolNameFor),
+          [
+            ...visibleCapabilities({
+              profiles: this.profiles,
+              principal: ownerPrincipal(deps.primary),
+            }).map(toolNameFor),
+            // Advertised without being capabilities, so they are absent from
+            // `visibleCapabilities` and have to be added here or every
+            // successful call to one is recorded as a refusal.
+            ...SURFACE_TOOL_NAMES,
+          ],
         ),
     );
 

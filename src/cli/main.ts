@@ -2,6 +2,7 @@ import { connect } from './commands/connect/index.ts';
 import { connectCustom } from './commands/connect/custom/index.ts';
 import { disconnect } from './commands/connection.ts';
 import { grantConnectionTo, revokeConnectionFrom } from './commands/grant.ts';
+import { connectionDeclare } from './commands/connection-declare.ts';
 import { connectionList } from './commands/connection-list.ts';
 import { membersAdd, membersList, membersRemove } from './commands/members.ts';
 import { relabel } from './commands/relabel.ts';
@@ -145,6 +146,16 @@ export async function run(argv: readonly string[]): Promise<void> {
     // The command connecting no longer implies. A connection belongs to the
     // workspace (ADR-057), so which profiles may reach it is a separate say.
     case 'connection':
+      if (second === 'declare') {
+        const [provider] = rest;
+        return connectionDeclare(provider, {
+          ...global,
+          json,
+          ...(text(flags, 'id') !== undefined ? { id: text(flags, 'id') } : {}),
+          ...(text(flags, 'account') !== undefined ? { account: text(flags, 'account') } : {}),
+          ...(text(flags, 'label') !== undefined ? { label: text(flags, 'label') } : {}),
+        });
+      }
       if (second !== 'list' && second !== undefined) {
         throw new Error(`Unknown: ${PROGRAM} connection ${second}`);
       }

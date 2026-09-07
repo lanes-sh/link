@@ -33,6 +33,7 @@ export const contacts = defineProvider({
   name: 'Google Contacts',
   description:
     'Look up a saved contact by name to find their address or phone number, including the addresses Gmail saved automatically. Read-only, via the People REST API.',
+  keywords: ['address book', 'directory', 'people', 'email address'],
   connector: {
     kind: 'http',
     base_url: 'https://people.googleapis.com',
