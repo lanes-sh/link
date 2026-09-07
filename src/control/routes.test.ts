@@ -29,6 +29,9 @@ function routes(verified: ControlAssertion | null = ADMIN) {
     // they agree so the routes themselves are what is under test.
     workspace: verified?.workspace ?? 'ws-aaa',
     verifier: { async verify() { return verified; } },
+    // See `provision.test.ts`: this pipeline provisions on the way past, and
+    // these tests are about the gate rather than about storage.
+    ensure: async () => false,
     log: silent,
     readers: {
       async connections(root: string) {

@@ -35,6 +35,10 @@ function deps(over: Partial<ControlDeps> = {}): ControlDeps {
   return {
     workspace: 'ws-aaa',
     verifier: { async verify() { return ADMIN; } },
+    // No storage behind these tests, and none needed: what they cover is the
+    // gate. Provisioning is the one step that would reach for a real workspace,
+    // and `provision.test.ts` is where it is exercised.
+    ensure: async () => false,
     log: silent,
     readers: {
       async connections() { return []; },

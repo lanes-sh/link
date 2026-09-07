@@ -7,6 +7,7 @@ import {
   type WorkspaceWriters,
 } from './commands.ts';
 import { environmentFor } from './workspace.ts';
+import { ensureManagedWorkspace } from './provision.ts';
 import { PROFILE_ROUTES } from './profile-routes.ts';
 import { json, notFound, type Route } from './routing.ts';
 
@@ -73,6 +74,18 @@ export interface ControlDeps {
   readonly log: Logger;
   readonly readers?: WorkspaceReaders;
   readonly writers?: WorkspaceWriters;
+  /**
+   * Bring the workspace into existence if it is not there yet.
+   *
+   * A seam like the ones below, and for the same reason: it is the one step in
+   * the pipeline that touches real storage before any route runs, so a test
+   * covering the gate would otherwise need a workspace behind it.
+   */
+  readonly ensure?: (
+    root: string,
+    workspace: string,
+    env: Record<string, string | undefined>,
+  ) => Promise<boolean>;
   /** Test seams, so a route test needs no workspace on disk. */
   readonly create?: WorkspaceWriters['create'];
   readonly grant?: WorkspaceWriters['grant'];
@@ -159,8 +172,23 @@ export async function controlRoutes(request: Request, deps: ControlDeps): Promis
   // From the assertion, never from the router: the signed statement is what
   // authorises this call, and a routing artefact is not.
   const root = workspaceRootFor(assertion);
+  const env = environmentFor(assertion);
 
   try {
+    // After the gates, deliberately. Provisioning on the way past an
+    // unauthenticated or unpermitted call would let anybody holding a workspace
+    // id create storage in it, and would make the 401 path do work.
+    //
+    // On every call rather than on the writes alone: a read arriving first —
+    // which is what the dashboard does — should find an empty workspace rather
+    // than an error, and the check is a `has` on a document that is present for
+    // every call but the first.
+    if (await (deps.ensure ?? ensureManagedWorkspace)(root, assertion.workspace, env)) {
+      deps.log.info('provisioned a hosted workspace on first use', {
+        workspace: assertion.workspace,
+      });
+    }
+
     return await route.run({
       assertion,
       root,
@@ -170,7 +198,7 @@ export async function controlRoutes(request: Request, deps: ControlDeps): Promis
       // From the assertion, exactly as `root` is. A command reads its workspace
       // out of this rather than out of `process.env`, which one process serving
       // many workspaces cannot use.
-      env: environmentFor(assertion),
+      env,
       body: () => request.json(),
     });
   } catch (error) {
