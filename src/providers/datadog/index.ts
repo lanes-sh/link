@@ -5,6 +5,7 @@ export const datadog = defineProvider({
   id: 'datadog',
   name: 'Datadog',
   description: 'Metrics, logs, monitors, incidents, and dashboards, via Datadog\'s official MCP server.',
+  keywords: ['monitoring', 'metrics', 'logs', 'alert', 'observability'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

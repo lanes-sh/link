@@ -16,6 +16,7 @@ export const zohoMail = defineProvider({
   name: 'Zoho Mail',
   description:
     'Read, search, and send mail in a Zoho mailbox over IMAP and SMTP, with an application-specific password.',
+  keywords: ['email', 'message', 'inbox', 'reply', 'correspondence'],
   connector: {
     kind: 'imap',
     host: 'imap.zoho.com',

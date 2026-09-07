@@ -44,6 +44,7 @@ import type { SocketFactory } from './socket.ts';
  */
 
 import { imapCapabilities } from './capabilities.ts';
+import { searchableCapabilities } from '../mcp/index.ts';
 import { mailboxAttachments } from './attachment.ts';
 import { getAttachment } from './download.ts';
 import { OPERATIONS } from './operations.ts';
@@ -90,12 +91,15 @@ export function createImapConnector(options: ImapConnectorOptions): Connector {
   return {
     kind: 'imap',
 
-    async discover(): Promise<DiscoveredCapability[]> {
+    async discover(context): Promise<DiscoveredCapability[]> {
       // Logging in is the point of discovering: a rejected app-specific
       // password should stop `connect`, not surface later as a failed tool call.
       const supportsMove = await client.run(async (session) => session.capabilities.has('MOVE'));
 
-      return imapCapabilities({ supportsMove, canSend: options.smtp !== undefined });
+      return searchableCapabilities(
+        imapCapabilities({ supportsMove, canSend: options.smtp !== undefined }),
+        context.manifest,
+      );
     },
 
     async identify(): Promise<string | null> {

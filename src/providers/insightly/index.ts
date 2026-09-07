@@ -5,6 +5,7 @@ export const insightly = defineProvider({
   id: 'insightly',
   name: 'Insightly',
   description: 'Contacts, organisations, opportunities, and projects, via Insightly\'s official MCP server.',
+  keywords: ['crm', 'contact', 'lead', 'opportunity', 'pipeline'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.insightly.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

@@ -5,6 +5,7 @@ export const mercury = defineProvider({
   id: 'mercury',
   name: 'Mercury',
   description: 'Accounts, balances, transactions, and cards, via Mercury\'s official MCP server.',
+  keywords: ['bank', 'account', 'payment', 'balance', 'transaction'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.mercury.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

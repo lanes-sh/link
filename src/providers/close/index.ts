@@ -5,6 +5,7 @@ export const close = defineProvider({
   id: 'close',
   name: 'Close',
   description: 'Leads, contacts, opportunities, and activities in the CRM, via Close\'s official MCP server.',
+  keywords: ['crm', 'lead', 'deal', 'pipeline', 'sales'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.close.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

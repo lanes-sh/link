@@ -5,6 +5,7 @@ export const icloudCalendar = defineProvider({
   id: 'icloud_calendar',
   name: 'iCloud Calendar',
   description: 'Read and create events in iCloud calendars over CalDAV.',
+  keywords: ['meeting', 'invite', 'appointment', 'schedule', 'availability'],
   connector: {
     kind: 'dav',
     base_url: 'https://caldav.icloud.com',

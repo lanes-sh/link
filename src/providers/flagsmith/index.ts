@@ -5,6 +5,7 @@ export const flagsmith = defineProvider({
   id: 'flagsmith',
   name: 'Flagsmith',
   description: 'Feature flags, segments, and environments, via Flagsmith\'s official MCP server.',
+  keywords: ['feature flag', 'toggle', 'rollout', 'experiment', 'remote config'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.flagsmith.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

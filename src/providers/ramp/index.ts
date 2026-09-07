@@ -5,6 +5,7 @@ export const ramp = defineProvider({
   id: 'ramp',
   name: 'Ramp',
   description: 'Cards, transactions, reimbursements, and spend limits, via Ramp\'s official MCP server.',
+  keywords: ['expense', 'card', 'spending', 'transaction', 'reimbursement'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.ramp.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

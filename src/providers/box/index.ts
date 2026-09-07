@@ -18,6 +18,7 @@ export const box = defineProvider({
   id: 'box',
   name: 'Box',
   description: 'Files, folders, and metadata in Box, via Box\'s official MCP server.',
+  keywords: ['file', 'folder', 'upload', 'download', 'storage'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.box.com/' },
   auth: {
     kind: 'oauth',

@@ -5,6 +5,7 @@ export const circleci = defineProvider({
   id: 'circleci',
   name: 'CircleCI',
   description: 'Pipelines, workflows, jobs, and test results, via CircleCI\'s official MCP server.',
+  keywords: ['ci', 'pipeline', 'build', 'workflow', 'deployment'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.circleci.com/v1/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

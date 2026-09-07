@@ -5,6 +5,7 @@ export const supabase = defineProvider({
   id: 'supabase',
   name: 'Supabase',
   description: 'Projects, database schema, SQL, edge functions, and docs, via Supabase\'s official MCP server.',
+  keywords: ['database', 'postgres', 'auth', 'storage', 'backend'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.supabase.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
   /**

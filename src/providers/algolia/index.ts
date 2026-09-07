@@ -5,6 +5,7 @@ export const algolia = defineProvider({
   id: 'algolia',
   name: 'Algolia',
   description: 'Search indices, records, queries, and synonyms, via Algolia\'s official MCP server.',
+  keywords: ['search', 'index', 'query', 'relevance', 'autocomplete'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.algolia.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

@@ -13,6 +13,7 @@ export const render = defineProvider({
   id: 'render',
   name: 'Render',
   description: 'Services, deploys, logs, and environment variables, via Render\'s official MCP server.',
+  keywords: ['deployment', 'hosting', 'service', 'build', 'infrastructure'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.render.com/mcp' },
   auth: { kind: 'bearer' },
   setup: {

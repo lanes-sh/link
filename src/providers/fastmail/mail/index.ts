@@ -9,6 +9,7 @@ export const fastmailMail = defineProvider({
   name: 'Fastmail Mail',
   description:
     'Read, search, and send mail in a Fastmail mailbox over IMAP and SMTP, with an app password that does not expire.',
+  keywords: ['email', 'message', 'inbox', 'reply', 'correspondence'],
   connector: {
     kind: 'imap',
     host: 'imap.fastmail.com',

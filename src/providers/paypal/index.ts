@@ -5,6 +5,7 @@ export const paypal = defineProvider({
   id: 'paypal',
   name: 'PayPal',
   description: 'Invoices, orders, payments, subscriptions, and disputes, via PayPal\'s official MCP server.',
+  keywords: ['payment', 'invoice', 'transaction', 'money', 'checkout'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.paypal.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

@@ -35,6 +35,7 @@ const manifest = defineProvider({
   name: 'bunq',
   description:
     'Bank accounts, balances, transaction history, and payments — including batches and drafts that wait for approval in the bunq app.',
+  keywords: ['bank', 'payment', 'balance', 'transaction', 'account'],
   connector: {
     kind: 'http',
     base_url: 'https://api.bunq.com/v1',

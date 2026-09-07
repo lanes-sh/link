@@ -5,6 +5,7 @@ export const resend = defineProvider({
   id: 'resend',
   name: 'Resend',
   description: 'Transactional email, domains, and delivery events, via Resend\'s official MCP server.',
+  keywords: ['email', 'transactional email', 'send', 'delivery', 'template'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.resend.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

@@ -5,6 +5,7 @@ export const shortcut = defineProvider({
   id: 'shortcut',
   name: 'Shortcut',
   description: 'Stories, epics, iterations, and workflows, via Shortcut\'s official MCP server.',
+  keywords: ['issue', 'story', 'ticket', 'sprint', 'backlog'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.shortcut.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

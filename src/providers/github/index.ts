@@ -23,6 +23,7 @@ export const github = defineProvider({
   id: 'github',
   name: 'GitHub',
   description: 'Repositories, issues, pull requests, and workflow runs, via GitHub\'s official MCP server.',
+  keywords: ['repository', 'pull request', 'commit', 'issue', 'code review'],
   connector: {
     kind: 'mcp',
     endpoint: 'https://api.githubcopilot.com/mcp/',

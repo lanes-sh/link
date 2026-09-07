@@ -5,6 +5,7 @@ export const fastmailContacts = defineProvider({
   id: 'fastmail_contacts',
   name: 'Fastmail Contacts',
   description: 'Search and read contacts in a Fastmail address book over CardDAV.',
+  keywords: ['address book', 'directory', 'people', 'email address'],
   connector: { kind: 'dav', base_url: 'https://carddav.fastmail.com', service: 'carddav' },
   auth: { kind: 'basic', app: FASTMAIL_APP },
   identity: { kind: 'connector' },

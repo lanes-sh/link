@@ -123,7 +123,7 @@ const connectorWith = (steps: readonly Step[], options: { smtp?: boolean; move?:
 const annotations: Record<string, unknown>[] = [];
 const storage = createMemoryBlobStore();
 const CONTEXT = {
-  manifest: { id: 'icloud_mail' },
+  manifest: { id: 'icloud_mail', name: 'iCloud Mail' },
   provider: {
     audit: { annotate: (detail: Record<string, unknown>) => annotations.push(detail) },
     // Scoped to this provider and connection by the time a connector sees it,
@@ -143,7 +143,28 @@ const CONTEXT = {
 const parsed = (result: { content: readonly { text?: string }[] }): Record<string, unknown> =>
   JSON.parse(result.content[0]!.text!);
 
+
+/**
+ * The searchable fields, applied by the connector rather than by the caller.
+ *
+ * `titleFor` and `withKeywords` are unit-tested in `../searchability.test.ts`,
+ * and that was the whole of it for a while — which missed the actual defect,
+ * because the helpers were right and this connector was not calling them. A
+ * fixed capability set is written here and returned from `discover` as it
+ * stands, so there was no rewriting step to apply them in.
+ */
 describe('discovery', () => {
+  test('the searchable fields are applied to a fixed capability set', async () => {
+    const { connector } = connectorWith([]);
+
+    const capabilities = await connector.discover(CONTEXT);
+
+    expect(capabilities.every((capability) => capability.title !== undefined)).toBe(true);
+    expect(capabilities.find((capability) => capability.name === 'list_mailboxes')?.title).toBe(
+      'iCloud Mail: list mailboxes',
+    );
+  });
+
   test('the capability set is fixed, because the protocol fixes it', async () => {
     const { connector } = connectorWith([]);
 

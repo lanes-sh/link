@@ -1,5 +1,6 @@
 import type { Connector, ToolResult } from '#connectivity';
 import { davCapabilities } from './capabilities.ts';
+import { searchableCapabilities } from '../mcp/index.ts';
 import { createContact, searchContacts } from './contacts.ts';
 import {
   createEvent,
@@ -73,8 +74,11 @@ export function createDavConnector(options: DavConnectorOptions): Connector {
   return {
     kind: 'dav',
 
-    async discover() {
-      const capabilities = davCapabilities(options.service);
+    async discover(context) {
+      const capabilities = searchableCapabilities(
+        davCapabilities(options.service),
+        context.manifest,
+      );
 
       // Prove the credential before declaring the connection good. Without this
       // a wrong app-specific password surfaces as a failed tool call days later
