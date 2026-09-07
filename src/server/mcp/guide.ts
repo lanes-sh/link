@@ -97,6 +97,29 @@ change to what exists here is a command a person runs; nothing on this surface
 adds a connection, edits a profile, or changes who may consume it. That is not an
 omission to work around.
 
+## A tool you cannot see may still be reachable
+
+Your list of tools is a snapshot, taken when your client connected. This endpoint
+cannot tell you when it changes — it is stateless, so there is no stream on which
+to send the notification, and it says so rather than promising one it cannot keep.
+Some clients re-read the list each session; some hold the one they first fetched
+for as long as they are registered.
+
+So a connection authorised since then is reachable here and absent from your list.
+Two tools exist for exactly that, and their names never change, which is what
+makes them present in whatever list you were given:
+
+- **Search** finds any capability this endpoint reaches now, by keyword or by its
+  exact id, and returns the arguments it takes.
+- **Call** invokes one by id, under the same permissions the named tool would
+  have had. It reaches nothing you could not otherwise reach, and a capability
+  the profile does not allow is refused here exactly as it would be there.
+
+Prefer a named tool wherever your list has one — it is the same call, and your
+client can see its schema without asking. Reach for these when you cannot see a
+tool for something the owner has plausibly connected, and before concluding that
+you cannot do it.
+
 ## When a call is refused
 
 A refusal is information, not an obstacle. Three kinds, and they mean different
