@@ -54,6 +54,40 @@ export interface PolicyFlags extends GlobalFlags {
   readonly connection?: string | undefined;
 }
 
+/**
+ * The data half. The wrapper below resolves the workspace from the process
+ * environment, which is right for a terminal with one workspace in view; a
+ * process serving many needs the half that takes an `env`.
+ */
+export async function applyPolicyRule(
+  effect: 'allow' | 'deny',
+  capability: string,
+  flags: PolicyFlags,
+  options: { env?: Record<string, string | undefined> } = {},
+): Promise<{ profile: string; capability: string; effect: 'allow' | 'deny' } | null> {
+  const { resolution, config } = await resolveProfile(
+    flags,
+    options.env !== undefined ? { env: options.env } : {},
+  );
+
+  const key = flags.connection;
+  if (key === undefined) throw new Error('--connection is required. A rule governs one connection (ADR-058).');
+
+  const index = config.grants.findIndex((grant) => grant.connection === key);
+  if (index === -1) {
+    throw new Error(`Profile "${resolution.profile}" does not grant "${key}".`);
+  }
+
+  // Already declared is an outcome, not an error.
+  if (config.grants[index]![effect].some((rule) => rule.capability === capability)) return null;
+
+  const document = await ConfigDocument.open(resolution.workspaceRoot, resolution.profile);
+  document.addTo(['grants', index, effect], capability, { inline: true });
+  await document.save();
+
+  return { profile: resolution.profile, capability, effect };
+}
+
 export async function policyRule(
   effect: 'allow' | 'deny',
   capability: string,

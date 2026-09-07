@@ -152,3 +152,4 @@ export {
 } from './vault.ts';
 
 export { generateKey, type DocumentIO } from './document.ts';
+export { workspaceKey, workspaceVaultKey, type DerivedPurpose } from './derived.ts';

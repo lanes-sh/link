@@ -512,9 +512,9 @@ describe('removing a profile does not reach into the repository', () => {
     // survives, because this command opens the target's declared storage and
     // the routing that points memory at a repository is applied in
     // `openRuntime`.
-    const { output } = await run(() =>
-      removeProfile('personal', { ...SELECT, dryRun: true, yes: true, deleteData: true }),
-    );
+    const { output } = await run(async () => {
+      await removeProfile('personal', { ...SELECT, dryRun: true, yes: true, deleteData: true });
+    });
 
     expect(output).toContain('my-org/my-notes');
     expect(output).toContain('survive this removal');

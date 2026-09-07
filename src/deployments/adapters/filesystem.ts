@@ -93,7 +93,13 @@ export function createFilesystemBlobStore(options: FilesystemBlobStoreOptions): 
       // everything else a profile owns — the audit log, `state.kv`, memory, and
       // cached mail attachments. Left at the umask default those are 0644 in a
       // 0755 directory, which on a shared machine is every local user's to read.
-      const temporary = `${path}.${process.pid}.tmp`;
+      //
+      // The pid is not enough on its own: two writes to the same key inside one
+      // process pick the same temporary name, the first rename moves it, and the
+      // second fails with ENOENT on a file it thinks it just wrote. One process
+      // serving many workspaces does exactly this, and it surfaced as a
+      // provisioning failure rather than as anything about storage.
+      const temporary = `${path}.${process.pid}.${crypto.randomUUID().slice(0, 8)}.tmp`;
       await writeFile(temporary, data, { mode: 0o600 });
       await rename(temporary, path);
 

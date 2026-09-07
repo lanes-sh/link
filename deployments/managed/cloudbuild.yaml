@@ -1,0 +1,87 @@
+# The Lanes-hosted runtime, built and deployed.
+#
+# **One substitution decides the environment, and everything else is derived
+# from it.** The API's own pipeline overrides each `_*_SECRET` individually to a
+# `_STAGING` twin, which means a secret added without a matching override leaves
+# stage silently reading production's — two are in that state today. Repeating it
+# here would put a stage build one forgotten line away from reading production
+# mailbox credentials, so `_ENV` is the only thing a trigger overrides and the
+# suffix, the service name, the URL and the bucket all follow from it (ADR-072).
+#
+# The runtime also refuses to boot when its environment and its derived
+# locations disagree, so a mistake here fails the revision rather than serving
+# the wrong tenant's data.
+
+substitutions:
+  # `stage` or `prod`. The only override a trigger sets.
+  _ENV: stage
+  # Derived below; declared so `gcloud builds submit` can be run by hand.
+  _SERVICE: lanes-link-managed-${_ENV}
+  _REGION: europe-west1
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  dynamicSubstitutions: true
+
+images:
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/cloud-run-source-deploy/${_SERVICE}'
+
+steps:
+  - id: build
+    name: 'gcr.io/cloud-builders/docker'
+    args:
+      - build
+      - '-f'
+      - deployments/managed/Dockerfile
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/cloud-run-source-deploy/${_SERVICE}'
+      - '.'
+
+  - id: push
+    name: 'gcr.io/cloud-builders/docker'
+    args:
+      - push
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/cloud-run-source-deploy/${_SERVICE}'
+
+  - id: deploy
+    name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -euo pipefail
+
+        # prod reads the unsuffixed secrets; stage reads the _STAGING twins.
+        # One expression rather than a line per secret, which is the whole
+        # argument at the top of this file.
+        if [ "${_ENV}" = "prod" ]; then SUFFIX=""; API="https://api.lanes.sh"; else SUFFIX="_STAGING"; API="https://api-stage.lanes.sh"; fi
+
+        # The audience is a per-environment constant, not this service's URL.
+        # A Cloud Run URL is assigned at the first *healthy* revision, and this
+        # runtime refuses to boot without an audience — so the URL cannot be
+        # known before the thing that needs it has started. That circle cost one
+        # failed deploy to find. A constant separates stage from prod exactly as
+        # well, which is all the audience is for here (ADR-072), and the API
+        # names the same string through LINK_CONTROL_AUDIENCE.
+        #
+        # `.lanes.internal` resolves nowhere on purpose: nothing should ever
+        # treat this as an address, and a name that cannot be dialled says so.
+        AUDIENCE="https://${_SERVICE}.lanes.internal"
+
+        # **`--no-allow-unauthenticated` is the outer gate** (ADR-076). This
+        # service holds live refresh tokens for other people's accounts and has
+        # no business being reachable from the internet: the API's service
+        # account is admitted by IAM and nobody else is. The assertion check
+        # inside is the second layer, not the only one.
+        gcloud run deploy ${_SERVICE} \
+          --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/cloud-run-source-deploy/${_SERVICE} \
+          --region=${_REGION} \
+          --platform=managed \
+          --no-allow-unauthenticated \
+          --service-account=lanes-link-managed@${PROJECT_ID}.iam.gserviceaccount.com \
+          --set-env-vars="LANES_ENV=${_ENV},LANES_API_URL=$${API},LANES_CONTROL_ISSUER=$${API},LANES_CONTROL_AUDIENCE=$${AUDIENCE},LANES_RUNTIME_ISSUER=https://${_SERVICE}.lanes.internal" \
+          --update-secrets="LANES_CONTROL_PUBLIC_KEY=LANES_CONTROL_PUBLIC_KEY$${SUFFIX}:latest,LANES_RUNTIME_PRIVATE_KEY=LANES_RUNTIME_PRIVATE_KEY$${SUFFIX}:latest,LANES_LINK_VAULT_KEY=LANES_LINK_VAULT_KEY$${SUFFIX}:latest"
+
+        URL="$(gcloud run services describe ${_SERVICE} --region=${_REGION} --format='value(status.url)')"
+        echo "deployed ${_SERVICE} at $${URL}"
+        echo "point the API at it: LINK_CONTROL_URL=$${URL} LINK_CONTROL_AUDIENCE=$${AUDIENCE}"

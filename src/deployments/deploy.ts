@@ -18,6 +18,7 @@ import { repairOwnerLayer } from '#cli/config-repair-sweep.ts';
 import { migrateToCurrentContract } from '#cli/workspace-migrate.ts';
 import { deployedWorkspace, uploadWorkspace } from './upload.ts';
 import { servingProfiles } from './serving.ts';
+import { resolveDeployTarget } from './deploy-target.ts';
 import { healthLine, reachability, registerLine, reportUnauthorised } from './report.ts';
 
 /**
@@ -83,7 +84,16 @@ export async function deploy(flags: DeployFlags): Promise<void> {
   // ran the contract 1→2 step alone, so a contract-2 bucket passed straight
   // through and the revision came up reading an empty `data/` while the bytes
   // stayed under `data/<profile>/`. See `migrateToCurrentContract`.
-  if (!(await migrateTargetWorkspace(requireTargetFlag(flags), flags.dryRun !== true))) return;
+  // Resolved once, before anything reads it: deriving it twice could answer
+  // differently if `gcloud config` changed under a long deploy.
+  const deployTarget = await resolveDeployTarget(flags);
+  if (flags.target === undefined) {
+    // Said out loud, because a name nobody typed is a name nobody expects to
+    // have to pass to the next command.
+    print(style.dim(`         naming this deployment ${style.bold(deployTarget)}`));
+  }
+
+  if (!(await migrateTargetWorkspace(deployTarget, flags.dryRun !== true))) return;
 
   // The one command allowed to name a target that does not exist yet: creating
   // it is what a first deploy is for.
@@ -104,7 +114,7 @@ export async function deploy(flags: DeployFlags): Promise<void> {
   // nothing declares has no set to derive from.
   const { profiles: serving, primary } = await servingProfiles({
     workspaceRoot: resolveWorkspaceRoot(),
-    target: requireTargetFlag(flags),
+    target: deployTarget,
     named: flags.profiles ?? [],
   });
 
@@ -347,14 +357,6 @@ export async function deploy(flags: DeployFlags): Promise<void> {
   print(registerLine(resolution.profile, target));
 
   reportUnauthorised(prepared.warnings, resolution.profile, target);
-}
-
-/** `--target` is required by `SELECTION`; this is the type narrowing, not a check. */
-function requireTargetFlag(flags: DeployFlags): string {
-  if (!flags.target) {
-    throw new ConfigError('--target is required. It names the deployment this acts on.');
-  }
-  return flags.target;
 }
 
 /**

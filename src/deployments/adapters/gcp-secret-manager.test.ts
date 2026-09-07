@@ -553,3 +553,90 @@ describe('application default credentials', () => {
     }
   });
 });
+
+/**
+ * One project, many workspaces.
+ *
+ * A self-hosted deploy gets a project per workspace, so a reference is unique
+ * by construction and nothing here was needed. A Lanes-hosted runtime serves
+ * many workspaces from one project, and every one of them stores
+ * `tokens/tok1`. Without a namespace the second `set` adds a version to the
+ * first workspace's secret and both then read the same refresh token, which is
+ * the one failure in this adapter whose wrong answer is somebody else's
+ * mailbox.
+ *
+ * The fake is shared between the two stores on purpose: the question is not
+ * whether each store works on its own, it is whether either can reach the
+ * other's secrets.
+ */
+function sharedProject(seed: Record<string, string> = {}) {
+  const api = fakeSecretManager(seed);
+  const tokens = {
+    async token() {
+      return 'test-access-token';
+    },
+  };
+  return {
+    api,
+    workspace: (namespace: string) =>
+      new GcpSecretManagerStore({ project: PROJECT, namespace, fetch: api.fetch, tokens }),
+  };
+}
+
+describe('workspace namespace', () => {
+  test('two workspaces in one project do not share a reference', async () => {
+    const project = sharedProject();
+    const first = project.workspace('ws-aaa');
+    const second = project.workspace('ws-bbb');
+
+    await first.set('tokens/tok1', 'first-workspace-token');
+    await second.set('tokens/tok1', 'second-workspace-token');
+
+    expect(await first.get('tokens/tok1')).toBe('first-workspace-token');
+    expect(await second.get('tokens/tok1')).toBe('second-workspace-token');
+  });
+
+  test('listing returns this workspace only, with its own references', async () => {
+    const project = sharedProject();
+    const first = project.workspace('ws-aaa');
+    const second = project.workspace('ws-bbb');
+
+    await first.set('gmail/main', 'a');
+    await second.set('gmail/main', 'b');
+    await second.set('gmail/side', 'c');
+
+    // The namespace is an encoding detail: a caller writes and reads the same
+    // reference it would against an unnamespaced store.
+    expect(await first.list()).toEqual(['gmail/main']);
+    expect(await second.list()).toEqual(['gmail/main', 'gmail/side']);
+  });
+
+  test('one workspace cannot see another through has or delete', async () => {
+    const project = sharedProject();
+    const first = project.workspace('ws-aaa');
+    const second = project.workspace('ws-bbb');
+
+    await first.set('gmail/main', 'a');
+
+    expect(await second.has('gmail/main')).toBe(false);
+    // Deleting a reference this workspace does not hold must not reach across.
+    await second.delete('gmail/main');
+    expect(await first.get('gmail/main')).toBe('a');
+  });
+
+  test('a namespaced store does not read an unnamespaced secret', async () => {
+    // The migration hazard: a workspace deployed before namespacing has its
+    // secrets at the bare id. A namespaced store must miss them rather than
+    // silently adopt whatever is at the old name.
+    const project = sharedProject({ gmail__main: 'pre-existing' });
+    expect(await project.workspace('ws-aaa').get('gmail/main')).toBeNull();
+  });
+
+  test('refuses a namespace that would collide with a reference segment', async () => {
+    // `__` separates segments, so a namespace carrying one would let
+    // `a__b` + `c/d` and `a` + `b__c/d` land on the same secret id.
+    expect(() => sharedProject().workspace('ws__aaa')).toThrow(/namespace/i);
+    expect(() => sharedProject().workspace('ws_')).toThrow(/namespace/i);
+    expect(() => sharedProject().workspace('')).toThrow(/namespace/i);
+  });
+});

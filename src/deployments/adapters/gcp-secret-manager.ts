@@ -84,6 +84,31 @@ export function encodeRef(ref: SecretRef): string {
   return id;
 }
 
+/**
+ * A workspace namespace, checked once at construction rather than per call.
+ *
+ * `SEPARATOR` separates segments in an encoded id, so a namespace containing
+ * one — or ending in `_`, which produces one as soon as the separator is
+ * appended — would let two different (namespace, reference) pairs encode to the
+ * same secret id. That is the collision `encodeRef` already refuses per
+ * reference, applied to the segment prepended to every one of them.
+ */
+export function assertValidNamespace(namespace: string): void {
+  const refuse = (why: string): never => {
+    throw new Error(
+      `Secret Manager namespace ${JSON.stringify(namespace)} ${why}. A namespace is one ` +
+        `segment of [A-Za-z0-9_-] that neither contains "${SEPARATOR}" nor ends in "_", ` +
+        'because it is prepended to every reference and shares their encoding.',
+    );
+  };
+
+  if (namespace.length === 0) refuse('is empty');
+  if (!/^[A-Za-z0-9_-]+$/.test(namespace)) refuse('is not a single Secret Manager id segment');
+  if (namespace.includes(SEPARATOR) || namespace.endsWith('_')) {
+    refuse('would collide with the segment separator');
+  }
+}
+
 export function decodeRef(secretId: string): string {
   return secretId.split(SEPARATOR).join('/');
 }
@@ -97,6 +122,16 @@ export interface GcpSecretManagerOptions {
   /** The Google Cloud project holding the secrets. */
   readonly project: string;
   /**
+   * Which workspace's secrets these are, when the project holds more than one.
+   *
+   * Omitted for a self-hosted deploy: it owns its project, so a reference is
+   * unique by construction. A Lanes-hosted runtime serves many workspaces from
+   * one project and every one of them stores `tokens/tok1`, so without this the
+   * second write adds a version to the first workspace's secret and both then
+   * read one refresh token.
+   */
+  readonly namespace?: string;
+  /**
    * Where the token comes from. Defaults to Application Default Credentials:
    * `GOOGLE_ACCESS_TOKEN`, then `GOOGLE_APPLICATION_CREDENTIALS`, then the
    * gcloud well-known file, then the metadata server.
@@ -108,6 +143,7 @@ export interface GcpSecretManagerOptions {
 
 export class GcpSecretManagerStore implements SecretStore {
   readonly #project: string;
+  readonly #namespace: string | undefined;
   readonly #tokens: AccessTokenSource;
   readonly #fetch: typeof globalThis.fetch;
 
@@ -118,7 +154,9 @@ export class GcpSecretManagerStore implements SecretStore {
           'Set `credentials.project` on the target.',
       );
     }
+    if (options.namespace !== undefined) assertValidNamespace(options.namespace);
     this.#project = options.project;
+    this.#namespace = options.namespace;
     this.#fetch = options.fetch ?? globalThis.fetch;
     this.#tokens =
       options.tokens ??
@@ -128,10 +166,40 @@ export class GcpSecretManagerStore implements SecretStore {
       });
   }
 
+  /**
+   * The secret id one reference maps to in this store.
+   *
+   * A namespaced store prepends its workspace before encoding, so `tokens/tok1`
+   * in workspace `ws-aaa` is `ws-aaa__tokens__tok1` and the same reference in
+   * another workspace is a different secret. Unnamespaced this is `encodeRef`
+   * unchanged, which is what keeps every existing deployment reading the ids it
+   * already wrote.
+   *
+   * The reference is validated before the namespace is prepended, not after:
+   * `nonamespace` is malformed and must say so, and composing first would make
+   * it `ws-aaa/nonamespace`, which is well-formed and would be accepted.
+   */
+  #id(ref: SecretRef): string {
+    assertValidSecretRef(ref);
+    return encodeRef(this.#namespace === undefined ? ref : `${this.#namespace}/${ref}`);
+  }
+
+  /**
+   * The reference a stored id represents here, or null when it is not ours.
+   *
+   * Only `list` needs this. Every other method addresses one secret by name and
+   * simply misses when it belongs to another workspace.
+   */
+  #owned(stored: SecretRef): SecretRef | null {
+    if (this.#namespace === undefined) return stored;
+    const scope = `${this.#namespace}/`;
+    return stored.startsWith(scope) ? stored.slice(scope.length) : null;
+  }
+
   async get(ref: SecretRef): Promise<string | null> {
     const response = await this.#call(
       'GET',
-      `/projects/${this.#project}/secrets/${encodeRef(ref)}/versions/latest:access`,
+      `/projects/${this.#project}/secrets/${this.#id(ref)}/versions/latest:access`,
     );
 
     // A ref with no secret, and a ref whose secret has no live version, are the
@@ -185,7 +253,7 @@ export class GcpSecretManagerStore implements SecretStore {
    * both 404, both create, the loser gets `ALREADY_EXISTS`, and both add.
    */
   async set(ref: SecretRef, value: string): Promise<void> {
-    const id = encodeRef(ref);
+    const id = this.#id(ref);
     const version = `/projects/${this.#project}/secrets/${id}:addVersion`;
     const payload = { payload: { data: Buffer.from(value, 'utf8').toString('base64') } };
 
@@ -212,7 +280,7 @@ export class GcpSecretManagerStore implements SecretStore {
     // leave `list` reporting a ref that `get` cannot read.
     const response = await this.#call(
       'DELETE',
-      `/projects/${this.#project}/secrets/${encodeRef(ref)}`,
+      `/projects/${this.#project}/secrets/${this.#id(ref)}`,
     );
     if (response.status === 404) return; // Deleting what is not there is a no-op.
     await this.#json(response, `delete ${ref}`);
@@ -236,11 +304,13 @@ export class GcpSecretManagerStore implements SecretStore {
         const id = secret.name?.split('/').pop();
         if (!id) continue;
 
-        const ref = decodeRef(id);
+        const ref = this.#owned(decodeRef(id));
         // A project may hold secrets this system did not write — a Cloud Build
-        // key, another app's token. Anything that does not decode to a valid
-        // reference is not ours, and is skipped rather than reported.
-        if (!isValidSecretRef(ref)) continue;
+        // key, another app's token — and, where it serves more than one
+        // workspace, secrets belonging to a different one. Anything that is not
+        // a valid reference inside this store's own namespace is skipped rather
+        // than reported.
+        if (ref === null || !isValidSecretRef(ref)) continue;
         if (prefix && !ref.startsWith(prefix)) continue;
         refs.push(ref);
       }

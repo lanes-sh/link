@@ -28,6 +28,26 @@ import { streamLogger } from './logging.ts';
  *                      there is no workspace default any more (ADR-037), and
  *                      `lanes link deploy` sets it at rollout.
  *   PORT               injected by Cloud Run. 8080 is its default.
+ *
+ * And on a Lanes-managed runtime only, three more. Setting the first is what
+ * mounts the control surface; absent, this container serves exactly what a
+ * self-hosted one serves.
+ *
+ *   LANES_CONTROL_PUBLIC_KEY  the API's signing key, SPKI PEM. Pinned rather
+ *                      than discovered: a runtime that fetched its own trust
+ *                      anchor could be told to trust something else.
+ *   LANES_CONTROL_ISSUER      who may have signed. Carries the environment.
+ *   LANES_CONTROL_AUDIENCE    this service's own URL, for the same reason —
+ *                      ADR-072, so a stage assertion is not a prod one.
+ *
+ * And, whenever `LANES_LINK_HOME` is a `lanes://` root, two more — the return
+ * leg, so this runtime can read the bytes it was started to serve:
+ *
+ *   LANES_RUNTIME_PRIVATE_KEY the key it signs its own assertion with, PKCS#8
+ *                      PEM. A *third* keypair: the two above authorise other
+ *                      people to us, this one authorises us to the API.
+ *   LANES_RUNTIME_ISSUER      who we claim to be, matching the API's
+ *                      LINK_RUNTIME_ISSUER. Carries the environment.
  */
 
 const env = process.env;
@@ -63,8 +83,62 @@ const log = (message: string): void => {
   process.stdout.write(`${new Date().toISOString()} ${message}\n`);
 };
 
+// Imported only when it is configured, and that is not a style choice.
+// `lanes link deploy` submits the *installed package* as the build source
+// (`installRoot` in `deployments/gcp/driver.ts`), and package.json's `files`
+// excludes `src/control/**` — it is Lanes-only code and has no business in
+// every CLI user's node_modules. A static import here would therefore resolve
+// in this repository and fail at startup in every self-hosted container, which
+// is the worst place to find out.
+//
+// The env var is the switch, so testing it before the import is the same
+// condition `controlDepsFrom` applies, stated once more where the module has to
+// be absent. `src/control/boot.test.ts` owns the rest of the behaviour.
+//
+// Before the bind either way, so a misconfigured key fails the revision rather
+// than leaving it healthy and refusing every control call with the same "no" a
+// forged assertion gets.
+let control;
+if (env['LANES_CONTROL_PUBLIC_KEY']) {
+  try {
+    const { controlDepsFrom } = await import('#control/boot.ts');
+    control = await controlDepsFrom(env);
+  } catch (error) {
+    process.stderr.write(`${(error as Error).message}\n`);
+    process.exit(1);
+  }
+}
+
+// The return leg, and it has to happen before anything reads configuration:
+// `workspaceFiles` builds a `lanes://` store on the first read of
+// `lanes-link.yaml`, and that store asks for the process's credential at call
+// time. Registered here rather than passed, for the reason the adapter gives —
+// `deployments` may not import `auth`, so the layer that may registers one.
+//
+// Same dynamic-import treatment as the control block, and the same reason:
+// package.json's `files` excludes `src/control/**`, so a static import would
+// resolve in this repository and fail at startup in every self-hosted container.
+try {
+  const { lanesApiUrl } = await import('#deployments/adapters/lanes.ts');
+  const { runtimeTokensFrom } = await import('#control/identity.ts');
+  const tokens = await runtimeTokensFrom(env, lanesApiUrl(env));
+  if (tokens) {
+    const { useLanesCredentials } = await import('#deployments/adapters/lanes.ts');
+    useLanesCredentials(tokens);
+    log('presenting a runtime assertion to the Lanes API for this workspace');
+  }
+} catch (error) {
+  // Before the bind, so a missing or unusable key fails the revision rather
+  // than leaving it healthy and answering every request with a storage error.
+  process.stderr.write(`${(error as Error).message}\n`);
+  process.exit(1);
+}
+
+if (control) log(`control surface on for workspace ${control.workspace}`);
+
 try {
   const endpoint = await startEndpoint({
+    ...(control ? { control } : {}),
     flags: {
       ...(env['LANES_LINK_PROFILE'] ? { profile: env['LANES_LINK_PROFILE'] } : {}),
       ...(env['LANES_LINK_TARGET'] ? { target: env['LANES_LINK_TARGET'] } : {}),
