@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { titleFor, withKeywords } from './index.ts';
+import { gmail } from '#providers/google/gmail/index.ts';
 
 /**
  * The two fields a client's tool search actually reads.
@@ -101,5 +102,34 @@ describe('withKeywords', () => {
     expect(withKeywords('Search the address book.', ['address book'])).toBe(
       'Search the address book.',
     );
+  });
+});
+
+/**
+ * The helpers being right is half of it. The other half is being *called*, and
+ * the two connectors that call them are not every path a tool arrives by.
+ *
+ * `http` and `mcp` apply both as they build a tool from what they discovered.
+ * An authored capability is never discovered — `createCompositeConnector`
+ * delegates `discover` to the remote and answers only `invoke` — so it reaches
+ * the surface carrying whatever its definition wrote and nothing else. That is
+ * invisible at runtime in the way this file's opening note describes: the tool
+ * works perfectly and merely loses to a neighbour that says "email" when it
+ * does not.
+ *
+ * Which is what happened. `gmail.send_message` is the one authored capability on
+ * a remote provider in the tree, and it was the only tool on a whole profile
+ * with no `title`, so "send an email" ranked `users.drafts.send` above the
+ * capability that exists to send mail.
+ */
+describe('an authored capability is as searchable as a discovered one', () => {
+  test('gmail.send_message carries a title and its provider keywords', () => {
+    const send = gmail.capabilities.find((capability) => capability.name === 'send_message');
+
+    expect(send).toBeDefined();
+    expect(send?.title).toBe('Gmail: send message');
+    // `message` is absent because the description already carries it, which is
+    // `withKeywords` working rather than a term going missing.
+    expect(send?.description).toContain('Also: email, inbox, reply, correspondence.');
   });
 });

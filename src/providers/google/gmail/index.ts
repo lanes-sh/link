@@ -1,4 +1,5 @@
 import { defineProvider, defineProviderWithCapabilities } from '#connectivity';
+import { titleFor, withKeywords } from '#connectivity/transports';
 import { GMAIL_IDENTITY, GOOGLE_APP, GOOGLE_OAUTH, specPath } from '../shared/oauth.ts';
 import { googleServiceAccount } from '../shared/service-account.ts';
 import { googleSetup } from '../shared/setup.ts';
@@ -111,5 +112,19 @@ const manifest = defineProvider({
  */
 export const gmail = defineProviderWithCapabilities({
   manifest,
-  capabilities: [gmailSendMessage],
+  // Searchable on the same two fields as every discovered tool. `titleFor` and
+  // `withKeywords` are applied by the `http` and `mcp` connectors as they build
+  // a tool from what they discovered, and an authored capability never passes
+  // through either — so without this the one capability here is the only tool on
+  // the whole surface with no `title` and none of its provider's keywords. That
+  // is the search's motivating example losing to a neighbour: "send an email"
+  // scored `users.drafts.send` above this, because only the former carried
+  // "email" at all.
+  capabilities: [
+    {
+      ...gmailSendMessage,
+      title: titleFor(manifest.name, gmailSendMessage.name),
+      description: withKeywords(gmailSendMessage.description, manifest.keywords),
+    },
+  ],
 });
