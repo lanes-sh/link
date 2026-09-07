@@ -14,6 +14,7 @@ export const driveMcp = defineProvider({
   name: 'Google Drive (Google MCP)',
   description:
     'Search, read, and create files via Google\'s official Drive MCP server. Requires Workspace Developer Preview enrolment — use "drive" otherwise.',
+  keywords: ['document', 'upload', 'download', 'attachment', 'storage'],
   connector: { kind: 'mcp', endpoint: 'https://drivemcp.googleapis.com/mcp/v1' },
   auth: { kind: 'oauth', registration: 'manual', app: GOOGLE_APP, scopes: DRIVE_SCOPES },
   identity: DRIVE_IDENTITY,

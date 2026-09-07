@@ -28,6 +28,7 @@ export const gmailMcp = defineProvider({
   name: 'Gmail (Google MCP)',
   description:
     'Read and compose mail via Google\'s official Gmail MCP server. Requires Workspace Developer Preview enrolment — use "gmail" otherwise.',
+  keywords: ['email', 'message', 'inbox', 'reply', 'correspondence'],
   connector: { kind: 'mcp', endpoint: 'https://gmailmcp.googleapis.com/mcp/v1' },
   auth: { kind: 'oauth', registration: 'manual', app: GOOGLE_APP, scopes: GMAIL_MCP_SCOPES },
   identity: GMAIL_IDENTITY,

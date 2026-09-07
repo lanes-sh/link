@@ -16,6 +16,7 @@ export const drive = defineProvider({
   name: 'Google Drive',
   description:
     'Search, read, and export files, and organise the ones this app created — rename, move, trash, copy, and share — via the Drive REST API.',
+  keywords: ['document', 'upload', 'download', 'attachment', 'storage'],
   connector: {
     kind: 'http',
     base_url: 'https://www.googleapis.com/drive/v3',

@@ -40,6 +40,7 @@ export const gmailImap = defineProvider({
   name: 'Gmail (IMAP)',
   description:
     'Read, search, and send mail in a personal Gmail mailbox over IMAP and SMTP, with an app password that does not expire.',
+  keywords: ['email', 'message', 'inbox', 'reply', 'correspondence'],
   connector: {
     kind: 'imap',
     host: 'imap.gmail.com',

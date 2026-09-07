@@ -73,6 +73,7 @@ const manifest = defineProvider({
   name: 'Gmail',
   description:
     'Read, search, send, draft, and organise mail — labels, read-state, spam, and trash — via the Gmail REST API.',
+  keywords: ['email', 'message', 'inbox', 'reply', 'correspondence'],
   connector: {
     kind: 'http',
     base_url: GMAIL_HOST,

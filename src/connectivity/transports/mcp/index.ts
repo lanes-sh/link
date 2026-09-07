@@ -83,6 +83,66 @@ export function shortenName(providerId: string, name: string, all: readonly stri
 }
 
 /**
+ * A readable name for a discovered capability, where the vendor supplied none.
+ *
+ * MCP's `title` is optional and almost nobody fills it in: it was `undefined` on
+ * every one of the 144 tools the vendored specs produce, because an OpenAPI
+ * document has a `summary` and an `operationId` and no display name. So a client
+ * listing them had only the wire name to show, and — the reason this exists — a
+ * client that *defers* tool loading had one less field to rank on.
+ *
+ * That second use is what makes this more than cosmetic (ADR-075). Tool search
+ * is client-side and it matches on names and descriptions, so those two fields
+ * are the whole index. The wire name carries the provider id (`gmail_...`) but
+ * the vendor's own noun appears nowhere: `Gmail` is in the manifest, and the
+ * manifest is not what a client is ranking. Putting it in the title puts it in
+ * the index, once per tool, for about twenty-five bytes.
+ *
+ * The operation reads better reversed. An operationId is written
+ * object-then-verb — `users.drafts.list`, `spreadsheets.values.update` — because
+ * it is a path; a person says "list drafts". So the last segment leads, the one
+ * before it follows, and camelCase is split so `copyTo` reads as words. Deeper
+ * segments are dropped rather than joined: `users.` prefixes most of Gmail and
+ * says nothing that distinguishes one tool from another.
+ *
+ * Never overwrites a `title` the vendor did supply. An upstream MCP server that
+ * wrote one knows its own product better than this does.
+ */
+export function titleFor(vendor: string, name: string): string {
+  const words = (segment: string) =>
+    segment.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[_-]+/g, ' ').toLowerCase();
+
+  const segments = name.split('.').filter((segment) => segment.length > 0);
+  const verb = segments.at(-1);
+  const object = segments.at(-2);
+
+  if (verb === undefined) return vendor;
+  return object === undefined
+    ? `${vendor}: ${words(verb)}`
+    : `${vendor}: ${words(verb)} ${words(object)}`;
+}
+
+/**
+ * The manifest's search vocabulary, on the description that carries it.
+ *
+ * One line, appended to every capability of a provider that declares
+ * `keywords`. Repetitive on purpose: a client's tool search ranks each tool as
+ * its own document, so a word present on the provider and absent from the tool
+ * is a word that does not match the tool. There is nowhere else to put it.
+ *
+ * A term already in the description is dropped rather than repeated, which
+ * keeps the line to the words that are genuinely missing and stops it growing
+ * as vendors improve their own wording.
+ */
+export function withKeywords(description: string, keywords: readonly string[] = []): string {
+  const missing = keywords.filter(
+    (term) => !new RegExp(`\\b${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(description),
+  );
+
+  return missing.length === 0 ? description : `${description}\n\nAlso: ${missing.join(', ')}.`;
+}
+
+/**
  * Turn an upstream transport error into something readable.
  *
  * The SDK reports a bad HTTP status by appending the whole response body,
@@ -173,8 +233,16 @@ export function createMcpConnector(options: McpConnectorOptions): Connector {
 
         return tools.map((tool) => ({
           name: shortenName(context.manifest.id, tool.name, names),
-          ...(tool.title ? { title: tool.title } : {}),
-          description: tool.description ?? `${context.manifest.name} ${tool.name}`,
+          // The upstream title wins where there is one; `titleFor` fills in
+          // where there is not, so the vendor's noun reaches the field a
+          // deferring client ranks on either way.
+          title:
+            tool.title ??
+            titleFor(context.manifest.name, shortenName(context.manifest.id, tool.name, names)),
+          description: withKeywords(
+            tool.description ?? `${context.manifest.name} ${tool.name}`,
+            context.manifest.keywords,
+          ),
           inputSchema: tool.inputSchema ?? { type: 'object', properties: {} },
           bundle: inferBundle(tool, shortenName(context.manifest.id, tool.name, names)),
           // The upstream name is kept verbatim: ours may differ once it has
