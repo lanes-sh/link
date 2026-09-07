@@ -19,17 +19,19 @@ import { streamLogger } from './logging.ts';
  * `--no-allow-unauthenticated` with the API's service account as the only
  * caller IAM admits (ADR-074). There is no `/mcp` for anybody to reach.
  *
- * **One workspace per process, for now.** `createWorkspaceRouter` is the map
- * that makes it many and it is wired in the next slice, along with the
- * per-workspace vault key — which is the part that must land before two
- * tenants ever share a process, because today `LANES_LINK_VAULT_KEY` is
- * read once for the whole of one.
+ * **Many workspaces, one process, and no `LANES_LINK_HOME`.** Every control
+ * route already derives its root, its environment and its workspace from the
+ * verified assertion (`workspaceRootFor`, `environmentFor`), so the only thing
+ * that was ever per-process about this surface was which workspace it claimed
+ * to be. That is decided per request here.
+ *
+ * The vault key follows the same rule and had to be fixed for it:
+ * `LANES_LINK_VAULT_KEY` is read once per process, so before
+ * `#secrets/derived.ts` every tenant's vault would have been sealed under one
+ * key. It is now a master that each workspace derives its own from.
  *
  * What the environment has to provide:
  *
- *   LANES_LINK_HOME            `lanes://<workspace-id>` — whose configuration
- *                       this serves. The workspace is also what the control
- *                       assertion must name, and a disagreement is refused.
  *   LANES_RUNTIME_PRIVATE_KEY  the key this runtime signs its own assertion
  *                       with, so it may read that workspace's bytes back
  *                       through the API. See `#control/identity.ts`.
@@ -66,17 +68,47 @@ const hostname = env['LANES_LINK_HOST'] ?? '0.0.0.0';
 // Everything below imports `#control/**`, which package.json's `files` excludes
 // from the published package — this file is only ever run from a checkout, so
 // unlike `container.ts` it can import it statically.
-const { controlDepsFrom } = await import('#control/boot.ts');
+const { controlVerifierFrom } = await import('#control/boot.ts');
 const { runtimeTokensFrom } = await import('#control/identity.ts');
 const { lanesApiUrl, useLanesCredentials } = await import('#deployments/adapters/lanes.ts');
+const { assertEnvironmentMatches, environmentFrom } = await import('#deployments/environment.ts');
 
 const apiUrl = lanesApiUrl(env);
+
+/**
+ * ADR-072's guard, called by something other than its own test at last.
+ *
+ * `LANES_ENV` is required of anything that is not talking to a local API. A
+ * deployed revision that declared no environment would get no check at all,
+ * which is the exact failure the ADR exists for — so the absence is refused
+ * rather than defaulted, and a local run is recognised by its API being on this
+ * machine rather than by a variable somebody could also forget.
+ */
+const local = /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/.test(apiUrl);
+if (env['LANES_ENV'] !== undefined || !local) {
+  try {
+    const environment = environmentFrom(env['LANES_ENV']);
+    // The API URL is the derived location this service actually has. The
+    // storage root is per workspace and arrives with the assertion, so there
+    // is no process-wide one to check — which is itself a consequence of
+    // serving many workspaces.
+    assertEnvironmentMatches({ environment, what: 'LANES_API_URL', value: apiUrl });
+    log(`environment ${environment}`);
+  } catch (error) {
+    refuse((error as Error).message);
+  }
+} else {
+  log('no LANES_ENV set and the API is local, so no environment check applies');
+}
 
 // Before anything reads configuration. `workspaceFiles` builds a `lanes://`
 // store on the first read and asks for the process's credential at call time,
 // so a runtime that registered late would fail its own first read.
 try {
-  const tokens = await runtimeTokensFrom(env, apiUrl);
+  // `requireManagedRoot: false` — this service has no root of its own. Every
+  // workspace it serves is named by the assertion that arrives, so the key is
+  // required unconditionally rather than because of where bytes live.
+  const tokens = await runtimeTokensFrom(env, apiUrl, { requireManagedRoot: false });
   if (!tokens) {
     refuse(
       'LANES_RUNTIME_PRIVATE_KEY is not set, so this runtime has nothing to present to the ' +
@@ -88,9 +120,9 @@ try {
   refuse((error as Error).message);
 }
 
-const deps = await (async () => {
+const verifier = await (async () => {
   try {
-    const built = await controlDepsFrom(env);
+    const built = await controlVerifierFrom(env);
     if (!built) {
       refuse(
         'LANES_CONTROL_PUBLIC_KEY is not set, so nothing this service was sent could be ' +
@@ -103,6 +135,45 @@ const deps = await (async () => {
     return refuse((error as Error).message);
   }
 })();
+
+/**
+ * Which workspace a request is for, read from the token without verifying it.
+ *
+ * Safe, and worth saying why rather than leaving it to look like a shortcut.
+ * This decides *routing* only. `controlRoutes` then verifies the signature
+ * properly and refuses unless the assertion names the same workspace it was
+ * dispatched for — so a forged claim routes somewhere and is then turned away
+ * by the signature check, exactly as an unforged one for the wrong workspace
+ * would be.
+ *
+ * The alternative was a hostname per workspace, which is what
+ * `createWorkspaceRouter` was written against. ADR-074 made this service
+ * private with no hostname anybody resolves, so that statement no longer
+ * exists to be had. The agreement check stays anyway: it costs nothing and it
+ * still catches the case where routing and verification disagree.
+ */
+function workspaceOf(request: Request): string | null {
+  const header = request.headers.get('authorization') ?? '';
+  const [scheme, token] = header.split(' ');
+  if (scheme?.toLowerCase() !== 'bearer' || !token) return null;
+
+  const middle = token.split('.')[1];
+  if (!middle) return null;
+  try {
+    const padded = middle.replaceAll('-', '+').replaceAll('_', '/');
+    const claims = JSON.parse(atob(padded + '='.repeat((4 - (padded.length % 4)) % 4))) as {
+      workspace?: unknown;
+    };
+    return typeof claims.workspace === 'string' && claims.workspace.length > 0
+      ? claims.workspace
+      : null;
+  } catch {
+    // Unparseable is not an error here: it is a token that will not verify
+    // either, and the refusal belongs to the verifier so there is one answer
+    // for every way a statement can fail to convince.
+    return null;
+  }
+}
 
 const logger = streamLogger((line) => process.stdout.write(`${line}\n`));
 
@@ -117,11 +188,18 @@ const server = Bun.serve({
     // between this and the internet — so a health check that required an
     // assertion would be a revision that never goes healthy.
     if (url.pathname === '/health') {
-      return Response.json({ ok: true, workspace: deps.workspace });
+      return Response.json({ ok: true });
     }
 
     if (isControlPath(url.pathname)) {
-      return await controlRoutes(request, { ...deps, log: logger });
+      const workspace = workspaceOf(request);
+      // One answer for a token that names no workspace and for one that names
+      // a workspace nothing will admit. A caller able to tell them apart could
+      // enumerate tenants by watching which ids answer differently, which is
+      // ADR-007's argument one level up.
+      if (workspace === null) return Response.json({ error: 'unauthenticated' }, { status: 401 });
+
+      return await controlRoutes(request, { workspace, verifier, log: logger });
     }
 
     // Everything else, including `/mcp`. A client does not connect here; it
@@ -131,7 +209,7 @@ const server = Bun.serve({
   },
 });
 
-log(`managed control surface on :${server.port} for workspace ${deps.workspace}`);
+log(`managed control surface on :${server.port}, serving whichever workspace is asserted`);
 log(`reading its configuration through ${apiUrl}`);
 
 // Cloud Run sends SIGTERM and waits; a process that ignores it is killed with

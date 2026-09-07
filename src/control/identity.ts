@@ -149,11 +149,22 @@ export function runtimeTokens(options: RuntimeTokensOptions): TokenSource {
 export async function runtimeTokensFrom(
   env: Record<string, string | undefined>,
   apiUrl: string,
+  options: {
+    /**
+     * Whether a `lanes://` root is what makes the key required.
+     *
+     * True for the single-workspace container, where the root says whose bytes
+     * these are. False for the multi-tenant service, which has no root at all —
+     * every workspace it serves is named by the assertion that arrives, so the
+     * key is required unconditionally and its caller says so.
+     */
+    readonly requireManagedRoot?: boolean;
+  } = {},
 ): Promise<TokenSource | undefined> {
   const pem = env[PRIVATE_KEY];
   if (!pem) {
     const root = env['LANES_LINK_HOME'] ?? '';
-    if (root.startsWith(LANES_SCHEME)) {
+    if ((options.requireManagedRoot ?? true) && root.startsWith(LANES_SCHEME)) {
       // Refused rather than left to fail at the first read. A `lanes://` root
       // with no key is a runtime that will throw "No credential is registered"
       // on `lanes-link.yaml`, which reads as a storage fault three components

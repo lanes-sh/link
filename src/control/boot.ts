@@ -62,9 +62,18 @@ async function publicKeyFrom(pem: string): Promise<CryptoKey> {
   }
 }
 
-export async function controlDepsFrom(
+/**
+ * The verifier alone, without binding this process to one workspace.
+ *
+ * What a multi-tenant runtime needs: every control route already derives its
+ * root, its environment and its workspace from the *assertion*
+ * (`workspaceRootFor`, `environmentFor`), so the only thing that was ever
+ * per-process about the control surface was which workspace it claimed to be.
+ * Serving many means deciding that per request instead.
+ */
+export async function controlVerifierFrom(
   env: Record<string, string | undefined>,
-): Promise<Omit<ControlDeps, 'log'> | undefined> {
+): Promise<ControlAssertionVerifier | undefined> {
   const pem = env[PUBLIC_KEY];
   // The key is the switch. A `lanes://` root alone does not turn control on:
   // the CLI addresses a managed workspace by that root too, and a runtime that
@@ -81,6 +90,26 @@ export async function controlDepsFrom(
   if (!issuer) throw new Error(`${PUBLIC_KEY} is set but ${ISSUER} is not.`);
   if (!audience) throw new Error(`${PUBLIC_KEY} is set but ${AUDIENCE} is not.`);
 
+  return new ControlAssertionVerifier({
+    publicKey: await publicKeyFrom(pem),
+    issuer,
+    audience,
+  });
+}
+
+export async function controlDepsFrom(
+  env: Record<string, string | undefined>,
+): Promise<Omit<ControlDeps, 'log'> | undefined> {
+  const pem = env[PUBLIC_KEY];
+  // The key is the switch. A `lanes://` root alone does not turn control on:
+  // the CLI addresses a managed workspace by that root too, and a runtime that
+  // mounted control because of where its bytes live would be turning a storage
+  // decision into an authorisation one.
+  if (!pem) return undefined;
+
+  const verifier = await controlVerifierFrom(env);
+  if (!verifier) return undefined;
+
   const root = env['LANES_LINK_HOME'] ?? '';
   if (!root.startsWith(LANES_SCHEME)) {
     throw new Error(
@@ -89,12 +118,5 @@ export async function controlDepsFrom(
     );
   }
 
-  return {
-    workspace: lanesWorkspaceFrom(root),
-    verifier: new ControlAssertionVerifier({
-      publicKey: await publicKeyFrom(pem),
-      issuer,
-      audience,
-    }),
-  };
+  return { workspace: lanesWorkspaceFrom(root), verifier };
 }

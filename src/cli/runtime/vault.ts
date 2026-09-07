@@ -8,6 +8,8 @@ import {
   type VaultStore,
 } from '#providers/owner.ts';
 import type { StorageFactory, TargetInput } from '#deployments/target.ts';
+import { workspaceVaultKey } from '#secrets';
+import { LANES_SCHEME } from '#deployments/adapters/lanes.ts';
 
 /**
  * Which document the vault is, and where it lives.
@@ -42,6 +44,19 @@ export function openVault(
   // document every other profile uses rather than inventing a second one.
   const connection = soleGrantFor(config, 'lanes_vault') ?? 'main';
 
+  // One key per workspace on a hosted runtime, and the process key everywhere
+  // else. `LANES_LINK_VAULT_KEY` is read once per process, which is right for a
+  // deploy serving one workspace and a cross-tenant leak in one serving many:
+  // every vault would be sealed under the same key. Undefined for any root that
+  // is not `lanes://`, so a self-hosted deploy is untouched (ADR-070).
+  // Decided here rather than in `#secrets`, which may not import `#deployments`
+  // and so cannot know that a hosted workspace is spelled `lanes://`.
+  const hosted = root.startsWith(LANES_SCHEME)
+    ? root.slice(LANES_SCHEME.length).replace(/\/+$/, '')
+    : '';
+  const perWorkspace =
+    hosted.length > 0 && !hosted.includes('/') ? workspaceVaultKey(hosted) : undefined;
+
   switch (vault.adapter) {
     case 'file':
       return createFileVaultStore({
@@ -65,12 +80,14 @@ export function openVault(
       return createSecretVaultStore({
         store: credentials,
         ref: vaultRef(declared, config),
+        ...(perWorkspace ? { keySource: perWorkspace } : {}),
       });
 
     case 'blob':
       return createBlobVaultStore({
         store: storage(),
         key: vault.path ?? layout.vaultKey(connection),
+        ...(perWorkspace ? { keySource: perWorkspace } : {}),
       });
   }
 }
