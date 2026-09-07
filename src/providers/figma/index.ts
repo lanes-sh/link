@@ -32,6 +32,7 @@ export const figma = defineProvider({
   id: 'figma',
   name: 'Figma',
   description: 'Files, designs, components, and Dev Mode context, via Figma\'s official MCP server.',
+  keywords: ['design', 'mockup', 'prototype', 'canvas', 'component'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.figma.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
   setup: {

@@ -5,6 +5,7 @@ export const attio = defineProvider({
   id: 'attio',
   name: 'Attio',
   description: 'Records, lists, notes, and tasks in the CRM, via Attio\'s official MCP server.',
+  keywords: ['crm', 'contact', 'company', 'deal', 'pipeline'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.attio.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

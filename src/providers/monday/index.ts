@@ -5,6 +5,7 @@ export const monday = defineProvider({
   id: 'monday',
   name: 'monday.com',
   description: 'Boards, items, groups, columns, and updates, via monday.com\'s official MCP server.',
+  keywords: ['board', 'task', 'project', 'workflow', 'status'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.monday.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

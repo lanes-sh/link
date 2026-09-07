@@ -5,6 +5,7 @@ export const calendly = defineProvider({
   id: 'calendly',
   name: 'Calendly',
   description: 'Scheduled events, invitees, event types, and availability, via Calendly\'s official MCP server.',
+  keywords: ['booking', 'meeting', 'schedule', 'availability', 'appointment'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.calendly.com' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

@@ -5,6 +5,7 @@ export const zapier = defineProvider({
   id: 'zapier',
   name: 'Zapier',
   description: 'Zaps, and the actions they reach across thousands of apps, via Zapier\'s official MCP server.',
+  keywords: ['automation', 'workflow', 'integration', 'trigger', 'connect'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.zapier.com/api/mcp/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

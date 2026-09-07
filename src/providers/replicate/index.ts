@@ -5,6 +5,7 @@ export const replicate = defineProvider({
   id: 'replicate',
   name: 'Replicate',
   description: 'Models, predictions, and deployments, via Replicate\'s official MCP server.',
+  keywords: ['model', 'inference', 'machine learning', 'prediction', 'ai'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.replicate.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

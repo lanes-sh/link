@@ -9,6 +9,7 @@ export const notion = defineProvider({
   id: 'notion',
   name: 'Notion',
   description: 'Pages, databases, comments, and workspace search, via Notion\'s official MCP server.',
+  keywords: ['notes', 'wiki', 'page', 'database', 'knowledge base'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.notion.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
   /**

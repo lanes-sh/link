@@ -5,6 +5,7 @@ export const vercel = defineProvider({
   id: 'vercel',
   name: 'Vercel',
   description: 'Projects, deployments, build logs, and domains, via Vercel\'s official MCP server.',
+  keywords: ['deployment', 'hosting', 'build', 'domain', 'preview'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.vercel.com' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

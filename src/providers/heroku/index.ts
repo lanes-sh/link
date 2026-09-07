@@ -5,6 +5,7 @@ export const heroku = defineProvider({
   id: 'heroku',
   name: 'Heroku',
   description: 'Apps, dynos, add-ons, releases, and logs, via Heroku\'s official MCP server.',
+  keywords: ['deployment', 'hosting', 'dyno', 'app', 'infrastructure'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.heroku.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

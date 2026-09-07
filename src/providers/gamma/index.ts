@@ -5,6 +5,7 @@ export const gamma = defineProvider({
   id: 'gamma',
   name: 'Gamma',
   description: 'Presentations and documents, generated and read back, via Gamma\'s official MCP server.',
+  keywords: ['presentation', 'slides', 'deck', 'document', 'design'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.gamma.app/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

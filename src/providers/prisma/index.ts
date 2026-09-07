@@ -5,6 +5,7 @@ export const prisma = defineProvider({
   id: 'prisma',
   name: 'Prisma',
   description: 'Postgres databases, schema, and migrations, via Prisma\'s official MCP server.',
+  keywords: ['database', 'orm', 'schema', 'migration', 'query'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.prisma.io/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

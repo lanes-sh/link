@@ -5,6 +5,7 @@ export const fireflies = defineProvider({
   id: 'fireflies',
   name: 'Fireflies',
   description: 'Meeting transcripts, summaries, and action items, via Fireflies\'s official MCP server.',
+  keywords: ['meeting notes', 'transcript', 'recording', 'summary', 'call'],
   connector: { kind: 'mcp', endpoint: 'https://api.fireflies.ai/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

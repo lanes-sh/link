@@ -28,6 +28,7 @@ export const reddit = defineProvider({
   name: 'Reddit',
   description:
     'Read subreddits, posts, comments, and search, and post, comment, vote, and edit as your account, via the Reddit API.',
+  keywords: ['forum', 'subreddit', 'post', 'comment', 'discussion'],
   connector: {
     kind: 'http',
     // Host only. Reddit puts no version in the path, and this must equal the

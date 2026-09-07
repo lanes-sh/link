@@ -69,6 +69,7 @@ export const discord = defineProvider({
   name: 'Discord',
   description:
     'Post announcements, read channels, and triage messages in the servers your bot has been added to, via the Discord v10 HTTP API.',
+  keywords: ['chat', 'server', 'channel', 'message', 'community'],
   connector: {
     kind: 'http',
     base_url: 'https://discord.com/api/v10',

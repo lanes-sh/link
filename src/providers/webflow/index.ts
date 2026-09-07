@@ -5,6 +5,7 @@ export const webflow = defineProvider({
   id: 'webflow',
   name: 'Webflow',
   description: 'Sites, pages, CMS collections, and items, via Webflow\'s official MCP server.',
+  keywords: ['website', 'cms', 'design', 'publishing', 'page'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.webflow.com/mcp' },
   auth: { kind: 'oauth', registration: 'dynamic' },
 });

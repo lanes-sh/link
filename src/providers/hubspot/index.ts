@@ -30,6 +30,7 @@ export const hubspot = defineProvider({
   id: 'hubspot',
   name: 'HubSpot',
   description: 'CRM contacts, companies, deals, and engagements, via HubSpot\'s official MCP server.',
+  keywords: ['crm', 'contact', 'deal', 'pipeline', 'marketing'],
   connector: { kind: 'mcp', endpoint: 'https://mcp.hubspot.com' },
   auth: {
     kind: 'oauth',
