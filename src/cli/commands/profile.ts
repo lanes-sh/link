@@ -20,6 +20,7 @@ import {
 } from '#profile';
 
 import { recordConfigChange } from '../audit-change.ts';
+import { nextAfterEdit, publishProfileEdit, type PublishOutcome } from '../publish.ts';
 import { resolveProfile } from '../runtime.ts';
 import { emit, ok, print, style, table } from '../output.ts';
 import { readSession } from '#auth/lanes/session.ts';
@@ -48,6 +49,13 @@ export interface ProfileCreated {
   readonly targets: readonly string[];
   /** Which sibling supplied each non-local target's adapters, where one did. */
   readonly copiedFrom: Readonly<Record<string, string>>;
+  /**
+   * What the endpoint did with it, in a form fit to print.
+   *
+   * Absent from `createProfile`, which writes the file and tells nobody. It is
+   * `profileAdd` that publishes, so it is `profileAdd` that fills this in.
+   */
+  readonly published?: string;
 }
 
 export interface ProfileListing {
@@ -66,8 +74,16 @@ export interface ProfileListing {
  *
  * It now decides *where the file goes* rather than what is written in it: a
  * profile lives in one target's workspace and declares nothing about it
- * (ADR-052), so `--workspace cloud` writes into the bucket and the endpoint there
- * serves it on its next reconcile.
+ * (ADR-052), so `--workspace cloud` writes into the bucket the endpoint there
+ * reads from.
+ *
+ * **Writing it is not enough, and this comment is where that was missed.** It
+ * used to say the endpoint "serves it on its next reconcile". There is no next
+ * reconcile: a running endpoint lists the profiles once, at boot or at a
+ * reload (`openReconciled`), so a profile added underneath one stayed durable
+ * and invisible — to `/state`, and so to the dashboard, and to every client —
+ * until the revision restarted. `profileAdd` notifies for the same reason every
+ * other config edit does; see below.
  */
 export async function createProfile(
   name: string,
@@ -188,6 +204,26 @@ export async function readProfiles(target: string): Promise<ProfileListing> {
   };
 }
 
+/**
+ * The line a *creation* ends on, where one is worth printing.
+ *
+ * The one place this differs from the seven commands that publish an edit. They
+ * change a config that is already being served, so "nothing answered" is always
+ * worth saying — a stale endpoint is serving the previous answer to a question
+ * somebody has already asked. A profile is new: nothing is holding a stale view
+ * of it, and on a fresh workspace `profile add` is the first command anybody
+ * runs, so that line arrived as the first sentence this CLI ever printed and
+ * described an endpoint they had not set up yet.
+ *
+ * So: when the endpoint took the edit, and when the target publishes somewhere.
+ * The second is what makes a deployed workspace always say something — that is
+ * the case this whole change exists for, where a notify that did not land is
+ * exactly the surprise being fixed, and silence is what made it a surprise.
+ */
+export function publishedAfterCreate(outcome: PublishOutcome): string | undefined {
+  return outcome.served || outcome.published !== undefined ? nextAfterEdit(outcome) : undefined;
+}
+
 export async function profileAdd(
   name: string,
   options: { targets: readonly string[]; nonInteractive?: boolean; json?: boolean },
@@ -215,7 +251,30 @@ export async function profileAdd(
     arguments: { port: created.port, workspace: primary },
   });
 
-  return emit(options.json, created, () => {
+  // Told to the endpoint that has to serve it, exactly as every other config
+  // edit tells it (ADR-029). This was the one edit that did not, and a profile
+  // created against a live workspace was invisible until the endpoint next
+  // started — see the header.
+  //
+  // **Wrapped, because this must not be able to fail the creation.** `profile
+  // add` is the command that may have *just written* the workspace it is
+  // publishing to, so the credential store the notify authenticates with can be
+  // opened before one exists. `publishAndNotify` already treats a failed
+  // publish as reportable rather than fatal; this extends that to the store it
+  // opens before reaching that guard. The profile is on disk either way, and a
+  // creation that succeeded must not report failure.
+  let outcome: PublishOutcome;
+  try {
+    outcome = await publishProfileEdit({ resolution, config, target: primary });
+  } catch (error) {
+    const reason =
+      error instanceof Error ? (error.message.split('\n')[0] ?? error.message) : String(error);
+    outcome = { served: false, reason };
+  }
+
+  const published = publishedAfterCreate(outcome);
+
+  return emit(options.json, { ...created, ...(published ? { published } : {}) }, () => {
     print(ok(`created profile ${style.bold(created.name)}`));
     print(`      config   ${created.path}`);
     print(`      port     ${created.port}`);
@@ -224,6 +283,8 @@ export async function profileAdd(
     for (const [target, from] of Object.entries(created.copiedFrom)) {
       print(`      ${style.dim(`${target} adapters copied from profile "${from}"`)}`);
     }
+
+    if (published) print(`      ${style.dim(published)}`);
 
     print();
     print(
