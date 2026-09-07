@@ -80,13 +80,25 @@ export function grantedConnections(
 export interface OpenOptions {
   /** Injected for tests. */
   readonly fetch?: FetchLike | undefined;
+  /**
+   * The environment this open resolves its workspace from.
+   *
+   * `process.env` when absent, which is every CLI caller and the
+   * single-workspace container. A Lanes-hosted runtime serves many workspaces
+   * from one process and cannot use it: `LANES_LINK_HOME` there is a property
+   * of the request's assertion, not of the process, so it is threaded through
+   * rather than read (`#control/workspace.ts`).
+   */
+  readonly env?: Record<string, string | undefined> | undefined;
 }
 
 export async function openRuntime(
   flags: GlobalFlags,
   options: OpenOptions = {},
 ): Promise<Runtime> {
-  const { resolution, config, target, resolved } = await resolveProfile(flags);
+  const { resolution, config, target, resolved } = await resolveProfile(flags, {
+    ...(options.env ? { env: options.env } : {}),
+  });
   // `resolveProfile` returns this for every caller that did not ask to create
   // the target, and `openRuntime` never does — a runtime for a target that does
   // not exist yet has nothing to open. The check is what makes that readable at

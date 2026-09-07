@@ -88,7 +88,16 @@ export const SUPPORTED_CONTRACT = 5;
  */
 
 export const credentialsTargetSchema = z.object({
-  adapter: z.enum(['file', 'gcp-secret-manager']),
+  /**
+   * `blob` keeps credentials as one encrypted document in the workspace's own
+   * storage, which is the only adapter a `lanes://` workspace can use without a
+   * Google Cloud project of its own: `file` needs a filesystem path and
+   * `workspacePath` refuses a remote root, and `gcp-secret-manager` needs a
+   * project. ADR-071 described a `lanes` secrets adapter for this and nothing
+   * was ever written; this is the same job done with the store that already
+   * exists.
+   */
+  adapter: z.enum(['file', 'gcp-secret-manager', 'blob']),
   path: z.string().optional(),
   project: z.string().optional(),
   /**

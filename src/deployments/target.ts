@@ -86,6 +86,31 @@ export async function openSecrets(input: {
         ),
       });
 
+    case 'blob': {
+      // One encrypted document beside the config it belongs to, sealed under a
+      // key derived per workspace rather than the process-global
+      // `LANES_LINK_CREDENTIAL_KEY` — one process serving many tenants must not
+      // seal every tenant's refresh tokens under one key, which is the same
+      // rule the vault follows (`#secrets/derived.ts`).
+      const { createBlobSecretStore, workspaceKey } = await import('#secrets');
+      const { workspaceFiles } = await import('#profile');
+      const { LANES_SCHEME } = await import('./adapters/lanes.ts');
+
+      const hosted = root.startsWith(LANES_SCHEME)
+        ? root.slice(LANES_SCHEME.length).replace(/\/+$/, '')
+        : '';
+      const derived =
+        hosted.length > 0 && !hosted.includes('/')
+          ? await workspaceKey(hosted, 'credentials')()
+          : undefined;
+
+      return createBlobSecretStore({
+        store: workspaceFiles(root),
+        ...(declared.credentials.path ? { key: declared.credentials.path } : {}),
+        ...(derived ? { encryptionKey: derived } : {}),
+      });
+    }
+
     case 'gcp-secret-manager': {
       if (!declared.credentials.project) {
         throw new ConfigError(

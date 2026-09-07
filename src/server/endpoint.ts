@@ -172,8 +172,10 @@ async function openReconciled(options: {
   }
 }
 
-/** What the transports need from a runtime, which is less than a runtime. */
-function profileRuntimes(runtimes: ReadonlyMap<string, Runtime>): Map<string, ProfileRuntime> {
+/** What the transports need from a runtime, which is less than a runtime.
+ *  Exported for `./managed-data.ts`: a second copy of this mapping would be a
+ *  second place `policy` gets forgotten. */
+export function profileRuntimes(runtimes: ReadonlyMap<string, Runtime>): Map<string, ProfileRuntime> {
   return new Map(
     [...runtimes].map(([name, runtime]) => [
       name,

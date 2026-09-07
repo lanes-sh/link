@@ -1,7 +1,9 @@
 #!/usr/bin/env bun
 import { controlRoutes } from '#control/routes.ts';
 import { isControlPath } from '#control/routing.ts';
+import { environmentFor } from '#control/workspace.ts';
 import { streamLogger } from './logging.ts';
+import { createDataPlane } from './managed-data.ts';
 
 /**
  * The entrypoint for a Lanes-hosted runtime.
@@ -13,11 +15,16 @@ import { streamLogger } from './logging.ts';
  * workspace whose control surface exists to create its first profile. Serving
  * configuration cannot depend on there being something configured.
  *
- * So this serves the control surface and nothing else. That is not a stopgap:
- * a managed workspace's data is reached through `api.lanes.sh/mcp` and proxied,
- * never by a client connecting here, and this service is
- * `--no-allow-unauthenticated` with the API's service account as the only
- * caller IAM admits (ADR-074). There is no `/mcp` for anybody to reach.
+ * It serves two surfaces, both behind the same assertion. **The control plane**
+ * (`/v1/...`) is configuration: profiles, grants, members. **The data plane**
+ * (`/mcp`) is the workspace's own MCP surface, which the API proxies for the
+ * caller — this is what turns a hosted workspace from configurable into usable,
+ * and it is why the Data tab stopped saying "not reachable from here yet".
+ *
+ * Neither is on the internet. This service is `--no-allow-unauthenticated` with
+ * the API's service account as the only caller IAM admits (ADR-074), so `/mcp`
+ * here is not a URL any client connects to — `api.lanes.sh/mcp` is the only
+ * front door and it forwards.
  *
  * **Many workspaces, one process, and no `LANES_LINK_HOME`.** Every control
  * route already derives its root, its environment and its workspace from the
@@ -152,21 +159,26 @@ const verifier = await (async () => {
  * exists to be had. The agreement check stays anyway: it costs nothing and it
  * still catches the case where routing and verification disagree.
  */
-function workspaceOf(request: Request): string | null {
+function bearerOf(request: Request): string | null {
   const header = request.headers.get('authorization') ?? '';
   const [scheme, token] = header.split(' ');
-  if (scheme?.toLowerCase() !== 'bearer' || !token) return null;
+  return scheme?.toLowerCase() === 'bearer' && token ? token : null;
+}
+
+function claimOf(request: Request, claim: 'workspace' | 'sub'): string | null {
+  const token = bearerOf(request);
+  if (!token) return null;
 
   const middle = token.split('.')[1];
   if (!middle) return null;
   try {
     const padded = middle.replaceAll('-', '+').replaceAll('_', '/');
-    const claims = JSON.parse(atob(padded + '='.repeat((4 - (padded.length % 4)) % 4))) as {
-      workspace?: unknown;
-    };
-    return typeof claims.workspace === 'string' && claims.workspace.length > 0
-      ? claims.workspace
-      : null;
+    const claims = JSON.parse(atob(padded + '='.repeat((4 - (padded.length % 4)) % 4))) as Record<
+      string,
+      unknown
+    >;
+    const value = claims[claim];
+    return typeof value === 'string' && value.length > 0 ? value : null;
   } catch {
     // Unparseable is not an error here: it is a token that will not verify
     // either, and the refusal belongs to the verifier so there is one answer
@@ -175,7 +187,42 @@ function workspaceOf(request: Request): string | null {
   }
 }
 
+const workspaceOf = (request: Request): string | null => claimOf(request, 'workspace');
+const subjectOf = (request: Request): string | null => claimOf(request, 'sub');
+
+/**
+ * What a caller who reaches no profile is served.
+ *
+ * A valid MCP session with nothing in it, rather than a 401. Their credential
+ * is fine and the workspace is fine; they have simply not been added to a
+ * profile. A refusal would send somebody to check a token that is not the
+ * problem.
+ */
+async function emptySurface(request: Request): Promise<Response> {
+  const body = (await request.json().catch(() => null)) as { id?: unknown; method?: unknown } | null;
+  const id = body?.id ?? null;
+
+  if (body?.method === 'tools/list') {
+    return Response.json({ jsonrpc: '2.0', id, result: { tools: [] } });
+  }
+  return Response.json({
+    jsonrpc: '2.0',
+    id,
+    error: {
+      code: -32601,
+      message:
+        'This workspace has no Lanes Link profile listing you as a member, so there is ' +
+        'nothing here for you to reach yet. Ask an admin to add you to one.',
+    },
+  });
+}
+
 const logger = streamLogger((line) => process.stdout.write(`${line}\n`));
+
+// Workspaces held open across requests, so a second call does not re-read the
+// whole store. Bounded and drained before close, the same discipline
+// `createWorkspaceRouter` applies one level up.
+const data = createDataPlane({ log: logger });
 
 const server = Bun.serve({
   port,
@@ -189,6 +236,39 @@ const server = Bun.serve({
     // assertion would be a revision that never goes healthy.
     if (url.pathname === '/health') {
       return Response.json({ ok: true });
+    }
+
+    // The data plane. Same assertion, same workspace resolution; what differs is
+    // that this one is served *as the subject the assertion names* rather than
+    // on their behalf — the tools they see and what each may reach come from
+    // the profiles that list them, read from the workspace on every call.
+    if (url.pathname === '/mcp') {
+      const workspace = workspaceOf(request);
+      const subject = subjectOf(request);
+      if (workspace === null || subject === null) {
+        return Response.json({ error: 'unauthenticated' }, { status: 401 });
+      }
+
+      const assertion = await verifier.verify(bearerOf(request) ?? '');
+      // Verified properly here, exactly as the control routes do it. The peek
+      // above is routing; this is the decision.
+      if (assertion === null || assertion.workspace !== workspace) {
+        return Response.json({ error: 'unauthenticated' }, { status: 401 });
+      }
+
+      const served = await data.serve({
+        workspace,
+        subject: assertion.subject,
+        env: environmentFor(assertion),
+        request,
+        clientLabel: request.headers.get('x-mcp-client') ?? undefined,
+      });
+
+      // Null means this subject is a member of no profile in this workspace,
+      // which is ordinary — somebody in the Lanes workspace who has not been
+      // added to a Link profile yet. An empty surface rather than a refusal,
+      // because there is nothing wrong with their credential.
+      return served ?? emptySurface(request);
     }
 
     if (isControlPath(url.pathname)) {

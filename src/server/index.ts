@@ -6,7 +6,7 @@ import { allowedHostnamesFor, rebindingRefusal } from './rebinding.ts';
 import { ANY_ORIGIN, corsAware, type CorsPolicy } from './cors.ts';
 import { isPairedPath, readRoutes } from './read/routes.ts';
 import type { ServerOptions } from './options.ts';
-import { controlRoutes, isControlPath, type ControlDeps } from '#control/routes.ts';
+import type { ControlDeps } from '#control/routes.ts';
 import type { Generation } from './generation.ts';
 import type { Generations } from './generations.ts';
 import {
@@ -180,8 +180,22 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
       // `options.authenticator`, and only what `isControlPath` matched handed
       // over. Absent unless this runtime is the managed one, so a self-hosted
       // endpoint reaches none of it.
-      if (options.control && isControlPath(url.pathname)) {
-        return await controlRoutes(request, options.control);
+      if (options.control) {
+        // Imported here rather than at the top, and it is not a style choice.
+        // `package.json`'s `files` excludes `src/control/**` — it is Lanes-only
+        // code with no business in every CLI user's node_modules — so a static
+        // import resolves in this repository and is a missing module in the
+        // published package, where it would fail at import time for everybody
+        // running `lanes link start`. `container.ts` already documents this for
+        // its own import; this one had it wrong.
+        //
+        // Behind `options.control`, which only a managed runtime sets, so a
+        // self-hosted endpoint never reaches for the module at all. The dynamic
+        // import is cached after the first call.
+        const { controlRoutes, isControlPath } = await import('#control/routes.ts');
+        if (isControlPath(url.pathname)) {
+          return await controlRoutes(request, options.control);
+        }
       }
 
       if (

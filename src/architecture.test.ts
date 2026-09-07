@@ -646,4 +646,67 @@ describe('no real identifiers', () => {
 
     expect(violations).toEqual([]);
   });
+
+  /**
+   * Nothing that ships may statically import something that does not.
+   *
+   * `package.json`'s `files` excludes `src/control/**` and the two managed-only
+   * server entrypoints: Lanes-only code with no business in every CLI user's
+   * node_modules. The exclusion is invisible in this checkout, where every file
+   * resolves — and the failure it causes is at *import time* in the published
+   * package, so the first person to run `lanes link start` after a release finds
+   * it rather than the release doing.
+   *
+   * That happened: `src/server/index.ts` imported `#control/routes.ts` at the
+   * top of the file while `src/control/**` was excluded, and nothing here or
+   * anywhere else noticed. `container.ts` had the same import written the right
+   * way, with a comment explaining why — which is what made the wrong one look
+   * deliberate.
+   *
+   * A dynamic `await import()` is fine and is the fix: it runs only on the
+   * branch that needs it, which on a self-hosted endpoint is never.
+   */
+  test('a shipped file does not statically import an excluded one', async () => {
+    const manifest = JSON.parse(await readFile(join(SRC, '..', 'package.json'), 'utf8')) as {
+      files: string[];
+    };
+
+    // Only the exclusions naming a path — `!src/**/*.test.ts` is a pattern about
+    // test files, which are excluded everywhere and imported by nothing shipped.
+    const excluded = manifest.files
+      .filter((one) => one.startsWith('!src/') && !one.includes('*.test.ts'))
+      .map((one) => one.slice(1).replace(/\/\*\*$/, ''));
+
+    /** `#control/routes.ts` and the like, back to the path they resolve to. */
+    const resolves = (specifier: string): string | null => {
+      if (specifier.startsWith('#control/')) return `src/control/${specifier.slice('#control/'.length)}`;
+      if (specifier.startsWith('./')) return null;
+      return null;
+    };
+
+    const violations: string[] = [];
+
+    for (const path of await publishedFiles()) {
+      const shown = relative(join(SRC, '..'), path);
+      if (!shown.startsWith('src/') || !shown.endsWith('.ts')) continue;
+      if (shown.endsWith('.test.ts')) continue;
+      // A file that is itself excluded may import anything else excluded: they
+      // ship together, or not at all.
+      if (excluded.some((one) => shown === one || shown.startsWith(`${one}/`))) continue;
+
+      for (const [index, line] of (await readFile(path, 'utf8')).split('\n').entries()) {
+        // Static only. `await import(...)` is the documented way to reach one.
+        const match = line.match(/^\s*import\s+(?!type\b)[^;]*?from\s+'([^']+)'/);
+        const target = match?.[1] ? resolves(match[1]) : null;
+        if (!target) continue;
+        if (excluded.some((one) => target === one || target.startsWith(`${one}/`))) {
+          violations.push(
+            `${shown}:${index + 1} statically imports ${match![1]}, which package.json excludes`,
+          );
+        }
+      }
+    }
+
+    expect(violations).toEqual([]);
+  });
 });

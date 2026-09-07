@@ -37,12 +37,20 @@ import { KEY_BYTES, type KeySource } from './document.ts';
 const MASTER = 'LANES_LINK_VAULT_KEY';
 
 /**
- * Bound into every derivation so a key from this scheme cannot collide with one
- * from another use of the same master. Includes the purpose rather than only
- * the workspace, because a second derived key (an audit chain, say) sharing the
- * master must not be able to produce the same bytes.
+ * What each derived key is for, bound into the derivation.
+ *
+ * Two keys for one workspace must not be the same bytes. The vault and the
+ * credential store hold different things under different threat models — a
+ * vault item is the owner's own secret, a credential is an account's refresh
+ * token — and a bug that crossed them would decrypt one with the other's key
+ * and report corruption rather than a mistake.
  */
-const INFO = 'lanes-link/vault/v1';
+const PURPOSES = {
+  vault: 'lanes-link/vault/v1',
+  credentials: 'lanes-link/credentials/v1',
+} as const;
+
+export type DerivedPurpose = keyof typeof PURPOSES;
 
 function decodeMaster(raw: string): Uint8Array {
   // Base64 first, hex second, matching what `document.ts` accepts, so a key
@@ -61,13 +69,14 @@ function decodeMaster(raw: string): Uint8Array {
 }
 
 /**
- * A key source for one workspace.
+ * A key source for one workspace and one purpose.
  *
  * The caller decides there is a workspace to derive for; see the note above
  * about why that decision is not made here.
  */
-export function workspaceVaultKey(
+export function workspaceKey(
   workspace: string,
+  purpose: DerivedPurpose,
   env: Record<string, string | undefined> = process.env,
 ): KeySource {
   return async () => {
@@ -84,6 +93,14 @@ export function workspaceVaultKey(
     // so a cache at this level would be a second copy of the same value with a
     // second lifetime — and one keyed by workspace is exactly the thing that
     // must not be shared between them.
-    return new Uint8Array(hkdfSync('sha256', decodeMaster(master), workspace, INFO, KEY_BYTES));
+    return new Uint8Array(
+      hkdfSync('sha256', decodeMaster(master), workspace, PURPOSES[purpose], KEY_BYTES),
+    );
   };
 }
+
+/** The vault's key for one workspace. The common case, named. */
+export const workspaceVaultKey = (
+  workspace: string,
+  env: Record<string, string | undefined> = process.env,
+): KeySource => workspaceKey(workspace, 'vault', env);

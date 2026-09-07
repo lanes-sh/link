@@ -33,18 +33,24 @@ import { MANAGED_TARGET } from './workspace.ts';
  * refresh token.
  *
  * The project comes from the environment because it is Lanes', not the
- * customer's, and it is the one field a local run has no answer for. Absent, the
- * block is still written and still parses — nothing on the configuration path
- * opens the secret store, so profiles, grants and members all work. It is
- * connecting an account that needs it, and `openSecrets` already refuses that
- * by name.
+ * customer's, and it is the one field a local run has no answer for. Without
+ * one the workspace keeps its credentials as an encrypted document in its own
+ * storage instead, sealed under a key derived for that workspace — which is
+ * what makes a hosted workspace fully usable with no Google Cloud project
+ * anywhere, and is what a local end-to-end run needs.
  */
 const SECRET_PROJECT = 'LANES_RUNTIME_SECRET_PROJECT';
 
 function skeleton(workspace: string, project: string | undefined): string {
+  // With a project, Secret Manager namespaced per workspace. Without one, an
+  // encrypted document in the workspace's own storage — which is what a local
+  // run has, and the reason the first version of this file wrote an unusable
+  // registry: it named `gcp-secret-manager` unconditionally, so opening a
+  // runtime refused with "credentials.project is required" the moment anything
+  // beyond configuration was asked for.
   const credentials = project
     ? `{ adapter: gcp-secret-manager, project: ${project}, namespace: ${workspace} }`
-    : `{ adapter: gcp-secret-manager, namespace: ${workspace} }`;
+    : '{ adapter: blob }';
 
   // Written as text rather than serialised from an object, so the comments
   // survive. Somebody will read this file while working out what Lanes holds
@@ -61,9 +67,14 @@ function skeleton(workspace: string, project: string | undefined): string {
 # before answering. That is also where the plan's storage limit is counted, so
 # every byte this workspace holds passes one place.
 #
-# "credentials" is Google Secret Manager, namespaced per workspace: every
-# workspace stores the same reference names, and the namespace is what keeps two
-# of them from being the same secret.
+# "credentials" is where the accounts you connect keep their tokens, and
+# "vault" is where your own secrets go. Secret Manager namespaced per workspace
+# where Lanes runs one, otherwise an encrypted document in this workspace's own
+# storage. Either way each key is derived for this workspace alone, so one
+# workspace's document cannot be opened with another's key.
+#
+# Neither may be "file": a workspace that is not on a disk has no path to put
+# one at, and the default is "file", which is why both are written here.
 #
 # The target is called "managed" and the name is not yours to change: every
 # control call resolves it by that name, so renaming it here stops this
@@ -74,6 +85,7 @@ workspaces:
   ${MANAGED_TARGET}:
     credentials: ${credentials}
     storage: { adapter: lanes, workspace: ${workspace} }
+    vault: { adapter: blob }
 `;
 }
 

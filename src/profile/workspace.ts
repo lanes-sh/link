@@ -342,8 +342,8 @@ export function workspacePath(workspaceRoot: string, path: string): string {
   if (isRemoteWorkspace(workspaceRoot)) {
     throw new ConfigError(
       `This target wants a filesystem path ("${path}"), but the workspace is ${workspaceRoot}. ` +
-        'A workspace in a bucket can only use adapters that address it as one: ' +
-        'credentials `gcp-secret-manager`, storage `gcs` or `s3`, vault `secret` or `blob`.',
+        'It can only use adapters that address it as one: credentials ' +
+        '`gcp-secret-manager` or `blob`, storage `gcs`, `s3` or `lanes`, vault `secret` or `blob`.',
     );
   }
   return isAbsolute(path) ? path : resolve(workspaceRoot, path);

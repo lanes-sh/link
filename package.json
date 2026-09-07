@@ -41,6 +41,8 @@
     "src",
     "!src/**/*.test.ts",
     "!src/control/**",
+    "!src/server/managed.ts",
+    "!src/server/managed-data.ts",
     "instructions",
     "README.md",
     "LICENSE",

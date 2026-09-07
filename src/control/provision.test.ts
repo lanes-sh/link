@@ -58,11 +58,23 @@ describe('a hosted workspace on first use', () => {
 
     expect(target).toBeDefined();
     expect(target?.storage).toEqual({ adapter: 'lanes', workspace: 'ws-aaa' });
+    // The vault too, and it is not optional: the default is `file`, a hosted
+    // workspace has no path to put one at, and the failure is a profile that
+    // opens everywhere except where it matters.
+    expect(target?.vault).toEqual({ adapter: 'blob' });
+    expect(parsed.default_workspace).toBe('managed');
+  });
+
+  test('namespaces its credentials when Lanes runs a Secret Manager project', async () => {
     // The namespace is what keeps one tenant's `tokens/tok1` from being
     // another's: every workspace stores the same reference names, and they
-    // share a Secret Manager project.
-    expect(target?.credentials?.namespace).toBe('ws-aaa');
-    expect(parsed.default_workspace).toBe('managed');
+    // share one project.
+    const at = await root();
+    await ensureManagedWorkspace(at, 'ws-aaa', { LANES_RUNTIME_SECRET_PROJECT: 'my-project' });
+
+    const parsed = workspaceSchema.parse(await registry(at));
+    expect(parsed.workspaces['managed']?.credentials?.adapter).toBe('gcp-secret-manager');
+    expect(parsed.workspaces['managed']?.credentials?.namespace).toBe('ws-aaa');
   });
 
   test('names the Secret Manager project when the process has one', async () => {
@@ -73,17 +85,18 @@ describe('a hosted workspace on first use', () => {
     expect(parsed.workspaces['managed']?.credentials?.project).toBe('my-project');
   });
 
-  test('writes a usable registry without one, because configuration needs no secrets', async () => {
-    // The local case. Profiles, grants and members never open the secret store,
-    // so a workspace with no project is fully configurable; it is connecting an
-    // account that needs it, and `openSecrets` refuses that by name rather than
-    // failing here where nothing is wrong yet.
+  test('keeps them in its own storage without one, so no GCP project is needed', async () => {
+    // The local case, and the one that had to be got right: the first version
+    // named `gcp-secret-manager` unconditionally, so opening a runtime refused
+    // with "credentials.project is required" the moment anything beyond
+    // configuration was asked for. A hosted workspace has to be fully usable
+    // with no Google Cloud project anywhere.
     const at = await root();
     await ensureManagedWorkspace(at, 'ws-aaa', {});
 
-    const parsed = workspaceSchema.safeParse(await registry(at));
-    expect(parsed.success).toBe(true);
-    expect(parsed.data?.workspaces['managed']?.credentials?.project).toBeUndefined();
+    const parsed = workspaceSchema.parse(await registry(at));
+    expect(parsed.workspaces['managed']?.credentials?.adapter).toBe('blob');
+    expect(parsed.workspaces['managed']?.credentials?.project).toBeUndefined();
   });
 
   test('does nothing on every call after the first', async () => {
