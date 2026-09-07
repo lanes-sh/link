@@ -39,6 +39,15 @@ import { streamLogger } from './logging.ts';
  *   LANES_CONTROL_ISSUER      who may have signed. Carries the environment.
  *   LANES_CONTROL_AUDIENCE    this service's own URL, for the same reason —
  *                      ADR-072, so a stage assertion is not a prod one.
+ *
+ * And, whenever `LANES_LINK_HOME` is a `lanes://` root, two more — the return
+ * leg, so this runtime can read the bytes it was started to serve:
+ *
+ *   LANES_RUNTIME_PRIVATE_KEY the key it signs its own assertion with, PKCS#8
+ *                      PEM. A *third* keypair: the two above authorise other
+ *                      people to us, this one authorises us to the API.
+ *   LANES_RUNTIME_ISSUER      who we claim to be, matching the API's
+ *                      LINK_RUNTIME_ISSUER. Carries the environment.
  */
 
 const env = process.env;
@@ -98,6 +107,31 @@ if (env['LANES_CONTROL_PUBLIC_KEY']) {
     process.stderr.write(`${(error as Error).message}\n`);
     process.exit(1);
   }
+}
+
+// The return leg, and it has to happen before anything reads configuration:
+// `workspaceFiles` builds a `lanes://` store on the first read of
+// `lanes-link.yaml`, and that store asks for the process's credential at call
+// time. Registered here rather than passed, for the reason the adapter gives —
+// `deployments` may not import `auth`, so the layer that may registers one.
+//
+// Same dynamic-import treatment as the control block, and the same reason:
+// package.json's `files` excludes `src/control/**`, so a static import would
+// resolve in this repository and fail at startup in every self-hosted container.
+try {
+  const { lanesApiUrl } = await import('#deployments/adapters/lanes.ts');
+  const { runtimeTokensFrom } = await import('#control/identity.ts');
+  const tokens = await runtimeTokensFrom(env, lanesApiUrl(env));
+  if (tokens) {
+    const { useLanesCredentials } = await import('#deployments/adapters/lanes.ts');
+    useLanesCredentials(tokens);
+    log('presenting a runtime assertion to the Lanes API for this workspace');
+  }
+} catch (error) {
+  // Before the bind, so a missing or unusable key fails the revision rather
+  // than leaving it healthy and answering every request with a storage error.
+  process.stderr.write(`${(error as Error).message}\n`);
+  process.exit(1);
 }
 
 if (control) log(`control surface on for workspace ${control.workspace}`);

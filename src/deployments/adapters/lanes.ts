@@ -44,9 +44,17 @@ export type FetchLike = (input: string | URL | Request, init?: RequestInit) => P
 /** Objects per listing page. The API pages; this is what it is asked for. */
 const PAGE_SIZE = 1000;
 
-/** How a caller proves who it is. The CLI signs in; the control plane asserts. */
+/**
+ * How a caller proves who it is. The CLI signs in; the runtime asserts.
+ *
+ * The workspace is passed because the runtime's credential names one: an
+ * assertion good for every tenant is a credential worth stealing, and one good
+ * for this workspace is not. A CLI session token ignores the argument, since a
+ * person's identity is the same whichever workspace they are opening and the
+ * API resolves their membership per call.
+ */
 export interface TokenSource {
-  token(): Promise<string>;
+  token(workspace: string): Promise<string>;
 }
 
 export interface LanesBlobStoreOptions {
@@ -88,7 +96,7 @@ export function useLanesCredentials(tokens: TokenSource | null): void {
 }
 
 const registeredTokens: TokenSource = {
-  async token() {
+  async token(workspace) {
     if (registered === null) {
       throw new Error(
         'No credential is registered for a lanes:// workspace, so there is nothing to ' +
@@ -96,7 +104,7 @@ const registeredTokens: TokenSource = {
           'service registers one at startup.',
       );
     }
-    return registered.token();
+    return registered.token(workspace);
   },
 };
 
@@ -133,7 +141,7 @@ export function createLanesBlobStore(options: LanesBlobStoreOptions): BlobStore 
   const request = async (url: string, init: RequestInit = {}): Promise<Response> =>
     call(url, {
       ...init,
-      headers: { ...init.headers, authorization: `Bearer ${await tokens.token()}` },
+      headers: { ...init.headers, authorization: `Bearer ${await tokens.token(options.workspace)}` },
     });
 
   const failure = async (operation: string, key: string, response: Response): Promise<Error> => {
