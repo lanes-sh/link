@@ -71,6 +71,12 @@ export async function start(
         print(plan);
         print(ok(`reconciled ${ofMany ? profile : ''}`.trim()));
       },
+      // The same silence the container's reporter carried. `serving` prints the
+      // profiles that opened, so a workspace holding four and serving three
+      // said so only by the length of a list nobody counts.
+      skipped({ profile, reason }) {
+        print(warn(`not serving ${style.bold(profile)}: ${reason}`));
+      },
     },
   });
 
