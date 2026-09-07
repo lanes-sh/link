@@ -135,11 +135,10 @@ export async function createProfile(
      * for every CLI caller and this stays absent for all of them. A process
      * serving many workspaces concurrently cannot use it: setting the variable
      * per request has the second request overwrite the first mid-flight.
-     *
      * `resolveWorkspaceRoot` has taken an `env` all along; what was missing was
-     * this command passing one through. Threaded rather than defaulted, so a
-     * caller that forgets it gets the terminal behaviour instead of writing
-     * into whichever workspace the process happened to boot with.
+     * this command passing one through — threaded rather than defaulted, so a
+     * caller that forgets it gets the terminal behaviour instead of writing into
+     * whichever workspace the process happened to boot with.
      */
     env?: Record<string, string | undefined>;
   },
