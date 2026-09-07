@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { controlRoutes } from '#control/routes.ts';
-import { isControlPath } from '#control/routing.ts';
+import { assertionFrom, isControlPath } from '#control/routing.ts';
 import { environmentFor } from '#control/workspace.ts';
 import { streamLogger } from './logging.ts';
 import { createDataPlane } from './managed-data.ts';
@@ -159,14 +159,8 @@ const verifier = await (async () => {
  * exists to be had. The agreement check stays anyway: it costs nothing and it
  * still catches the case where routing and verification disagree.
  */
-function bearerOf(request: Request): string | null {
-  const header = request.headers.get('authorization') ?? '';
-  const [scheme, token] = header.split(' ');
-  return scheme?.toLowerCase() === 'bearer' && token ? token : null;
-}
-
 function claimOf(request: Request, claim: 'workspace' | 'sub'): string | null {
-  const token = bearerOf(request);
+  const token = assertionFrom(request);
   if (!token) return null;
 
   const middle = token.split('.')[1];
@@ -249,7 +243,7 @@ const server = Bun.serve({
         return Response.json({ error: 'unauthenticated' }, { status: 401 });
       }
 
-      const assertion = await verifier.verify(bearerOf(request) ?? '');
+      const assertion = await verifier.verify(assertionFrom(request) ?? '');
       // Verified properly here, exactly as the control routes do it. The peek
       // above is routing; this is the decision.
       if (assertion === null || assertion.workspace !== workspace) {

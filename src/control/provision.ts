@@ -76,6 +76,11 @@ function skeleton(workspace: string, project: string | undefined): string {
 # Neither may be "file": a workspace that is not on a disk has no path to put
 # one at, and the default is "file", which is why both are written here.
 #
+# "lanes_workspace" binds this to the Lanes workspace whose membership list
+# decides who may be put on a profile (ADR-060). Without it the workspace can
+# only delegate to whoever is signed in — which on a laptop is you and in a
+# container is nobody, so a profile created here listed nobody at all.
+#
 # The target is called "managed" and the name is not yours to change: every
 # control call resolves it by that name, so renaming it here stops this
 # workspace answering. \`lanes link workspace rename\` refuses it for that reason.
@@ -83,6 +88,7 @@ contract: ${SUPPORTED_CONTRACT}
 default_workspace: ${MANAGED_TARGET}
 workspaces:
   ${MANAGED_TARGET}:
+    lanes_workspace: ${workspace}
     credentials: ${credentials}
     storage: { adapter: lanes, workspace: ${workspace} }
     vault: { adapter: blob }

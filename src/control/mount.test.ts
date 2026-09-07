@@ -146,8 +146,12 @@ describe('creating a profile', () => {
       body: JSON.stringify(body),
     });
 
-  const withCreate = (over: Partial<ControlDeps> = {}) =>
-    deps({
+  /** Every subject added to a profile by the request under test. */
+  let seated: { subject: string; role: string; profile: string }[] = [];
+
+  const withCreate = (over: Partial<ControlDeps> = {}) => {
+    seated = [];
+    return deps({
       create: async (name: string) => ({
         name,
         path: `/w/profiles/${name}/profile.yaml`,
@@ -155,13 +159,49 @@ describe('creating a profile', () => {
         targets: ['managed'],
         copiedFrom: {},
       }),
+      addMember: async (subject: string, role: string, profile: string) => {
+        seated.push({ subject, role, profile });
+        return { profile, subject, role, alreadyListed: false };
+      },
       ...over,
     });
+  };
 
   test('an admin holding the scope creates one', async () => {
     const response = await controlRoutes(post({ name: 'work' }), withCreate());
     expect(response.status).toBe(201);
     expect((await response.json() as { profile: string }).profile).toBe('work');
+  });
+
+  test('and is put on it, because a profile listing nobody reaches nobody', async () => {
+    // `profile add` seeds the signed-in subject as owner by reading the
+    // operator's own Lanes session, and a container has none — so a profile
+    // created here listed nobody, and its owner could not see their own tools.
+    // Found by deploying it; the same call on a laptop seeded from that
+    // machine's session and looked correct.
+    const response = await controlRoutes(post({ name: 'work' }), withCreate());
+
+    expect((await response.json() as { member: boolean }).member).toBe(true);
+    expect(seated).toEqual([{ subject: ADMIN.subject, role: 'owner', profile: 'work' }]);
+  });
+
+  test('says so when the profile was made and the member was not', async () => {
+    // Reported rather than swallowed, and still a 201: the profile exists, and
+    // telling somebody it failed outright sends them to create it again into a
+    // 409.
+    const response = await controlRoutes(
+      post({ name: 'work' }),
+      withCreate({
+        addMember: async () => {
+          throw new Error('the store would not answer');
+        },
+      }),
+    );
+
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as { profile: string; member: boolean; error: string };
+    expect(body.member).toBe(false);
+    expect(body.error).toContain('reaches nobody');
   });
 
   test('an editor may not, because creating one widens what an agent reaches', async () => {

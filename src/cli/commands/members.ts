@@ -101,7 +101,10 @@ export async function membersList(flags: GlobalFlags & { json?: boolean }): Prom
 }
 
 /** The Lanes workspace this one is bound to, if any. */
-async function boundWorkspace(target: string): Promise<string | undefined> {
+async function boundWorkspace(
+  target: string,
+  env?: Record<string, string | undefined>,
+): Promise<string | undefined> {
   // **The workspace that declares the target, which is not this machine once it
   // is deployed.** `lanes_workspace` is a declaration field, and
   // `recordDeployment` writes the declaration into the bucket while leaving
@@ -111,7 +114,15 @@ async function boundWorkspace(target: string): Promise<string | undefined> {
   // person at the keyboard, and the remedy it printed — add `lanes_workspace:`
   // under `workspaces.<target>` — named the pointer entry, which the next
   // deploy overwrites. A declaration resolves back to this root unchanged.
-  const local = resolveWorkspaceRoot();
+  //
+  // The environment is threaded rather than read from `process.env`, for the
+  // reason that variable cannot be trusted in a Lanes-hosted runtime: one
+  // process serves many workspaces and `LANES_LINK_HOME` is a property of the
+  // request's assertion. Without it this resolved *no* workspace there, found
+  // no binding, and refused every member but the person at a keyboard — of whom
+  // there is none in a container. Every profile the control plane created
+  // listed nobody.
+  const local = resolveWorkspaceRoot(env ? { env } : {});
   const registry = await readRegistry(await resolveTargetWorkspace(local, target).catch(() => local));
   return registry[target]?.lanes_workspace;
 }
@@ -197,7 +208,7 @@ export async function addMemberTo(
   // The caller's own subject is not available here — there is no session in a
   // server. `assertDelegatable` degrades to a warning when it cannot check, and
   // the API is the party that owns membership and validates before calling.
-  await assertDelegatable(subject, target, undefined);
+  await assertDelegatable(subject, target, undefined, options.env);
 
   const document = await ConfigDocument.open(resolution.workspaceRoot, resolution.profile);
   document.addTo(['members'], { subject, role }, { inline: true });
@@ -300,8 +311,9 @@ async function assertDelegatable(
   subject: string,
   target: string,
   signedIn: string | undefined,
+  env?: Record<string, string | undefined>,
 ): Promise<void> {
-  const bound = await boundWorkspace(target);
+  const bound = await boundWorkspace(target, env);
 
   if (bound === undefined) {
     if (subject === signedIn) return;

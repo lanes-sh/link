@@ -44,7 +44,7 @@ export const PROFILE_ROUTES: readonly Route[] = [
     method: 'POST',
     path: '/v1/profiles',
     needs: WIDENS,
-    async run({ writers, env, body }) {
+    async run({ assertion, writers, env, body }) {
       let named: unknown;
       try {
         named = await body();
@@ -76,7 +76,37 @@ export const PROFILE_ROUTES: readonly Route[] = [
           nonInteractive: true,
           env,
         });
-        return json({ profile: created.name }, 201);
+        // **And the caller goes on it.** `profile add` seeds the signed-in
+        // subject as owner, which reads the operator's own Lanes session — a
+        // container has none, so a profile created here listed nobody and
+        // reached nobody. Empty members means nobody and looks like everybody,
+        // so this is the difference between a working profile and one whose
+        // owner cannot see their own tools.
+        //
+        // Found by deploying it: the same call against a laptop seeded the
+        // member from that machine's session and looked correct, which is
+        // exactly the kind of thing only a real deployment shows.
+        //
+        // Failing here is reported as a partial rather than swallowed: the
+        // profile exists, and saying otherwise would send somebody to create it
+        // again into a 409.
+        try {
+          await writers.addMember(assertion.subject, 'owner', created.name, env);
+        } catch (error) {
+          return json(
+            {
+              profile: created.name,
+              member: false,
+              error:
+                `Created "${created.name}", but could not add you to it: ` +
+                `${error instanceof Error ? error.message : String(error)}. ` +
+                'It reaches nobody until someone is on it.',
+            },
+            201,
+          );
+        }
+
+        return json({ profile: created.name, member: true }, 201);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         // A name already taken is the caller's to fix and the one failure here

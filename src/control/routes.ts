@@ -9,7 +9,7 @@ import {
 import { environmentFor } from './workspace.ts';
 import { ensureManagedWorkspace } from './provision.ts';
 import { PROFILE_ROUTES } from './profile-routes.ts';
-import { json, notFound, type Route } from './routing.ts';
+import { assertionFrom, json, notFound, type Route } from './routing.ts';
 
 // Re-exported so the server mounts one module rather than two: which paths
 // this surface claims and what answers them are one fact from outside.
@@ -140,11 +140,8 @@ export async function controlRoutes(request: Request, deps: ControlDeps): Promis
   if (!matched) return notFound();
   const { route, params } = matched;
 
-  const header = request.headers.get('authorization') ?? '';
-  const [scheme, token] = header.split(' ');
-  if (scheme?.toLowerCase() !== 'bearer' || !token) {
-    return json({ error: 'unauthenticated' }, 401);
-  }
+  const token = assertionFrom(request);
+  if (!token) return json({ error: 'unauthenticated' }, 401);
 
   const assertion = await deps.verifier.verify(token);
   if (assertion === null) {

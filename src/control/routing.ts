@@ -123,3 +123,26 @@ export interface Route {
   readonly needs: Requirement;
   run(context: RouteContext): Promise<Response>;
 }
+
+/**
+ * The header the control assertion arrives in.
+ *
+ * Not `authorization`, and the reason is the outer gate. A managed runtime is
+ * `--no-allow-unauthenticated` (ADR-075), so Cloud Run's IAM check reads
+ * `authorization` and expects a Google-signed identity token there — the two
+ * cannot share one header, and IAM is the one that has to win because it
+ * refuses before the request reaches this process at all.
+ *
+ * `authorization` is still accepted as a fallback, for a local run where there
+ * is no IAM in front and nothing minting identity tokens.
+ */
+export const ASSERTION_HEADER = 'x-lanes-assertion';
+
+/** The assertion this request carries, from either header. */
+export function assertionFrom(request: Request): string | null {
+  const dedicated = request.headers.get(ASSERTION_HEADER);
+  if (dedicated) return dedicated.trim();
+
+  const [scheme, token] = (request.headers.get('authorization') ?? '').split(' ');
+  return scheme?.toLowerCase() === 'bearer' && token ? token : null;
+}

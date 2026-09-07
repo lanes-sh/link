@@ -58,6 +58,11 @@ describe('a hosted workspace on first use', () => {
 
     expect(target).toBeDefined();
     expect(target?.storage).toEqual({ adapter: 'lanes', workspace: 'ws-aaa' });
+    // The binding that decides whose membership list a profile's members are
+    // validated against (ADR-060). Without it the workspace delegates only to
+    // whoever is signed in, which in a container is nobody — so every profile
+    // created through the control plane listed no one and reached no one.
+    expect(target?.lanes_workspace).toBe('ws-aaa');
     // The vault too, and it is not optional: the default is `file`, a hosted
     // workspace has no path to put one at, and the failure is a profile that
     // opens everywhere except where it matters.
