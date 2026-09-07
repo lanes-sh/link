@@ -1,8 +1,8 @@
 import type { SecretStore } from '#secrets';
-import { anyIssuedToken, openTarget, type Config } from '#profile';
+import { anyIssuedToken, openTarget, readEndpointRecord, type Config } from '#profile';
 import { publishWorkspace } from '#deployments/upload.ts';
 import { openSecretStoreFor, type Runtime } from './runtime.ts';
-import { endpointUrl } from './endpoint-url.ts';
+import { deployedUrl, localUrl } from './endpoint-url.ts';
 
 /**
  * Getting an edit to the endpoint that has to serve it.
@@ -122,11 +122,29 @@ async function notifyReload(input: {
 }): Promise<PublishOutcome> {
   let url: string;
   try {
-    // Answers for a deployed target as well as a local one — a loopback URL
-    // sent to a deployment reaches a port with nothing behind it, which is the
-    // bug this function's own doc comment records.
+    // Three answers, in the order of who actually knows.
+    //
+    // **The platform**, for a deployed target. A loopback URL sent to a
+    // deployment reaches a port with nothing behind it, which is the bug this
+    // function's own doc comment records.
+    //
+    // **The endpoint itself**, for a local one. `start` serves every profile in
+    // the workspace from one URL, and that URL is the port of the profile it was
+    // started with — so deriving it from the *edited* profile's `instance.port`
+    // was right only when those happened to be the same profile, and could
+    // never be right for a profile that had only just been created. The record
+    // is written by the process that bound the socket; see `endpoint-record.ts`
+    // and ADR-074.
+    //
+    // **The config**, when there is no record — a workspace whose endpoint has
+    // never run under this version, or is not running at all. That is the
+    // address this used unconditionally, so nothing is worse off for falling
+    // back to it.
     const { declared } = await openTarget(input.workspaceRoot, input.target);
-    url = (await endpointUrl(input.config, declared)).replace(/\/mcp$/, '/reload');
+    const deployed = await deployedUrl(declared.deploy);
+    const recorded = deployed ? null : await readEndpointRecord(input.workspaceRoot);
+    const base = deployed ?? recorded?.url ?? localUrl(input.config);
+    url = base.replace(/\/mcp$/, '/reload');
   } catch (error) {
     return { served: false, reason: `could not work out where the endpoint is: ${message(error)}` };
   }

@@ -4,12 +4,12 @@ import type { BlobMetadata, BlobStore } from '#stores/blobs';
 import type { Prompter } from '../../prompt.ts';
 import type { RemovalItem, RemovalPlan } from './removal.ts';
 import {
-  confirmedByName,
   executeRemoval,
   renderOutcome,
   type RemovalOutcome,
   type RunDeps,
 } from './remove.ts';
+import { confirmedByName } from './confirm.ts';
 
 /**
  * Performing a removal, and being honest about the parts that did not happen.

@@ -40,6 +40,25 @@ export interface ReadConnection {
   readonly account: string | null;
   /** Which profiles grant this connection at all. */
   readonly profiles: readonly string[];
+  /**
+   * When this endpoint first saw the connection, ISO 8601.
+   *
+   * Null when the state store has no record of it: a row reconcile has not
+   * caught up with, or a store that has been cleared. `connections.yaml` has
+   * never carried a timestamp, so this is the endpoint's own memory rather than
+   * anything the operator wrote, and a reader is told nothing rather than told
+   * a guess.
+   */
+  readonly createdAt: string | null;
+  /**
+   * When the account or the credential status last changed, ISO 8601.
+   *
+   * **Not "last used", and not a token refresh.** Reconcile moves this only
+   * when the account string it resolves differs from the stored one, or when
+   * the status flips, so on an untouched connection it equals `createdAt` for
+   * the life of the workspace. Anything that wants activity wants `/audit`.
+   */
+  readonly updatedAt: string | null;
 }
 
 /**
@@ -56,12 +75,20 @@ export interface ReadConnection {
  */
 export type ProviderNames = (provider: string) => string | undefined;
 
-/** The connection rows as `connections.yaml` holds them. */
+/**
+ * The connection rows as `connections.yaml` holds them.
+ *
+ * The two dates are not in that file and never were; `connectionRows` attaches
+ * them from the state store on the way in. Optional because that store is
+ * disposable by design, so a bind that cannot read it still produces rows.
+ */
 export interface ConnectionRow {
   readonly provider: string;
   readonly id: string;
   readonly account?: string | undefined;
   readonly label?: string | undefined;
+  readonly createdAt?: string | undefined;
+  readonly updatedAt?: string | undefined;
 }
 
 export interface ReadGrant {
@@ -173,6 +200,8 @@ export function readState(
       label: row.label ?? (named ? defaultConnectionLabel(named, row.account) : null),
       account: row.account ?? null,
       profiles: grantedBy.get(ref) ?? [],
+      createdAt: row.createdAt ?? null,
+      updatedAt: row.updatedAt ?? null,
     };
   });
 
@@ -192,6 +221,10 @@ export function readState(
       label: null,
       account: null,
       profiles: grantedBy.get(ref) ?? [],
+      // Nothing holds this row but a grant, so there is no record of it to
+      // date and no file line it came from.
+      createdAt: null,
+      updatedAt: null,
     });
   }
 

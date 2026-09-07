@@ -13,7 +13,9 @@ import {
 import { parseDocument } from 'yaml';
 import { rm } from 'node:fs/promises';
 import { terminalPrompter, type Prompter } from '../../prompt.ts';
+import { confirmedByName } from './confirm.ts';
 import { recordConfigChange } from '../../audit-change.ts';
+import { nextAfterEdit, publishProfileEdit } from '../../publish.ts';
 import { announceProfile, emit, fail, ok, print, style } from '../../output.ts';
 import {
   buildRegistryWithWorkspace,
@@ -228,49 +230,6 @@ export function renderOutcome(outcome: RemovalOutcome): void {
   process.exitCode = 1;
 }
 
-/**
- * The confirmation, which asks for the name rather than a keystroke.
- *
- * A step up from `agreed()`, deliberately. That helper is `y/N` and is right
- * for `vault remove`, which drops one item the operator can put back. This
- * drops every live OAuth refresh token a profile holds, and putting those back
- * means visiting each vendor again — so the gesture should be one you cannot
- * make by leaning on the keyboard.
- *
- * Local rather than shared for the same reason it is not `agreed()`: the shape
- * differs, and bending the existing helper for a single caller in another
- * command folder would leave both worse. If a second consumer appears, promote
- * it then.
- */
-export async function confirmedByName(
-  profile: string,
-  options: { yes?: boolean | undefined; prompter?: Prompter | undefined },
-): Promise<boolean> {
-  if (options.yes) return true;
-
-  // A prompter that was passed in is the caller's answer to "is there anyone
-  // to ask" — the console passes one that replays a form. Only the default
-  // needs stdin consulted, and conflating the two makes an injected prompter
-  // untestable and a real terminal the only place this works.
-  const prompter = options.prompter ?? terminalPrompter;
-  const someoneToAsk = options.prompter ? prompter.interactive : process.stdin.isTTY;
-
-  if (!someoneToAsk) {
-    throw new ConfigError(
-      `Removing "${profile}" cannot be undone, and stdin is not a terminal, so there is nobody to ask. Pass --yes to proceed.`,
-    );
-  }
-
-  const typed = (await prompter.ask(`Type ${profile} to remove it, or anything else to stop`))
-    .trim();
-
-  if (typed !== profile) {
-    print(style.dim('  cancelled — nothing was removed'));
-    return false;
-  }
-  return true;
-}
-
 export interface RemoveFlags extends GlobalFlags {
   readonly dryRun?: boolean | undefined;
   readonly yes?: boolean | undefined;
@@ -362,7 +321,28 @@ export async function removeProfile(name: string, flags: RemoveFlags): Promise<v
     arguments: { connections: config.grants.map((grant) => grant.connection) },
   });
 
-  return emit(flags.json, outcome, () => renderOutcome(outcome));
+  // And the endpoint is told, as it is told about every other config edit
+  // (ADR-074) — but more urgently than any of them. It holds the profiles it
+  // listed at boot, so without this a profile that has been *removed*, with its
+  // credentials and its stores deleted, stayed reachable until the revision
+  // happened to restart: the operator believing they had revoked something they
+  // had not. Wrapped because the removal has already happened and a failure to
+  // announce it cannot undo it; `publishWorkspace` copies what the local store
+  // has, which no longer includes this profile, so nothing here can put the
+  // file back. A throw is reported as nothing — `renderOutcome` owns the exit
+  // code, derived from what survived on the stores.
+  let published: string | undefined;
+  try {
+    const resolution = { workspaceRoot: root, profile: name };
+    published = nextAfterEdit(await publishProfileEdit({ resolution, config, target }));
+  } catch {
+    // See above.
+  }
+
+  return emit(flags.json, { ...outcome, ...(published ? { published } : {}) }, () => {
+    renderOutcome(outcome);
+    if (published) print(style.dim(`  ${published}`));
+  });
 }
 
 /** `profiles/<name>.yaml`, however the path was spelled for display. */

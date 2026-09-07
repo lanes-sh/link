@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { readdir, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { nextAfterEdit } from './publish.ts';
 
 /**
@@ -69,5 +71,72 @@ describe('what an edit says it did', () => {
 
     expect(line).toContain('could not publish');
     expect(line).toContain('bucket not found');
+  });
+});
+
+/**
+ * That an edit which records itself also tells the endpoint.
+ *
+ * The bug this exists for is a missing call, not a wrong one. `profile add`
+ * wrote a profile into a deployed workspace's bucket and told nobody, so the
+ * running revision — which lists the profiles at boot and at a reload and at no
+ * other time — kept serving a set the operator had already added to. The
+ * profile was durable and invisible at once, which reads exactly like a
+ * dashboard that has not refreshed.
+ *
+ * The pattern was followed by seven commands and missed by this one, so a
+ * hand-kept list of the seven would not have caught it: the list would have
+ * been written from the code as it stood. `recordConfigChange` is the signal
+ * instead, because it is the other half every config edit already performs —
+ * a command that thinks the change is worth an audit entry thinks it is a
+ * change, and a change the endpoint has not heard about is a stale endpoint.
+ */
+describe('a recorded config edit reaches the endpoint', () => {
+  /**
+   * Commands that record a change and deliberately do not publish one.
+   *
+   * Each needs an argument, not just an entry — an exception nobody has to
+   * justify is how the gap above lasted as long as it did.
+   */
+  const EXCEPTIONS: Readonly<Record<string, string>> = {
+    // The pairing credential is not in the generation. A deployed endpoint
+    // reads it per request behind `cachedPairingCredential` and a loopback bind
+    // reads it per request outright, so there is nothing held for a reload to
+    // replace: `pair` changes a secret, not the config a generation was built
+    // from.
+    'commands/operate/pair.ts': 'the pairing credential is read per request, not held',
+  };
+
+  async function modules(dir: string): Promise<string[]> {
+    const found: string[] = [];
+    for (const entry of await readdir(join(import.meta.dir, dir), { withFileTypes: true })) {
+      const path = `${dir}/${entry.name}`;
+      if (entry.isDirectory()) found.push(...(await modules(path)));
+      else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) found.push(path);
+    }
+    return found;
+  }
+
+  test('every command that records one publishes it, or says why not', async () => {
+    const offenders: string[] = [];
+
+    for (const path of await modules('commands')) {
+      const source = await readFile(join(import.meta.dir, path), 'utf8');
+      if (!source.includes('recordConfigChange(')) continue;
+      if (source.includes("publish.ts'")) continue;
+      if (path in EXCEPTIONS) continue;
+      offenders.push(path);
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
+  test('the exceptions are still commands that record a change', async () => {
+    // An exception for a file that stopped recording is dead, and dead
+    // exceptions are how a list like this stops meaning anything.
+    for (const path of Object.keys(EXCEPTIONS)) {
+      const source = await readFile(join(import.meta.dir, path), 'utf8');
+      expect(source).toContain('recordConfigChange(');
+    }
   });
 });
