@@ -21,16 +21,33 @@ And, in what it does not do:
 This ADR takes that decision. It is an amendment rather than a reversal: every mechanism ADR-075
 built is what makes this possible, and the default is unchanged.
 
-**What the measurement now says.** A real endpoint serving two profiles and eleven providers
-advertises **278 tools**. The clients it is advertised to do not all accept that:
+**What the measurement now says.** Taken from a deployed endpoint serving two profiles and eleven
+providers, by asking it — one `tools/list`, both ways, same generation:
+
+| | tools | on the wire | ≈ tokens |
+|---|---|---|---|
+| `full` | 278 | 702 KB | 180,000 |
+| `crunched` | 28 | 31 KB | 8,000 |
+
+ADR-075's table measured 428 KB across every `http` provider. This is larger because it is the
+whole surface: 77 of ~105 providers declare `connector.kind: 'mcp'` and their schemas are the
+upstream server's verbatim, which is the part that ADR paragraph said no care here can move.
+
+**180,000 tokens is not a large fraction of a context window. It is most of one**, spent before
+the agent has read the request. That is the number the decision turns on, and it was not available
+when ADR-075 deferred it.
+
+The clients this is advertised to do not all accept it either:
 
 - Hosted Claude surfaces are reported to cap the aggregate tool list at 256 across all connectors,
   keeping the alphabetically-first 256 and truncating the namespace that straddles the boundary. At
   278 that boundary falls inside one provider, which disappears with no error anywhere.
-- The cost is not only the ceiling. ADR-075 already recorded the accuracy figures — 49% to 74% on
-  one model, 79.5% to 88.1% on another — and attributed them to a discovery step not being a tax on
-  selection. Those numbers cut the other way too: a catalogue large enough to displace the request
-  is a catalogue the model selects from worse.
+- The cost is not only the ceiling, and the ceiling is not the worst of it. ADR-075 already
+  recorded the accuracy figures — 49% to 74% on one model, 79.5% to 88.1% on another — and
+  attributed them to a discovery step not being a tax on selection. Those numbers cut the other way
+  too: a catalogue large enough to displace the request is a catalogue the model selects from worse.
+  A client that truncates at 256 at least still holds 256 usable tools; one that accepts all 278
+  carries 180,000 tokens of schema into every turn.
 
 The observed failure is the one that motivated the measurement. An agent holding this surface
 reported that it could not see the endpoint's tools at all, then found them when asked a second
