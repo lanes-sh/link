@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { searchCapabilities } from './search-index.ts';
+import { searchCapabilities, searchResults } from './search-index.ts';
 import type { MergedCapability } from './visibility.ts';
 
 /**
@@ -191,5 +191,75 @@ describe('searching what a caller can reach', () => {
     expect(searchCapabilities('vendor_mail.send_message', surface)).toContain(
       'personal: vendor_mail.main',
     );
+  });
+});
+
+/**
+ * What an answer promises, beyond naming the right capability.
+ *
+ * The ranking work made the first result right. These are the properties that
+ * decide whether being right is *enough* — whether the caller can act on the
+ * answer, or has to come back and ask again.
+ */
+describe('what comes back', () => {
+  /**
+   * The line that cost a round trip.
+   *
+   * Twenty ids used to follow the explained matches under "Search again with a
+   * capability id for one of these to get its arguments" — an instruction to
+   * spend another turn, printed once per id. On the endpoint this work started
+   * from, the capability that reads a mailbox was in that tail.
+   */
+  test('nothing is listed without the arguments needed to call it', () => {
+    const answer = searchCapabilities('message', surface);
+
+    expect(answer).not.toContain('Search again');
+    expect(answer).not.toContain('without schemas');
+    for (const line of answer.split('\n')) expect(line).not.toMatch(/^- `[^`]+` —/);
+  });
+
+  /** Every capability named in an answer arrives with a schema attached. */
+  test('every capability named is one the caller could invoke', () => {
+    const answer = searchCapabilities('message', surface);
+    const named = (answer.match(/^capability: /gm) ?? []).length;
+    const schemas = (answer.match(/^arguments \(JSON Schema/gm) ?? []).length;
+
+    expect(named).toBeGreaterThan(0);
+    expect(schemas).toBe(named);
+  });
+
+  /** A residue is counted, so the caller knows to narrow rather than to re-ask. */
+  test('matches beyond the limit are counted, not enumerated', () => {
+    const answer = searchCapabilities('message', surface, undefined, { limit: 1 });
+
+    expect((answer.match(/^capability: /gm) ?? []).length).toBe(1);
+    expect(answer).toMatch(/further match(es)? scored lower/);
+  });
+
+  test('a provider filter narrows to that provider', () => {
+    const answer = searchCapabilities('message', surface, undefined, { provider: 'vendor_chat' });
+
+    expect(answer).toContain('vendor_chat.post_message');
+    expect(answer).not.toContain('vendor_mail.messages.list');
+  });
+
+  /**
+   * A behaviour filter, and only that. It narrows the answer; it cannot make a
+   * write reachable or unreachable, which is policy's job and stays there.
+   */
+  test('a read-only filter withholds the writes', () => {
+    const answer = searchCapabilities('message', surface, undefined, { readOnly: true });
+
+    expect(answer).toContain('vendor_mail.messages.list');
+    expect(answer).not.toContain('vendor_chat.post_message');
+  });
+
+  test('the structured copy carries what the prose says', () => {
+    const { matched, capabilities } = searchResults('spreadsheet', surface);
+
+    expect(matched).toBeGreaterThan(0);
+    expect(capabilities[0]?.capability).toBe('vendor_sheets.values.update');
+    expect(capabilities[0]?.inputSchema).toHaveProperty('properties');
+    expect(capabilities[0]?.reachable[0]?.profile).toBe('personal');
   });
 });

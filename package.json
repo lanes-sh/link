@@ -52,6 +52,7 @@
     "typecheck": "tsc --noEmit",
     "lanes": "bun run ./src/cli/lanes.ts",
     "audit": "bun audit",
+    "bench:retrieval": "bun test src/server/mcp/retrieval-bench.test.ts",
     "vendor:bunq": "bun run ./src/providers/bunq/specs/vendor.ts",
     "vendor:discord": "bun run ./src/providers/discord/specs/vendor.ts",
     "vendor:google": "bun run ./src/providers/google/specs/vendor.ts",

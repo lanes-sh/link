@@ -283,6 +283,19 @@ function fit(
 }
 
 /** One capability, with how well it answered and enough to render it. */
+/**
+ * Whether a capability only reads, as its own name says.
+ *
+ * The same reading `fit` uses to order results, exposed so a caller can ask for
+ * it outright. `readOnly: true` is a filter on the answer and never a claim
+ * about authority: policy decides what may be called, and a hint about
+ * behaviour cannot grant or withhold anything.
+ */
+export function reads(id: string): boolean {
+  const rest = id.split('.').slice(1);
+  return actionOf(rest.flatMap((segment) => words(segment))) === 'read';
+}
+
 export interface Match {
   readonly id: string;
   readonly tool: string;

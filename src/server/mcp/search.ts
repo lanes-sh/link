@@ -2,7 +2,7 @@ import { forProfile } from '#auth';
 import { isToolResult } from '#connectivity';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
-import { searchCapabilities } from './search-index.ts';
+import { type Filters, searchCapabilities, searchResults } from './search-index.ts';
 import { SURFACE_TOOL_NAMES, toolNameFor } from './naming.ts';
 import { mergeCapabilities, type BuildServerOptions } from './visibility.ts';
 
@@ -93,13 +93,53 @@ export function registerSearchSurface(server: McpServer, options: BuildServerOpt
             'Keywords, or an exact capability id in the form "<provider>.<capability>". ' +
               'Plain words work best — what you want done, not a tool name.',
           ),
+        // Every filter below narrows an answer that was already built from what
+        // this caller may reach. None of them can widen it, and naming
+        // something unreachable returns nothing rather than saying it exists.
+        provider: z
+          .string()
+          .optional()
+          .describe('Only this provider, when you already know which account answers.'),
+        profile: z.enum(profiles as [string, ...string[]]).optional().describe('Only this profile.'),
+        connection: z.string().optional().describe('Only capabilities this account can serve.'),
+        readOnly: z
+          .boolean()
+          .optional()
+          .describe('Only capabilities that read. Use when looking something up, never to make a write safe — this filters the answer and grants nothing.'),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(10)
+          .optional()
+          .describe('How many to explain in full. Three by default; ten is the most.'),
       },
     },
-    async ({ query }: { query: string }) => ({
-      content: [
-        { type: 'text' as const, text: searchCapabilities(query, merged, options.surface) },
-      ],
-    }),
+    async (input: {
+      query: string;
+      provider?: string | undefined;
+      profile?: string | undefined;
+      connection?: string | undefined;
+      readOnly?: boolean | undefined;
+      limit?: number | undefined;
+    }) => {
+      const { query, ...rest } = input;
+      const filters: Filters = rest;
+      const structured = searchResults(query, merged, filters);
+
+      // Both, deliberately. The text is what a model reads; the structured copy
+      // is what a client can act on without a regular expression, and a search
+      // result exists to become the next call. The spec asks for the serialized
+      // form in a text block as well for clients that predate it, and here the
+      // prose is more useful than the JSON would be, so the prose is what goes
+      // there.
+      return {
+        content: [
+          { type: 'text' as const, text: searchCapabilities(query, merged, options.surface, filters) },
+        ],
+        structuredContent: structured as unknown as Record<string, unknown>,
+      };
+    },
   );
 
   server.registerTool(

@@ -2,7 +2,7 @@ import { isTool } from '#connectivity';
 import { z } from 'zod';
 import { toolNameFor } from './naming.ts';
 import { queryTerms } from './query.ts';
-import { type Match, rank } from './ranking.ts';
+import { type Match, rank, reads } from './ranking.ts';
 import { sanitizeSchema } from './schema.ts';
 import { scoreEntry, searchable, summaryOf } from './searchable.ts';
 import type { MergedCapability } from './visibility.ts';
@@ -19,11 +19,27 @@ import type { MergedCapability } from './visibility.ts';
  * See `search.ts` for what the surface is for and why it exists (ADR-075).
  */
 
-/** How many matches come back with their whole schema attached. */
-const DETAILED = 5;
+/**
+ * What an answer may cost, in bytes of the caller's context.
+ *
+ * A count was the wrong unit. Five matches is 900 bytes of one provider's
+ * schemas and 40 KB of another's, so a fixed number either truncates the useful
+ * answer or floods the context — and which it does depends on whose API the
+ * caller happened to ask about.
+ */
+const BUDGET = 16 * 1024;
 
-/** How many come back as a line each, after those. */
-const LISTED = 20;
+/** The most any one query will explain, however small the schemas are. */
+const MOST = 10;
+
+/**
+ * The fewest, however large.
+ *
+ * The best match is rendered in full even when it alone exceeds the budget. An
+ * answer that names the right capability and withholds its arguments is the
+ * expensive kind of wrong: it costs a round trip *and* looks like an answer.
+ */
+const FEWEST = 1;
 
 /** What one capability's title, description and schema are, whichever kind it is. */
 function shapeOf(entry: MergedCapability): {
@@ -67,7 +83,8 @@ function whereReachable(entry: MergedCapability): string {
 function renderMatches(
   query: string,
   matches: readonly Match[],
-  surface?: 'full' | 'crunched',
+  surface: 'full' | 'crunched' | undefined,
+  limit: number,
 ): string {
   if (matches.length === 0) {
     return (
@@ -78,8 +95,7 @@ function renderMatches(
     );
   }
 
-  const detailed = matches.slice(0, DETAILED);
-  const listed = matches.slice(DETAILED, DETAILED + LISTED);
+  const { detailed, omitted } = afford(matches, limit);
 
   const lines: string[] = [
     `${matches.length} match${matches.length === 1 ? '' : 'es'} for "${query}".`,
@@ -119,25 +135,52 @@ function renderMatches(
     lines.push('');
   }
 
-  if (listed.length > 0) {
-    lines.push(`## ${listed.length} more, without schemas`);
-    lines.push('');
-    lines.push('Search again with a capability id for one of these to get its arguments.');
-    lines.push('');
-    for (const match of listed) {
-      const shape = shapeOf(match.entry);
-      const summary = (shape.description.split('\n')[0] ?? '').slice(0, 100);
-      lines.push(`- \`${match.id}\` — ${summary}`);
-    }
-    lines.push('');
-  }
-
-  const hidden = matches.length - detailed.length - listed.length;
-  if (hidden > 0) {
-    lines.push(`${hidden} further match${hidden === 1 ? '' : 'es'} not shown. Narrow the query.`);
+  // What is left is *counted*, never listed.
+  //
+  // The list used to run to twenty ids with no schemas under the line "Search
+  // again with a capability id for one of these to get its arguments" — which
+  // is an instruction to spend another round trip, printed twenty times. On the
+  // endpoint this work started from it was reached on the query that mattered:
+  // the capability that reads a mailbox was in that tail, so answering "what is
+  // the last email" cost two searches before the first call.
+  //
+  // Everything above is complete enough to invoke. Anything below it is a
+  // narrower query away, and saying so once is enough.
+  if (omitted > 0) {
+    lines.push(
+      `${omitted} further match${omitted === 1 ? '' : 'es'} scored lower and are not shown. ` +
+        'Narrow the query, or raise `limit`, if none of the above is what you meant.',
+    );
   }
 
   return lines.join('\n');
+}
+
+/**
+ * How many matches this answer can afford to explain properly.
+ *
+ * Spends the budget on whole entries rather than trimming every entry to fit:
+ * a schema with its properties removed does not cost less, it costs the same
+ * and buys nothing, because the caller still cannot compose the call. Better
+ * three capabilities the caller can invoke than eight they must ask about.
+ */
+function afford(
+  matches: readonly Match[],
+  limit: number,
+): { detailed: Match[]; omitted: number } {
+  const ceiling = Math.max(FEWEST, Math.min(limit, MOST));
+  const detailed: Match[] = [];
+  let spent = 0;
+
+  for (const match of matches) {
+    if (detailed.length >= ceiling) break;
+    const cost = JSON.stringify(shapeOf(match.entry).inputSchema).length;
+    if (detailed.length >= FEWEST && spent + cost > BUDGET) break;
+    detailed.push(match);
+    spent += cost;
+  }
+
+  return { detailed, omitted: matches.length - detailed.length };
 }
 
 /**
@@ -150,8 +193,97 @@ export function searchCapabilities(
   query: string,
   merged: Map<string, MergedCapability>,
   surface?: 'full' | 'crunched',
+  filters: Filters = {},
 ): string {
-  return renderMatches(query, rank(query, merged), surface);
+  return renderMatches(query, select(query, merged, filters), surface, filters.limit ?? DEFAULT);
+}
+
+/**
+ * The same answer as data, for a client that would rather not parse prose.
+ *
+ * `tools/call` may carry `structuredContent` beside its text since the
+ * 2026-07-28 revision, and a search result is the strongest case for it on this
+ * endpoint: its whole purpose is to be read and turned into the *next* call, so
+ * every field a client has to recover with a regular expression is a chance to
+ * recover it wrongly. The text stays — it is what a model reads, and older
+ * clients get nothing else.
+ */
+export function searchResults(
+  query: string,
+  merged: Map<string, MergedCapability>,
+  filters: Filters = {},
+): {
+  query: string;
+  matched: number;
+  capabilities: {
+    capability: string;
+    tool: string;
+    title: string | undefined;
+    description: string;
+    reachable: { profile: string; connections: string[] }[];
+    inputSchema: Record<string, unknown>;
+  }[];
+} {
+  const matches = select(query, merged, filters);
+  const { detailed } = afford(matches, filters.limit ?? DEFAULT);
+
+  return {
+    query,
+    matched: matches.length,
+    capabilities: detailed.map((match) => {
+      const shape = shapeOf(match.entry);
+      return {
+        capability: match.id,
+        tool: match.tool,
+        title: shape.title,
+        description: shape.description.split('\n\nAvailable connections')[0] ?? '',
+        reachable: [...match.entry.reachable].map(([profile, connections]) => ({
+          profile,
+          connections: [...connections],
+        })),
+        inputSchema: shape.inputSchema,
+      };
+    }),
+  };
+}
+
+/** How many matches an answer explains when the caller does not say. */
+const DEFAULT = 3;
+
+/**
+ * What a caller may narrow a search by, beyond the words.
+ *
+ * All optional, and none of them can widen what is reachable — they filter the
+ * ranking, which was already built only from what this caller may reach. A
+ * filter naming something they cannot reach returns nothing, which is the same
+ * answer they would get for a capability that does not exist (ADR-007).
+ */
+export type Filters = {
+  readonly provider?: string | undefined;
+  readonly profile?: string | undefined;
+  readonly connection?: string | undefined;
+  readonly readOnly?: boolean | undefined;
+  readonly limit?: number | undefined;
+};
+
+/** The ranking, narrowed by whatever the caller pinned down. */
+function select(
+  query: string,
+  merged: Map<string, MergedCapability>,
+  filters: Filters,
+): Match[] {
+  return rank(query, merged).filter((match) => {
+    if (filters.provider !== undefined && match.id.split('.')[0] !== filters.provider) return false;
+    if (filters.readOnly === true && !reads(match.id)) return false;
+    if (filters.profile !== undefined && !match.entry.reachable.has(filters.profile)) return false;
+    if (filters.connection !== undefined) {
+      const named = [...match.entry.reachable.values()].some((all) =>
+        all.includes(filters.connection as string),
+      );
+      if (!named) return false;
+    }
+    return true;
+  });
 }
 
 /**
