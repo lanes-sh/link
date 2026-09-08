@@ -57,7 +57,9 @@ have to. Read \`lanes://instructions\` for the whole account of how it works.`;
 
 const ROUTING = `**Routing.** Every tool takes \`profile\` and \`connection\`. A profile is how
 someone separates work from personal — when it is ambiguous which one is meant,
-ask. Do not default to whichever is listed first.`;
+ask. Do not default to whichever is listed first, and do not report something
+missing on the strength of one profile: absence is per profile, and the other one
+is where the answer usually is.`;
 
 const MEMORY = `**Memory is worth consulting.** Before concluding you do not know something
 about this person or their work, search it. Writing to memory is a separate
@@ -186,6 +188,24 @@ from when your client connected, and a connection made since is missing from it.
 concluding you cannot do something, call \`lanes_tools_search\` — then \`lanes_tools_call\` to
 invoke what it names, under the permissions the named tool would have had.`;
 
+/**
+ * The same paragraph, for an endpoint that advertises a small surface on purpose.
+ *
+ * `SEARCH` explains an absent tool as a stale snapshot, which is the true
+ * reason under `full` and the wrong one under `crunched`: there the tool was
+ * never advertised and re-reading the list will not produce it. A model told
+ * the wrong reason waits for the wrong remedy.
+ *
+ * Two characters shorter than the paragraph it replaces, so it cannot push the
+ * assembled instructions past `MAX_INSTRUCTIONS` — the arithmetic at the
+ * budget's docstring holds unchanged, and this substitution can only reduce the
+ * measured maximum.
+ */
+const SEARCH_CRUNCHED = `**Most of what this endpoint reaches is not in your tool list.** It advertises a
+small surface deliberately, so a missing tool is normal rather than a fault. Before
+concluding you cannot do something, call \`lanes_tools_search\` — then \`lanes_tools_call\` to
+invoke what it names, under the permissions the named tool would have had.`;
+
 const REFUSAL = `**A refused call is the permission system working**, not an obstacle to route
 around. Report what was refused and let the owner decide whether to widen it.
 Every call, including a refused one, is recorded.`;
@@ -303,10 +323,30 @@ function habitsFor(reachable: readonly string[]): string[] {
  * now taken from what the test measures rather than composed by hand, so the
  * next paragraph cannot be certified against a case nothing serves:
  *
- *   the paired branch, every owner provider, remote clients   3102
- *   the unpaired branch, which is the real maximum            3216
+ *   the paired branch, every owner provider, remote clients   3358
+ *   the unpaired branch, which is the real maximum            3361
  *
  * `SEARCH` costs 338 of that — 336 of prose and the two characters `join` adds.
+ *
+ * Raised a sixth time, to 3450, for one sentence in `ROUTING` — that absence is
+ * per profile, and one profile having nothing is not grounds for saying a thing
+ * does not exist. It costs 145 characters and the two branches above moved from
+ * 3102 and 3216.
+ *
+ * The case for it is `ENTITIES`' case one step further out, and it was observed
+ * rather than reasoned about: with two profiles served, an agent searched one,
+ * answered "nothing filed under that name", and found the entry on the other
+ * only when pushed. Every guard that would otherwise catch this is on the wrong
+ * side of it — the endpoint answered correctly, policy allowed both, and the
+ * audit log records two successful searches. Only prose stands between a partial
+ * look and a confident negative, and a confident negative ends the turn, so
+ * there is no later moment at which a skill loaded when relevant would help.
+ * That is the same argument `SEARCH` and `AVAILABILITY` are already here on.
+ *
+ * The ceiling keeps roughly the headroom the fifth raise left it: 89 characters
+ * against 84. That is deliberate — this docstring's own warning is that the
+ * widest case gets recertified when the number moves and not when the prose
+ * does, so the margin is small enough that the next paragraph has to measure.
  *
  * The arithmetic, because the number is a measurement and not a round figure.
  * Twenty profiles, twenty connections each, every owner provider reachable,
@@ -334,7 +374,7 @@ function habitsFor(reachable: readonly string[]): string[] {
  * exactly the final length, because `join` adds the same two characters the
  * reduce already counted.
  */
-export const MAX_INSTRUCTIONS = 3300;
+export const MAX_INSTRUCTIONS = 3450;
 
 /** Which of the owner-layer providers this principal can actually reach. */
 function ownerProviders(merged: ReadonlyMap<string, MergedCapability>): string[] {
@@ -391,6 +431,8 @@ export function serverInstructions(
   /** Whether a client authorises against this endpoint rather than being handed
    * a token — see `AVAILABILITY`, the only paragraph that reads it. */
   remoteClients = false,
+  /** How much of the surface is advertised — see `config.surface`. */
+  surface: 'full' | 'crunched' = 'full',
 ): string {
   const reachable = connectionsByProfile(profiles, merged);
   const owner = ownerProviders(merged);
@@ -405,7 +447,7 @@ export function serverInstructions(
     FILES,
     // Between "the tool is not there" and "the call was refused", which is the
     // order a caller meets them in: absent, then present and denied.
-    SEARCH,
+    surface === 'crunched' ? SEARCH_CRUNCHED : SEARCH,
     REFUSAL,
     ...(remoteClients ? [AVAILABILITY] : []),
   ];

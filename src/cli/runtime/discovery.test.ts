@@ -6,7 +6,9 @@ import { join } from 'node:path';
 import { defineProvider, type DiscoveredCapability } from '#connectivity';
 import { PROVIDER_MANIFESTS } from '#providers/index.ts';
 import { openRuntime } from '../runtime.ts';
-import { capabilityDiff, discoveryProbe, isEmptyDiff } from './discovery.ts';
+import { capabilityDiff, discoveryProbe, isEmptyDiff, primeDiscovery } from './discovery.ts';
+import { ProviderRegistry } from '#registry';
+import type { RuntimeState } from '#stores/state';
 import { DISCOVERY_NAMESPACE } from '#stores/state';
 
 /**
@@ -182,5 +184,85 @@ describe('capabilityDiff', () => {
   test('identical sets are empty', () => {
     const set = [capability('a'), capability('b')];
     expect(isEmptyDiff(capabilityDiff(set, [...set]))).toBe(true);
+  });
+});
+
+/**
+ * The cache reads that stand between a cold instance and its open port.
+ *
+ * `primeDiscovery` runs before the endpoint binds, once per profile, over every
+ * provider the catalogue registers rather than every one the operator
+ * connected. Serially that is of the order of eighty round trips against a
+ * bucket, and it was the largest single term in a ten-second cold start.
+ *
+ * Concurrency is the fix and it is invisible in the result — the registry ends
+ * up holding the same thing either way — so it is asserted directly, against a
+ * store that records how many reads were in flight at once.
+ */
+describe('priming discovery', () => {
+  /** A store that answers slowly enough to overlap, and counts the overlap. */
+  function countingState(): { state: RuntimeState; peak: () => number; order: () => string[] } {
+    let inFlight = 0;
+    let peak = 0;
+    const order: string[] = [];
+
+    const kv = {
+      get: async (_namespace: string, key: string): Promise<string | null> => {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        order.push(key);
+        await Bun.sleep(5);
+        inFlight -= 1;
+        return null;
+      },
+      set: async () => {},
+      delete: async () => {},
+      keys: async () => [],
+      clearNamespace: async () => {},
+    };
+
+    return {
+      state: { kv, connections: {}, cursors: {} } as unknown as RuntimeState,
+      peak: () => peak,
+      order: () => order,
+    };
+  }
+
+  /** `count` providers the cache has to be consulted for — no committed spec. */
+  function registryOf(count: number): ProviderRegistry {
+    const registry = new ProviderRegistry();
+
+    for (let index = 0; index < count; index += 1) {
+      registry.register(
+        defineProvider({
+          id: `probe_${index}`,
+          name: `Probe ${index}`,
+          summary: 'A provider whose capabilities are not derivable offline.',
+          connector: { kind: 'mcp', endpoint: 'https://mcp.example.com/mcp' },
+          auth: { kind: 'none' },
+        }) as never,
+      );
+    }
+
+    return registry;
+  }
+
+  test('reads the cache concurrently rather than one round trip at a time', async () => {
+    const { state, peak } = countingState();
+
+    await primeDiscovery(registryOf(40), state);
+
+    // The bound is 16; the assertion is that it overlaps at all, because the
+    // number is a tuning choice and "serial" is the regression.
+    expect(peak()).toBeGreaterThan(1);
+  });
+
+  test('asks for every provider it could not derive, exactly once', async () => {
+    const { state, order } = countingState();
+
+    await primeDiscovery(registryOf(40), state);
+
+    expect(order()).toHaveLength(40);
+    expect(new Set(order()).size).toBe(40);
   });
 });

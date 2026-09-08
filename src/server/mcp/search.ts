@@ -96,7 +96,9 @@ export function registerSearchSurface(server: McpServer, options: BuildServerOpt
       },
     },
     async ({ query }: { query: string }) => ({
-      content: [{ type: 'text' as const, text: searchCapabilities(query, merged) }],
+      content: [
+        { type: 'text' as const, text: searchCapabilities(query, merged, options.surface) },
+      ],
     }),
   );
 
@@ -223,13 +225,23 @@ export function registerSearchSurface(server: McpServer, options: BuildServerOpt
       // produced under, and a link is a follow-up call the caller makes against
       // a *typed* resource tool — so a caller reaching a capability through here
       // gets the text and is told to use the named tool for the rest.
+      //
+      // Under `crunched` there is no named tool to be told about, so the
+      // message says what is actually true rather than naming one the client
+      // cannot call. This is the one thing the mode genuinely costs, and it is
+      // recorded in ADR-076 rather than papered over.
+      const linkAdvice =
+        options.surface === 'crunched'
+          ? 'this endpoint does not advertise its typed tools, so the resource link cannot be handed back through here'
+          : `call ${toolNameFor(capability)} directly to receive this as a resource link`;
+
       return {
         content: outcome.result.content.map((block) =>
           block.type === 'text'
             ? { type: 'text' as const, text: block.text }
             : {
                 type: 'text' as const,
-                text: `[${block.name ?? block.uri}] — call ${toolNameFor(capability)} directly to receive this as a resource link.`,
+                text: `[${block.name ?? block.uri}] — ${linkAdvice}.`,
               },
         ),
         ...(outcome.result.isError ? { isError: true } : {}),

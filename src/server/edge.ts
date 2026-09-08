@@ -1,4 +1,5 @@
-import { challenge, type AuthOutcome, type ChallengeError } from '#auth';
+import { challenge, type AuthOutcome, type Authenticator, type ChallengeError } from '#auth';
+import type { Logger } from '#connectivity';
 import { RateLimiter } from '#policy';
 
 /**
@@ -90,8 +91,22 @@ export function callerKey(request: Request): string {
   return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'direct';
 }
 
-/** Refused for rate rather than for credential — deliberately a different status. */
-export function tooManyAttempts(retryAfterMs: number): Response {
+/**
+ * Refused for rate rather than for credential — deliberately a different status.
+ *
+ * **It still carries the challenge when it is standing in for a 401.** The whole
+ * point of the `WWW-Authenticate` header is that a client whose access token has
+ * lapsed reads it and refreshes; the ceiling below turns some of those 401s into
+ * 429s, and a 429 without the header is one the client cannot act on. A
+ * connector with several sessions retrying an expired token spends the budget in
+ * seconds, and then recovers a minute later on its own — which reads as an
+ * endpoint that is intermittently unavailable rather than one asking to be
+ * re-authorised.
+ *
+ * Absent for the pre-auth ceilings, which meter `.well-known` and `/register`
+ * and have no credential to challenge for.
+ */
+export function tooManyAttempts(retryAfterMs: number, metadataUrl?: string | null): Response {
   return new Response(
     JSON.stringify({
       error: 'too_many_requests',
@@ -102,6 +117,9 @@ export function tooManyAttempts(retryAfterMs: number): Response {
       headers: {
         'content-type': 'application/json',
         'retry-after': String(Math.max(1, Math.ceil(retryAfterMs / 1000))),
+        ...(metadataUrl === undefined
+          ? {}
+          : { 'www-authenticate': challenge(metadataUrl, CHALLENGE.invalid) }),
       },
     },
   );
@@ -249,5 +267,99 @@ export function authRefusal(input: {
   const budget = input.limiter.take(callerKey(input.request), FAILED_AUTH_PER_MINUTE);
   return budget.allowed
     ? unauthorized(input.reason, input.metadataUrl)
-    : tooManyAttempts(budget.retryAfterMs);
+    : tooManyAttempts(budget.retryAfterMs, input.metadataUrl);
+}
+
+/** What a request says it is calling, and on what. */
+export interface NamedTarget {
+  readonly method: string | null;
+  readonly name: string | null;
+}
+
+/**
+ * The method and target of a request, whichever revision it speaks.
+ *
+ * The 2026-07-28 envelope requires both in headers and rejects a request whose
+ * headers and body disagree, so for an envelope client this is exact and free.
+ *
+ * **A 2025-era request carries neither**, and those are most of the clients this
+ * endpoint is actually advertised to — the hosted connectors reach it by URL and
+ * speak the older revision. Reading the header alone therefore short-circuited
+ * for exactly the callers the refusal audit and the stale-config probe were
+ * written for: a call naming a tool the protocol layer rejects left no trace,
+ * and an instance holding config older than the account being named never
+ * re-read it. Both are documented in `index.ts` as the second exception to
+ * `audit.every-invocation`, and the fix named there is this one — clone and
+ * parse the body when the header is absent, which is what `stdio.ts` already
+ * does for want of headers.
+ *
+ * The clone is what makes it safe: the handler still gets an unconsumed body.
+ * The cost is bounded by the same rule that bounds everything else on this path
+ * — attachments are named rather than carried (ADR-017), so an MCP request body
+ * is small.
+ */
+export async function namedTarget(request: Request): Promise<NamedTarget> {
+  const method = request.headers.get('mcp-method');
+  if (method !== null) return { method, name: request.headers.get('mcp-name') };
+
+  try {
+    const body = (await request.clone().json()) as {
+      method?: unknown;
+      params?: { name?: unknown };
+    };
+
+    return {
+      method: typeof body.method === 'string' ? body.method : null,
+      name: typeof body.params?.name === 'string' ? body.params.name : null,
+    };
+  } catch {
+    // A body that is not JSON is one the handler refuses on its own, and a
+    // refusal that cannot be named is not worth failing the request over.
+    return { method: null, name: null };
+  }
+}
+
+/**
+ * Authenticate, and turn a store outage into an answer rather than a stack.
+ *
+ * `authenticate` is not a pure check: both authenticators in the chain read the
+ * credential store, and on a deployed instance that is a network call — a GCS
+ * GET for the hashed token object, and a Secret Manager read behind the bearer
+ * path. Neither was guarded, and there is no `catch` anywhere in the router, so
+ * a 429 or a 503 from either store escaped the fetch handler entirely: the
+ * client got a bare 500, nothing was logged, and "the connector is unavailable"
+ * is how every client renders that.
+ *
+ * **503, not 401.** The credential presented may well be perfectly good; what
+ * failed is this endpoint's ability to check it. Answering 401 would tell a
+ * client to refresh a token that is not the problem, and a client that cannot
+ * refresh then asks the person to authorise again — user-visible churn caused by
+ * a transient bucket error. `Retry-After` says the useful thing instead.
+ *
+ * This is deliberately not the same choice `OidcAuthenticator` makes internally.
+ * There, an unreachable issuer means the claim cannot be established at all and
+ * failing closed is the safe reading. Here the failure is ours and is transient,
+ * and both readings are closed — so the one that does not misattribute the fault
+ * wins.
+ */
+export async function authenticateRequest(
+  authenticator: Authenticator,
+  request: Request,
+  log: Logger,
+): Promise<AuthOutcome | Response> {
+  try {
+    return await authenticator.authenticate(request.headers.get('authorization'));
+  } catch (error) {
+    log.error('could not authenticate', {
+      message: error instanceof Error ? error.message : String(error),
+    });
+
+    return new Response(
+      JSON.stringify({
+        error: 'unavailable',
+        hint: 'This endpoint could not reach its credential store. The credential was not rejected.',
+      }),
+      { status: 503, headers: { 'content-type': 'application/json', 'retry-after': '2' } },
+    );
+  }
 }

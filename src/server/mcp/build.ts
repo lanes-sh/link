@@ -8,7 +8,7 @@ import { registerPrompt } from './prompts.ts';
 import { registerResource } from './resources.ts';
 import { registerDiscoveredTool, registerLocalTool } from './tools.ts';
 import { registerSearchSurface } from './search.ts';
-import { mergeCapabilities, type BuildServerOptions } from './visibility.ts';
+import { advertisedTools, mergeCapabilities, type BuildServerOptions } from './visibility.ts';
 
 /**
  * Building the MCP surface for one principal.
@@ -48,7 +48,7 @@ export function buildMcpServer(options: BuildServerOptions): McpServer {
     // and `Implementation` would take it as an unknown extra and drop it from
     // `initialize` without complaining.
     {
-      instructions: serverInstructions(names, merged, options.remoteClients),
+      instructions: serverInstructions(names, merged, options.remoteClients, options.surface),
       // Declared `false` because it is false, and the SDK defaults it to `true`.
       //
       // `listChanged` is a promise to send `notifications/tools/list_changed`
@@ -109,19 +109,27 @@ export function buildMcpServer(options: BuildServerOptions): McpServer {
   // any tool list from this endpoint has them. See `search.ts`.
   registerSearchSurface(server, options);
 
+  // Which capabilities get a typed tool. Under `full` this is every tool the
+  // loop would have registered anyway, so the guards below are no-ops; under
+  // `crunched` the rest stay reachable through the surface registered above.
+  // Computed here and not asked per entry, because `visibleToolCount` and
+  // `advertisedNames` consume the same function and the three must agree.
+  const advertised = advertisedTools(merged, options.surface);
+
   for (const [id, entry] of merged) {
     // Discovered first: an upstream MCP server or an OpenAPI document supplies
     // the schema, and there is no local capability object to inspect.
     if (entry.discovered) {
-      registerDiscoveredTool(server, id, entry, options);
+      if (advertised.has(id)) registerDiscoveredTool(server, id, entry, options);
       continue;
     }
 
     const capability = entry.capability;
     if (!capability) continue;
 
-    if (isTool(capability)) registerLocalTool(server, id, entry, capability, options);
-    else if (isResource(capability)) registerResource(server, id, entry, capability, options);
+    if (isTool(capability)) {
+      if (advertised.has(id)) registerLocalTool(server, id, entry, capability, options);
+    } else if (isResource(capability)) registerResource(server, id, entry, capability, options);
     else if (isPrompt(capability)) registerPrompt(server, id, entry, capability, options);
   }
 

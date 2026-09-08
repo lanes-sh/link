@@ -61,7 +61,25 @@ export async function refreshDirectly(
   // `authorized_via` unless there is a new one, and dropping any of the three
   // would leave the *next* refresh with no token, no attribution, or pointed at
   // the wrong client.
-  await provider.saveTokens({ ...existing, ...refreshed, refresh_token: refreshToken } as never);
+  //
+  // `refresh_token` then falls back rather than being pinned. Pinning it to the
+  // value read at the top of this function was the same sentence read one way
+  // too far: it made the old token survive an absence, and also survive a
+  // *replacement*. An issuer that rotates on each refresh invalidates the one it
+  // just replaced, so storing the old one leaves the next refresh presenting a
+  // dead credential — an `invalid_grant` an hour later, indistinguishable from a
+  // revoked consent and with nothing to connect it back to here.
+  //
+  // Google's token endpoint does not rotate, which is why this was invisible.
+  // The broker is under no such obligation, and neither is any provider added
+  // later.
+  const rotated = (refreshed as { refresh_token?: unknown }).refresh_token;
+
+  await provider.saveTokens({
+    ...existing,
+    ...refreshed,
+    refresh_token: typeof rotated === 'string' && rotated.length > 0 ? rotated : refreshToken,
+  } as never);
   return (await provider.tokens()) as unknown;
 }
 

@@ -125,7 +125,10 @@ export async function outputs(flags: OutputsFlags): Promise<void> {
         paint: style.dim,
       });
     } else {
-      const invocation = await tokenInvocation(runtime.resolution.target);
+      const invocation = await tokenInvocation(
+        runtime.resolution.target,
+        runtime.resolution.workspaceRoot,
+      );
       print(
         `  claude mcp add --transport http lanes-link ${url} \\\n` +
           `    --header "Authorization: Bearer $(${invocation.command})"`,
@@ -165,6 +168,7 @@ export async function outputs(flags: OutputsFlags): Promise<void> {
  */
 export async function tokenInvocation(
   target: string,
+  workspaceRoot: string,
 ): Promise<{ command: string; onPath: boolean }> {
   // `--workspace`, always, and from the *resolved* selection rather than the
   // flags. A token is per-workspace, so `outputs --workspace cloud` printing a
@@ -180,7 +184,23 @@ export async function tokenInvocation(
   const resolved = Bun.which('lanes');
   if (resolved) {
     try {
-      const result = Bun.spawnSync([resolved, ...argv]);
+      // Pinned to the workspace this command already resolved, rather than
+      // letting the child resolve its own. `resolveWorkspaceRoot` checks
+      // `LANES_LINK_HOME`, then walks ancestors, then falls back to
+      // `~/.lanes-link` — so a bare spawn asks a *different* question than the
+      // one being answered, and the answer it gives is about somebody else's
+      // workspace. That is the failure this function's own history records:
+      // the equality check that used to catch "a `lanes` on PATH belonging to a
+      // different workspace" had to be dropped, and nothing replaced it.
+      //
+      // It also stops the test suite reaching the operator's real workspace.
+      // `bun test` from a worktree ran this against `~/.lanes-link` with
+      // `--workspace cloud`, which is a network call to a live bucket from a
+      // unit test — and the five-second timeout it hit is what made a green
+      // checkout look red.
+      const result = Bun.spawnSync([resolved, ...argv], {
+        env: { ...process.env, LANES_LINK_HOME: workspaceRoot },
+      });
       // Exit status and a plausible token, rather than a comparison against a
       // known value. This used to be handed the expected token and check for
       // equality, which caught a `lanes` on PATH belonging to a different

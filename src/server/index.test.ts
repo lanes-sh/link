@@ -528,23 +528,23 @@ describe('audit over the wire', () => {
     }
   });
 
-  test('a pre-envelope call to a hidden tool leaves no trace — a known gap', async () => {
+  test('a pre-envelope call to a hidden tool is recorded too', async () => {
     // Asserting the gap rather than hiding it, the way `resources.test.ts` does
     // for `resources/read`.
     //
-    // The test above works because the edge reads `mcp-method` and `mcp-name`,
-    // which the 2026-07-28 envelope requires and validates against the body. A
-    // 2025-era client sends neither, and `createMcpHandler` is constructed
-    // without a `legacy` option — whose default is `'stateless'`, so those
-    // requests are *served*, not refused. The header read short-circuits, the
-    // legacy leg answers `-32602 Tool ... not found`, and nothing is recorded.
+    // This was the second documented exception to `audit.every-invocation`, and
+    // it is closed. The test above works because the edge reads `mcp-method` and
+    // `mcp-name`, which the 2026-07-28 envelope requires and validates against
+    // the body. A 2025-era client sends neither — and is most of what reaches a
+    // deployed endpoint, since the hosted connectors speak the older revision.
+    // The header read short-circuited, the legacy leg answered `-32602 Tool ...
+    // not found`, and nothing was recorded.
     //
-    // Documented as the second exception to `audit.every-invocation` in
-    // `https://lanes.sh/docs/link/security`. Closing it means reading the body at the edge
-    // — `request.clone()` and a parse — which is what `stdio.ts` already does
-    // because a pipe has no headers to read instead.
-    //
-    // Change this expectation when it is closed; do not delete it.
+    // `namedTarget` now falls back to `request.clone()` and a parse, which is
+    // what `stdio.ts` already did for want of headers. The assertion is that
+    // both legs produce the same row, because "the same surface over a different
+    // transport" is the claim, and an audit gap on one of them is a real
+    // difference dressed as an implementation detail.
     const harness = startHarness({
       profile: 'legacy_denials',
       port: allocatePort(),
@@ -573,10 +573,17 @@ describe('audit over the wire', () => {
       expect(response.status).toBe(200);
       expect(await response.text()).toContain('not found');
 
-      // And this is the gap: the same probe that produces a row above produces
-      // none here.
-      expect(await harness.audit.tail({ deniedOnly: true })).toHaveLength(0);
-      expect(await harness.audit.tail()).toHaveLength(0);
+      // The same probe that produces a row for an envelope client produces one
+      // here, spelled with the capability id rather than the wire name.
+      const denied = await harness.audit.tail({ deniedOnly: true });
+
+      expect(denied).toHaveLength(1);
+      expect(denied[0]).toMatchObject({
+        capability: 'example.set_note',
+        authorization: 'denied_default',
+        status: 'not_invoked',
+        error: { kind: 'not_available' },
+      });
     } finally {
       await harness.stop();
     }

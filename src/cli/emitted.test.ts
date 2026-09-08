@@ -67,7 +67,7 @@ describe('what setup tells someone to run', () => {
 
 describe('what outputs tells someone to run', () => {
   test('the token command names the workspace, and never a profile', async () => {
-    const invocation = await tokenInvocation('cloud');
+    const invocation = await tokenInvocation('cloud', '/nonexistent-workspace-for-this-test');
 
     expect(invocation.command).toContain('--workspace cloud');
     // A token is the workspace's since ADR-068 and `token show` refuses
