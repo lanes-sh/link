@@ -159,6 +159,16 @@ describe('the habits it teaches', () => {
     expect(text).toContain('Do not default to whichever is listed first');
   });
 
+  test('says a partial look is not a negative answer', () => {
+    // Observed with two profiles served: an agent searched one, answered
+    // "nothing filed under that name", and found the entry on the other only
+    // when pushed. Nothing else catches that — the endpoint answered correctly,
+    // policy allowed both, and the audit log shows two successful searches — so
+    // this sentence is the only thing standing between a partial look and a
+    // confident negative, and a confident negative ends the turn.
+    expect(text).toContain('absence is per profile');
+  });
+
   test('covers each thing a client would otherwise have to guess', () => {
     // The unconditional half: routing, attachments, and what a refusal means
     // apply to every endpoint regardless of what it is granted.

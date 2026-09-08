@@ -57,7 +57,9 @@ have to. Read \`lanes://instructions\` for the whole account of how it works.`;
 
 const ROUTING = `**Routing.** Every tool takes \`profile\` and \`connection\`. A profile is how
 someone separates work from personal — when it is ambiguous which one is meant,
-ask. Do not default to whichever is listed first.`;
+ask. Do not default to whichever is listed first, and do not report something
+missing on the strength of one profile: absence is per profile, and the other one
+is where the answer usually is.`;
 
 const MEMORY = `**Memory is worth consulting.** Before concluding you do not know something
 about this person or their work, search it. Writing to memory is a separate
@@ -321,10 +323,30 @@ function habitsFor(reachable: readonly string[]): string[] {
  * now taken from what the test measures rather than composed by hand, so the
  * next paragraph cannot be certified against a case nothing serves:
  *
- *   the paired branch, every owner provider, remote clients   3102
- *   the unpaired branch, which is the real maximum            3216
+ *   the paired branch, every owner provider, remote clients   3358
+ *   the unpaired branch, which is the real maximum            3361
  *
  * `SEARCH` costs 338 of that — 336 of prose and the two characters `join` adds.
+ *
+ * Raised a sixth time, to 3450, for one sentence in `ROUTING` — that absence is
+ * per profile, and one profile having nothing is not grounds for saying a thing
+ * does not exist. It costs 145 characters and the two branches above moved from
+ * 3102 and 3216.
+ *
+ * The case for it is `ENTITIES`' case one step further out, and it was observed
+ * rather than reasoned about: with two profiles served, an agent searched one,
+ * answered "nothing filed under that name", and found the entry on the other
+ * only when pushed. Every guard that would otherwise catch this is on the wrong
+ * side of it — the endpoint answered correctly, policy allowed both, and the
+ * audit log records two successful searches. Only prose stands between a partial
+ * look and a confident negative, and a confident negative ends the turn, so
+ * there is no later moment at which a skill loaded when relevant would help.
+ * That is the same argument `SEARCH` and `AVAILABILITY` are already here on.
+ *
+ * The ceiling keeps roughly the headroom the fifth raise left it: 89 characters
+ * against 84. That is deliberate — this docstring's own warning is that the
+ * widest case gets recertified when the number moves and not when the prose
+ * does, so the margin is small enough that the next paragraph has to measure.
  *
  * The arithmetic, because the number is a measurement and not a round figure.
  * Twenty profiles, twenty connections each, every owner provider reachable,
@@ -352,7 +374,7 @@ function habitsFor(reachable: readonly string[]): string[] {
  * exactly the final length, because `join` adds the same two characters the
  * reduce already counted.
  */
-export const MAX_INSTRUCTIONS = 3300;
+export const MAX_INSTRUCTIONS = 3450;
 
 /** Which of the owner-layer providers this principal can actually reach. */
 function ownerProviders(merged: ReadonlyMap<string, MergedCapability>): string[] {
