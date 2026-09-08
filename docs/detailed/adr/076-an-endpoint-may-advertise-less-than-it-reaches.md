@@ -122,6 +122,26 @@ ADR-075 accepted that because the caller could be told to use the typed tool ins
 `crunched` there is no typed tool to name, so the message says the link cannot be returned rather
 than naming one the client cannot call. This is the one thing the mode genuinely costs.
 
+**The stale-instance self-heal had to follow the calls.** `probeForNewConfig` exists because one
+`/reload` reaches one instance (ADR-029), so an instance can hold configuration older than the
+account a caller is naming; the recovery is to re-read when a call names something the generation
+cannot reach. That check was on the *tool name*, which works while every capability has a tool of
+its own — and stops working here, because the tool name is `lanes_tools_call` and that is always
+advertised. Left as it was, a provider connected after an instance booted would be answered
+"cannot reach", which is indistinguishable from never having connected it.
+
+So `Generation.knows()` asks the gateway one level down, about the capability it names, against
+the reachable set rather than the registry — the registry holds what the catalogue defines whether
+or not a grant reaches it, and so does not move when a connection is made. Reachability is also
+what the tool-name check always meant: a denied capability is not advertised either, so it too
+provoked one reload before its refusal. Policy denial and stale config are identical from inside
+the instance, and telling them apart is the probe's whole job.
+
+What this costs is bounded by the same rate limit as before — one probe per ten seconds — and a
+test asserts the inverse, that a *reachable* capability does not send the instance back to its
+config, because a reload per gateway call would re-open the whole workspace to learn what it
+already knew.
+
 **Flipping the mode changes a list clients cache.** `listChanged` is `false` (ADR-032) and nothing
 here makes a client re-read. So this is a deliberate operation with the same consequence as
 connecting a new provider — issue #162's consequence — and not a setting to toggle casually. It is

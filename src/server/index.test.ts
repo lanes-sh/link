@@ -1068,6 +1068,31 @@ members: []
       await harness.stop();
     }
   });
+
+  test('a gateway call naming a capability this instance has not heard of reloads too', async () => {
+    // The same stale instance, reached the way `surface: crunched` makes every
+    // non-owner call arrive: through `lanes_tools_call`. The check above cannot
+    // fire for it — `lanes_tools_call` is always advertised, so the tool name is
+    // always known — and without this the gateway answers "cannot reach", which
+    // reads exactly like the provider was never connected.
+    const port = allocatePort();
+    const { harness, edit } = reloadable(port, configWith('personal', port, ['a'], READ_ONLY));
+
+    try {
+      edit(configWith('personal', port, ['a'], EVERYTHING));
+
+      const result = await callTool(harness.server.url, 'lanes_tools_call', {
+        capability: 'example.echo',
+        connection: 'example.a',
+        arguments: { message: 'hello' },
+      });
+
+      expect(result.isError).toBeFalsy();
+      expect(result.text).toContain('hello');
+    } finally {
+      await harness.stop();
+    }
+  });
 });
 
 describe('the authentication edge', () => {

@@ -3,11 +3,15 @@ import { ownerPrincipal, type Principal } from '#auth';
 import {
   advertisedNames,
   buildMcpServer,
+  visibleCapabilities,
   SURFACE_TOOL_NAMES,
   visibleToolCount,
   type ProfileRuntime,
 } from '#server/mcp';
 import type { GenerationDeps, OpenedWorkspace } from './generations.ts';
+
+/** The gateway, whose own name never says what it is reaching for. */
+const GATEWAY_TOOL = SURFACE_TOOL_NAMES[1]!;
 
 /**
  * One boot's worth of runtimes, and everything derived from them.
@@ -57,12 +61,52 @@ export class Generation {
   readonly visible: () => ReadonlySet<string>;
 
   /**
+   * Every capability id this generation can reach, advertised or not.
+   *
+   * Wider than `visible()` under `surface: crunched`, where most of what is
+   * reachable is deliberately not advertised — which is exactly the gap the
+   * gateway is for, and the reason it needs its own set to check against.
+   */
+  readonly reachable: () => ReadonlySet<string>;
+
+  /**
    * How many tools this generation advertises (ADR-032).
    *
    * Not `visible().size`: that set spans every reachable capability, and a
    * resource or a prompt is in it without being in `tools/list`.
    */
   readonly toolCount: () => number;
+
+  /**
+   * Whether this generation has heard of what a request is asking for.
+   *
+   * The question a stale instance has to answer before it refuses. It was once
+   * the same as "is the tool name advertised", and that stopped being enough
+   * when `surface: crunched` made `lanes_tools_call` the way most calls arrive:
+   * the gateway's own name is always advertised, so the tool-name check can
+   * never fire for it, and a call naming a provider connected since this
+   * instance booted was answered "cannot reach" — indistinguishable, to whoever
+   * asked, from never having connected it.
+   *
+   * So the gateway is asked one level down, about the capability it names,
+   * against the same reachable set `lanes_tools_call` dispatches from. Not the
+   * registry: that holds every capability the catalogue defines whether or not
+   * a grant reaches it, so it does not move when a connection is made and would
+   * answer "known" for something this instance cannot actually call.
+   *
+   * Reachability is also what the tool-name check has always meant. A denied
+   * capability is not advertised, so calling it by name already provokes one
+   * reload before the refusal — policy denial and stale config look identical
+   * from here, and resolving that is the probe's whole job. The gateway now
+   * gets the same treatment rather than a stricter one.
+   */
+  knows(named: { name: string | null; capability: string | null }): boolean {
+    if (named.name === null) return true;
+    if (!this.visible().has(named.name)) return false;
+    if (named.name !== GATEWAY_TOOL || named.capability === null) return true;
+
+    return this.reachable().has(named.capability);
+  }
 
   /**
    * The surface mode, read from the primary profile and from nowhere else.
@@ -111,6 +155,16 @@ export class Generation {
             // successful call to one is recorded as a refusal.
             ...SURFACE_TOOL_NAMES,
           ],
+        ),
+    );
+
+    this.reachable = this.#memo(
+      () =>
+        new Set(
+          visibleCapabilities({
+            profiles: this.profiles,
+            principal: ownerPrincipal(deps.primary),
+          }),
         ),
     );
 

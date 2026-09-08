@@ -195,6 +195,35 @@ describe('a crunched surface', () => {
     expect(prompts.map((prompt) => prompt.name)).toContain('lanes_skills_review-diff');
   });
 
+  test('a reachable capability does not send the instance back to its config', async () => {
+    // The inverse of the stale-instance fix: `knows()` asks about the capability
+    // the gateway names, and if it answered "unknown" for one that is merely
+    // de-advertised, every call under this mode would provoke a reload — the
+    // whole workspace re-opened, per call, to learn what it already knew.
+    const epoch = async () => {
+      const response = await fetch(crunched.server.url.replace('/mcp', '/reload'), {
+        method: 'POST',
+        headers: { authorization: `Bearer ${crunched.token}` },
+      });
+      return ((await response.json()) as { epoch?: number }).epoch;
+    };
+
+    const before = await epoch();
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await callGateway(crunched.server.url, {
+        capability: 'example.echo',
+        profile: 'personal',
+        connection: 'example.a',
+        arguments: { message: 'again' },
+      });
+    }
+
+    // One epoch for the explicit reload above, one for the one below, and none
+    // in between — the calls did not add any.
+    expect(await epoch()).toBe((before ?? 0) + 1);
+  });
+
   test('a call through the gateway is not recorded as a refusal', async () => {
     await callGateway(crunched.server.url, {
       capability: 'example.echo',
