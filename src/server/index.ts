@@ -300,7 +300,7 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
         if (named.method === 'tools/call' || named.method === 'prompts/get') {
           const toolName = named.name;
 
-          if (toolName && !generation.visible().has(toolName)) {
+          if (!generation.knows(named)) {
             // Before recording it as a refusal: this instance may simply be
             // holding config older than the account the caller is naming.
             if (await probeForNewConfig()) {

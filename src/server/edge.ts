@@ -274,6 +274,22 @@ export function authRefusal(input: {
 export interface NamedTarget {
   readonly method: string | null;
   readonly name: string | null;
+  /**
+   * The capability id, when the tool being called is `lanes_tools_call`.
+   *
+   * The gateway's own name is always advertised, so the tool name says nothing
+   * about whether this instance knows what is being asked for. One level down
+   * it does. Absent for every other tool, and for a body that does not carry it.
+   */
+  readonly capability: string | null;
+  /**
+   * The keywords, when the tool being called is `lanes_tools_search`.
+   *
+   * The same problem as `capability` and not the same shape: a search names no
+   * capability to look up, so what "this instance knows about it" means is
+   * whether anything it holds matches. Absent for every other tool.
+   */
+  readonly query: string | null;
 }
 
 /**
@@ -299,23 +315,32 @@ export interface NamedTarget {
  * is small.
  */
 export async function namedTarget(request: Request): Promise<NamedTarget> {
-  const method = request.headers.get('mcp-method');
-  if (method !== null) return { method, name: request.headers.get('mcp-name') };
+  // The envelope mirrors the method and the target name into headers, but not
+  // a tool's arguments — so the stable-name pair's own arguments are only ever
+  // in the body, and reading them is the one thing an envelope client does not
+  // save us.
+  const header = request.headers.get('mcp-method');
 
   try {
     const body = (await request.clone().json()) as {
       method?: unknown;
-      params?: { name?: unknown };
+      params?: { name?: unknown; arguments?: { capability?: unknown; query?: unknown } };
     };
+    const { capability, query } = body.params?.arguments ?? {};
 
     return {
-      method: typeof body.method === 'string' ? body.method : null,
-      name: typeof body.params?.name === 'string' ? body.params.name : null,
+      method: header ?? (typeof body.method === 'string' ? body.method : null),
+      name:
+        request.headers.get('mcp-name') ??
+        (typeof body.params?.name === 'string' ? body.params.name : null),
+      capability: typeof capability === 'string' ? capability : null,
+      query: typeof query === 'string' ? query : null,
     };
   } catch {
     // A body that is not JSON is one the handler refuses on its own, and a
-    // refusal that cannot be named is not worth failing the request over.
-    return { method: null, name: null };
+    // refusal that cannot be named is not worth failing the request over. The
+    // headers still stand where an envelope client sent them.
+    return { method: header, name: request.headers.get('mcp-name'), capability: null, query: null };
   }
 }
 
