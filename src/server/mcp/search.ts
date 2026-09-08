@@ -81,6 +81,32 @@ export function registerSearchSurface(server: McpServer, options: BuildServerOpt
         idempotentHint: true,
         openWorldHint: false,
       },
+      // What the structured half of the answer looks like.
+      //
+      // Declared because the answer is already structured and a client is
+      // entitled to validate it — the specification says a server MUST conform
+      // to an output schema it publishes, and says nothing about one that
+      // publishes structured content with no schema to check it against, which
+      // is what this was doing. It also documents the shape for a client
+      // building the next call, which is the only reason a search result exists.
+      outputSchema: {
+        query: z.string(),
+        matched: z.number().int().describe('How many capabilities matched, including any not explained below.'),
+        capabilities: z.array(
+          z.object({
+            capability: z.string().describe('The id to pass to lanes_tools_call.'),
+            tool: z.string().describe('The tool name, if this endpoint advertises one for it.'),
+            title: z.string().optional(),
+            description: z.string(),
+            reachable: z
+              .array(z.object({ profile: z.string(), connections: z.array(z.string()) }))
+              .describe('Where it can be called, and as which account.'),
+            inputSchema: z
+              .record(z.string(), z.unknown())
+              .describe('Its arguments. `profile` and `connection` are added by this endpoint.'),
+          }),
+        ),
+      },
       description:
         'Find capabilities by keyword and get their argument schemas. ' +
         'Use this when you need something this endpoint plausibly offers and you cannot see a tool for it — ' +

@@ -33,6 +33,7 @@ interface UpstreamTool {
   name: string;
   title?: string;
   description?: string;
+  outputSchema?: Record<string, unknown>;
   inputSchema?: Record<string, unknown>;
   annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean };
 }
@@ -341,6 +342,11 @@ export function createMcpConnector(options: McpConnectorOptions): Connector {
             context.manifest.keywords,
           ),
           inputSchema: tool.inputSchema ?? { type: 'object', properties: {} },
+          // Kept where the upstream declared one. It is theirs, it describes
+          // their result, and this endpoint returns that result unchanged — so
+          // passing it on is the only honest thing to do with it, and dropping
+          // it left every client parsing prose for facts it had been handed.
+          ...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
           bundle: inferBundle(tool, shortenName(context.manifest.id, tool.name, names)),
           // The upstream name is kept verbatim: ours may differ once it has
           // been through name normalisation, and calling the wrong tool
