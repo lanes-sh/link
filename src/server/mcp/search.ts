@@ -5,7 +5,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { type Filters, searchCapabilities, searchResults } from './search-index.ts';
 import { validate } from './validate.ts';
 import { SURFACE_TOOL_NAMES, toolNameFor } from './naming.ts';
-import { mergeCapabilities, type BuildServerOptions } from './visibility.ts';
+import { mergeCapabilities, type BuildServerOptions, type MergedCapability } from './visibility.ts';
 
 /**
  * The two tools whose names never change.
@@ -63,8 +63,19 @@ import { mergeCapabilities, type BuildServerOptions } from './visibility.ts';
 
 
 
-export function registerSearchSurface(server: McpServer, options: BuildServerOptions): void {
-  const merged = mergeCapabilities(options);
+export function registerSearchSurface(
+  server: McpServer,
+  options: BuildServerOptions,
+  // Built once by `buildMcpServer` and handed down.
+  //
+  // This used to call `mergeCapabilities` itself, so the whole policy sweep —
+  // every profile, every capability, `allowedConnections` per candidate
+  // connection — ran twice on every single request: once for the registration
+  // loop and once for this closure, for the same answer. Optional so the
+  // function still stands alone in a test.
+  catalogue?: Map<string, MergedCapability>,
+): void {
+  const merged = catalogue ?? mergeCapabilities(options);
   const profiles = [...options.profiles.keys()];
 
   server.registerTool(
