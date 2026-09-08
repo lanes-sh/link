@@ -80,7 +80,18 @@ export const CORPUS: Map<string, MergedCapability> = new Map([
     ['users.drafts.list', 'list drafts', "Lists the drafts in the user's mailbox."],
     ['users.drafts.get', 'get drafts', 'Gets the specified draft.'],
     ['users.drafts.delete', 'delete drafts', 'Immediately and permanently deletes the specified draft.'],
+    // The label operations are here in the number a real mail API has them,
+    // and that number is the point. A fixture with one of them made this
+    // provider's busiest noun *messages* by a wide margin, so the tiebreak that
+    // reads frequency answered correctly for the wrong reason. A deployed
+    // endpoint has five, which makes the two nouns level and puts the whole
+    // weight of the answer back on the terms — which is where the ranking was
+    // still getting it wrong.
     ['users.labels.list', 'list labels', "Lists all labels in the user's mailbox."],
+    ['users.labels.create', 'create labels', 'Creates a new label.'],
+    ['users.labels.delete', 'delete labels', 'Immediately and permanently deletes the specified label.'],
+    ['users.labels.update', 'update labels', 'Updates the specified label.'],
+    ['users.labels.patch', 'patch labels', 'Patch the specified label.'],
     ['users.threads.list', 'list threads', "Lists the threads in the user's mailbox."],
     ['send_message', 'send message', 'Send a message, with attachments, or save it as a draft.'],
   ]),

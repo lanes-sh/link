@@ -24,6 +24,18 @@ import { searchCapabilities } from './search-index.ts';
 /** Where retrieval stood before any of this — the number to beat, not to keep. */
 const BASELINE = { top1: 31, top3: 63, schema: 81, bytes: 4_063 } as const;
 
+/**
+ * And the same three, measured against the deployed endpoint rather than this
+ * corpus, on the query the work started from. Kept because a fixture is a model
+ * of a surface and this is the surface: eleven providers, two mail accounts,
+ * descriptions written by their vendors rather than by us.
+ *
+ *   "latest email in inbox"    before: 27 matches, 11,893 B, schemaless tail
+ *                               after:  6 matches,  5,815 B, every match callable
+ *   tools advertised           before: 28, none carrying behaviour hints
+ *                               after:  28, all four hints on every one
+ */
+
 /** Floors, set below today's measurement so ordinary noise does not fail CI. */
 const FLOOR = { top1: 90, top3: 95, schema: 90 } as const;
 

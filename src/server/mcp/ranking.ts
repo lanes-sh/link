@@ -1,7 +1,7 @@
 import { isTool } from '#connectivity';
 import type { MergedCapability } from './visibility.ts';
 import { toolNameFor } from './naming.ts';
-import { fieldsOf, holds, scoreEntry, searchable, words } from './searchable.ts';
+import { exactly, fieldsOf, holds, scoreEntry, searchable, words } from './searchable.ts';
 import {
   actionOf,
   READ_VERBS,
@@ -56,50 +56,7 @@ import {
 
 
 
-/**
- * The thing a provider is mostly about, taken from how often it talks about it.
- *
- * Gmail has capabilities under `messages`, `drafts`, `labels` and `threads`, and
- * a bare "email" matches all four identically because the provider's keywords
- * are appended to all four identically. Something has to break that tie, and the
- * honest signal already present is proportion: an API devotes more operations to
- * its subject than to its accessories. Four `messages.*` against one `labels.*`
- * is the vendor saying which one is the point.
- *
- * Derived rather than declared, so it costs no per-provider authoring and cannot
- * drift from the surface it describes. It is a tiebreak and weighted like one:
- * it must not outrank a term that genuinely matched.
- */
-function primaryResources(merged: Map<string, MergedCapability>): Map<string, string> {
-  const counts = new Map<string, Map<string, number>>();
 
-  for (const [id, entry] of merged) {
-    if (!searchable(entry)) continue;
-    const [provider, ...rest] = id.split('.');
-    if (provider === undefined || rest.length === 0) continue;
-    const resource = resourceOf(rest);
-    if (resource === undefined) continue;
-
-    const byResource = counts.get(provider) ?? new Map<string, number>();
-    byResource.set(resource, (byResource.get(resource) ?? 0) + 1);
-    counts.set(provider, byResource);
-  }
-
-  const primary = new Map<string, string>();
-  for (const [provider, byResource] of counts) {
-    const best = [...byResource].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0];
-    if (best && best[1] > 1) primary.set(provider, best[0]);
-  }
-  return primary;
-}
-
-/** The noun in a capability name, once its verbs and its scoping words are gone. */
-function resourceOf(segments: readonly string[]): string | undefined {
-  const nouns = segments
-    .flatMap((segment) => words(segment))
-    .filter((word) => !READ_VERBS.has(word) && !WRITE_VERBS.has(word) && word !== 'users' && word !== 'me');
-  return nouns[nouns.length - 1];
-}
 
 
 
@@ -184,9 +141,27 @@ function weighted(
     const confidence = typed.get(term) ?? 1;
     const inferred = confidence < 1;
     const hit = inferred
-      ? holds(fields.description, term)
-        ? 1
-        : 0
+      ? // An inferred term may name the *operation*, but never the vendor.
+        //
+        // Description-only was too strict, and a real endpoint showed where.
+        // Gmail's three list operations describe themselves almost identically —
+        // "Lists all labels / the drafts / the messages in the user's mailbox" —
+        // and the provider keywords appended to each carry the word *message*,
+        // so expanding "email" matched all three in the description and settled
+        // nothing. The one field that distinguishes them is the operation's own
+        // name, and that was the field an inferred term could not reach.
+        //
+        // The vendor's name stays out of reach, because that is what the
+        // restriction was for: a provider called `outlook_mail` otherwise wins
+        // every mail query on spelling. Scored below a typed name hit, since it
+        // is still an inference.
+        holds(fields.name, term)
+        ? 1.5
+        : holds(fields.title, term)
+          ? 1.2
+          : holds(fields.description, term)
+            ? 1
+            : 0
       : holds(fields.name, term)
         ? 3
         : holds(fields.title, term)
@@ -197,7 +172,22 @@ function weighted(
               ? 1
               : 0;
 
-    score += hit * (specificity.get(term) ?? 1) * confidence;
+    // For an inferred term only, a word that *is* it outweighs one that merely
+    // starts with it.
+    //
+    // `holds` cannot draw this line and should not: as the match test it has to
+    // be generous, because "meetings" must find "meeting". But when the term was
+    // inferred rather than typed, and two candidates are otherwise identical,
+    // exactness is the last honest signal left — "my todo list" expands *todo*
+    // to *task*, which is exactly the word in `tasks.list` and merely the first
+    // four letters of `tasklists.list`.
+    //
+    // Confined to inferred terms because applying it to typed ones rewarded the
+    // wrong thing: *latest* is exactly a word in `get_latest_release`, and
+    // giving that extra credit put a release-notes tool back on top of a mail
+    // query — the original failure, returning by the other door.
+    const strength = !inferred || exactly(fields.name, term) || exactly(fields.title, term) ? 1 : 0.8;
+    score += hit * strength * (specificity.get(term) ?? 1) * confidence;
     if (hit > 0 && !inferred) matched++;
   }
 
@@ -241,7 +231,6 @@ function weighted(
  */
 function fit(
   id: string,
-  primary: Map<string, string>,
   intent: Intent,
   wantsMany: boolean,
   asked: boolean,
@@ -252,9 +241,7 @@ function fit(
   const name = rest.flatMap((segment) => words(segment));
   let bonus = 0;
 
-  const subject = primary.get(provider);
-  const resource = resourceOf(rest);
-  if (subject !== undefined && resource !== undefined && holds([resource], subject)) bonus += 0.4;
+
 
   const action = actionOf(name);
   if (action === intent.wants) bonus += intent.explicit ? 0.35 : 0.15;
@@ -327,9 +314,20 @@ export function rank(query: string, merged: Map<string, MergedCapability>): Matc
   // whether something matches is still `scoreEntry(...) > 0` exactly; what
   // follows only decides the order among things that already matched, and
   // cannot make a miss into a hit or the reverse.
+  // No "what is this provider mostly about" tiebreak here, and there was one.
+  //
+  // It read the provider's busiest noun off how many operations mentioned it,
+  // which is a real signal and was measurably wrong where it mattered most: a
+  // deployed mail provider has five label operations against four message ones,
+  // so frequency concluded the provider was about *labels* and answered "latest
+  // email in inbox" with the tool that lists label names. It was carrying two
+  // other queries that the fixes above now carry properly, so it went.
+  //
+  // What is left in its place is the honest position: where a provider's own
+  // words do not distinguish two of its operations, this ranks them by the
+  // query and stops. It does not guess which one the vendor cares about.
   const specificity = inverseFrequency(terms, candidates);
   const typed = confidence(queryWords(query));
-  const primary = primaryResources(merged);
   const intent = intentOf(queryWords(query));
   const wantsMany =
     intent.wants === 'read' && (intent.explicit || plural(queryWords(query))) && !namesOne(terms);
@@ -340,7 +338,7 @@ export function rank(query: string, merged: Map<string, MergedCapability>): Matc
     tool: toolNameFor(id),
     score:
       weighted(id, entry, terms, specificity, typed) *
-      fit(id, primary, intent, wantsMany, asked),
+      fit(id, intent, wantsMany, asked),
     entry,
   }));
 

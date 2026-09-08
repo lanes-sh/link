@@ -115,7 +115,14 @@ export function confidence(terms: readonly string[]): Map<string, number> {
   const weights = new Map<string, number>(terms.map((term) => [term, 1]));
   for (const term of terms) {
     for (const group of VOCABULARY) {
-      if (!group.some((word) => word === term)) continue;
+      // Matched the way every other comparison here matches, which it was not.
+      // Exact equality meant a plural never expanded: a caller typing
+      // "meetings" got no synonyms at all, because the table says "meeting" —
+      // so the query fell back to whatever the vendor's own words happened to
+      // be, and the tiebreak decided. `holds` already covers the endings that
+      // come up, and using it here is what makes the table apply to the way
+      // people actually type.
+      if (!holds(group, term)) continue;
       for (const word of group) if (!weights.has(word)) weights.set(word, SYNONYM);
     }
   }

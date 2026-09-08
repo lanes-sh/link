@@ -40,6 +40,10 @@ export function words(text: string): string[] {
  * `getting` and also `getaway`, and one would make every term match everything.
  * Equality is always enough, so short terms still work as themselves.
  */
+export function exactly(list: readonly string[], term: string): boolean {
+  return list.includes(term);
+}
+
 export function holds(list: readonly string[], term: string): boolean {
   const stem = elide(term);
   return list.some(
