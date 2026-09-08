@@ -239,6 +239,12 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
     // a reload replaces (ADR-029). Retiring that generation stays safe for them
     // because `Runtime.close()` ends connector sessions and the audit log — it
     // does not close the credential store or the state handle these hold.
+    // Read once, and before the generations that carry it. `version()` walks up
+    // to the install root and parses `package.json`; doing it per request would
+    // put a synchronous file read on a hot path to answer a value that cannot
+    // change while this process lives.
+    const runningVersion = version();
+
     const generations = new Generations(
       { profiles: profileRuntimes(runtimes), close: () => closeAll(runtimes).then(() => {}) },
       async (): Promise<OpenedWorkspace> => {
@@ -258,14 +264,20 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
       // `remoteClients` is the gate's existence, not a second setting: a profile
       // declaring `auth.authorization` is one a connector reaches by URL, which
       // is exactly the client the extra paragraph is written for.
-      { primary: primary.resolution.profile, log, ...(gate ? { remoteClients: true } : {}) },
+      //
+      // `version` is what the endpoint calls itself in `serverInfo`, and it was
+      // computed here and then handed only to the read surface — so every
+      // instance this has ever served, over HTTP and over stdio, answered
+      // `initialize` with `buildMcpServer`'s `0.0.0` fallback. The value exists
+      // for exactly the case that misses: two machines a release apart with
+      // nothing on either to say so (`#cli/version.ts`).
+      {
+        primary: primary.resolution.profile,
+        log,
+        version: runningVersion,
+        ...(gate ? { remoteClients: true } : {}),
+      },
     );
-
-    // Read once. `version()` walks up to the install root and parses
-    // `package.json`; doing it per request would put a synchronous file read on
-    // the read surface's hot path to answer a value that cannot change while
-    // this process lives.
-    const runningVersion = version();
 
     const server = serve({
       generations,
@@ -364,6 +376,10 @@ export async function startStdioEndpoint(
       profiles: profileRuntimes(runtimes),
       primary: primary.resolution.profile,
       log: options.log ?? silentLogger(),
+      // The same omission as the HTTP path above, and the same fix. A client
+      // reaching this over a pipe is the one most likely to be a release behind
+      // the workspace it opens, since nothing redeployed it.
+      version: version(),
       ...(options.clientLabel ? { clientLabel: options.clientLabel } : {}),
     });
 
