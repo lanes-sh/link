@@ -11,6 +11,7 @@ export {
   inferBundle,
   searchableCapabilities,
   shortenName,
+  neutralise,
   titleFor,
   withKeywords,
   type McpConnectorOptions,

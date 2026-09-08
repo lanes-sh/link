@@ -123,6 +123,71 @@ export function titleFor(vendor: string, name: string): string {
 }
 
 /**
+ * The most of an upstream description this endpoint will carry.
+ *
+ * A cap, not a judgement about writing style. A description is advertised to
+ * every caller on every `tools/list`, so an upstream server shipping three
+ * thousand words spends the owner's context on every turn.
+ */
+const LONGEST = 2_000;
+
+/**
+ * Text that is trying to be an instruction rather than a description.
+ *
+ * Deliberately short, and deliberately not presented as complete. This cannot
+ * be a filter that catches everything — a sufficiently careful sentence always
+ * reads as English — and pretending otherwise would be worse than the honest
+ * version, because it would invite trusting the output. What it catches is the
+ * shape the published attacks take: a role marker, or a sentence addressed to
+ * the model about what it must do before or instead of what it was asked.
+ */
+const INSTRUCTIONS: readonly RegExp[] = [
+  // Role and turn markers. A description is one field of one tool; anything
+  // announcing a new speaker inside it is trying to end the field early.
+  /<\/?(?:system|assistant|user|tool_call|function_call)[^>]*>/gi,
+  /\[\/?INST\]/gi,
+  /(?:^|\n)\s*(?:###\s*)?(?:system|assistant|user)\s*:/gi,
+  // Sentences aimed at the reader's obedience rather than its understanding.
+  /ignore\s+(?:all\s+)?(?:previous|prior|above|earlier)\s+(?:instructions?|prompts?|messages?|rules?)/gi,
+  /disregard\s+(?:all\s+)?(?:previous|prior|above|earlier)\s+(?:instructions?|prompts?|rules?)/gi,
+  /(?:you\s+)?must\s+(?:always|first|never)\s+(?:call|invoke|run|use|read)/gi,
+  /before\s+(?:using|calling|invoking)\s+(?:any|this|another)\s+tool/gi,
+  /do\s+not\s+(?:tell|mention|inform|reveal)\s+the\s+(?:user|owner)/gi,
+];
+
+/**
+ * An upstream description, made safe to put in front of a model.
+ *
+ * Most of this endpoint's providers are other people's MCP servers, and their
+ * tool descriptions reach the owner's model verbatim. That field is the
+ * documented injection surface: a compromised or careless server writes
+ * instructions into what reads as help text, and the model follows them,
+ * because from where it sits there is nothing to tell the two apart. This
+ * endpoint is the gateway all of it passes through, which makes it the one
+ * place the check can be made once for every client behind it.
+ *
+ * **Marked, never silently dropped.** A removed sentence is invisible to
+ * everyone, including the operator trying to work out why a tool behaves
+ * strangely. A replaced one shows up in `lanes link tools`, in a search result,
+ * and in a diff. What the model sees instead is a statement that something was
+ * withheld — which is true, and is not itself an instruction.
+ *
+ * This does not make an untrusted description trustworthy, and nothing here
+ * could. It removes the shapes that are unambiguously not description, and
+ * bounds what the rest may cost.
+ */
+export function neutralise(description: string): string {
+  let text = description;
+  for (const pattern of INSTRUCTIONS) text = text.replace(pattern, '[withheld]');
+
+  // Zero-width and bidirectional control characters, which hide the difference
+  // between what a reviewer reads and what a model does.
+  text = text.replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, '');
+
+  return text.length > LONGEST ? `${text.slice(0, LONGEST)}… [truncated]` : text;
+}
+
+/**
  * The manifest's search vocabulary, on the description that carries it.
  *
  * One line, appended to every capability of a provider that declares
@@ -268,8 +333,11 @@ export function createMcpConnector(options: McpConnectorOptions): Connector {
           title:
             tool.title ??
             titleFor(context.manifest.name, shortenName(context.manifest.id, tool.name, names)),
+          // Neutralised at the boundary, which is here: this is the line where
+          // somebody else's text becomes this endpoint's advertisement. Doing
+          // it further in would mean every later reader had to remember to.
           description: withKeywords(
-            tool.description ?? `${context.manifest.name} ${tool.name}`,
+            neutralise(tool.description ?? `${context.manifest.name} ${tool.name}`),
             context.manifest.keywords,
           ),
           inputSchema: tool.inputSchema ?? { type: 'object', properties: {} },
