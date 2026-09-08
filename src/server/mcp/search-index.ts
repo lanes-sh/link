@@ -258,6 +258,33 @@ export function schemaFor(entry: MergedCapability): Record<string, unknown> {
   return shapeOf(entry).inputSchema;
 }
 
+/**
+ * The shape `searchResults` promises, as the tool advertises it.
+ *
+ * Beside the function that produces it rather than beside the registration that
+ * publishes it, because the specification requires a server to conform to an
+ * output schema it declares — and a schema kept next to the declaration drifts
+ * from the code that has to satisfy it.
+ */
+export const SEARCH_RESULT = {
+        query: z.string(),
+        matched: z.number().int().describe('How many capabilities matched, including any not explained below.'),
+        capabilities: z.array(
+          z.object({
+            capability: z.string().describe('The id to pass to lanes_tools_call.'),
+            tool: z.string().describe('The tool name, if this endpoint advertises one for it.'),
+            title: z.string().optional(),
+            description: z.string(),
+            reachable: z
+              .array(z.object({ profile: z.string(), connections: z.array(z.string()) }))
+              .describe('Where it can be called, and as which account.'),
+            inputSchema: z
+              .record(z.string(), z.unknown())
+              .describe('Its arguments. `profile` and `connection` are added by this endpoint.'),
+          }),
+        ),
+};
+
 /** How many matches an answer explains when the caller does not say. */
 const DEFAULT = 3;
 

@@ -2,7 +2,13 @@ import { forProfile } from '#auth';
 import { isTool, isToolResult } from '#connectivity';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
-import { type Filters, searchCapabilities, searchResults } from './search-index.ts';
+import {
+  type Filters,
+  SEARCH_RESULT,
+  searchCapabilities,
+  searchResults,
+} from './search-index.ts';
+import { expandIfReferences, sibling } from './expand-result.ts';
 import { validate } from './validate.ts';
 import { SURFACE_TOOL_NAMES, toolNameFor } from './naming.ts';
 import { mergeCapabilities, type BuildServerOptions, type MergedCapability } from './visibility.ts';
@@ -100,24 +106,7 @@ export function registerSearchSurface(
       // publishes structured content with no schema to check it against, which
       // is what this was doing. It also documents the shape for a client
       // building the next call, which is the only reason a search result exists.
-      outputSchema: {
-        query: z.string(),
-        matched: z.number().int().describe('How many capabilities matched, including any not explained below.'),
-        capabilities: z.array(
-          z.object({
-            capability: z.string().describe('The id to pass to lanes_tools_call.'),
-            tool: z.string().describe('The tool name, if this endpoint advertises one for it.'),
-            title: z.string().optional(),
-            description: z.string(),
-            reachable: z
-              .array(z.object({ profile: z.string(), connections: z.array(z.string()) }))
-              .describe('Where it can be called, and as which account.'),
-            inputSchema: z
-              .record(z.string(), z.unknown())
-              .describe('Its arguments. `profile` and `connection` are added by this endpoint.'),
-          }),
-        ),
-      },
+      outputSchema: SEARCH_RESULT,
       description:
         'Find capabilities by keyword and get their argument schemas. ' +
         'Use this when you need something this endpoint plausibly offers and you cannot see a tool for it — ' +
@@ -218,6 +207,13 @@ export function registerSearchSurface(
           .record(z.string(), z.unknown())
           .default({})
           .describe("The capability's own arguments, as its schema describes them"),
+        expand: z
+          .boolean()
+          .optional()
+          .describe(
+            'Fill in a list that comes back as bare identifiers, by fetching the first few. ' +
+              'On by default. Pass false to get the identifiers as the provider returned them.',
+          ),
       },
     },
     async (input: {
@@ -225,6 +221,7 @@ export function registerSearchSurface(
       profile: string;
       connection: string;
       arguments?: Record<string, unknown>;
+      expand?: boolean | undefined;
     }) => {
       const { capability, profile, connection } = input;
       const entry = merged.get(capability);
@@ -341,6 +338,27 @@ export function registerSearchSurface(
           isError: true,
         };
       }
+
+      // A list that came back as bare identifiers is filled in before it is
+      // returned, so reading one thing does not cost two calls. Every condition
+      // is strict — see `expand.ts` — and a list already holding whole records
+      // fails them and is left alone, which is what happens to almost every
+      // provider here.
+      const filled = await expandIfReferences(
+        capability,
+        outcome.result,
+        input.expand !== false,
+        merged,
+        async (id) =>
+          runtime.dispatcher.invoke({
+            principal: forProfile(options.principal, profile),
+            capabilityId: sibling(capability, merged) as string,
+            connectionKey: connection,
+            arguments: { ...(input.arguments ?? {}), id },
+            ...(options.clientLabel ? { clientLabel: options.clientLabel } : {}),
+          }),
+      );
+      if (filled) return filled;
 
       // Text only, unlike `makeHandler`. A `resource_link` has to be rewritten
       // through `resourceLinkRouter` to carry the profile and connection it was
