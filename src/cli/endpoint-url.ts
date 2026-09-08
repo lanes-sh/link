@@ -58,7 +58,7 @@ export async function endpointHealth(
     probe.pathname = '/health';
     const response = await fetch(probe, {
       ...(token === undefined ? {} : { headers: { authorization: `Bearer ${token}` } }),
-      signal: AbortSignal.timeout(700),
+      signal: AbortSignal.timeout(probeTimeoutMs(probe)),
     });
     if (!response.ok) return null;
 
@@ -72,6 +72,32 @@ export async function endpointHealth(
   } catch {
     return null;
   }
+}
+
+/** Loopback hosts, where "not answering quickly" really does mean "not there". */
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1']);
+
+/**
+ * How long to wait for `/health` before calling an endpoint absent.
+ *
+ * Two different questions wear the same shape. A loopback endpoint is a process
+ * on this machine: it answers in single-digit milliseconds or it is not running,
+ * and making a caller wait seconds to be told a port is closed is a cost paid
+ * for nothing.
+ *
+ * A deployed one is a container that may not be running *yet*. `min_instances`
+ * defaults to 0, so the endpoint scales to zero when idle and the next request
+ * starts it — measured between 9.8 and 11.9 seconds on a real deployment before
+ * the boot reads were made concurrent. Against that, a 700ms probe reported a
+ * perfectly healthy endpoint as not answering, and `outputs` printed it as
+ * down: the built-in diagnostic confirming the false alarm rather than
+ * correcting it, in precisely the situation someone runs it to check.
+ *
+ * The two callers are both diagnostics, so waiting for a true answer beats
+ * returning a fast wrong one.
+ */
+function probeTimeoutMs(url: URL): number {
+  return LOOPBACK.has(url.hostname) ? 700 : 12_000;
 }
 
 export interface EndpointHealth {

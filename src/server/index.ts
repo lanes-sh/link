@@ -9,6 +9,7 @@ import type { Generation } from './generation.ts';
 import type { Generations } from './generations.ts';
 import {
   authRefusal,
+  authenticateRequest,
   failedAuthLimiter,
   namedTarget,
   unauthenticatedLimiter,
@@ -221,9 +222,9 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
         return new Response('Not found', { status: 404 });
       }
 
-      const outcome = await options.authenticator.authenticate(
-        request.headers.get('authorization'),
-      );
+      const attempt = await authenticateRequest(options.authenticator, request, options.log);
+      if (attempt instanceof Response) return attempt;
+      const outcome = attempt;
 
       // The refusal, and the ceiling on how often one may be provoked. Both in
       // `./edge.ts`, which is the subject: what this endpoint does about a
