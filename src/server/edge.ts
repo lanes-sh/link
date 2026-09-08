@@ -251,3 +251,52 @@ export function authRefusal(input: {
     ? unauthorized(input.reason, input.metadataUrl)
     : tooManyAttempts(budget.retryAfterMs);
 }
+
+/** What a request says it is calling, and on what. */
+export interface NamedTarget {
+  readonly method: string | null;
+  readonly name: string | null;
+}
+
+/**
+ * The method and target of a request, whichever revision it speaks.
+ *
+ * The 2026-07-28 envelope requires both in headers and rejects a request whose
+ * headers and body disagree, so for an envelope client this is exact and free.
+ *
+ * **A 2025-era request carries neither**, and those are most of the clients this
+ * endpoint is actually advertised to — the hosted connectors reach it by URL and
+ * speak the older revision. Reading the header alone therefore short-circuited
+ * for exactly the callers the refusal audit and the stale-config probe were
+ * written for: a call naming a tool the protocol layer rejects left no trace,
+ * and an instance holding config older than the account being named never
+ * re-read it. Both are documented in `index.ts` as the second exception to
+ * `audit.every-invocation`, and the fix named there is this one — clone and
+ * parse the body when the header is absent, which is what `stdio.ts` already
+ * does for want of headers.
+ *
+ * The clone is what makes it safe: the handler still gets an unconsumed body.
+ * The cost is bounded by the same rule that bounds everything else on this path
+ * — attachments are named rather than carried (ADR-017), so an MCP request body
+ * is small.
+ */
+export async function namedTarget(request: Request): Promise<NamedTarget> {
+  const method = request.headers.get('mcp-method');
+  if (method !== null) return { method, name: request.headers.get('mcp-name') };
+
+  try {
+    const body = (await request.clone().json()) as {
+      method?: unknown;
+      params?: { name?: unknown };
+    };
+
+    return {
+      method: typeof body.method === 'string' ? body.method : null,
+      name: typeof body.params?.name === 'string' ? body.params.name : null,
+    };
+  } catch {
+    // A body that is not JSON is one the handler refuses on its own, and a
+    // refusal that cannot be named is not worth failing the request over.
+    return { method: null, name: null };
+  }
+}
