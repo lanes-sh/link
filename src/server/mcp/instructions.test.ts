@@ -62,6 +62,29 @@ describe('reaching the endpoint at all', () => {
     expect(text).toContain('personal: example.a, example.b, example.c, example.d, example.e');
     expect(text.length).toBeLessThan(MAX_INSTRUCTIONS);
   });
+
+  test('a crunched surface is told why its tool list is short, and costs no more', () => {
+    const connections = new Map([
+      ['a.read', reaching({ personal: ['example.a', 'example.b', 'example.c'] })],
+      ['a.write', reaching({ personal: ['example.d', 'example.e'] })],
+    ]);
+
+    const full = serverInstructions(['personal'], connections, true, 'full');
+    const crunched = serverInstructions(['personal'], connections, true, 'crunched');
+
+    // The reason an absent tool is absent is the part a model acts on, and it
+    // differs by mode: a stale snapshot can be re-read, a surface that never
+    // advertised the tool cannot.
+    expect(full).toContain('snapshot');
+    expect(crunched).toContain('advertises a\nsmall surface deliberately');
+    expect(crunched).not.toContain('snapshot');
+
+    // Substituted rather than added. The budget is the reason the paragraph was
+    // written to the length it was, so this is the assertion that keeps a later
+    // edit honest.
+    expect(crunched.length).toBeLessThan(MAX_INSTRUCTIONS);
+    expect(crunched.length).toBeLessThanOrEqual(full.length);
+  });
 });
 
 describe('the facts under the prose', () => {

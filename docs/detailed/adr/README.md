@@ -88,6 +88,7 @@ Run.
 | [073](073-a-connection-names-its-own-account.md) | A connection names its own account; the operator is asked last, and never handed a uuid to live with |
 | [074](074-the-endpoint-records-where-it-bound.md) | The endpoint records where it bound, so an edit reaches the one that is running rather than a port derived from the profile it edited |
 | [075](075-the-list-a-client-caches-must-stop-changing.md) | The typed tool list stays and gains a search beside it, so a client that never re-reads can still reach a new connection |
+| [076](076-an-endpoint-may-advertise-less-than-it-reaches.md) | An endpoint may advertise less than it reaches, so a catalogue too large for its clients can shrink without any capability leaving it |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 

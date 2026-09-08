@@ -1,4 +1,4 @@
-import { isTool } from '#connectivity';
+import { RESERVED_PROVIDER_IDS, isTool } from '#connectivity';
 import type { Principal } from '#auth';
 import type { Config, SelectedConnection } from '#profile';
 import type { ProviderRegistry } from '#registry';
@@ -6,7 +6,7 @@ import type { Dispatcher } from '#dispatch';
 import type { PolicyDocument, ProfilePolicy } from '#policy';
 import { allowedConnections } from '#policy';
 import { mayReach } from '#auth';
-import { SURFACE_TOOL_NAMES } from './naming.ts';
+import { SURFACE_TOOL_NAMES, toolNameFor } from './naming.ts';
 
 /**
  * What this principal can see, and therefore what gets registered at all.
@@ -73,6 +73,15 @@ export interface BuildServerOptions {
    * transport cannot fail the way this describes.
    */
   readonly remoteClients?: boolean | undefined;
+  /**
+   * How much of the reachable surface is advertised. See `config.surface`.
+   *
+   * Absent means `full`, which is what every caller that does not set it gets
+   * and what this endpoint served before the option existed. Taken from the
+   * primary profile, because `tools/list` is the union across profiles and a
+   * union has one shape.
+   */
+  readonly surface?: 'full' | 'crunched' | undefined;
 }
 
 /** One profile as the map the builder wants. */
@@ -163,14 +172,85 @@ export function visibleToolCount(options: BuildServerOptions): number {
   // The stable-name pair is advertised unconditionally and is not a
   // capability, so it is in `tools/list` and not in `merged` — see
   // `SURFACE_TOOL_NAMES`.
-  let count = SURFACE_TOOL_NAMES.length;
+  return SURFACE_TOOL_NAMES.length + advertisedTools(mergeCapabilities(options), options.surface).size;
+}
 
-  for (const entry of mergeCapabilities(options).values()) {
-    if (entry.discovered) count += 1;
-    else if (entry.capability && isTool(entry.capability)) count += 1;
+/** Whether this entry registers as a tool, as `buildMcpServer` decides it. */
+function registersAsTool(entry: MergedCapability): boolean {
+  return entry.discovered ? true : !!entry.capability && isTool(entry.capability);
+}
+
+/** Whether this capability belongs to the owner layer — the endpoint's own material. */
+function isOwnerLayer(capabilityId: string): boolean {
+  const dot = capabilityId.indexOf('.');
+  return RESERVED_PROVIDER_IDS.includes(dot === -1 ? capabilityId : capabilityId.slice(0, dot));
+}
+
+/**
+ * Which reachable capabilities get a typed tool of their own.
+ *
+ * The one evaluation three places consume — the registration loop in
+ * `build.ts`, the count `/reload` returns, and the visible set that decides
+ * whether a call is recorded as a refusal. They were separate before there was
+ * anything to disagree about; a mode that advertises less than it can reach is
+ * exactly the thing that makes them able to drift, so they share this.
+ *
+ * `crunched` keeps the owner layer and nothing else. That line is not a
+ * shortlist someone tuned: the owner layer is the material this endpoint holds
+ * itself rather than anybody's API, it is small, and the instructions name
+ * several of its tools directly — an agent is told to call `lanes_setup_overview`
+ * before saying something cannot be reached, and `lanes_entities.find` before
+ * using anyone's address. Advertising less than this would leave those
+ * sentences pointing at tools the client cannot see.
+ *
+ * Everything omitted stays in `merged`, which is what `lanes_tools_call`
+ * dispatches against — so it is still reachable, still policy-checked, still
+ * audited. Omission is exposition, not authority. `grants:` is the lever that
+ * changes authority, and it removes the capability from `merged` entirely.
+ */
+export function advertisedTools(
+  merged: ReadonlyMap<string, MergedCapability>,
+  surface: 'full' | 'crunched' | undefined,
+): ReadonlySet<string> {
+  const advertised = new Set<string>();
+
+  for (const [id, entry] of merged) {
+    if (!registersAsTool(entry)) continue;
+    if (surface === 'crunched' && !isOwnerLayer(id)) continue;
+    advertised.add(id);
   }
 
-  return count;
+  return advertised;
+}
+
+/**
+ * Every wire name the built server will answer, for the refusal audit.
+ *
+ * Not `visibleCapabilities().map(toolNameFor)` any more: that was the same set
+ * while everything reachable was advertised, and stops being so under
+ * `crunched`. A name in this set and not on the wire means a call to it is
+ * answered by the SDK and recorded nowhere, which is the half of the drift that
+ * fails silently.
+ *
+ * Resources and prompts are unaffected by the mode and stay in regardless — a
+ * skill is a prompt (ADR-032), and neither was ever on the tool count.
+ */
+export function advertisedNames(options: BuildServerOptions): string[] {
+  const merged = mergeCapabilities(options);
+
+  // Identical to what this returned before the option existed, deliberately:
+  // `full` must not be a different code path that happens to agree.
+  if (options.surface !== 'crunched') return [...merged.keys()].map(toolNameFor);
+
+  const advertised = advertisedTools(merged, options.surface);
+  const names: string[] = [];
+
+  for (const [id, entry] of merged) {
+    if (registersAsTool(entry) && !advertised.has(id)) continue;
+    names.push(id);
+  }
+
+  return names.map(toolNameFor);
 }
 
 /**

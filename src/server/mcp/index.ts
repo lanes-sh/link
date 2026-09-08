@@ -23,6 +23,8 @@ export { SERVER_NAME, SURFACE_TOOL_NAMES, capabilityIdForToolName, toolNameFor }
 export { scopeResourceUri } from './routing.ts';
 export { sanitizeSchema } from './schema.ts';
 export {
+  advertisedNames,
+  advertisedTools,
   mergeCapabilities,
   oneProfile,
   visibleCapabilities,
