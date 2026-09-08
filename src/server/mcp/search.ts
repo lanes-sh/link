@@ -79,6 +79,16 @@ export function registerSearchSurface(server: McpServer, options: BuildServerOpt
     SURFACE_TOOL_NAMES[0]!,
     {
       title: 'Search every tool this endpoint can reach',
+      // Reading a catalogue this endpoint already holds. Nothing leaves the
+      // process, nothing changes, and asking twice gives the same answer — so
+      // this is the one tool on the surface a client can safely stop asking
+      // permission for, and saying so is most of what makes a search cheap.
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
       description:
         'Find capabilities by keyword and get their argument schemas. ' +
         'Use this when you need something this endpoint plausibly offers and you cannot see a tool for it — ' +
@@ -146,6 +156,17 @@ export function registerSearchSurface(server: McpServer, options: BuildServerOpt
     SURFACE_TOOL_NAMES[1]!,
     {
       title: 'Invoke any tool this endpoint can reach',
+      // The gateway cannot say what it is about to do, because that depends on
+      // the capability named in the call. A hint is a property of a tool and
+      // this tool is every tool, so the only honest posture is the cautious
+      // one — which is the cost `surface: crunched` pays here: routing provider
+      // calls through one name means none of them can carry their own.
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
       description:
         'Call a capability by id, for when it is not in your tool list. ' +
         'Get the id and its argument schema from lanes_tools_search first — the arguments are ' +

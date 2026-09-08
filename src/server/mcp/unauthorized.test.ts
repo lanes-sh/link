@@ -71,6 +71,9 @@ members: []
           capability: undefined,
           discovered: discovered(id.slice(id.indexOf('.') + 1)),
         })),
+      // This fake declares no bundles, so nothing here reads-only. What is
+      // under test is grants, and the read/write split does not enter into it.
+      expandBundle: () => [],
     },
     policy: toPolicyDocument(config),
   } as unknown as ProfileRuntime;
