@@ -53,7 +53,7 @@ describe('the token command outputs prints', () => {
   test('names the workspace and not a profile, on either path', async () => {
     // Whichever branch is taken — a `lanes` on PATH, or the checkout-relative
     // fallback — the selection has to survive into the line somebody pastes.
-    const invocation = await tokenInvocation('cloud');
+    const invocation = await tokenInvocation('cloud', '/nonexistent-workspace-for-this-test');
 
     expect(invocation.command).toContain('--workspace cloud');
     expect(invocation.command).not.toContain('--profile');

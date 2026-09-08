@@ -235,7 +235,11 @@ function whereReachable(entry: MergedCapability): string {
     .join(' | ');
 }
 
-function renderMatches(query: string, matches: readonly Match[]): string {
+function renderMatches(
+  query: string,
+  matches: readonly Match[],
+  surface?: 'full' | 'crunched',
+): string {
   if (matches.length === 0) {
     return (
       `Nothing reachable matches "${query}".\n\n` +
@@ -251,14 +255,26 @@ function renderMatches(query: string, matches: readonly Match[]): string {
   const lines: string[] = [
     `${matches.length} match${matches.length === 1 ? '' : 'es'} for "${query}".`,
     '',
-    'Each one is invocable two ways. Prefer the named tool if your tool list has it; ' +
-      'use lanes_tools_call if it does not — which is the case when this endpoint ' +
-      'gained a connection after your client last read its tool list.',
+    // Why the tool is missing differs by mode, and the reason is the part a
+    // model acts on. Under `full` an absent tool means the client's list is
+    // stale; under `crunched` it means the endpoint never advertised it and
+    // never will, so telling the model to prefer a named tool would be telling
+    // it to wait for something that is not coming.
+    surface === 'crunched'
+      ? 'This endpoint advertises a small surface on purpose: the owner layer and these two ' +
+        'tools. Everything below is reachable through lanes_tools_call and will not appear in ' +
+        'your tool list, so call it with the capability id and the arguments shown.'
+      : 'Each one is invocable two ways. Prefer the named tool if your tool list has it; ' +
+        'use lanes_tools_call if it does not — which is the case when this endpoint ' +
+        'gained a connection after your client last read its tool list.',
     '',
   ];
 
   for (const match of detailed) {
-    lines.push(`## ${match.tool}`);
+    // The wire name is the address under `full`. Under `crunched` it names no
+    // tool the client can call, so the id — which is what `lanes_tools_call`
+    // takes — leads instead.
+    lines.push(`## ${surface === 'crunched' ? match.id : match.tool}`);
     const shape = shapeOf(match.entry);
     if (shape.title) lines.push(`${shape.title}`);
     lines.push('');
@@ -301,6 +317,10 @@ function renderMatches(query: string, matches: readonly Match[]): string {
  * One entry point, because the caller is a tool handler and the only thing it
  * has to decide is what text to return.
  */
-export function searchCapabilities(query: string, merged: Map<string, MergedCapability>): string {
-  return renderMatches(query, rank(query, merged));
+export function searchCapabilities(
+  query: string,
+  merged: Map<string, MergedCapability>,
+  surface?: 'full' | 'crunched',
+): string {
+  return renderMatches(query, rank(query, merged), surface);
 }

@@ -9,7 +9,9 @@ import type { Generation } from './generation.ts';
 import type { Generations } from './generations.ts';
 import {
   authRefusal,
+  authenticateRequest,
   failedAuthLimiter,
+  namedTarget,
   unauthenticatedLimiter,
   unauthenticatedRefusal,
 } from './edge.ts';
@@ -220,9 +222,9 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
         return new Response('Not found', { status: 404 });
       }
 
-      const outcome = await options.authenticator.authenticate(
-        request.headers.get('authorization'),
-      );
+      const attempt = await authenticateRequest(options.authenticator, request, options.log);
+      if (attempt instanceof Response) return attempt;
+      const outcome = attempt;
 
       // The refusal, and the ceiling on how often one may be provoked. Both in
       // `./edge.ts`, which is the subject: what this endpoint does about a
@@ -281,15 +283,9 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
         // request whose headers and body disagree, so reading them here is exact
         // without parsing (and consuming) the body.
         //
-        // **Only for an envelope client.** A 2025-era request carries neither
-        // header, and `createMcpHandler` is built without a `legacy` option —
-        // whose default is `'stateless'`, so those requests are served rather
-        // than refused. This check short-circuits and the refusal goes
-        // unrecorded. That is the second documented exception to
-        // `audit.every-invocation` in `https://lanes.sh/docs/link/security`, asserted in
-        // `index.test.ts`. Closing it means cloning and parsing the body when
-        // the header is absent, which is what `stdio.ts` does for want of
-        // headers.
+        // A 2025-era request carries neither header, which is most of what
+        // reaches a deployed endpoint — `namedTarget` reads its body instead, so
+        // this no longer short-circuits for the clients it was written for.
         //
         // `prompts/get` is included because a prompt is named exactly as a tool
         // is — `skills_review-diff` — so the same lookup is exact.
@@ -300,9 +296,9 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
         // matching it against each registered template, which is a real design
         // decision — not least about what to record when it matches nothing —
         // and M4 did not take it. `resources.test.ts` asserts the gap.
-        const method = request.headers.get('mcp-method');
-        if (method === 'tools/call' || method === 'prompts/get') {
-          const toolName = request.headers.get('mcp-name');
+        const named = await namedTarget(request);
+        if (named.method === 'tools/call' || named.method === 'prompts/get') {
+          const toolName = named.name;
 
           if (toolName && !generation.visible().has(toolName)) {
             // Before recording it as a refusal: this instance may simply be

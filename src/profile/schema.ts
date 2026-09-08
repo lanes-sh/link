@@ -543,6 +543,38 @@ export const configSchema = z.object({
   description: z.string().min(1).optional(),
 
   /**
+   * How much of the reachable surface goes into `tools/list`.
+   *
+   * `full` is every capability policy allows, one typed tool each, which is what
+   * this endpoint has always served and what ADR-001 describes. `crunched`
+   * advertises the owner layer and the stable-name pair, and leaves everything
+   * else reachable through `lanes_tools_search` and `lanes_tools_call` — the
+   * same dispatcher, the same policy, the same audit row. **No capability is
+   * lost either way**; what changes is how much of the catalogue a client loads
+   * before it has been asked anything.
+   *
+   * It exists because the eager list outgrew its clients. ADR-075 measured 428
+   * KB for the `http` providers alone and deferred the question of whether the
+   * typed tools should ever stop being advertised, on the grounds that the
+   * number had to come from measuring this surface. ADR-076 takes that decision
+   * with the measurement: a real endpoint serving 278 tools, against a hosted
+   * client that keeps 256.
+   *
+   * Opt-in, and `full` by default, because the argument cuts both ways —
+   * a client that defers well does it better than this can, with no round trip
+   * and its prompt cache intact, and making that client worse to help one that
+   * pins its list would be the wrong trade to force on everybody. Read from the
+   * primary profile only: one endpoint serves several profiles and `tools/list`
+   * is their union, so this is a property of the endpoint rather than of a row
+   * in it — the granularity ADR-075 named when it refused a per-connection flag.
+   *
+   * Optional and additive, so every profile written before it keeps loading
+   * unchanged — the same reasoning as `identity` below, and the reason
+   * `contract` does not move.
+   */
+  surface: z.enum(['full', 'crunched']).default('full'),
+
+  /**
    * The connections this profile selects, and what may be done with each.
    *
    * There is no `connections:` block here any more — a connection belongs to

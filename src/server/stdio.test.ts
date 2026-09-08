@@ -116,6 +116,32 @@ describe('the stdio surface', () => {
     }
   });
 
+  test('a call to the stable-name surface is not mistaken for a refusal', async () => {
+    const harness = await startStdioHarness({
+      profile: 'allowed',
+      port: allocatePort(),
+      policy: `  allow:\n    - "example.*"`,
+    });
+
+    try {
+      // `lanes_tools_search` is advertised without being a capability, so it is
+      // absent from `visibleCapabilities` and has to be added to the visible set
+      // explicitly. The HTTP path does that; this asserts the pipe does too,
+      // because otherwise every successful call to the surface writes a row
+      // saying the caller reached for something that was never advertised.
+      await harness.client.callTool({
+        name: 'lanes_tools_search',
+        arguments: { query: 'echo' },
+      });
+
+      await Bun.sleep(50);
+
+      expect(await harness.audit.tail({ deniedOnly: true })).toHaveLength(0);
+    } finally {
+      await harness.stop();
+    }
+  });
+
   test('every profile in the workspace is reachable through the one pipe', async () => {
     const harness = await startStdioHarness({
       profile: 'personal',

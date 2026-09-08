@@ -145,6 +145,26 @@ describe('refreshDirectly', () => {
     });
   });
 
+  test('a rotated refresh token replaces the stored one', async () => {
+    // The other direction of the test above, and the one that was missing. An
+    // issuer that rotates on every refresh invalidates the token it just
+    // replaced, so keeping the old one leaves the *next* refresh presenting a
+    // dead credential — an `invalid_grant` that reads exactly like a revoked
+    // consent, arriving an hour later with nothing to connect it to this.
+    //
+    // Google's token endpoint does not rotate, which is why this went unnoticed;
+    // the broker is under no such obligation.
+    const { fetch } = recording(200, {
+      success: true,
+      data: { access_token: 'fresh', refresh_token: 'rotated' },
+    });
+    const { provider, current } = stubProvider({ refresh_token: 'rt', authorized_via: 'broker' });
+
+    await refreshDirectly(manifest(), provider, 'https://oauth2.example.com/token', store(), fetch);
+
+    expect(current()).toMatchObject({ refresh_token: 'rotated', access_token: 'fresh' });
+  });
+
   test('a fresher assertion from the broker replaces the stored one', async () => {
     const { fetch } = recording(200, {
       success: true,

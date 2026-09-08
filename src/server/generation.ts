@@ -1,10 +1,9 @@
 import { createMcpHandler, type McpHttpHandler, type McpRequestContext } from '@modelcontextprotocol/server';
 import { ownerPrincipal, type Principal } from '#auth';
 import {
+  advertisedNames,
   buildMcpServer,
-  toolNameFor,
   SURFACE_TOOL_NAMES,
-  visibleCapabilities,
   visibleToolCount,
   type ProfileRuntime,
 } from '#server/mcp';
@@ -65,6 +64,25 @@ export class Generation {
    */
   readonly toolCount: () => number;
 
+  /**
+   * The surface mode, read from the primary profile and from nowhere else.
+   *
+   * One endpoint serves several profiles and `tools/list` is their union, so
+   * "how much of it is advertised" is a property of the endpoint rather than of
+   * a row in it — the granularity ADR-075 named when it declined a
+   * per-connection flag, and the same rule `instance.port` already follows.
+   *
+   * Read per generation rather than pinned at bind time, so a reload picks up a
+   * changed value the way it picks up a changed grant. Spread into the options
+   * object so `full` passes nothing at all and cannot be told apart from a
+   * caller that never heard of the setting.
+   */
+  #surface(): { surface?: 'crunched' } {
+    return this.profiles.get(this.#deps.primary)?.config.surface === 'crunched'
+      ? { surface: 'crunched' }
+      : {};
+  }
+
   constructor(epoch: number, opened: OpenedWorkspace, deps: GenerationDeps) {
     this.epoch = epoch;
     this.profiles = opened.profiles;
@@ -83,12 +101,13 @@ export class Generation {
       () =>
         new Set(
           [
-            ...visibleCapabilities({
+            ...advertisedNames({
               profiles: this.profiles,
               principal: ownerPrincipal(deps.primary),
-            }).map(toolNameFor),
+              ...this.#surface(),
+            }),
             // Advertised without being capabilities, so they are absent from
-            // `visibleCapabilities` and have to be added here or every
+            // `mergeCapabilities` and have to be added here or every
             // successful call to one is recorded as a refusal.
             ...SURFACE_TOOL_NAMES,
           ],
@@ -96,7 +115,11 @@ export class Generation {
     );
 
     this.toolCount = this.#memo(() =>
-      visibleToolCount({ profiles: this.profiles, principal: ownerPrincipal(deps.primary) }),
+      visibleToolCount({
+        profiles: this.profiles,
+        principal: ownerPrincipal(deps.primary),
+        ...this.#surface(),
+      }),
     );
   }
 
@@ -221,6 +244,7 @@ export class Generation {
           clientLabel,
           ...(this.#deps.version ? { version: this.#deps.version } : {}),
           ...(this.#deps.remoteClients ? { remoteClients: true } : {}),
+          ...this.#surface(),
         }),
       {
         onerror: (error: Error) =>

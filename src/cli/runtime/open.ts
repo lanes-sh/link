@@ -1,7 +1,7 @@
 import { BearerAuthenticator, ownerPrincipal } from '#auth';
 import type { SecretStore } from '#secrets';
 import type { AuditReader } from '#audit';
-import { DISCOVERY_NAMESPACE, type RuntimeState } from '#stores/state';
+import type { RuntimeState } from '#stores/state';
 import type { BlobStore } from '#stores/blobs';
 import type { AnyConnector, ProviderManifest } from '#connectivity';
 import { RateLimiter, allowedConnections } from '#policy';
@@ -38,7 +38,7 @@ import { connectorFactory } from '#connectivity/transports';
 import { requestAuthorizer } from '#connectivity/auth/index.ts';
 import { resolveProfile, type GlobalFlags } from './select.ts';
 import { buildRegistryWithWorkspace, readSkillsForStart, reloadSkills } from './registry.ts';
-import { discoveryProbe } from './discovery.ts';
+import { primeDiscovery } from './discovery.ts';
 import { openVault } from './vault.ts';
 import { EMPTY_SKILL_STORE, skillStore } from './stores.ts';
 import type { Runtime } from './types.ts';
@@ -253,43 +253,9 @@ export async function openRuntime(
   // registered rather than rebuilding once to find out.
   fingerprint = loaded.fingerprint;
 
-  // Discovered capabilities never come from a live call on the dispatch path —
-  // that is what keeps the server stateless. But "not live" is not the same as
-  // "cached", and conflating the two was a bug: `connect` was the only writer of
-  // this cache, so an operator who upgraded without re-authorising kept whatever
-  // their last consent screen happened to discover. Drive shipped nine
-  // operations and served six; Gmail served a `drafts.create` this repository
-  // had deleted, because the spec is read by the tests and the cache is read by
-  // the endpoint.
-  //
-  // So: derive it where deriving is free, and cache it only where it is not. An
-  // `http` provider's capabilities are a pure function of a document committed
-  // here — reviewed in a diff, not fetched from a vendor — which is the property
-  // that makes re-deriving safe as well as cheap.
-  for (const entry of registry.list()) {
-    if (entry.manifest.connector.kind === 'local') continue;
-
-    const probe = discoveryProbe(entry.manifest);
-    if (probe?.cost === 'offline') {
-      try {
-        registry.setDiscovered(entry.manifest.id, await probe.run());
-        continue;
-      } catch {
-        // A malformed committed spec is a build problem, not a reason to refuse
-        // to start — fall through to whatever the cache last held.
-      }
-    }
-
-    const cached = await state.kv.get(DISCOVERY_NAMESPACE, entry.manifest.id);
-    if (cached) {
-      try {
-        registry.setDiscovered(entry.manifest.id, JSON.parse(cached));
-      } catch {
-        // A corrupt cache entry means "not discovered yet", which `plan`
-        // reports and `connect` fixes — never a reason to fail startup.
-      }
-    }
-  }
+  // Re-derived where deriving is free, read from the cache where it is not.
+  // `primeDiscovery` carries the reasoning and the bound it reads under.
+  await primeDiscovery(registry, state);
 
   // One factory for the whole runtime, so its cache actually holds. The
   // dispatcher and the CLI share it deliberately: a stateful connector must be

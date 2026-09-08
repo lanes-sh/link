@@ -3,10 +3,10 @@ import type { JSONRPCMessage, Transport } from '@modelcontextprotocol/server';
 import { ownerPrincipal } from '#auth';
 import type { Logger } from '#connectivity';
 import {
+  SURFACE_TOOL_NAMES,
+  advertisedNames,
   buildMcpServer,
   capabilityIdForToolName,
-  toolNameFor,
-  visibleCapabilities,
   type ProfileRuntime,
 } from './mcp/index.ts';
 
@@ -75,9 +75,22 @@ export function serveOverStdio(options: StdioOptions): StdioSurface {
    * connection anyway — the memoisation the HTTP path needs exists only because
    * it rebuilds per request.
    */
-  const visible = new Set(
-    visibleCapabilities({ profiles: options.profiles, principal }).map(toolNameFor),
-  );
+  // Same rule as the HTTP path: the primary profile decides, because the list
+  // this serves is the union across profiles and a union has one shape.
+  const surface: { surface?: 'crunched' } =
+    options.profiles.get(options.primary)?.config.surface === 'crunched'
+      ? { surface: 'crunched' }
+      : {};
+
+  const visible = new Set([
+    ...advertisedNames({ profiles: options.profiles, principal, ...surface }),
+    // Advertised without being capabilities, so they are absent from
+    // `visibleCapabilities` and have to be added here or every successful call
+    // to one is recorded as a refusal. `Generation.visible` makes the same
+    // addition over HTTP; this path was written before the surface existed and
+    // did not gain it, so the pipe has been writing that false row ever since.
+    ...SURFACE_TOOL_NAMES,
+  ]);
   const allCapabilityIds = [
     ...new Set(
       [...options.profiles.values()].flatMap((runtime) =>
@@ -93,6 +106,7 @@ export function serveOverStdio(options: StdioOptions): StdioSurface {
         principal,
         ...(options.clientLabel ? { clientLabel: options.clientLabel } : {}),
         ...(options.version ? { version: options.version } : {}),
+        ...surface,
       }),
     {
       transport: auditRefusals(options.transport ?? new StdioServerTransport(), (message) =>
