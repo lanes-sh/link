@@ -100,24 +100,71 @@ function holds(list: readonly string[], term: string): boolean {
   );
 }
 
+/** What one capability's title and description are, whichever kind it is. */
+function summaryOf(entry: MergedCapability): { title: string | undefined; description: string } {
+  if (entry.discovered) {
+    return { title: entry.discovered.title, description: entry.discovered.description };
+  }
+
+  const capability = entry.capability;
+  if (!capability || !isTool(capability)) return { title: undefined, description: '' };
+
+  return { title: capability.title, description: capability.description };
+}
+
+/** Whether the search considers this entry at all. */
+function searchable(entry: MergedCapability): boolean {
+  return entry.discovered !== undefined || (!!entry.capability && isTool(entry.capability));
+}
+
+/**
+ * How well one entry answers the query — the whole of the ranking.
+ *
+ * Its own function because two callers have to agree exactly: the search, and
+ * the check in front of it that decides whether a miss is worth re-reading the
+ * config for. A second reading of "does this match" would make the endpoint
+ * reload for queries that then succeed anyway, and skip the reload for the ones
+ * that needed it — both silent.
+ *
+ * Deliberately reads `summaryOf` rather than `shapeOf`: nothing here looks at a
+ * schema, and `shapeOf` converts Zod to JSON Schema for every authored
+ * capability it is handed.
+ */
+function scoreEntry(id: string, entry: MergedCapability, terms: readonly string[]): number {
+  const summary = summaryOf(entry);
+  const name = words(id);
+  const title = words(summary.title ?? '');
+  // The connections block `describeWithConnections` appends is not part of
+  // what this searches — it is identical on every tool, so it would match
+  // every term in it against everything.
+  const description = words(summary.description.split('\n\nAvailable connections')[0] ?? '');
+
+  let score = 0;
+  for (const term of terms) {
+    // The name is worth most: it carries the provider id, which is how a
+    // query naming a vendor finds that vendor's tools at all.
+    if (holds(name, term)) score += 3;
+    else if (holds(title, term)) score += 2;
+    else if (holds(description, term)) score += 1;
+  }
+
+  return score;
+}
+
 /** What one capability's title, description and schema are, whichever kind it is. */
 function shapeOf(entry: MergedCapability): {
   title: string | undefined;
   description: string;
   inputSchema: Record<string, unknown>;
 } {
+  const summary = summaryOf(entry);
+
   if (entry.discovered) {
-    return {
-      title: entry.discovered.title,
-      description: entry.discovered.description,
-      inputSchema: sanitizeSchema(entry.discovered.inputSchema),
-    };
+    return { ...summary, inputSchema: sanitizeSchema(entry.discovered.inputSchema) };
   }
 
   const capability = entry.capability;
-  if (!capability || !isTool(capability)) {
-    return { title: undefined, description: '', inputSchema: { type: 'object' } };
-  }
+  if (!capability || !isTool(capability)) return { ...summary, inputSchema: { type: 'object' } };
 
   // Authored capabilities carry Zod, so the JSON Schema a caller needs is
   // derived here rather than stored. `registerLocalTool` hands the SDK the Zod
@@ -131,7 +178,7 @@ function shapeOf(entry: MergedCapability): {
     // threw would take out every other result with it.
   }
 
-  return { title: capability.title, description: capability.description, inputSchema };
+  return { ...summary, inputSchema };
 }
 
 interface Match {
@@ -167,25 +214,9 @@ function rank(query: string, merged: Map<string, MergedCapability>): Match[] {
   const matches: Match[] = [];
 
   for (const [id, entry] of merged) {
-    if (!entry.discovered && !(entry.capability && isTool(entry.capability))) continue;
+    if (!searchable(entry)) continue;
 
-    const shape = shapeOf(entry);
-    const name = words(id);
-    const title = words(shape.title ?? '');
-    // The connections block `describeWithConnections` appends is not part of
-    // what this searches — it is identical on every tool, so it would match
-    // every term in it against everything.
-    const description = words(shape.description.split('\n\nAvailable connections')[0] ?? '');
-
-    let score = 0;
-    for (const term of terms) {
-      // The name is worth most: it carries the provider id, which is how a
-      // query naming a vendor finds that vendor's tools at all.
-      if (holds(name, term)) score += 3;
-      else if (holds(title, term)) score += 2;
-      else if (holds(description, term)) score += 1;
-    }
-
+    const score = scoreEntry(id, entry, terms);
     if (score > 0) matches.push({ id, tool: toolNameFor(id), score, entry });
   }
 
@@ -323,4 +354,41 @@ export function searchCapabilities(
   surface?: 'full' | 'crunched',
 ): string {
   return renderMatches(query, rank(query, merged), surface);
+}
+
+/**
+ * Whether anything at all would come back for this query.
+ *
+ * `searchCapabilities` renders "Nothing reachable matches" from an empty
+ * ranking, and that sentence is a claim about what this *instance* holds rather
+ * than about the account. An instance that missed the notify (ADR-029) makes it
+ * about a provider connected minutes ago, and it is the answer a model acts on:
+ * a search is how anything outside the owner layer is found under
+ * `surface: crunched`, so a wrong miss here ends the attempt before a call is
+ * ever composed.
+ *
+ * So the endpoint asks this before dispatching a search, and treats a miss the
+ * way it already treats a call naming a tool it does not serve — see
+ * `Generation.knows`.
+ *
+ * The same ranking `rank` runs, stopped at the first hit instead of sorted.
+ * A query that matches costs a partial pass and no reload; only one that
+ * matches nothing pays for the whole pass, and that is the query about to cost
+ * a network round trip regardless.
+ */
+export function matchesQuery(
+  query: string,
+  merged: ReadonlyMap<string, MergedCapability>,
+): boolean {
+  if (merged.has(query.trim())) return true;
+
+  const terms = queryTerms(query);
+  if (terms.length === 0) return false;
+
+  for (const [id, entry] of merged) {
+    if (!searchable(entry)) continue;
+    if (scoreEntry(id, entry, terms) > 0) return true;
+  }
+
+  return false;
 }

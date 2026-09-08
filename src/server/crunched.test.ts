@@ -195,6 +195,58 @@ describe('a crunched surface', () => {
     expect(prompts.map((prompt) => prompt.name)).toContain('lanes_skills_review-diff');
   });
 
+  test('neither half of the pair sends the instance back to its config on a hit', async () => {
+    // The inverse of the stale-instance fix, and it has to hold for both halves.
+    // `knows()` asks the gateway about the capability it names and the search
+    // about whether anything matches its query; if either answered "unknown" for
+    // something this instance can perfectly well reach, every call under this
+    // mode would provoke a reload — the whole workspace re-opened, per call, to
+    // learn what it already knew.
+    const epoch = async () => {
+      const response = await fetch(crunched.server.url.replace('/mcp', '/reload'), {
+        method: 'POST',
+        headers: { authorization: `Bearer ${crunched.token}` },
+      });
+      return ((await response.json()) as { epoch?: number }).epoch;
+    };
+
+    const before = await epoch();
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await callGateway(crunched.server.url, {
+        capability: 'example.echo',
+        profile: 'personal',
+        connection: 'example.a',
+        arguments: { message: 'again' },
+      });
+      await rpc(crunched.server.url, 'tools/call', {
+        name: SURFACE_TOOL_NAMES[0]!,
+        arguments: { query: 'echo a message' },
+      });
+    }
+
+    // One epoch for the explicit reload above, one for the one below, and none
+    // in between — the calls did not add any.
+    expect(await epoch()).toBe((before ?? 0) + 1);
+  });
+
+  test('a search that matches nothing is answered, not refused', async () => {
+    // The probe fires here — nothing reachable matches — and this asserts what
+    // happens *after* it: one reload finds the config unchanged, and the search
+    // still answers with the same sentence it always did. The self-heal is a
+    // retry of the question, never a different answer to it.
+    const response = await rpc(crunched.server.url, 'tools/call', {
+      name: SURFACE_TOOL_NAMES[0]!,
+      arguments: { query: 'quantumfoobarbaz' },
+    });
+    const result = response.body['result'] as
+      | { content?: { text?: string }[]; isError?: boolean }
+      | undefined;
+
+    expect(result?.isError).toBeFalsy();
+    expect(result?.content?.[0]?.text ?? '').toContain('Nothing reachable matches');
+  });
+
   test('a call through the gateway is not recorded as a refusal', async () => {
     await callGateway(crunched.server.url, {
       capability: 'example.echo',

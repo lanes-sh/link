@@ -122,6 +122,48 @@ ADR-075 accepted that because the caller could be told to use the typed tool ins
 `crunched` there is no typed tool to name, so the message says the link cannot be returned rather
 than naming one the client cannot call. This is the one thing the mode genuinely costs.
 
+**The stale-instance self-heal had to follow both halves of the pair.** `probeForNewConfig` exists because one
+`/reload` reaches one instance (ADR-029), so an instance can hold configuration older than the
+account a caller is naming; the recovery is to re-read when a call names something the generation
+cannot reach. That check was on the *tool name*, which works while every capability has a tool of
+its own — and stops working here, because the tool name is `lanes_tools_call` and that is always
+advertised. Left as it was, a provider connected after an instance booted would be answered
+"cannot reach", which is indistinguishable from never having connected it.
+
+So `Generation.knows()` asks the gateway one level down, about the capability it names, against
+the reachable set rather than the registry — the registry holds what the catalogue defines whether
+or not a grant reaches it, and so does not move when a connection is made. Reachability is also
+what the tool-name check always meant: a denied capability is not advertised either, so it too
+provoked one reload before its refusal. Policy denial and stale config are identical from inside
+the instance, and telling them apart is the probe's whole job.
+
+**The search is the half that comes first, and it needed a different question.** Under `crunched`
+nothing outside the owner layer is *called* until it has been *found*, so the realistic order after
+connecting a provider is search, then call. A stale instance answers `Nothing reachable matches`,
+and that sentence is not a hedge a model retries — it is a claim that the account does not have the
+thing, and it ends the attempt before a capability id is ever composed. Fixing only the call path
+would have left the endpoint able to recover from a mistake a model had already been told not to
+make.
+
+A search names no capability, so there is nothing to look up one level down. What it names is a
+query, and "has this instance heard of it" therefore means *does anything it holds match* — which
+is the ranking the search is about to run anyway. So `knows()` runs that ranking, stopped at the
+first hit, and a miss provokes the same probe: the reload lands before dispatch, the request is
+re-pinned to the new generation, and the search then answers from the config that was just read.
+The recovery happens inside the one call the model made, rather than on a retry nobody issues.
+
+`matchesQuery` and `rank` share their scoring for that reason. Two readings of "does this match"
+would drift into an endpoint that reloads for queries which then succeed anyway, and skips the
+reload for the ones that needed it — both silent, and the second one indistinguishable from the bug
+this closes.
+
+What this costs is bounded by the same rate limit as before — one probe per ten seconds, for both
+halves together — and tests assert the inverse for each: a *reachable* capability and a *matching*
+query do not send the instance back to its config, because a reload per call would re-open the
+whole workspace to learn what it already knew. A query that matches pays for a partial pass and
+nothing else; only one that matches nothing pays for the whole ranking twice, and that is the query
+about to cost a network round trip regardless.
+
 **Flipping the mode changes a list clients cache.** `listChanged` is `false` (ADR-032) and nothing
 here makes a client re-read. So this is a deliberate operation with the same consequence as
 connecting a new provider — issue #162's consequence — and not a setting to toggle casually. It is
