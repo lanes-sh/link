@@ -1,8 +1,9 @@
 import { forProfile } from '#auth';
-import { isToolResult } from '#connectivity';
+import { isTool, isToolResult } from '#connectivity';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { type Filters, searchCapabilities, searchResults } from './search-index.ts';
+import { validate } from './validate.ts';
 import { SURFACE_TOOL_NAMES, toolNameFor } from './naming.ts';
 import { mergeCapabilities, type BuildServerOptions } from './visibility.ts';
 
@@ -61,16 +62,7 @@ import { mergeCapabilities, type BuildServerOptions } from './visibility.ts';
  */
 
 
-/**
- * Register the pair.
- *
- * Unconditionally, and ahead of the loop that registers what policy decided —
- * the same placement and the same argument as `lanes://instructions`. These
- * describe the surface rather than being part of it, and their whole value is
- * that a client which has fetched *any* tool list from this endpoint has them.
- * Registering them conditionally would put the one escape hatch from a stale
- * list behind the thing that goes stale.
- */
+
 export function registerSearchSurface(server: McpServer, options: BuildServerOptions): void {
   const merged = mergeCapabilities(options);
   const profiles = [...options.profiles.keys()];
@@ -261,6 +253,38 @@ export function registerSearchSurface(server: McpServer, options: BuildServerOpt
           isError: true,
         };
       }
+
+      // A capability that is not a tool is refused here rather than dispatched.
+      //
+      // It used to be checked on the way *out*: the entry was found, the call
+      // ran, a rate-limit unit was spent, an audit row was written and the
+      // upstream was possibly reached — and only then did the result turn out
+      // not to be a tool result. A resource is not callable, and saying so
+      // costs nothing before the fact and a round trip after it.
+      if (entry.discovered === undefined && (!entry.capability || !isTool(entry.capability))) {
+        return {
+          content: [{ type: 'text' as const, text: `${capability} is not a tool` }],
+          isError: true,
+        };
+      }
+
+      // Arguments are checked against the schema this endpoint advertised for
+      // this capability, before anything leaves the process.
+      //
+      // The typed tools have always had this: the SDK compiles their input
+      // schema at registration and refuses a malformed call itself. Reaching
+      // the same capability through the gateway had nothing — `arguments` is an
+      // open record — so a misspelled field travelled to the vendor, cost a
+      // network round trip and an audit row, and came back as whatever error
+      // that vendor writes. Under `surface: crunched` every provider call takes
+      // this path, so it was every call.
+      //
+      // The failure is returned as a tool execution error with the schema
+      // attached, because the specification is explicit that clients should
+      // feed those back to the model to self-correct. The next turn is then a
+      // corrected call rather than another search.
+      const invalid = validate(capability, entry, input.arguments ?? {});
+      if (invalid) return invalid;
 
       const outcome = await runtime.dispatcher.invoke({
         principal: forProfile(options.principal, profile),

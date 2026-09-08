@@ -247,6 +247,17 @@ export function searchResults(
   };
 }
 
+/**
+ * The arguments a capability accepts, as the search would print them.
+ *
+ * Exported so the gateway can validate against exactly what it advertised. A
+ * second derivation of "what this takes" would let the two disagree, and the
+ * disagreement would read as the caller getting the schema wrong.
+ */
+export function schemaFor(entry: MergedCapability): Record<string, unknown> {
+  return shapeOf(entry).inputSchema;
+}
+
 /** How many matches an answer explains when the caller does not say. */
 const DEFAULT = 3;
 
