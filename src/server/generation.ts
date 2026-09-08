@@ -3,12 +3,17 @@ import { ownerPrincipal, type Principal } from '#auth';
 import {
   advertisedNames,
   buildMcpServer,
-  visibleCapabilities,
+  matchesQuery,
+  mergeCapabilities,
   SURFACE_TOOL_NAMES,
   visibleToolCount,
+  type MergedCapability,
   type ProfileRuntime,
 } from '#server/mcp';
 import type { GenerationDeps, OpenedWorkspace } from './generations.ts';
+
+/** The search, whose own name never says what it is looking for. */
+const SEARCH_TOOL = SURFACE_TOOL_NAMES[0]!;
 
 /** The gateway, whose own name never says what it is reaching for. */
 const GATEWAY_TOOL = SURFACE_TOOL_NAMES[1]!;
@@ -61,13 +66,19 @@ export class Generation {
   readonly visible: () => ReadonlySet<string>;
 
   /**
-   * Every capability id this generation can reach, advertised or not.
+   * Every capability this generation can reach, advertised or not.
    *
    * Wider than `visible()` under `surface: crunched`, where most of what is
    * reachable is deliberately not advertised — which is exactly the gap the
-   * gateway is for, and the reason it needs its own set to check against.
+   * stable-name pair is for, and the reason it needs its own set to check
+   * against.
+   *
+   * The whole merged entry rather than the id alone, because the two halves of
+   * that pair ask different questions of it: `lanes_tools_call` names an id and
+   * wants a lookup, `lanes_tools_search` names keywords and wants the same
+   * ranking the search itself runs.
    */
-  readonly reachable: () => ReadonlySet<string>;
+  readonly reachable: () => ReadonlyMap<string, MergedCapability>;
 
   /**
    * How many tools this generation advertises (ADR-032).
@@ -99,13 +110,32 @@ export class Generation {
    * reload before the refusal — policy denial and stale config look identical
    * from here, and resolving that is the probe's whole job. The gateway now
    * gets the same treatment rather than a stricter one.
+   *
+   * **The search is the half that matters more**, because it comes first. Under
+   * `crunched` a client's list holds the owner layer and this pair, so nothing
+   * else is *called* until it has been *found* — and a stale instance answering
+   * "nothing reachable matches" ends the attempt before a capability id is ever
+   * composed. Fixing only the call path would have left the endpoint able to
+   * recover from a mistake a model had already been told not to make.
+   *
+   * A search names no capability, so there is nothing to look up; the question
+   * one level down is instead whether anything it holds matches, which is the
+   * ranking the search is about to run. `matchesQuery` is that ranking, stopped
+   * at the first hit — see `#server/mcp/search-index.ts` for why it must be the
+   * same one.
    */
-  knows(named: { name: string | null; capability: string | null }): boolean {
+  knows(named: { name: string | null; capability: string | null; query: string | null }): boolean {
     if (named.name === null) return true;
     if (!this.visible().has(named.name)) return false;
-    if (named.name !== GATEWAY_TOOL || named.capability === null) return true;
 
-    return this.reachable().has(named.capability);
+    if (named.name === GATEWAY_TOOL) {
+      return named.capability === null || this.reachable().has(named.capability);
+    }
+    if (named.name === SEARCH_TOOL) {
+      return named.query === null || matchesQuery(named.query, this.reachable());
+    }
+
+    return true;
   }
 
   /**
@@ -158,14 +188,8 @@ export class Generation {
         ),
     );
 
-    this.reachable = this.#memo(
-      () =>
-        new Set(
-          visibleCapabilities({
-            profiles: this.profiles,
-            principal: ownerPrincipal(deps.primary),
-          }),
-        ),
+    this.reachable = this.#memo(() =>
+      mergeCapabilities({ profiles: this.profiles, principal: ownerPrincipal(deps.primary) }),
     );
 
     this.toolCount = this.#memo(() =>

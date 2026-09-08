@@ -1093,6 +1093,32 @@ members: []
       await harness.stop();
     }
   });
+
+  test('a search finding nothing reloads before it reports the absence', async () => {
+    // The half that comes first, and the one a model acts on hardest. A search
+    // names no capability, so the check above has nothing to look up — what it
+    // names is a query, and "has this instance heard of it" means whether
+    // anything it holds matches. Without this, the same stale instance answers
+    // "Nothing reachable matches", which is not a hedge a model retries: it
+    // says the provider is not connected, and under `surface: crunched` the
+    // gateway call that would have self-healed is never composed at all.
+    const port = allocatePort();
+    const { harness, edit } = reloadable(port, configWith('personal', port, ['a'], READ_ONLY));
+
+    try {
+      // `echo` is reachable under EVERYTHING and under READ_ONLY is not — and
+      // nothing READ_ONLY leaves reachable mentions the word, so the stale
+      // instance's own ranking genuinely finds nothing.
+      edit(configWith('personal', port, ['a'], EVERYTHING));
+
+      const result = await callTool(harness.server.url, 'lanes_tools_search', { query: 'echo' });
+
+      expect(result.text).not.toContain('Nothing reachable matches');
+      expect(result.text).toContain('example.echo');
+    } finally {
+      await harness.stop();
+    }
+  });
 });
 
 describe('the authentication edge', () => {
