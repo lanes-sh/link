@@ -3,6 +3,7 @@ import type { JSONRPCMessage, Transport } from '@modelcontextprotocol/server';
 import { ownerPrincipal } from '#auth';
 import type { Logger } from '#connectivity';
 import {
+  SURFACE_TOOL_NAMES,
   buildMcpServer,
   capabilityIdForToolName,
   toolNameFor,
@@ -75,9 +76,15 @@ export function serveOverStdio(options: StdioOptions): StdioSurface {
    * connection anyway — the memoisation the HTTP path needs exists only because
    * it rebuilds per request.
    */
-  const visible = new Set(
-    visibleCapabilities({ profiles: options.profiles, principal }).map(toolNameFor),
-  );
+  const visible = new Set([
+    ...visibleCapabilities({ profiles: options.profiles, principal }).map(toolNameFor),
+    // Advertised without being capabilities, so they are absent from
+    // `visibleCapabilities` and have to be added here or every successful call
+    // to one is recorded as a refusal. `Generation.visible` makes the same
+    // addition over HTTP; this path was written before the surface existed and
+    // did not gain it, so the pipe has been writing that false row ever since.
+    ...SURFACE_TOOL_NAMES,
+  ]);
   const allCapabilityIds = [
     ...new Set(
       [...options.profiles.values()].flatMap((runtime) =>
