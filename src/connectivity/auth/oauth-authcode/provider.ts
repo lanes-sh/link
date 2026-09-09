@@ -144,6 +144,48 @@ export class CredentialOAuthProvider {
     });
   }
 
+  /**
+   * The grant to ask for, when it is not an authorization code.
+   *
+   * Optional in the SDK's interface and, until 2.0.0, unnecessary: `auth()`
+   * exchanged a stored refresh token itself. It now routes **every** token
+   * request through here, so a provider that does not implement it can only
+   * ever complete the one flow the SDK still has a default for — the
+   * authorization code. Every `mcp` connector using OAuth therefore worked
+   * until its first access token expired and then failed permanently, with
+   * `fetchToken`'s own words: "Either provider.prepareTokenRequest() or
+   * authorizationCode is required". Nothing in that sentence points at a
+   * refresh, which is why it read as a discovery problem for so long.
+   *
+   * Two returns of `undefined`, and both matter:
+   *
+   * **A code exchange in flight.** The SDK consults this *before* it looks at
+   * the authorization code, so answering with a refresh grant here would
+   * hijack a genuine re-authorization and spend a refresh token where the
+   * caller had just consented in a browser. `#codeVerifier` is set for exactly
+   * the length of one exchange, which makes it the reliable signal that one is
+   * happening.
+   *
+   * **No refresh token stored.** Falling through leaves the SDK to raise its
+   * own error or start an authorization, which is the right outcome: a
+   * connection with no refresh token genuinely does need re-consent, and
+   * `redirectToAuthorization` turns that into `ReauthRequired` with the command
+   * that fixes it.
+   */
+  async prepareTokenRequest(scope?: string): Promise<URLSearchParams | undefined> {
+    if (this.#codeVerifier !== undefined) return undefined;
+
+    const stored = await this.tokens();
+    const refresh = stored?.refresh_token;
+    if (typeof refresh !== 'string' || refresh.length === 0) return undefined;
+
+    const params = new URLSearchParams({ grant_type: 'refresh_token', refresh_token: refresh });
+    // Only when asked for. An omitted `scope` on a refresh means "the same as
+    // before", and naming a narrower one would quietly downgrade the grant.
+    if (scope !== undefined && scope.length > 0) params.set('scope', scope);
+    return params;
+  }
+
   async redirectToAuthorization(authorizationUrl: URL): Promise<void> {
     if (!this.#options.openBrowser) {
       throw new ReauthRequired(
