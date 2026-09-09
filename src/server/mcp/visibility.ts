@@ -1,4 +1,4 @@
-import { RESERVED_PROVIDER_IDS, isTool } from '#connectivity';
+import { READ_BUNDLE, RESERVED_PROVIDER_IDS, isTool } from '#connectivity';
 import type { Principal } from '#auth';
 import type { Config, SelectedConnection } from '#profile';
 import type { ProviderRegistry } from '#registry';
@@ -116,6 +116,22 @@ export interface MergedCapability {
   readonly reachable: Map<string, string[]>;
   readonly capability: ReturnType<ProviderRegistry['capabilities']>[number]['capability'];
   readonly discovered: ReturnType<ProviderRegistry['capabilities']>[number]['discovered'];
+  /**
+   * Whether this capability only reads, as the provider itself classified it.
+   *
+   * The endpoint has always known this and never said so. Every connector
+   * assigns a bundle — an `mcp` provider from the upstream tool's own
+   * `readOnlyHint`, an `http` one from the request method, an authored one from
+   * the manifest — and policy has used it to decide grants since the beginning.
+   * It just never reached the wire, so a client had to assume the worst about
+   * every tool here: reading a stored file was advertised with the same posture
+   * as deleting one, and a client offering to auto-approve harmless calls could
+   * never find any.
+   *
+   * Carried on the merged entry rather than looked up at registration, because
+   * three places need it and only this one holds the registry.
+   */
+  readonly reads: boolean;
 }
 
 export function mergeCapabilities(options: BuildServerOptions): Map<string, MergedCapability> {
@@ -146,12 +162,44 @@ export function mergeCapabilities(options: BuildServerOptions): Map<string, Merg
         continue;
       }
 
-      merged.set(id, { reachable: new Map([[name, reachable]]), capability, discovered });
+      merged.set(id, {
+        reachable: new Map([[name, reachable]]),
+        capability,
+        discovered,
+        reads: readsOnly(id, discovered, runtime.registry),
+      });
     }
   }
 
   return merged;
 }
+
+/**
+ * Whether a capability only reads, taken from the provider rather than guessed.
+ *
+ * Two sources, one answer. A discovered capability carries the bundle its
+ * connector assigned it — from the upstream tool's `readOnlyHint` for an `mcp`
+ * provider, from the HTTP method for an `http` one. An authored capability is
+ * named in a bundle in its own manifest, which the registry can expand.
+ *
+ * Deliberately not inferred from the capability's name here, though the ranking
+ * does exactly that for ordering. Ordering may guess; an advertised hint about
+ * whether a call is safe may not, because a client is entitled to relax a
+ * confirmation on the strength of it. Where the provider did not say, this says
+ * nothing either, and the caller keeps the cautious default.
+ */
+function readsOnly(
+  id: string,
+  discovered: ReturnType<ProviderRegistry['capabilities']>[number]['discovered'],
+  registry: ProviderRegistry,
+): boolean {
+  if (discovered?.bundle !== undefined) return discovered.bundle === READ_BUNDLE;
+
+  const [provider] = id.split('.');
+  if (provider === undefined) return false;
+  return registry.expandBundle(provider, READ_BUNDLE).includes(id);
+}
+
 
 /** Which capability ids this principal can reach, across every profile served. */
 export function visibleCapabilities(options: BuildServerOptions): string[] {

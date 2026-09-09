@@ -107,7 +107,7 @@ export function buildMcpServer(options: BuildServerOptions): McpServer {
   // the resource above: they describe this surface rather than being part of
   // what policy decided, and their whole value is that a client which fetched
   // any tool list from this endpoint has them. See `search.ts`.
-  registerSearchSurface(server, options);
+  registerSearchSurface(server, options, merged);
 
   // Which capabilities get a typed tool. Under `full` this is every tool the
   // loop would have registered anyway, so the guards below are no-ops; under

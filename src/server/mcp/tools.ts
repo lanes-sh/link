@@ -1,3 +1,4 @@
+import { annotationsFor } from './annotations.ts';
 import { forProfile } from '#auth';
 import { fromJsonSchema, type McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
@@ -61,6 +62,14 @@ export function registerDiscoveredTool(
         entry.reachable,
         accountsByProfile(options),
       ),
+      annotations: annotationsFor(id, entry.reads),
+      // Advertised where the provider declared one. The specification requires
+      // a server publishing an output schema to conform to it, and this
+      // endpoint hands back the upstream's result unchanged — so the upstream's
+      // own schema is exactly the promise being kept.
+      ...(discovered.outputSchema
+        ? { outputSchema: fromJsonSchema(sanitizeSchema(discovered.outputSchema)) }
+        : {}),
       // Spread the upstream schema rather than rebuilding it from properties
       // and required alone. Vendors put `$defs` beside those and `$ref` into
       // them — Linear's attachment tools do — and a rebuild drops the
@@ -101,6 +110,7 @@ export function registerLocalTool(
         entry.reachable,
         accountsByProfile(options),
       ),
+      annotations: annotationsFor(id, entry.reads),
       inputSchema: {
         ...shape,
         // Injected by core, never declared by a provider — ADR-001. Both enums

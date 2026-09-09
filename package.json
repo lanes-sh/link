@@ -1,6 +1,6 @@
 {
   "name": "@lanes-sh/link",
-  "version": "0.11.1",
+  "version": "0.12.0",
   "description": "A self-hostable MCP gateway for all your connections, memory, tasks, files, and secrets",
   "license": "Apache-2.0",
   "homepage": "https://lanes.sh/link",
@@ -52,6 +52,7 @@
     "typecheck": "tsc --noEmit",
     "lanes": "bun run ./src/cli/lanes.ts",
     "audit": "bun audit",
+    "bench:retrieval": "bun test src/server/mcp/retrieval-bench.test.ts",
     "vendor:bunq": "bun run ./src/providers/bunq/specs/vendor.ts",
     "vendor:discord": "bun run ./src/providers/discord/specs/vendor.ts",
     "vendor:google": "bun run ./src/providers/google/specs/vendor.ts",
@@ -91,7 +92,7 @@
     "@modelcontextprotocol/server": "2.0.0",
     "@rgrove/parse-xml": "4.2.3",
     "mcp-from-openapi": "2.5.1",
-    "nodemailer": "9.0.3",
+    "nodemailer": "9.1.1",
     "postal-mime": "2.7.5",
     "yaml": "2.9.0",
     "zod": "4.4.3"
