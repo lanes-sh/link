@@ -48,15 +48,20 @@ real operations and 65 questions (`bun run bench:compare`):
 | ranking | ranks first | in first three | found at all | MRR |
 |---|---|---|---|---|
 | words only | 37% | 66% | 83% | 0.527 |
-| meaning only | 45% | 69% | 89% | 0.577 |
+| meaning only | 42% | 69% | 91% | 0.569 |
 | **both** | **51%** | **68%** | **92%** | **0.623** |
 
 ## Three things this cost, recorded because they are the argument against it
 
 - **3.9 MB in the published package**, which is real and was chosen by measurement rather
-  than by taste. The 8M checkpoint is twice the size and no better here; the retrieval-tuned
-  32M is eight times the size and *worse*. A corpus of short identifiers and one-sentence
-  descriptions is not what a larger table's capacity was distilled for.
+  than by taste. The 8M checkpoint is twice the size and no better here, and the
+  retrieval-tuned 32M is eight times the size and *worse* — a corpus of short identifiers
+  and one-sentence descriptions is not what a larger table's capacity was distilled for.
+  The 2M checkpoint is half the size and *ties on the fixture*, which is why the choice was
+  made on a second corpus rather than on that one: over 82 capabilities imported from a
+  deployed endpoint and never tuned against, 4M reaches 0.581 MRR to 2M's 0.557. A
+  difference inside the noise of one corpus is a difference to measure elsewhere, not one
+  to round down to the cheaper option.
 - **A tokenizer reimplemented rather than depended on.** A static table is a lookup keyed
   by token, so a tokenizer that cuts a word differently returns a real vector for the wrong
   row — silently. The alternative is a native module with a model loader attached, in a
