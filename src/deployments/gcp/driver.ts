@@ -157,6 +157,20 @@ export function deployPlan(input: PlanInput): DeployStep[] {
         cloudrun.memory,
         '--cpu',
         cloudrun.cpu,
+        // Full processor while the container starts, throttled once it is
+        // serving. A cold start here is not a scheduling detail: `min_instances`
+        // defaults to zero, so the first request after an idle period waits for
+        // the whole of `openReconciled` — every profile opened in turn, every
+        // vendored OpenAPI document parsed — and cold starts on this image have
+        // been measured between nine and twelve seconds. A hosted connector
+        // gives up before that and reports an endpoint with no tools rather than
+        // a slow one, which is the failure that looks like a bug in this
+        // repository and is not.
+        //
+        // Costed only for the boot: startup CPU boost is billed for the startup
+        // period, not for the life of the revision, so this buys back seconds
+        // from the one request that could not afford them.
+        '--cpu-boost',
         // Named rather than inherited, like the five above. gen2 is the current
         // default and the one this image is tested on; pinning it means a
         // platform migration is a commit here rather than a change under a

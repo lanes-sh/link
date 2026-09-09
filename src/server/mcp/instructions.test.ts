@@ -19,6 +19,7 @@ function reaching(reachable: Record<string, string[]>): MergedCapability {
     reachable: new Map(Object.entries(reachable)),
     capability: undefined,
     discovered: undefined,
+    reads: false,
   };
 }
 
@@ -287,7 +288,7 @@ describe('the habits it teaches', () => {
       ]),
     );
     const merged = new Map([
-      ['x.y', { reachable, capability: undefined, discovered: undefined }],
+      ['x.y', { reachable, capability: undefined, discovered: undefined, reads: false }],
     ]) as never;
 
     const large = serverInstructions(profiles, merged);
@@ -323,7 +324,7 @@ describe('the habits it teaches', () => {
     const worst = serverInstructions(
       profiles,
       new Map([
-        ['x.y', { reachable, capability: undefined, discovered: undefined }],
+        ['x.y', { reachable, capability: undefined, discovered: undefined, reads: false }],
         ['lanes_memory.search', reaching({ [first]: ['lanes_memory.owner'] })],
         ['lanes_tasks.list', reaching({ [first]: ['lanes_tasks.owner'] })],
         ['lanes_assets.list', reaching({ [first]: ['lanes_assets.owner'] })],
@@ -369,7 +370,7 @@ describe('the habits it teaches', () => {
 
     const owner = (ids: readonly string[]) =>
       new Map([
-        ['x.y', { reachable, capability: undefined, discovered: undefined }],
+        ['x.y', { reachable, capability: undefined, discovered: undefined, reads: false }],
         ...ids.map(
           (id) =>
             [`${id}.list`, reaching({ [first]: [`${id}.owner`] })] as [
@@ -549,7 +550,7 @@ describe('the habits it teaches', () => {
       const text = serverInstructions(
         profiles,
         new Map([
-          ['x.y', { reachable, capability: undefined, discovered: undefined }],
+          ['x.y', { reachable, capability: undefined, discovered: undefined, reads: false }],
           ['lanes_memory.search', reaching({ [profiles[0] as string]: ['lanes_memory.owner'] })],
           ['lanes_skills.manage.list', reaching({ [profiles[0] as string]: ['lanes_skills.owner'] })],
           ['lanes_vault.put', reaching({ [profiles[0] as string]: ['lanes_vault.owner'] })],

@@ -267,7 +267,16 @@ export class BearerAuthenticator implements Authenticator {
     // the window. Only a cached comparison can be wrong this way, so a fresh
     // read never pays for a second one — which is what keeps a wrong token from
     // costing a store read per attempt.
-    if (fresh && matched === null) {
+    //
+    // **And only for something that could be one of these tokens.** A hosted
+    // connector presents an OAuth token: the next link in the chain handles it
+    // and it can never match a row here. Without that condition the ambiguity
+    // above was permanent for such a caller — a healthy endpoint has no static
+    // rows, so the match always failed and the "one re-read" fired on every
+    // request, re-confirming an empty list at the cost of a bucket read, a YAML
+    // parse and a schema validation. The cache never protected anything,
+    // because the path that consulted it was the path that always missed.
+    if (fresh && matched === null && couldBeProfileToken(presented)) {
       rows = await this.#reload();
       matched = find(presented, rows);
     }
@@ -349,11 +358,22 @@ function find(presented: string, rows: readonly LoadedToken[]): LoadedToken | nu
 }
 
 /**
+ * Whether a presented credential could be one of *these* tokens at all.
+ *
+ * `generateProfileToken` mints every one with this prefix, which
+ * `secret-detection.ts` and the edge limiter already recognise — so it is exact.
+ */
+const couldBeProfileToken = (presented: string): boolean =>
+  presented.startsWith(PROFILE_TOKEN_PREFIX);
+
+/** What a minted profile token starts with. */
+const PROFILE_TOKEN_PREFIX = 'llk_';
+/**
  * Mint a profile token: 32 random bytes, base64url, prefixed so it is
  * recognisable in a config file and greppable in a leak.
  */
 export function generateProfileToken(): string {
-  return `llk_${Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64url')}`;
+  return `${PROFILE_TOKEN_PREFIX}${Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64url')}`;
 }
 
 export {

@@ -1,10 +1,22 @@
 import { forProfile } from '#auth';
-import { isToolResult } from '#connectivity';
+import { isTool, isToolResult } from '#connectivity';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
-import { searchCapabilities } from './search-index.ts';
+import {
+  type Filters,
+  SEARCH_RESULT,
+  searchCapabilities,
+  searchResults,
+} from './search-index.ts';
+import { expandIfReferences, sibling } from './expand-result.ts';
+import { validate } from './validate.ts';
 import { SURFACE_TOOL_NAMES, toolNameFor } from './naming.ts';
-import { mergeCapabilities, type BuildServerOptions } from './visibility.ts';
+import {
+  accountsByProfile,
+  mergeCapabilities,
+  type BuildServerOptions,
+  type MergedCapability,
+} from './visibility.ts';
 
 /**
  * The two tools whose names never change.
@@ -61,24 +73,41 @@ import { mergeCapabilities, type BuildServerOptions } from './visibility.ts';
  */
 
 
-/**
- * Register the pair.
- *
- * Unconditionally, and ahead of the loop that registers what policy decided —
- * the same placement and the same argument as `lanes://instructions`. These
- * describe the surface rather than being part of it, and their whole value is
- * that a client which has fetched *any* tool list from this endpoint has them.
- * Registering them conditionally would put the one escape hatch from a stale
- * list behind the thing that goes stale.
- */
-export function registerSearchSurface(server: McpServer, options: BuildServerOptions): void {
-  const merged = mergeCapabilities(options);
+
+export function registerSearchSurface(
+  server: McpServer,
+  options: BuildServerOptions,
+  // Built once by `buildMcpServer` and handed down.
+  //
+  // This used to call `mergeCapabilities` itself, so the whole policy sweep —
+  // every profile, every capability, `allowedConnections` per candidate
+  // connection — ran twice on every single request: once for the registration
+  // loop and once for this closure, for the same answer. Optional so the
+  // function still stands alone in a test.
+  catalogue?: Map<string, MergedCapability>,
+): void {
+  const merged = catalogue ?? mergeCapabilities(options);
   const profiles = [...options.profiles.keys()];
 
   server.registerTool(
     SURFACE_TOOL_NAMES[0]!,
     {
       title: 'Search every tool this endpoint can reach',
+      // Reading a catalogue this endpoint already holds. Nothing leaves the
+      // process, nothing changes, and asking twice gives the same answer — so
+      // this is the one tool on the surface a client can safely stop asking
+      // permission for, and saying so is most of what makes a search cheap.
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+      // Declared because the answer is already structured and a client is
+      // entitled to validate it: the specification says a server MUST conform to
+      // an output schema it publishes, and has nothing to say about one
+      // returning structured content with no schema to check it against.
+      outputSchema: SEARCH_RESULT,
       description:
         'Find capabilities by keyword and get their argument schemas. ' +
         'Use this when you need something this endpoint plausibly offers and you cannot see a tool for it — ' +
@@ -93,19 +122,72 @@ export function registerSearchSurface(server: McpServer, options: BuildServerOpt
             'Keywords, or an exact capability id in the form "<provider>.<capability>". ' +
               'Plain words work best — what you want done, not a tool name.',
           ),
+        // Every filter below narrows an answer that was already built from what
+        // this caller may reach. None of them can widen it, and naming
+        // something unreachable returns nothing rather than saying it exists.
+        provider: z
+          .string()
+          .optional()
+          .describe('Only this provider, when you already know which account answers.'),
+        profile: z.enum(profiles as [string, ...string[]]).optional().describe('Only this profile.'),
+        connection: z.string().optional().describe('Only capabilities this account can serve.'),
+        readOnly: z
+          .boolean()
+          .optional()
+          .describe('Only capabilities that read. Use when looking something up, never to make a write safe — this filters the answer and grants nothing.'),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(10)
+          .optional()
+          .describe('How many to explain in full. Three by default; ten is the most.'),
       },
     },
-    async ({ query }: { query: string }) => ({
-      content: [
-        { type: 'text' as const, text: searchCapabilities(query, merged, options.surface) },
-      ],
-    }),
+    async (input: {
+      query: string;
+      provider?: string | undefined;
+      profile?: string | undefined;
+      connection?: string | undefined;
+      readOnly?: boolean | undefined;
+      limit?: number | undefined;
+    }) => {
+      const { query, ...rest } = input;
+      const filters: Filters = rest;
+      const accounts = accountsByProfile(options);
+      const structured = searchResults(query, merged, filters, accounts);
+
+      // Both, deliberately. The text is what a model reads; the structured copy
+      // is what a client acts on without a regular expression. The spec asks for
+      // a serialized form in the text block too, and here the prose is the more
+      // useful thing to put there.
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: searchCapabilities(query, merged, options.surface, filters, accounts),
+          },
+        ],
+        structuredContent: structured as unknown as Record<string, unknown>,
+      };
+    },
   );
 
   server.registerTool(
     SURFACE_TOOL_NAMES[1]!,
     {
       title: 'Invoke any tool this endpoint can reach',
+      // The gateway cannot say what it is about to do, because that depends on
+      // the capability named in the call. A hint is a property of a tool and
+      // this tool is every tool, so the only honest posture is the cautious
+      // one — which is the cost `surface: crunched` pays here: routing provider
+      // calls through one name means none of them can carry their own.
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
       description:
         'Call a capability by id, for when it is not in your tool list. ' +
         'Get the id and its argument schema from lanes_tools_search first — the arguments are ' +
@@ -128,6 +210,13 @@ export function registerSearchSurface(server: McpServer, options: BuildServerOpt
           .record(z.string(), z.unknown())
           .default({})
           .describe("The capability's own arguments, as its schema describes them"),
+        expand: z
+          .boolean()
+          .optional()
+          .describe(
+            'Fill in a list that comes back as bare identifiers, by fetching the first few. ' +
+              'On by default. Pass false to get the identifiers as the provider returned them.',
+          ),
       },
     },
     async (input: {
@@ -135,6 +224,7 @@ export function registerSearchSurface(server: McpServer, options: BuildServerOpt
       profile: string;
       connection: string;
       arguments?: Record<string, unknown>;
+      expand?: boolean | undefined;
     }) => {
       const { capability, profile, connection } = input;
       const entry = merged.get(capability);
@@ -201,6 +291,38 @@ export function registerSearchSurface(server: McpServer, options: BuildServerOpt
         };
       }
 
+      // A capability that is not a tool is refused here rather than dispatched.
+      //
+      // It used to be checked on the way *out*: the entry was found, the call
+      // ran, a rate-limit unit was spent, an audit row was written and the
+      // upstream was possibly reached — and only then did the result turn out
+      // not to be a tool result. A resource is not callable, and saying so
+      // costs nothing before the fact and a round trip after it.
+      if (entry.discovered === undefined && (!entry.capability || !isTool(entry.capability))) {
+        return {
+          content: [{ type: 'text' as const, text: `${capability} is not a tool` }],
+          isError: true,
+        };
+      }
+
+      // Arguments are checked against the schema this endpoint advertised for
+      // this capability, before anything leaves the process.
+      //
+      // The typed tools have always had this: the SDK compiles their input
+      // schema at registration and refuses a malformed call itself. Reaching
+      // the same capability through the gateway had nothing — `arguments` is an
+      // open record — so a misspelled field travelled to the vendor, cost a
+      // network round trip and an audit row, and came back as whatever error
+      // that vendor writes. Under `surface: crunched` every provider call takes
+      // this path, so it was every call.
+      //
+      // The failure is returned as a tool execution error with the schema
+      // attached, because the specification is explicit that clients should
+      // feed those back to the model to self-correct. The next turn is then a
+      // corrected call rather than another search.
+      const invalid = validate(capability, entry, input.arguments ?? {});
+      if (invalid) return invalid;
+
       const outcome = await runtime.dispatcher.invoke({
         principal: forProfile(options.principal, profile),
         capabilityId: capability,
@@ -219,6 +341,27 @@ export function registerSearchSurface(server: McpServer, options: BuildServerOpt
           isError: true,
         };
       }
+
+      // A list that came back as bare identifiers is filled in before it is
+      // returned, so reading one thing does not cost two calls. Every condition
+      // is strict — see `expand.ts` — and a list already holding whole records
+      // fails them and is left alone, which is what happens to almost every
+      // provider here.
+      const filled = await expandIfReferences(
+        capability,
+        outcome.result,
+        input.expand !== false,
+        merged,
+        async (id) =>
+          runtime.dispatcher.invoke({
+            principal: forProfile(options.principal, profile),
+            capabilityId: sibling(capability, merged) as string,
+            connectionKey: connection,
+            arguments: { ...(input.arguments ?? {}), id },
+            ...(options.clientLabel ? { clientLabel: options.clientLabel } : {}),
+          }),
+      );
+      if (filled) return filled;
 
       // Text only, unlike `makeHandler`. A `resource_link` has to be rewritten
       // through `resourceLinkRouter` to carry the profile and connection it was
