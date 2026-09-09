@@ -55,7 +55,11 @@
     "vendor:bunq": "bun run ./src/providers/bunq/specs/vendor.ts",
     "vendor:discord": "bun run ./src/providers/discord/specs/vendor.ts",
     "vendor:google": "bun run ./src/providers/google/specs/vendor.ts",
-    "vendor:microsoft": "bun run ./src/providers/microsoft/specs/vendor.ts"
+    "vendor:microsoft": "bun run ./src/providers/microsoft/specs/vendor.ts",
+    "bench:retrieval": "bun test src/server/mcp/bench-retrieval.test.ts",
+    "bench:corpus": "bun run bench/harvest.ts .harvest.json && bun run bench/corpus.ts .harvest.json bench/queries.json src/server/mcp/bench-corpus.json && rm -f .harvest.json",
+    "bench:compare": "bun run bench/compare.ts",
+    "vendor:vectors": "bun run ./bench/vendor-vectors.ts"
   },
   "imports": {
     "#audit": "./src/audit/index.ts",

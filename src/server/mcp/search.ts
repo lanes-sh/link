@@ -4,7 +4,7 @@ import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { searchCapabilities } from './search-index.ts';
 import { SURFACE_TOOL_NAMES, toolNameFor } from './naming.ts';
-import { mergeCapabilities, type BuildServerOptions } from './visibility.ts';
+import { accountsByProfile, mergeCapabilities, type BuildServerOptions } from './visibility.ts';
 
 /**
  * The two tools whose names never change.
@@ -74,6 +74,9 @@ import { mergeCapabilities, type BuildServerOptions } from './visibility.ts';
 export function registerSearchSurface(server: McpServer, options: BuildServerOptions): void {
   const merged = mergeCapabilities(options);
   const profiles = [...options.profiles.keys()];
+  // Named once per registration rather than per search: the selection cannot
+  // change without a new generation, and a generation builds a new server.
+  const accounts = accountsByProfile(options);
 
   server.registerTool(
     SURFACE_TOOL_NAMES[0]!,
@@ -93,11 +96,25 @@ export function registerSearchSurface(server: McpServer, options: BuildServerOpt
             'Keywords, or an exact capability id in the form "<provider>.<capability>". ' +
               'Plain words work best — what you want done, not a tool name.',
           ),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(15)
+          .optional()
+          .describe(
+            'How many matches to return with their full argument schemas. Defaults to 5. ' +
+              'Raise it when the question has several right answers — "what can I do with a ' +
+              'spreadsheet" — and lower it to 1 when you already know which capability you want.',
+          ),
       },
     },
-    async ({ query }: { query: string }) => ({
+    async ({ query, limit }: { query: string; limit?: number | undefined }) => ({
       content: [
-        { type: 'text' as const, text: searchCapabilities(query, merged, options.surface) },
+        {
+          type: 'text' as const,
+          text: searchCapabilities(query, merged, { surface: options.surface, limit, accounts }),
+        },
       ],
     }),
   );

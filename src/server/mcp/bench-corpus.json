@@ -1,0 +1,3114 @@
+{
+ "entries": [
+  {
+   "id": "forumly.list_posts",
+   "title": "Forumly: list posts",
+   "description": "List posts in a subreddit\n\nAlso: forum, post, comment, discussion.",
+   "properties": [
+    "subreddit",
+    "sort",
+    "limit",
+    "after",
+    "t"
+   ],
+   "required": [
+    "subreddit",
+    "sort"
+   ],
+   "schemaBytes": 727
+  },
+  {
+   "id": "forumly.get_post",
+   "title": "Forumly: get post",
+   "description": "Read a post and its comments\n\nAlso: forum, subreddit, comment, discussion.",
+   "properties": [
+    "article",
+    "sort",
+    "limit",
+    "depth"
+   ],
+   "required": [
+    "article"
+   ],
+   "schemaBytes": 559
+  },
+  {
+   "id": "forumly.search",
+   "title": "Forumly: search",
+   "description": "Search within a subreddit\n\nAlso: forum, post, comment, discussion.",
+   "properties": [
+    "subreddit",
+    "q",
+    "restrict_sr",
+    "sort",
+    "t",
+    "limit"
+   ],
+   "required": [
+    "subreddit",
+    "q"
+   ],
+   "schemaBytes": 776
+  },
+  {
+   "id": "forumly.get_subreddit",
+   "title": "Forumly: get subreddit",
+   "description": "Read a subreddit profile\n\nAlso: forum, post, comment, discussion.",
+   "properties": [
+    "subreddit"
+   ],
+   "required": [
+    "subreddit"
+   ],
+   "schemaBytes": 178
+  },
+  {
+   "id": "forumly.get_rules",
+   "title": "Forumly: get rules",
+   "description": "Read a subreddit’s posting rules\n\nAlso: forum, post, comment, discussion.",
+   "properties": [
+    "subreddit"
+   ],
+   "required": [
+    "subreddit"
+   ],
+   "schemaBytes": 178
+  },
+  {
+   "id": "forumly.list_flairs",
+   "title": "Forumly: list flairs",
+   "description": "List a subreddit’s post flairs\n\nAlso: forum, comment, discussion.",
+   "properties": [
+    "subreddit"
+   ],
+   "required": [
+    "subreddit"
+   ],
+   "schemaBytes": 178
+  },
+  {
+   "id": "forumly.whoami",
+   "title": "Forumly: whoami",
+   "description": "Read the authenticated account\n\nAlso: forum, subreddit, post, comment, discussion.",
+   "properties": [],
+   "required": [],
+   "schemaBytes": 62
+  },
+  {
+   "id": "forumly.list_my_subreddits",
+   "title": "Forumly: list my subreddits",
+   "description": "List subscribed subreddits\n\nAlso: forum, subreddit, post, comment, discussion.",
+   "properties": [
+    "limit",
+    "after"
+   ],
+   "required": [],
+   "schemaBytes": 252
+  },
+  {
+   "id": "forumly.submit_post",
+   "title": "Forumly: submit post",
+   "description": "Submit a post to a subreddit\n\nMany subreddits reject a submission with no flair. Call list_flairs first and pass flair_id, and read get_rules when posting somewhere unfamiliar.\n\nAlso: forum, comment, discussion.",
+   "properties": [
+    "sr",
+    "kind",
+    "title",
+    "text",
+    "url",
+    "flair_id",
+    "nsfw",
+    "spoiler",
+    "sendreplies",
+    "api_type"
+   ],
+   "required": [
+    "sr",
+    "kind",
+    "title",
+    "api_type"
+   ],
+   "schemaBytes": 1305
+  },
+  {
+   "id": "forumly.add_comment",
+   "title": "Forumly: add comment",
+   "description": "Comment on a post or reply to a comment\n\nthing_id must be a fullname — t3_<id> for a post, t1_<id> for a comment — not the bare id that appears in a URL.\n\nAlso: forum, subreddit, discussion.",
+   "properties": [
+    "thing_id",
+    "text",
+    "api_type"
+   ],
+   "required": [
+    "thing_id",
+    "text",
+    "api_type"
+   ],
+   "schemaBytes": 531
+  },
+  {
+   "id": "forumly.edit_text",
+   "title": "Forumly: edit text",
+   "description": "Edit your own post or comment\n\nAlso: forum, subreddit, discussion.",
+   "properties": [
+    "thing_id",
+    "text",
+    "api_type"
+   ],
+   "required": [
+    "thing_id",
+    "text",
+    "api_type"
+   ],
+   "schemaBytes": 518
+  },
+  {
+   "id": "forumly.vote",
+   "title": "Forumly: vote",
+   "description": "Vote on a post or comment\n\nAlso: forum, subreddit, discussion.",
+   "properties": [
+    "id",
+    "dir"
+   ],
+   "required": [
+    "id",
+    "dir"
+   ],
+   "schemaBytes": 317
+  },
+  {
+   "id": "forumly.delete_thing",
+   "title": "Forumly: delete thing",
+   "description": "Delete your own post or comment\n\nAlso: forum, subreddit, discussion.",
+   "properties": [
+    "id"
+   ],
+   "required": [
+    "id"
+   ],
+   "schemaBytes": 188
+  },
+  {
+   "id": "forumly.save_thing",
+   "title": "Forumly: save thing",
+   "description": "Save a post or comment\n\nAlso: forum, subreddit, discussion.",
+   "properties": [
+    "id",
+    "category"
+   ],
+   "required": [
+    "id"
+   ],
+   "schemaBytes": 297
+  },
+  {
+   "id": "forumly.set_flair",
+   "title": "Forumly: set flair",
+   "description": "Set the flair on your own post\n\nAlso: forum, subreddit, comment, discussion.",
+   "properties": [
+    "sr",
+    "link",
+    "flair_template_id",
+    "api_type"
+   ],
+   "required": [
+    "sr",
+    "link",
+    "flair_template_id",
+    "api_type"
+   ],
+   "schemaBytes": 638
+  },
+  {
+   "id": "chatter.get_channel",
+   "title": "Chatter: get channel",
+   "description": "GET /channels/{channel_id}\n\nOne channel by id — its name, type, topic, and which category it belongs to. Worth calling before a first post to a channel an agent has not written to before, to confirm it is the one intended and that it takes messages at all.\n\nAlso: chat, server, message, community.",
+   "properties": [
+    "channel_id"
+   ],
+   "required": [
+    "channel_id"
+   ],
+   "schemaBytes": 199
+  },
+  {
+   "id": "chatter.list_messages",
+   "title": "Chatter: list messages",
+   "description": "GET /channels/{channel_id}/messages\n\nRead a channel's recent messages. This is the triage read, and the only one: Chatter exposes no message search to bot applications, so finding something means paging this and filtering yourself. Newest first by default, up to `limit: 100` per call. Page *backwards* through history with `before` set to the oldest id you have seen; page forward for new arrivals with `after` set to the newest. `around` centres on one message. If every `content` comes back empty, the Message Content intent is switched off for this application — that is a toggle in the developer portal, not a permission on the invite, and nothing else reports it.\n\nAlso: chat, server, community.",
+   "properties": [
+    "channel_id",
+    "around",
+    "before",
+    "after",
+    "limit"
+   ],
+   "required": [
+    "channel_id"
+   ],
+   "schemaBytes": 609
+  },
+  {
+   "id": "chatter.create_message",
+   "title": "Chatter: create message",
+   "description": "POST /channels/{channel_id}/messages\n\nPost a message to a channel, as the bot application — it will carry an APP badge and the application's own name and avatar. To post under your own name instead, use `execute_webhook`. For a plain message, pass `content` (up to 2000 characters, Chatter-flavoured markdown). For an announcement, prefer `embeds`: an embed gives you a title, a coloured left border, a description, and up to 25 name/value `fields`, and it is what makes a post read as deliberate rather than typed. `color` is a decimal integer, not a hex string — 0x5865F2 is 5793266. Set `allowed_mentions` explicitly on anything that could ping a room: `{\"parse\": []}` suppresses every mention even if the text contains @everyone. Reply to something by passing `message_reference` with the message id. Attachments are not available here — files need a multipart request, which Chatter accepts and this connector cannot encode.\n\nAlso: chat, server, community.",
+   "properties": [
+    "channel_id",
+    "content",
+    "embeds",
+    "allowed_mentions",
+    "sticker_ids",
+    "components",
+    "flags",
+    "attachments",
+    "poll",
+    "shared_client_theme",
+    "message_reference",
+    "nonce"
+   ],
+   "required": [
+    "channel_id"
+   ],
+   "schemaBytes": 10432
+  },
+  {
+   "id": "chatter.list_pins",
+   "title": "Chatter: list pins",
+   "description": "GET /channels/{channel_id}/messages/pins\n\nThe pinned messages in a channel. Pinning is how this integration marks something as handled or important where a human will see it, so this is the read that shows what has been marked. Note the path is the current one — Chatter also serves a deprecated pins endpoint that is not exposed here.\n\nAlso: chat, server, message, community.",
+   "properties": [
+    "channel_id",
+    "before",
+    "limit"
+   ],
+   "required": [
+    "channel_id"
+   ],
+   "schemaBytes": 361
+  },
+  {
+   "id": "chatter.create_pin",
+   "title": "Chatter: create pin",
+   "description": "PUT /channels/{channel_id}/messages/pins/{message_id}\n\nPin a message to its channel, where it stays visible in the channel's pinned list. The heavier alternative to a reaction for marking something important: a pin is channel-wide and appears in the header, so it is the right weight for \"this is the announcement that matters\" and the wrong weight for routine triage. Needs Manage Messages. A channel holds at most 50 pins.\n\nAlso: chat, server, community.",
+   "properties": [
+    "channel_id",
+    "message_id"
+   ],
+   "required": [
+    "channel_id",
+    "message_id"
+   ],
+   "schemaBytes": 324
+  },
+  {
+   "id": "chatter.get_message",
+   "title": "Chatter: get message",
+   "description": "GET /channels/{channel_id}/messages/{message_id}\n\nOne message by id, with its author, timestamp, attachments, reactions, and any embeds. Use it to re-read a single message in full after `list_messages` has narrowed things down, or to check whether an edit or a reaction landed.\n\nAlso: chat, server, channel, community.",
+   "properties": [
+    "channel_id",
+    "message_id"
+   ],
+   "required": [
+    "channel_id",
+    "message_id"
+   ],
+   "schemaBytes": 324
+  },
+  {
+   "id": "chatter.update_message",
+   "title": "Chatter: update message",
+   "description": "PATCH /channels/{channel_id}/messages/{message_id}\n\nEdit a message this application posted. It cannot edit anyone else's, including one posted through a webhook — that needs the webhook's own edit endpoint. This is the typo fix for an announcement already out. Only the fields you pass are changed; passing `content` alone leaves existing embeds in place, and clearing an embed means passing `embeds: []` explicitly. Chatter shows an \"edited\" marker afterwards, which cannot be suppressed.\n\nAlso: chat, server, channel, community.",
+   "properties": [
+    "channel_id",
+    "message_id",
+    "content",
+    "embeds",
+    "flags",
+    "allowed_mentions",
+    "sticker_ids",
+    "components",
+    "attachments"
+   ],
+   "required": [
+    "channel_id",
+    "message_id"
+   ],
+   "schemaBytes": 6714
+  },
+  {
+   "id": "chatter.delete_message",
+   "title": "Chatter: delete message",
+   "description": "DELETE /channels/{channel_id}/messages/{message_id}\n\nDelete a message — the retraction, for an announcement that should not have gone out. Irreversible, and it leaves no trace in the channel for anyone who had not already read it. The application can always delete its own messages; deleting somebody else's needs Manage Messages in that channel. There is deliberately no bulk delete here: this removes one message named by id, so clearing a channel is not something an agent can do in one call.\n\nAlso: chat, server, community.",
+   "properties": [
+    "channel_id",
+    "message_id"
+   ],
+   "required": [
+    "channel_id",
+    "message_id"
+   ],
+   "schemaBytes": 324
+  },
+  {
+   "id": "chatter.crosspost_message",
+   "title": "Chatter: crosspost message",
+   "description": "POST /channels/{channel_id}/messages/{message_id}/crosspost\n\nPublish a message that was posted in an *announcement* channel out to every server that follows it. This is what makes an announcement channel worth using: subscribers see the post in their own server without joining yours. Only works on channel `type: 5`, and only on a message already posted there — so the sequence is `create_message` then this, with the id it returned. Rate limited far more tightly than posting, and it cannot be undone.\n\nAlso: chat, community.",
+   "properties": [
+    "channel_id",
+    "message_id"
+   ],
+   "required": [
+    "channel_id",
+    "message_id"
+   ],
+   "schemaBytes": 324
+  },
+  {
+   "id": "chatter.list_message_reactions_by_emoji",
+   "title": "Chatter: list message reactions by emoji",
+   "description": "GET /channels/{channel_id}/messages/{message_id}/reactions/{emoji_name}\n\nWho reacted to a message with one specific emoji. Pass a Unicode emoji directly (`emoji_name: \"✅\"`); a custom server emoji is `name:id`. Useful for reading a lightweight vote or acknowledgement off a message rather than asking people to reply.\n\nAlso: chat, channel, community.",
+   "properties": [
+    "channel_id",
+    "message_id",
+    "emoji_name",
+    "after",
+    "limit",
+    "type"
+   ],
+   "required": [
+    "channel_id",
+    "message_id",
+    "emoji_name"
+   ],
+   "schemaBytes": 823
+  },
+  {
+   "id": "chatter.add_my_message_reaction",
+   "title": "Chatter: add my message reaction",
+   "description": "PUT /channels/{channel_id}/messages/{message_id}/reactions/{emoji_name}/@me\n\nReact to a message as this application. The cheapest way to mark a message as seen, triaged, or categorised — a ✅ or 👀 costs nothing, notifies nobody, and is visible to everyone reading the channel. Pass a Unicode emoji directly (`emoji_name: \"✅\"`); a custom server emoji is `name:id`. Remove one with the matching delete tool, which is not exposed here.\n\nAlso: chat, community.",
+   "properties": [
+    "channel_id",
+    "message_id",
+    "emoji_name"
+   ],
+   "required": [
+    "channel_id",
+    "message_id",
+    "emoji_name"
+   ],
+   "schemaBytes": 417
+  },
+  {
+   "id": "chatter.create_thread_from_message",
+   "title": "Chatter: create thread from message",
+   "description": "POST /channels/{channel_id}/messages/{message_id}/threads\n\nStart a thread hanging off an existing message, which is how a post becomes a discussion without cluttering the channel. `name` is the thread title and is required. `auto_archive_duration` is in minutes and accepts only 60, 1440, 4320, or 10080. Use this to route a triaged message somewhere people can talk about it, rather than replying inline where it scrolls away.\n\nAlso: chat, server, community.",
+   "properties": [
+    "channel_id",
+    "message_id",
+    "name",
+    "auto_archive_duration",
+    "rate_limit_per_user"
+   ],
+   "required": [
+    "channel_id",
+    "message_id",
+    "name"
+   ],
+   "schemaBytes": 908
+  },
+  {
+   "id": "chatter.list_channel_webhooks",
+   "title": "Chatter: list channel webhooks",
+   "description": "GET /channels/{channel_id}/webhooks\n\nThe webhooks already configured on a channel, with their ids and tokens. Check here before calling `create_webhook`: a channel accumulates a webhook per call and there is a limit of 15, so reusing the one you made last time is the difference between a working integration and a channel full of clutter. Needs Manage Webhooks. The response includes each webhook's token, which is a credential — see the note on `execute_webhook`.\n\nAlso: chat, server, message, community.",
+   "properties": [
+    "channel_id"
+   ],
+   "required": [
+    "channel_id"
+   ],
+   "schemaBytes": 199
+  },
+  {
+   "id": "chatter.create_webhook",
+   "title": "Chatter: create webhook",
+   "description": "POST /channels/{channel_id}/webhooks\n\nCreate a webhook on a channel, which is what makes posting under your own name possible. Do this once per channel and keep the id and token; call `list_channel_webhooks` first to find an existing one rather than making another. `name` is a fallback label only — the name and avatar that actually appear are the ones passed per message to `execute_webhook`. `avatar` takes a base64 data URI, not a URL, and is optional. Needs Manage Webhooks. The returned `token` is a standalone credential: anybody holding it can post to this channel without any other authentication.\n\nAlso: chat, server, community.",
+   "properties": [
+    "channel_id",
+    "name",
+    "avatar"
+   ],
+   "required": [
+    "channel_id",
+    "name"
+   ],
+   "schemaBytes": 383
+  },
+  {
+   "id": "chatter.get_guild",
+   "title": "Chatter: get guild",
+   "description": "GET /guilds/{guild_id}\n\nOne server by id: name, description, icon, owner, and feature flags. Pass `with_counts: true` to also get approximate member and presence counts. Use this to confirm you have the right server before posting to it.\n\nAlso: chat, channel, message, community.",
+   "properties": [
+    "guild_id",
+    "with_counts"
+   ],
+   "required": [
+    "guild_id"
+   ],
+   "schemaBytes": 259
+  },
+  {
+   "id": "chatter.list_guild_channels",
+   "title": "Chatter: list guild channels",
+   "description": "GET /guilds/{guild_id}/channels\n\nEvery channel in a server, which is how a channel *name* becomes the `channel_id` the posting and reading tools require. Check the `type` field before posting: 0 is a normal text channel, 5 is an announcement channel (the only kind `crosspost_message` works on), 15 is a forum, and 2 and 13 are voice and stage, which cannot take messages. `parent_id` is the category a channel sits under.\n\nAlso: chat, message, community.",
+   "properties": [
+    "guild_id"
+   ],
+   "required": [
+    "guild_id"
+   ],
+   "schemaBytes": 195
+  },
+  {
+   "id": "chatter.get_active_guild_threads",
+   "title": "Chatter: get active guild threads",
+   "description": "GET /guilds/{guild_id}/threads/active\n\nEvery thread in a server that is not archived, across all channels at once. Cheaper than walking channels one at a time when the question is \"what conversations are open right now\", which is the usual first step of a triage pass.\n\nAlso: chat, channel, message, community.",
+   "properties": [
+    "guild_id"
+   ],
+   "required": [
+    "guild_id"
+   ],
+   "schemaBytes": 195
+  },
+  {
+   "id": "chatter.get_my_user",
+   "title": "Chatter: get my user",
+   "description": "GET /users/@me\n\nReturns the bot application this token belongs to — its id, username, and discriminator. Costs nothing and needs no permissions, so it is the call to make first when a connection is misbehaving: a 401 here means the stored token is wrong or is missing its `Bot ` prefix, and everything else will fail the same way.\n\nAlso: chat, server, channel, message, community.",
+   "properties": [],
+   "required": [],
+   "schemaBytes": 62
+  },
+  {
+   "id": "chatter.list_my_guilds",
+   "title": "Chatter: list my guilds",
+   "description": "GET /users/@me/guilds\n\nThe servers this bot has been added to — not the servers you are a member of. A server the bot was never invited to is invisible here and unreachable by every other tool, so an empty list means the invite step was missed rather than that you have no servers. Returns id, name, and your permissions in each. Start here to turn a server name into the id every other call wants.\n\nAlso: chat, channel, message, community.",
+   "properties": [
+    "before",
+    "after",
+    "limit",
+    "with_counts"
+   ],
+   "required": [],
+   "schemaBytes": 426
+  },
+  {
+   "id": "chatter.execute_webhook",
+   "title": "Chatter: execute webhook",
+   "description": "POST /webhooks/{webhook_id}/{webhook_token}\n\nPost through a webhook, setting the name and avatar on the message itself. This is how an announcement appears under your own name rather than the application's: pass `username` and `avatar_url` and the message wears them. It still carries an APP badge — Chatter has no way to remove that, and no API for posting as a real user account. Takes the same `content` and `embeds` as `create_message`. Pass `wait: true` to get the created message back, which is the only way to learn its id. `thread_id` posts into an existing thread in the webhook's channel. Note what this cannot do: a webhook only posts. It cannot read the channel, and the message it creates cannot be edited by `update_message` — a webhook message is editable only through the webhook that sent it.\n\nAlso: chat, server, community.",
+   "properties": [
+    "webhook_id",
+    "webhook_token",
+    "wait",
+    "thread_id",
+    "with_components",
+    "content",
+    "embeds",
+    "allowed_mentions",
+    "components",
+    "attachments",
+    "poll",
+    "tts"
+   ],
+   "required": [
+    "webhook_id",
+    "webhook_token"
+   ],
+   "schemaBytes": 9330
+  },
+  {
+   "id": "postbox.users.drafts.list",
+   "title": "Postbox: list drafts",
+   "description": "Lists the drafts in the user's mailbox.\n\nAlso: email, message, inbox, reply, correspondence.",
+   "properties": [
+    "alt",
+    "fields",
+    "userId",
+    "includeSpamTrash",
+    "maxResults",
+    "pageToken",
+    "q"
+   ],
+   "required": [
+    "userId"
+   ],
+   "schemaBytes": 1246
+  },
+  {
+   "id": "postbox.users.drafts.send",
+   "title": "Postbox: send drafts",
+   "description": "Sends the specified, existing draft to the recipients in the `To`, `Cc`, and `Bcc` headers.\n\nAlso: email, message, inbox, reply, correspondence.",
+   "properties": [
+    "alt",
+    "fields",
+    "userId",
+    "id",
+    "message"
+   ],
+   "required": [
+    "userId"
+   ],
+   "schemaBytes": 4465
+  },
+  {
+   "id": "postbox.users.drafts.get",
+   "title": "Postbox: get drafts",
+   "description": "Gets the specified draft.\n\nAlso: email, message, inbox, reply, correspondence.",
+   "properties": [
+    "alt",
+    "fields",
+    "userId",
+    "id",
+    "format"
+   ],
+   "required": [
+    "userId",
+    "id"
+   ],
+   "schemaBytes": 782
+  },
+  {
+   "id": "postbox.users.drafts.delete",
+   "title": "Postbox: delete drafts",
+   "description": "Immediately and permanently deletes the specified draft. Does not simply trash it.\n\nAlso: email, message, inbox, reply, correspondence.",
+   "properties": [
+    "alt",
+    "fields",
+    "userId",
+    "id"
+   ],
+   "required": [
+    "userId",
+    "id"
+   ],
+   "schemaBytes": 628
+  },
+  {
+   "id": "postbox.users.labels.list",
+   "title": "Postbox: list labels",
+   "description": "Lists all labels in the user's mailbox.\n\nAlso: email, message, inbox, reply, correspondence.",
+   "properties": [
+    "alt",
+    "fields",
+    "userId"
+   ],
+   "required": [
+    "userId"
+   ],
+   "schemaBytes": 523
+  },
+  {
+   "id": "postbox.users.labels.create",
+   "title": "Postbox: create labels",
+   "description": "Creates a new label.\n\nAlso: email, message, inbox, reply, correspondence.",
+   "properties": [
+    "alt",
+    "fields",
+    "userId",
+    "color",
+    "id",
+    "labelListVisibility",
+    "messageListVisibility",
+    "messagesTotal",
+    "messagesUnread",
+    "name",
+    "threadsTotal",
+    "threadsUnread"
+   ],
+   "required": [
+    "userId"
+   ],
+   "schemaBytes": 4784
+  },
+  {
+   "id": "postbox.users.labels.get",
+   "title": "Postbox: get labels",
+   "description": "Gets the specified label.\n\nAlso: email, message, inbox, reply, correspondence.",
+   "properties": [
+    "alt",
+    "fields",
+    "userId",
+    "id"
+   ],
+   "required": [
+    "userId",
+    "id"
+   ],
+   "schemaBytes": 630
+  },
+  {
+   "id": "postbox.users.labels.update",
+   "title": "Postbox: update labels",
+   "description": "Updates the specified label.\n\nAlso: email, message, inbox, reply, correspondence.",
+   "properties": [
+    "alt",
+    "fields",
+    "userId",
+    "pathId",
+    "bodyId",
+    "color",
+    "labelListVisibility",
+    "messageListVisibility",
+    "messagesTotal",
+    "messagesUnread",
+    "name",
+    "threadsTotal"
+   ],
+   "required": [
+    "userId",
+    "pathId"
+   ],
+   "schemaBytes": 4901
+  },
+  {
+   "id": "postbox.users.labels.delete",
+   "title": "Postbox: delete labels",
+   "description": "Immediately and permanently deletes the specified label and removes it from any messages and threads that it is applied to.\n\nAlso: email, message, inbox, reply, correspondence.",
+   "properties": [
+    "alt",
+    "fields",
+    "userId",
+    "id"
+   ],
+   "required": [
+    "userId",
+    "id"
+   ],
+   "schemaBytes": 628
+  },
+  {
+   "id": "postbox.users.messages.list",
+   "title": "Postbox: list messages",
+   "description": "Lists the messages in the user's mailbox.\n\nAlso: email, message, inbox, reply, correspondence.",
+   "properties": [
+    "alt",
+    "fields",
+    "userId",
+    "includeSpamTrash",
+    "labelIds",
+    "maxResults",
+    "pageToken",
+    "q"
+   ],
+   "required": [
+    "userId"
+   ],
+   "schemaBytes": 1794
+  },
+  {
+   "id": "postbox.users.messages.batchModify",
+   "title": "Postbox: batch modify messages",
+   "description": "Modifies the labels on the specified messages.\n\nPostbox has no separate verb for read-state, archiving, or spam — each one is a label edit, and this is the operation that makes it: `addLabelIds: [\"UNREAD\"]` marks unread and `removeLabelIds: [\"UNREAD\"]` marks read; `removeLabelIds: [\"INBOX\"]` archives; `addLabelIds: [\"SPAM\"], removeLabelIds: [\"INBOX\"]` reports spam; `addLabelIds: [\"STARRED\"]` stars. Moving a message into a folder is the same shape — add that folder's label id and remove \"INBOX\" — because a Postbox folder *is* a label. Call `labels_list` for the ids of the ones the user made; the capitalised ones above are system labels and always exist. To delete mail, use the `trash` operation rather than a label: it is recoverable and there is no permanent-delete tool here by design. This is the batch form: pass up to 1000 message ids in `ids`.\n\nAlso: email, reply, correspondence.",
+   "properties": [
+    "alt",
+    "fields",
+    "userId",
+    "addLabelIds",
+    "ids",
+    "removeLabelIds"
+   ],
+   "required": [
+    "userId"
+   ],
+   "schemaBytes": 989
+  },
+  {
+   "id": "postbox.users.messages.get",
+   "title": "Postbox: get messages",
+   "description": "Gets the specified message.\n\nAlso: email, inbox, reply, correspondence.",
+   "properties": [
+    "alt",
+    "fields",
+    "userId",
+    "id",
+    "format",
+    "metadataHeaders"
+   ],
+   "required": [
+    "userId",
+    "id"
+   ],
+   "schemaBytes": 1188
+  },
+  {
+   "id": "postbox.users.messages.modify",
+   "title": "Postbox: modify messages",
+   "description": "Modifies the labels on the specified message.\n\nPostbox has no separate verb for read-state, archiving, or spam — each one is a label edit, and this is the operation that makes it: `addLabelIds: [\"UNREAD\"]` marks unread and `removeLabelIds: [\"UNREAD\"]` marks read; `removeLabelIds: [\"INBOX\"]` archives; `addLabelIds: [\"SPAM\"], removeLabelIds: [\"INBOX\"]` reports spam; `addLabelIds: [\"STARRED\"]` stars. Moving a message into a folder is the same shape — add that folder's label id and remove \"INBOX\" — because a Postbox folder *is* a label. Call `labels_list` for the ids of the ones the user made; the capitalised ones above are system labels and always exist. To delete mail, use the `trash` operation rather than a label: it is recoverable and there is no permanent-delete tool here by design.\n\nAlso: email, reply, correspondence.",
+   "properties": [
+    "alt",
+    "fields",
+    "userId",
+    "id",
+    "addLabelIds",
+    "removeLabelIds"
+   ],
+   "required": [
+    "userId",
+    "id"
+   ],
+   "schemaBytes": 1034
+  },
+  {
+   "id": "postbox.users.messages.trash",
+   "title": "Postbox: trash messages",
+   "description": "Moves the specified message to the trash.\n\nAlso: email, inbox, reply, correspondence.",
+   "properties": [
+    "alt",
+    "fields",
+    "userId",
+    "id"
+   ],
+   "required": [
+    "userId",
+    "id"
+   ],
+   "schemaBytes": 629
+  },
+  {
+   "id": "postbox.users.messages.untrash",
+   "title": "Postbox: untrash messages",
+   "description": "Removes the specified message from the trash.\n\nAlso: email, inbox, reply, correspondence.",
+   "properties": [
+    "alt",
+    "fields",
+    "userId",
+    "id"
+   ],
+   "required": [
+    "userId",
+    "id"
+   ],
+   "schemaBytes": 641
+  },
+  {
+   "id": "postbox.users.messages.attachments.get",
+   "title": "Postbox: get attachments",
+   "description": "Gets the specified message attachment.\n\nAlso: email, inbox, reply, correspondence.",
+   "properties": [
+    "alt",
+    "fields",
+    "userId",
+    "messageId",
+    "id"
+   ],
+   "required": [
+    "userId",
+    "messageId",
+    "id"
+   ],
+   "schemaBytes": 760
+  },
+  {
+   "id": "postbox.users.getProfile",
+   "title": "Postbox: get profile users",
+   "description": "Gets the current user's Postbox profile.\n\nAlso: email, message, inbox, reply, correspondence.",
+   "properties": [
+    "alt",
+    "fields",
+    "userId"
+   ],
+   "required": [
+    "userId"
+   ],
+   "schemaBytes": 523
+  },
+  {
+   "id": "postbox.users.settings.filters.list",
+   "title": "Postbox: list filters",
+   "description": "Lists the message filters of a Postbox user.\n\nAlso: email, inbox, reply, correspondence.",
+   "properties": [
+    "alt",
+    "fields",
+    "userId"
+   ],
+   "required": [
+    "userId"
+   ],
+   "schemaBytes": 521
+  },
+  {
+   "id": "postbox.users.settings.filters.create",
+   "title": "Postbox: create filters",
+   "description": "Creates a filter. Note: you can only create a maximum of 1,000 filters.\n\nThis is how a sender is blocked, as opposed to reported. Reporting spam is a one-off label edit on messages that already exist — use `messages_modify` with `addLabelIds: [\"SPAM\"]` for that. A filter is a standing rule applied to mail that has not arrived yet: `criteria: {from: \"ada.lovelace@example.com\"}` with `action: {addLabelIds: [\"TRASH\"]}` to bin it on arrival, or `action: {addLabelIds: [\"SPAM\"]}` to route it to spam. `criteria` also matches on `to`, `subject`, `query`, and `hasAttachment`. The rule keeps running until it is deleted — it outlives this session, so prefer the one-off label edit unless a standing rule is what was asked for.\n\nAlso: email, message, inbox, reply, correspondence.",
+   "properties": [
+    "alt",
+    "fields",
+    "userId",
+    "action",
+    "criteria",
+    "id"
+   ],
+   "required": [
+    "userId"
+   ],
+   "schemaBytes": 2732
+  },
+  {
+   "id": "postbox.users.settings.filters.delete",
+   "title": "Postbox: delete filters",
+   "description": "Immediately and permanently deletes the specified filter.\n\nAlso: email, message, inbox, reply, correspondence.",
+   "properties": [
+    "alt",
+    "fields",
+    "userId",
+    "id"
+   ],
+   "required": [
+    "userId",
+    "id"
+   ],
+   "schemaBytes": 631
+  },
+  {
+   "id": "postbox.users.threads.list",
+   "title": "Postbox: list threads",
+   "description": "Lists the threads in the user's mailbox.\n\nAlso: email, message, inbox, reply, correspondence.",
+   "properties": [
+    "alt",
+    "fields",
+    "userId",
+    "includeSpamTrash",
+    "labelIds",
+    "maxResults",
+    "pageToken",
+    "q"
+   ],
+   "required": [
+    "userId"
+   ],
+   "schemaBytes": 1551
+  },
+  {
+   "id": "postbox.users.threads.get",
+   "title": "Postbox: get threads",
+   "description": "Gets the specified thread.\n\nAlso: email, message, inbox, reply, correspondence.",
+   "properties": [
+    "alt",
+    "fields",
+    "userId",
+    "id",
+    "format",
+    "metadataHeaders"
+   ],
+   "required": [
+    "userId",
+    "id"
+   ],
+   "schemaBytes": 1009
+  },
+  {
+   "id": "postbox.users.threads.modify",
+   "title": "Postbox: modify threads",
+   "description": "Modifies the labels applied to the thread. This applies to all messages in the thread.\n\nPostbox has no separate verb for read-state, archiving, or spam — each one is a label edit, and this is the operation that makes it: `addLabelIds: [\"UNREAD\"]` marks unread and `removeLabelIds: [\"UNREAD\"]` marks read; `removeLabelIds: [\"INBOX\"]` archives; `addLabelIds: [\"SPAM\"], removeLabelIds: [\"INBOX\"]` reports spam; `addLabelIds: [\"STARRED\"]` stars. Moving a message into a folder is the same shape — add that folder's label id and remove \"INBOX\" — because a Postbox folder *is* a label. Call `labels_list` for the ids of the ones the user made; the capitalised ones above are system labels and always exist. To delete mail, use the `trash` operation rather than a label: it is recoverable and there is no permanent-delete tool here by design. This applies to every message in the thread at once.\n\nAlso: email, reply, correspondence.",
+   "properties": [
+    "alt",
+    "fields",
+    "userId",
+    "id",
+    "addLabelIds",
+    "removeLabelIds"
+   ],
+   "required": [
+    "userId",
+    "id"
+   ],
+   "schemaBytes": 1034
+  },
+  {
+   "id": "postbox.users.threads.trash",
+   "title": "Postbox: trash threads",
+   "description": "Moves the specified thread to the trash. Any messages that belong to the thread are also moved to the trash.\n\nAlso: email, message, inbox, reply, correspondence.",
+   "properties": [
+    "alt",
+    "fields",
+    "userId",
+    "id"
+   ],
+   "required": [
+    "userId",
+    "id"
+   ],
+   "schemaBytes": 628
+  },
+  {
+   "id": "postbox.users.threads.untrash",
+   "title": "Postbox: untrash threads",
+   "description": "Removes the specified thread from the trash. Any messages that belong to the thread are also removed from the trash.\n\nAlso: email, message, inbox, reply, correspondence.",
+   "properties": [
+    "alt",
+    "fields",
+    "userId",
+    "id"
+   ],
+   "required": [
+    "userId",
+    "id"
+   ],
+   "schemaBytes": 640
+  },
+  {
+   "id": "filestore.about.get",
+   "title": "Filestore: get about",
+   "description": "Gets information about the user, the user's Drive, and system capabilities.\n\nAlso: document, upload, download, attachment, storage.",
+   "properties": [
+    "alt",
+    "fields",
+    "userIp"
+   ],
+   "required": [],
+   "schemaBytes": 435
+  },
+  {
+   "id": "filestore.files.list",
+   "title": "Filestore: list files",
+   "description": "Lists or searches files.\n\nAlso: document, upload, download, attachment, storage.",
+   "properties": [
+    "alt",
+    "fields",
+    "userIp",
+    "corpora",
+    "corpus",
+    "driveId",
+    "includeItemsFromAllDrives",
+    "includeLabels",
+    "includePermissionsForView",
+    "includeTeamDriveItems",
+    "orderBy",
+    "pageSize"
+   ],
+   "required": [],
+   "schemaBytes": 3701
+  },
+  {
+   "id": "filestore.files.create",
+   "title": "Filestore: create files",
+   "description": "Creates a file.\n\nThis also creates the Filestore-native file types, which have no create tool of their own: pass `mimeType: \"application/vnd.Filestore-apps.spreadsheet\"` for a spreadsheet, `.document` for a Doc, `.presentation` for Slides, or `.folder` for a folder, and leave the body empty. The file comes back with an id the Sheets and Docs tools then work on directly — creating a spreadsheet and filling it is this call followed by `sheets_spreadsheets_values_update`. Place it by passing `parents` with a folder id.\n\nAlso: upload, download, attachment, storage.",
+   "properties": [
+    "alt",
+    "fields",
+    "userIp",
+    "enforceSingleParent",
+    "ignoreDefaultVisibility",
+    "includeLabels",
+    "includePermissionsForView",
+    "keepRevisionForever",
+    "ocrLanguage",
+    "supportsAllDrives",
+    "supportsTeamDrives",
+    "useContentAsIndexableText"
+   ],
+   "required": [],
+   "schemaBytes": 37477
+  },
+  {
+   "id": "filestore.files.get",
+   "title": "Filestore: get files",
+   "description": "Gets a file's metadata or content by ID.\n\nAlso: document, upload, download, attachment, storage.",
+   "properties": [
+    "alt",
+    "fields",
+    "userIp",
+    "fileId",
+    "acknowledgeAbuse",
+    "includeLabels",
+    "includePermissionsForView",
+    "supportsAllDrives",
+    "supportsTeamDrives"
+   ],
+   "required": [
+    "fileId"
+   ],
+   "schemaBytes": 1433
+  },
+  {
+   "id": "filestore.files.update",
+   "title": "Filestore: update files",
+   "description": "Updates a file's metadata and/or content. When calling this method, only populate fields in the request that you want to modify. When updating fields, some fields might change automatically, such as modifiedDate. This method supports patch semantics.\n\nThis is also how a file is moved, renamed, and deleted. Move it by passing `addParents` with the destination folder id and `removeParents` with the current one — a Drive file has no path, only parents. Rename it with `name`. Delete it with `trashed: true`, which is recoverable; there is deliberately no permanent-delete tool here, because Drive has a trash and an agent should not be able to bypass it. Restore with `trashed: false`.\n\nAlso: document, upload, download, attachment, storage.",
+   "properties": [
+    "alt",
+    "fields",
+    "userIp",
+    "fileId",
+    "addParents",
+    "enforceSingleParent",
+    "includeLabels",
+    "includePermissionsForView",
+    "keepRevisionForever",
+    "ocrLanguage",
+    "removeParents",
+    "supportsAllDrives"
+   ],
+   "required": [
+    "fileId"
+   ],
+   "schemaBytes": 37490
+  },
+  {
+   "id": "filestore.files.copy",
+   "title": "Filestore: copy files",
+   "description": "Creates a copy of a file and applies any requested updates with patch semantics. Folders cannot be copied.\n\nAlso: document, upload, download, attachment, storage.",
+   "properties": [
+    "alt",
+    "fields",
+    "userIp",
+    "fileId",
+    "enforceSingleParent",
+    "ignoreDefaultVisibility",
+    "includeLabels",
+    "includePermissionsForView",
+    "keepRevisionForever",
+    "ocrLanguage",
+    "supportsAllDrives",
+    "supportsTeamDrives"
+   ],
+   "required": [
+    "fileId"
+   ],
+   "schemaBytes": 37467
+  },
+  {
+   "id": "filestore.files.export",
+   "title": "Filestore: export files",
+   "description": "Exports a the workspace document to the requested MIME type and returns exported byte content. Note that the exported content is limited to 10MB.\n\nAlso: upload, download, attachment, storage.",
+   "properties": [
+    "alt",
+    "fields",
+    "userIp",
+    "fileId",
+    "mimeType"
+   ],
+   "required": [
+    "fileId",
+    "mimeType"
+   ],
+   "schemaBytes": 692
+  },
+  {
+   "id": "filestore.permissions.list",
+   "title": "Filestore: list permissions",
+   "description": "Lists a file's or shared drive's permissions.\n\nAlso: document, upload, download, attachment, storage.",
+   "properties": [
+    "alt",
+    "fields",
+    "userIp",
+    "fileId",
+    "includePermissionsForView",
+    "pageSize",
+    "pageToken",
+    "supportsAllDrives",
+    "supportsTeamDrives",
+    "useDomainAdminAccess"
+   ],
+   "required": [
+    "fileId"
+   ],
+   "schemaBytes": 1935
+  },
+  {
+   "id": "filestore.permissions.create",
+   "title": "Filestore: create permissions",
+   "description": "Creates a permission for a file or shared drive. For more information on creating permissions, see Share files, folders & drives.\n\nAlso: document, upload, download, attachment, storage.",
+   "properties": [
+    "alt",
+    "fields",
+    "userIp",
+    "fileId",
+    "emailMessage",
+    "enforceSingleParent",
+    "moveToNewOwnersRoot",
+    "sendNotificationEmail",
+    "supportsAllDrives",
+    "supportsTeamDrives",
+    "transferOwnership",
+    "useDomainAdminAccess"
+   ],
+   "required": [
+    "fileId"
+   ],
+   "schemaBytes": 7763
+  },
+  {
+   "id": "gridwork.spreadsheets.get",
+   "title": "Gridwork: get spreadsheets",
+   "description": "Returns the spreadsheet at the given ID. The caller must specify the spreadsheet ID. By default, data within grids is not returned. You can include grid data in one of 2 ways: * Specify a [field mask](https://example.test/docs example.test/sheets/api/guides/field-masks) listing your desired fields using the `fields` URL parameter in HTTP * Set the includeGridData URL parameter to true. If a field mask is set, the `includeGridData` parameter is ignored For large spreadsheets, as a best practice, retrieve only the specific spreadsheet fields that you want. To retrieve only subsets of spreadsheet data, use the ranges URL parameter. Ranges are specified using [A1 notation](/sheets/api/guides/concepts#cell). You can define a single cell (for example, `A1`) or multiple cells (for example, `A1:D5`). You can also get cells from other sheets within the same spreadsheet (for example, `Sheet2!A1:C4`) or retrieve multiple ranges at once (for example, `?ranges=A1:D5&ranges=Sheet2!A1:C4`). Limiting the range returns only the portions of the spreadsheet that intersect the requested ranges.\n\nReads an existing spreadsheet. To create one, use `drive_files_create` with `mimeType: \"application/vnd.Gridwork-apps.spreadsheet\"`, then write into it with the `values_*` tools — this provider edits spreadsheets but does not create the file.\n\nAlso: table, csv, row, column, formula.",
+   "properties": [
+    "alt",
+    "fields",
+    "spreadsheetId",
+    "includeGridData",
+    "ranges"
+   ],
+   "required": [
+    "spreadsheetId"
+   ],
+   "schemaBytes": 854
+  },
+  {
+   "id": "gridwork.spreadsheets.sheets.copyTo",
+   "title": "Gridwork: copy to sheets",
+   "description": "Copies a single sheet from a spreadsheet to another spreadsheet. Returns the properties of the newly created sheet.\n\nCopies one tab into a *different* spreadsheet. To duplicate a tab within the same file use `batchUpdate` with a `duplicateSheet` request, and to copy the whole file use `drive_files_copy`.\n\nAlso: table, csv, row, column, formula.",
+   "properties": [
+    "alt",
+    "fields",
+    "spreadsheetId",
+    "sheetId",
+    "destinationSpreadsheetId"
+   ],
+   "required": [
+    "spreadsheetId",
+    "sheetId"
+   ],
+   "schemaBytes": 749
+  },
+  {
+   "id": "gridwork.spreadsheets.values.get",
+   "title": "Gridwork: get values",
+   "description": "Returns a range of values from a spreadsheet. The caller must specify the spreadsheet ID and a range.\n\nAlso: table, csv, row, column, formula.",
+   "properties": [
+    "alt",
+    "fields",
+    "spreadsheetId",
+    "range",
+    "dateTimeRenderOption",
+    "majorDimension",
+    "valueRenderOption"
+   ],
+   "required": [
+    "spreadsheetId",
+    "range"
+   ],
+   "schemaBytes": 1646
+  },
+  {
+   "id": "gridwork.spreadsheets.values.update",
+   "title": "Gridwork: update values",
+   "description": "Sets values in a range of a spreadsheet. The caller must specify the spreadsheet ID, range, and a valueInputOption.\n\nAlso: table, csv, row, column, formula.",
+   "properties": [
+    "alt",
+    "fields",
+    "spreadsheetId",
+    "pathRange",
+    "bodyRange",
+    "includeValuesInResponse",
+    "responseDateTimeRenderOption",
+    "responseValueRenderOption",
+    "valueInputOption",
+    "majorDimension",
+    "values"
+   ],
+   "required": [
+    "spreadsheetId",
+    "pathRange"
+   ],
+   "schemaBytes": 3441
+  },
+  {
+   "id": "gridwork.spreadsheets.values.append",
+   "title": "Gridwork: append values",
+   "description": "Appends values to a spreadsheet. The input range is used to search for existing data and find a \"table\" within that range. Values will be appended to the next row of the table, starting with the first column of the table. See the [guide](/sheets/api/guides/values#appending_values) and [sample code](/sheets/api/samples/writing#append_values) for specific details of how tables are detected and data is appended. The caller must specify the spreadsheet ID, range, and a valueInputOption. The `valueInputOption` only controls how the input data will be added to the sheet (column-wise or row-wise), it does not influence what cell the data starts being written to.\n\nAlso: csv, formula.",
+   "properties": [
+    "alt",
+    "fields",
+    "spreadsheetId",
+    "pathRange",
+    "bodyRange",
+    "includeValuesInResponse",
+    "insertDataOption",
+    "responseDateTimeRenderOption",
+    "responseValueRenderOption",
+    "valueInputOption",
+    "majorDimension",
+    "values"
+   ],
+   "required": [
+    "spreadsheetId",
+    "pathRange"
+   ],
+   "schemaBytes": 3511
+  },
+  {
+   "id": "gridwork.spreadsheets.values.clear",
+   "title": "Gridwork: clear values",
+   "description": "Clears values from a spreadsheet. The caller must specify the spreadsheet ID and range. Only values are cleared -- all other properties of the cell (such as formatting, data validation, etc..) are kept.\n\nAlso: table, csv, row, column, formula.",
+   "properties": [
+    "alt",
+    "fields",
+    "spreadsheetId",
+    "range"
+   ],
+   "required": [
+    "spreadsheetId",
+    "range"
+   ],
+   "schemaBytes": 650
+  },
+  {
+   "id": "gridwork.spreadsheets.values.batchClear",
+   "title": "Gridwork: batch clear values",
+   "description": "Clears one or more ranges of values from a spreadsheet. The caller must specify the spreadsheet ID and one or more ranges. Only values are cleared -- all other properties of the cell (such as formatting and data validation) are kept.\n\nAlso: table, csv, row, column, formula.",
+   "properties": [
+    "alt",
+    "fields",
+    "spreadsheetId",
+    "ranges"
+   ],
+   "required": [
+    "spreadsheetId"
+   ],
+   "schemaBytes": 665
+  },
+  {
+   "id": "gridwork.spreadsheets.values.batchGet",
+   "title": "Gridwork: batch get values",
+   "description": "Returns one or more ranges of values from a spreadsheet. The caller must specify the spreadsheet ID and one or more ranges.\n\nAlso: table, csv, row, column, formula.",
+   "properties": [
+    "alt",
+    "fields",
+    "spreadsheetId",
+    "dateTimeRenderOption",
+    "majorDimension",
+    "ranges",
+    "valueRenderOption"
+   ],
+   "required": [
+    "spreadsheetId"
+   ],
+   "schemaBytes": 1727
+  },
+  {
+   "id": "gridwork.spreadsheets.values.batchUpdate",
+   "title": "Gridwork: batch update values",
+   "description": "Sets values in one or more ranges of a spreadsheet. The caller must specify the spreadsheet ID, a valueInputOption, and one or more ValueRanges.\n\nAlso: table, csv, row, column, formula.",
+   "properties": [
+    "alt",
+    "fields",
+    "spreadsheetId",
+    "data",
+    "includeValuesInResponse",
+    "responseDateTimeRenderOption",
+    "responseValueRenderOption",
+    "valueInputOption"
+   ],
+   "required": [
+    "spreadsheetId"
+   ],
+   "schemaBytes": 3497
+  },
+  {
+   "id": "gridwork.spreadsheets.batchUpdate",
+   "title": "Gridwork: batch update spreadsheets",
+   "description": "Applies one or more updates to the spreadsheet. Each request is validated before being applied. If any request is not valid then the entire request will fail and nothing will be applied. Some requests have replies to give you some information about how they are applied. The replies will mirror the requests. For example, if you applied 4 updates and the 3rd one had a reply, then the response will have 2 empty replies, the actual reply, and another empty reply, in that order. Due to the collaborative nature of spreadsheets, it is not guaranteed that the spreadsheet will reflect exactly your changes after this completes, however it is guaranteed that the updates in the request will be applied together atomically. Your changes may be altered with respect to collaborator changes. If there are no collaborators, the spreadsheet should reflect your changes.\n\nThis is the structural-edit surface: adding, renaming, reordering, and deleting tabs, plus formatting, frozen rows, filters, and charts. The `requests` array takes Gridwork's `Request` objects — `addSheet` to create a tab, `updateSheetProperties` to rename one, `deleteSheet` to remove it, `repeatCell` to format a range. Its structure is omitted from this schema because inlining the full union costs megabytes; the shapes are at https://example.test/docs example.test/sheets/api/reference/rest/v4/spreadsheets/request. To change cell *values* rather than structure, use the `values_*` tools instead. To create a whole new spreadsheet file, use `drive_files_create` with `mimeType: \"application/vnd.Gridwork-apps.spreadsheet\"` — there is no create tool here.\n\nAlso: table, csv, row, column, formula.",
+   "properties": [
+    "alt",
+    "fields",
+    "spreadsheetId",
+    "includeSpreadsheetInResponse",
+    "requests",
+    "responseIncludeGridData",
+    "responseRanges"
+   ],
+   "required": [
+    "spreadsheetId"
+   ],
+   "schemaBytes": 1622
+  },
+  {
+   "id": "scribe.documents.get",
+   "title": "Scribe: get documents",
+   "description": "Gets the latest version of the specified document.\n\nAlso: word processor, text, writing, prose.",
+   "properties": [
+    "alt",
+    "fields",
+    "documentId",
+    "suggestionsViewMode"
+   ],
+   "required": [
+    "documentId"
+   ],
+   "schemaBytes": 874
+  },
+  {
+   "id": "scribe.documents.batchUpdate",
+   "title": "Scribe: batch update documents",
+   "description": "Applies one or more updates to the document. Each request is validated before being applied. If any request is not valid, then the entire request will fail and nothing will be applied. Some requests have replies to give you some information about how they are applied. Other requests do not need to return information; these each return an empty reply. The order of replies matches that of the requests. For example, suppose you call batchUpdate with four updates, and only the third one returns information. The response would have two empty replies, the reply to the third request, and another empty reply, in that order. Because other users may be editing the document, the document might not exactly reflect your changes: your changes may be altered with respect to collaborator changes. If there are no collaborators, the document should reflect your changes. In any case, the updates in your request are guaranteed to be applied together atomically.\n\nAlso: word processor, text, writing, prose.",
+   "properties": [
+    "alt",
+    "fields",
+    "documentId",
+    "requests",
+    "writeControl"
+   ],
+   "required": [
+    "documentId"
+   ],
+   "schemaBytes": 2408
+  },
+  {
+   "id": "agenda.events.list",
+   "title": "Agenda: list events",
+   "description": "Returns events on the specified calendar.\n\nAlso: meeting, invite, appointment, schedule, availability.",
+   "properties": [
+    "alt",
+    "fields",
+    "userIp",
+    "calendarId",
+    "alwaysIncludeEmail",
+    "eventTypes",
+    "iCalUID",
+    "maxAttendees",
+    "maxResults",
+    "orderBy",
+    "pageToken",
+    "privateExtendedProperty"
+   ],
+   "required": [
+    "calendarId"
+   ],
+   "schemaBytes": 7391
+  },
+  {
+   "id": "agenda.events.insert",
+   "title": "Agenda: insert events",
+   "description": "Creates an event.\n\nAlso: meeting, invite, appointment, schedule, availability.",
+   "properties": [
+    "alt",
+    "fields",
+    "userIp",
+    "calendarId",
+    "conferenceDataVersion",
+    "maxAttendees",
+    "sendNotifications",
+    "sendUpdates",
+    "supportsAttachments",
+    "anyoneCanAddSelf",
+    "attachments",
+    "attendees"
+   ],
+   "required": [
+    "calendarId"
+   ],
+   "schemaBytes": 30611
+  },
+  {
+   "id": "agenda.events.get",
+   "title": "Agenda: get events",
+   "description": "Returns an event based on its Agenda ID. To retrieve an event using its iCalendar ID, call the events.list method using the iCalUID parameter.\n\nAlso: meeting, invite, appointment, schedule, availability.",
+   "properties": [
+    "alt",
+    "fields",
+    "userIp",
+    "calendarId",
+    "eventId",
+    "alwaysIncludeEmail",
+    "maxAttendees",
+    "timeZone"
+   ],
+   "required": [
+    "calendarId",
+    "eventId"
+   ],
+   "schemaBytes": 1548
+  },
+  {
+   "id": "agenda.events.patch",
+   "title": "Agenda: patch events",
+   "description": "Updates an event. This method supports patch semantics.\n\nAlso: meeting, invite, appointment, schedule, availability.",
+   "properties": [
+    "alt",
+    "fields",
+    "userIp",
+    "calendarId",
+    "eventId",
+    "alwaysIncludeEmail",
+    "conferenceDataVersion",
+    "maxAttendees",
+    "sendNotifications",
+    "sendUpdates",
+    "supportsAttachments",
+    "anyoneCanAddSelf"
+   ],
+   "required": [
+    "calendarId",
+    "eventId"
+   ],
+   "schemaBytes": 31011
+  },
+  {
+   "id": "agenda.events.delete",
+   "title": "Agenda: delete events",
+   "description": "Deletes an event.\n\nAlso: meeting, invite, appointment, schedule, availability.",
+   "properties": [
+    "alt",
+    "fields",
+    "userIp",
+    "calendarId",
+    "eventId",
+    "sendNotifications",
+    "sendUpdates"
+   ],
+   "required": [
+    "calendarId",
+    "eventId"
+   ],
+   "schemaBytes": 1311
+  },
+  {
+   "id": "agenda.events.instances",
+   "title": "Agenda: instances events",
+   "description": "Returns instances of the specified recurring event.\n\nAlso: meeting, invite, appointment, schedule, availability.",
+   "properties": [
+    "alt",
+    "fields",
+    "userIp",
+    "calendarId",
+    "eventId",
+    "alwaysIncludeEmail",
+    "maxAttendees",
+    "maxResults",
+    "originalStart",
+    "pageToken",
+    "showDeleted",
+    "timeMax"
+   ],
+   "required": [
+    "calendarId",
+    "eventId"
+   ],
+   "schemaBytes": 2871
+  },
+  {
+   "id": "agenda.events.move",
+   "title": "Agenda: move events",
+   "description": "Moves an event to another calendar, i.e. changes an event's organizer.\n\nAlso: meeting, invite, appointment, schedule, availability.",
+   "properties": [
+    "alt",
+    "fields",
+    "userIp",
+    "calendarId",
+    "eventId",
+    "destination",
+    "sendNotifications",
+    "sendUpdates"
+   ],
+   "required": [
+    "calendarId",
+    "eventId",
+    "destination"
+   ],
+   "schemaBytes": 1392
+  },
+  {
+   "id": "agenda.freebusy.query",
+   "title": "Agenda: query freebusy",
+   "description": "Returns free/busy information for a set of calendars.\n\nAlso: meeting, invite, appointment, schedule, availability.",
+   "properties": [
+    "alt",
+    "fields",
+    "userIp",
+    "calendarExpansionMax",
+    "groupExpansionMax",
+    "items",
+    "timeMax",
+    "timeMin",
+    "timeZone"
+   ],
+   "required": [],
+   "schemaBytes": 1632
+  },
+  {
+   "id": "agenda.calendarList.list",
+   "title": "Agenda: list calendar list",
+   "description": "Returns the calendars on the user's calendar list.\n\nAlso: meeting, invite, appointment, schedule, availability.",
+   "properties": [
+    "alt",
+    "fields",
+    "userIp",
+    "maxResults",
+    "minAccessRole",
+    "pageToken",
+    "showDeleted",
+    "showHidden",
+    "syncToken"
+   ],
+   "required": [],
+   "schemaBytes": 2310
+  },
+  {
+   "id": "checklist.tasks.tasks.list",
+   "title": "Checklist: list tasks",
+   "description": "Returns all tasks in the specified task list.\n\nAlso: todo, reminder, checklist.",
+   "properties": [
+    "alt",
+    "fields",
+    "tasklist",
+    "completedMax",
+    "completedMin",
+    "dueMax",
+    "dueMin",
+    "maxResults",
+    "pageToken",
+    "showCompleted",
+    "showDeleted",
+    "showHidden"
+   ],
+   "required": [
+    "tasklist"
+   ],
+   "schemaBytes": 2500
+  },
+  {
+   "id": "checklist.tasks.tasks.insert",
+   "title": "Checklist: insert tasks",
+   "description": "Creates a new task on the specified task list.\n\nAlso: todo, reminder, checklist.",
+   "properties": [
+    "alt",
+    "fields",
+    "tasklist",
+    "queryParent",
+    "bodyParent",
+    "previous",
+    "completed",
+    "deleted",
+    "due",
+    "etag",
+    "hidden",
+    "id"
+   ],
+   "required": [
+    "tasklist"
+   ],
+   "schemaBytes": 3840
+  },
+  {
+   "id": "checklist.tasks.tasks.get",
+   "title": "Checklist: get tasks",
+   "description": "Returns the specified task.\n\nAlso: todo, reminder, checklist.",
+   "properties": [
+    "alt",
+    "fields",
+    "tasklist",
+    "task"
+   ],
+   "required": [
+    "tasklist",
+    "task"
+   ],
+   "schemaBytes": 547
+  },
+  {
+   "id": "checklist.tasks.tasks.patch",
+   "title": "Checklist: patch tasks",
+   "description": "Updates the specified task. This method supports patch semantics.\n\nAlso: todo, reminder, checklist.",
+   "properties": [
+    "alt",
+    "fields",
+    "tasklist",
+    "task",
+    "completed",
+    "deleted",
+    "due",
+    "etag",
+    "hidden",
+    "id",
+    "kind",
+    "links"
+   ],
+   "required": [
+    "tasklist",
+    "task"
+   ],
+   "schemaBytes": 3538
+  },
+  {
+   "id": "checklist.tasks.tasks.delete",
+   "title": "Checklist: delete tasks",
+   "description": "Deletes the specified task from the task list.\n\nAlso: todo, reminder, checklist.",
+   "properties": [
+    "alt",
+    "fields",
+    "tasklist",
+    "task"
+   ],
+   "required": [
+    "tasklist",
+    "task"
+   ],
+   "schemaBytes": 547
+  },
+  {
+   "id": "checklist.tasks.tasks.move",
+   "title": "Checklist: move tasks",
+   "description": "Moves the specified task to another position in the task list. This can include putting it as a child task under a new parent and/or move it to a different position among its sibling tasks.\n\nAlso: todo, reminder, checklist.",
+   "properties": [
+    "alt",
+    "fields",
+    "tasklist",
+    "task",
+    "parent",
+    "previous"
+   ],
+   "required": [
+    "tasklist",
+    "task"
+   ],
+   "schemaBytes": 939
+  },
+  {
+   "id": "checklist.tasks.tasklists.list",
+   "title": "Checklist: list tasklists",
+   "description": "Returns all the authenticated user's task lists.\n\nAlso: todo, reminder, checklist.",
+   "properties": [
+    "alt",
+    "fields",
+    "maxResults",
+    "pageToken"
+   ],
+   "required": [],
+   "schemaBytes": 640
+  },
+  {
+   "id": "checklist.tasks.tasklists.insert",
+   "title": "Checklist: insert tasklists",
+   "description": "Creates a new task list and adds it to the authenticated user's task lists.\n\nAlso: todo, reminder, checklist.",
+   "properties": [
+    "alt",
+    "fields",
+    "etag",
+    "id",
+    "kind",
+    "selfLink",
+    "title",
+    "updated"
+   ],
+   "required": [],
+   "schemaBytes": 1039
+  },
+  {
+   "id": "checklist.tasks.tasklists.patch",
+   "title": "Checklist: patch tasklists",
+   "description": "Updates the authenticated user's specified task list. This method supports patch semantics.\n\nAlso: todo, reminder, checklist.",
+   "properties": [
+    "alt",
+    "fields",
+    "tasklist",
+    "etag",
+    "id",
+    "kind",
+    "selfLink",
+    "title",
+    "updated"
+   ],
+   "required": [
+    "tasklist"
+   ],
+   "schemaBytes": 1160
+  },
+  {
+   "id": "rolodex.people.otherContacts.search",
+   "title": "Rolodex Contacts: search other contacts",
+   "description": "Provides a list of contacts in the authenticated user's other contacts that matches the search query. The query matches on a contact's `names`, `emailAddresses`, and `phoneNumbers` fields that are from the OTHER_CONTACT source. **IMPORTANT**: Before searching, clients should send a warmup request with an empty query to update the cache. See https://example.test/docs example.test/people/v1/other-contacts#search_the_users_other_contacts\n\nAlso: address book, directory, email address.",
+   "properties": [
+    "alt",
+    "fields",
+    "pageSize",
+    "query",
+    "readMask"
+   ],
+   "required": [],
+   "schemaBytes": 1159
+  },
+  {
+   "id": "rolodex.people.people.getBatchGet",
+   "title": "Rolodex Contacts: get batch get people",
+   "description": "Provides information about a list of specific people by specifying a list of requested resource names. Use `people/me` to indicate the authenticated user. The request returns a 400 error if 'personFields' is not specified.\n\nAlso: address book, directory, email address.",
+   "properties": [
+    "alt",
+    "fields",
+    "personFields",
+    "requestMask.includeField",
+    "resourceNames",
+    "sources"
+   ],
+   "required": [],
+   "schemaBytes": 2254
+  },
+  {
+   "id": "rolodex.people.people.searchContacts",
+   "title": "Rolodex Contacts: search contacts people",
+   "description": "Provides a list of contacts in the authenticated user's grouped contacts that matches the search query. The query matches on a contact's `names`, `nickNames`, `emailAddresses`, `phoneNumbers`, and `organizations` fields that are from the CONTACT source. **IMPORTANT**: Before searching, clients should send a warmup request with an empty query to update the cache. See https://example.test/docs example.test/people/v1/contacts#search_the_users_contacts\n\nAlso: address book, directory, email address.",
+   "properties": [
+    "alt",
+    "fields",
+    "pageSize",
+    "query",
+    "readMask",
+    "sources"
+   ],
+   "required": [],
+   "schemaBytes": 1847
+  },
+  {
+   "id": "mailhub.me.ListMailFolders",
+   "title": "Mailhub Mail: list mail folders me",
+   "description": "List mailFolders\n\nAlso: email, message, inbox, reply, correspondence.",
+   "properties": [
+    "top",
+    "filter",
+    "orderby",
+    "select"
+   ],
+   "required": [],
+   "schemaBytes": 1260
+  },
+  {
+   "id": "mailhub.me.ListMessages",
+   "title": "Mailhub Mail: list messages me",
+   "description": "Get open extension\n\nAlso: email, message, inbox, reply, correspondence.",
+   "properties": [
+    "top",
+    "search",
+    "filter",
+    "orderby",
+    "select"
+   ],
+   "required": [],
+   "schemaBytes": 2621
+  },
+  {
+   "id": "mailhub.me.GetMessages",
+   "title": "Mailhub Mail: get messages me",
+   "description": "Get messages from me\n\nAlso: email, message, inbox, reply, correspondence.",
+   "properties": [
+    "message-id",
+    "select"
+   ],
+   "required": [
+    "message-id"
+   ],
+   "schemaBytes": 954
+  },
+  {
+   "id": "mailhub.me.UpdateMessages",
+   "title": "Mailhub Mail: update messages me",
+   "description": "Update the navigation property messages in me\n\nAlso: email, message, inbox, reply, correspondence.",
+   "properties": [
+    "message-id",
+    "isRead",
+    "categories",
+    "flag",
+    "importance"
+   ],
+   "required": [
+    "message-id",
+    "isRead",
+    "categories",
+    "flag",
+    "importance"
+   ],
+   "schemaBytes": 3045
+  },
+  {
+   "id": "mailhub.me.messages.ListAttachments",
+   "title": "Mailhub Mail: list attachments messages",
+   "description": "List attachments\n\nAlso: email, message, inbox, reply, correspondence.",
+   "properties": [
+    "message-id",
+    "top",
+    "filter",
+    "orderby",
+    "select"
+   ],
+   "required": [
+    "message-id"
+   ],
+   "schemaBytes": 1171
+  },
+  {
+   "id": "mailhub.me.messages.GetAttachments",
+   "title": "Mailhub Mail: get attachments messages",
+   "description": "Get attachments from me\n\nAlso: email, message, inbox, reply, correspondence.",
+   "properties": [
+    "message-id",
+    "attachment-id",
+    "select"
+   ],
+   "required": [
+    "message-id",
+    "attachment-id"
+   ],
+   "schemaBytes": 583
+  },
+  {
+   "id": "mailhub.me.sendMail",
+   "title": "Mailhub Mail: send mail me",
+   "description": "Invoke action sendMail\n\nAlso: email, message, inbox, reply, correspondence.",
+   "properties": [
+    "message",
+    "saveToSentItems"
+   ],
+   "required": [
+    "message"
+   ],
+   "schemaBytes": 2907
+  },
+  {
+   "id": "daybook.me.ListCalendarView",
+   "title": "Mailhub Calendar: list calendar view me",
+   "description": "Get calendarView from me\n\nAlso: meeting, invite, appointment, schedule, availability.",
+   "properties": [
+    "startDateTime",
+    "endDateTime",
+    "top",
+    "filter",
+    "orderby",
+    "select"
+   ],
+   "required": [
+    "startDateTime",
+    "endDateTime"
+   ],
+   "schemaBytes": 3359
+  },
+  {
+   "id": "daybook.me.ListCalendars",
+   "title": "Mailhub Calendar: list calendars me",
+   "description": "List calendars\n\nAlso: meeting, invite, appointment, schedule, availability.",
+   "properties": [
+    "top",
+    "filter",
+    "orderby",
+    "select"
+   ],
+   "required": [],
+   "schemaBytes": 1636
+  },
+  {
+   "id": "daybook.me.ListEvents",
+   "title": "Mailhub Calendar: list events me",
+   "description": "List events\n\nAlso: meeting, invite, appointment, schedule, availability.",
+   "properties": [
+    "top",
+    "filter",
+    "orderby",
+    "select"
+   ],
+   "required": [],
+   "schemaBytes": 2930
+  },
+  {
+   "id": "daybook.me.CreateEvents",
+   "title": "Mailhub Calendar: create events me",
+   "description": "Create Event\n\nAlso: meeting, invite, appointment, schedule, availability.",
+   "properties": [
+    "subject",
+    "body",
+    "start",
+    "end",
+    "location",
+    "attendees",
+    "isAllDay",
+    "isOnlineMeeting",
+    "reminderMinutesBeforeStart",
+    "showAs",
+    "recurrence"
+   ],
+   "required": [
+    "subject",
+    "body",
+    "start",
+    "end",
+    "location",
+    "attendees",
+    "isAllDay",
+    "isOnlineMeeting",
+    "reminderMinutesBeforeStart",
+    "showAs",
+    "recurrence"
+   ],
+   "schemaBytes": 15239
+  },
+  {
+   "id": "daybook.me.GetEvents",
+   "title": "Mailhub Calendar: get events me",
+   "description": "Get events from me\n\nAlso: meeting, invite, appointment, schedule, availability.",
+   "properties": [
+    "event-id",
+    "select"
+   ],
+   "required": [
+    "event-id"
+   ],
+   "schemaBytes": 1103
+  },
+  {
+   "id": "daybook.me.UpdateEvents",
+   "title": "Mailhub Calendar: update events me",
+   "description": "Update the navigation property events in me\n\nAlso: meeting, invite, appointment, schedule, availability.",
+   "properties": [
+    "event-id",
+    "subject",
+    "body",
+    "start",
+    "end",
+    "location",
+    "attendees",
+    "isAllDay",
+    "isOnlineMeeting",
+    "reminderMinutesBeforeStart",
+    "showAs"
+   ],
+   "required": [
+    "event-id",
+    "subject",
+    "body",
+    "start",
+    "end",
+    "location",
+    "attendees",
+    "isAllDay",
+    "isOnlineMeeting",
+    "reminderMinutesBeforeStart",
+    "showAs"
+   ],
+   "schemaBytes": 10762
+  },
+  {
+   "id": "daybook.me.DeleteEvents",
+   "title": "Mailhub Calendar: delete events me",
+   "description": "Delete navigation property events for me\n\nAlso: meeting, invite, appointment, schedule, availability.",
+   "properties": [
+    "event-id",
+    "If-Match"
+   ],
+   "required": [
+    "event-id"
+   ],
+   "schemaBytes": 259
+  },
+  {
+   "id": "cardfile.me.ListContactFolders",
+   "title": "Mailhub Contacts: list contact folders me",
+   "description": "List contactFolders\n\nAlso: address book, directory, people, email address.",
+   "properties": [
+    "top",
+    "filter",
+    "orderby",
+    "select"
+   ],
+   "required": [],
+   "schemaBytes": 1030
+  },
+  {
+   "id": "cardfile.me.ListContacts",
+   "title": "Mailhub Contacts: list contacts me",
+   "description": "List contacts\n\nAlso: address book, directory, people, email address.",
+   "properties": [
+    "top",
+    "search",
+    "filter",
+    "orderby",
+    "select"
+   ],
+   "required": [],
+   "schemaBytes": 2821
+  },
+  {
+   "id": "cardfile.me.GetContacts",
+   "title": "Mailhub Contacts: get contacts me",
+   "description": "Get contacts from me\n\nAlso: address book, directory, people, email address.",
+   "properties": [
+    "contact-id",
+    "select"
+   ],
+   "required": [
+    "contact-id"
+   ],
+   "schemaBytes": 1005
+  },
+  {
+   "id": "cabinet.drives.GetItems",
+   "title": "Cabinet: get items drives",
+   "description": "Get items from drives\n\nAlso: document, upload, download, attachment, storage.",
+   "properties": [
+    "drive-id",
+    "driveItem-id",
+    "select"
+   ],
+   "required": [
+    "drive-id",
+    "driveItem-id"
+   ],
+   "schemaBytes": 1034
+  },
+  {
+   "id": "cabinet.drives.items.ListChildren",
+   "title": "Cabinet: list children items",
+   "description": "List children of a driveItem\n\nAlso: document, upload, download, attachment, storage.",
+   "properties": [
+    "drive-id",
+    "driveItem-id",
+    "top",
+    "search",
+    "filter",
+    "orderby",
+    "select"
+   ],
+   "required": [
+    "drive-id",
+    "driveItem-id"
+   ],
+   "schemaBytes": 2688
+  },
+  {
+   "id": "cabinet.drives.items.CreateChildren",
+   "title": "Cabinet: create children items",
+   "description": "Create new navigation property to children for drives\n\nAlso: document, upload, download, attachment, storage.",
+   "properties": [
+    "drive-id",
+    "driveItem-id",
+    "name",
+    "folder",
+    "file"
+   ],
+   "required": [
+    "drive-id",
+    "driveItem-id",
+    "name",
+    "folder",
+    "file"
+   ],
+   "schemaBytes": 2893
+  },
+  {
+   "id": "cabinet.drives.GetItemsContent",
+   "title": "Cabinet: get items content drives",
+   "description": "Get content for the navigation property items from drives\n\nAlso: document, upload, download, attachment, storage.",
+   "properties": [
+    "drive-id",
+    "driveItem-id"
+   ],
+   "required": [
+    "drive-id",
+    "driveItem-id"
+   ],
+   "schemaBytes": 292
+  },
+  {
+   "id": "cabinet.drives.drive.items.driveItem.search",
+   "title": "Cabinet: search drive item",
+   "description": "Invoke function search\n\nAlso: document, upload, download, attachment, storage.",
+   "properties": [
+    "drive-id",
+    "driveItem-id",
+    "q",
+    "top",
+    "search",
+    "filter",
+    "select",
+    "orderby"
+   ],
+   "required": [
+    "drive-id",
+    "driveItem-id",
+    "q"
+   ],
+   "schemaBytes": 2791
+  },
+  {
+   "id": "cabinet.drives.GetRoot",
+   "title": "Cabinet: get root drives",
+   "description": "Get a driveItem resource\n\nAlso: document, upload, download, attachment, storage.",
+   "properties": [
+    "drive-id",
+    "select"
+   ],
+   "required": [
+    "drive-id"
+   ],
+   "schemaBytes": 919
+  },
+  {
+   "id": "cabinet.me.GetDrive",
+   "title": "Cabinet: get drive me",
+   "description": "Get Drive\n\nAlso: document, upload, download, attachment, storage.",
+   "properties": [
+    "select"
+   ],
+   "required": [],
+   "schemaBytes": 550
+  },
+  {
+   "id": "taskpad.me.todo.ListLists",
+   "title": "Taskpad: list lists todo",
+   "description": "List lists\n\nAlso: todo, reminder, checklist.",
+   "properties": [
+    "top",
+    "search",
+    "filter",
+    "orderby",
+    "select"
+   ],
+   "required": [],
+   "schemaBytes": 1204
+  },
+  {
+   "id": "taskpad.me.todo.CreateLists",
+   "title": "Taskpad: create lists todo",
+   "description": "Create todoTaskList\n\nAlso: todo, reminder, checklist.",
+   "properties": [
+    "displayName"
+   ],
+   "required": [
+    "displayName"
+   ],
+   "schemaBytes": 209
+  },
+  {
+   "id": "taskpad.me.todo.lists.ListTasks",
+   "title": "Taskpad: list tasks lists",
+   "description": "List tasks\n\nAlso: todo, reminder, checklist.",
+   "properties": [
+    "todoTaskList-id",
+    "top",
+    "search",
+    "filter",
+    "orderby",
+    "select"
+   ],
+   "required": [
+    "todoTaskList-id"
+   ],
+   "schemaBytes": 1989
+  },
+  {
+   "id": "taskpad.me.todo.lists.CreateTasks",
+   "title": "Taskpad: create tasks lists",
+   "description": "Create todoTask\n\nAlso: todo, reminder, checklist.",
+   "properties": [
+    "todoTaskList-id",
+    "title",
+    "body",
+    "dueDateTime",
+    "reminderDateTime",
+    "importance",
+    "status",
+    "categories"
+   ],
+   "required": [
+    "todoTaskList-id",
+    "title",
+    "body",
+    "dueDateTime",
+    "reminderDateTime",
+    "importance",
+    "status",
+    "categories"
+   ],
+   "schemaBytes": 2767
+  },
+  {
+   "id": "taskpad.me.todo.lists.GetTasks",
+   "title": "Taskpad: get tasks lists",
+   "description": "Get tasks from me\n\nAlso: todo, reminder, checklist.",
+   "properties": [
+    "todoTaskList-id",
+    "todoTask-id",
+    "select"
+   ],
+   "required": [
+    "todoTaskList-id",
+    "todoTask-id"
+   ],
+   "schemaBytes": 845
+  },
+  {
+   "id": "taskpad.me.todo.lists.UpdateTasks",
+   "title": "Taskpad: update tasks lists",
+   "description": "Update the navigation property tasks in me\n\nAlso: todo, reminder, checklist.",
+   "properties": [
+    "todoTaskList-id",
+    "todoTask-id",
+    "title",
+    "body",
+    "dueDateTime",
+    "reminderDateTime",
+    "importance",
+    "status",
+    "categories"
+   ],
+   "required": [
+    "todoTaskList-id",
+    "todoTask-id",
+    "title",
+    "body",
+    "dueDateTime",
+    "reminderDateTime",
+    "importance",
+    "status",
+    "categories"
+   ],
+   "schemaBytes": 2879
+  },
+  {
+   "id": "taskpad.me.todo.lists.DeleteTasks",
+   "title": "Taskpad: delete tasks lists",
+   "description": "Delete navigation property tasks for me\n\nAlso: todo, reminder, checklist.",
+   "properties": [
+    "todoTaskList-id",
+    "todoTask-id",
+    "If-Match"
+   ],
+   "required": [
+    "todoTaskList-id",
+    "todoTask-id"
+   ],
+   "schemaBytes": 392
+  },
+  {
+   "id": "ledger.List_all_DraftPayment_for_User_MonetaryAccount",
+   "title": "Ledger: list all draft payment for user monetary account",
+   "description": "Get a listing of all DraftPayments from a given MonetaryAccount.\n\nAlso: bank, payment, balance, transaction, account.",
+   "properties": [
+    "userID",
+    "monetary-accountID"
+   ],
+   "required": [
+    "userID",
+    "monetary-accountID"
+   ],
+   "schemaBytes": 232
+  },
+  {
+   "id": "ledger.CREATE_DraftPayment_for_User_MonetaryAccount",
+   "title": "Ledger: create draft payment for user monetary account",
+   "description": "Create a new DraftPayment.\n\nPrepares a payment without sending it: it waits in the Ledger app until a human approves it, which is the checkpoint a direct payment does not have. Takes `entries`, an array of { amount, counterparty_alias, description } shaped exactly like a direct payment, plus number_of_required_accepts (1 for a personal account).\n\nAlso: bank, balance, transaction.",
+   "properties": [
+    "userID",
+    "monetary-accountID",
+    "status",
+    "entries",
+    "previous_updated_timestamp",
+    "number_of_required_accepts",
+    "schedule"
+   ],
+   "required": [
+    "userID",
+    "monetary-accountID",
+    "entries",
+    "number_of_required_accepts"
+   ],
+   "schemaBytes": 3065
+  },
+  {
+   "id": "ledger.READ_DraftPayment_for_User_MonetaryAccount",
+   "title": "Ledger: read draft payment for user monetary account",
+   "description": "Get a specific DraftPayment.\n\nAlso: bank, payment, balance, transaction, account.",
+   "properties": [
+    "userID",
+    "monetary-accountID",
+    "itemId"
+   ],
+   "required": [
+    "userID",
+    "monetary-accountID",
+    "itemId"
+   ],
+   "schemaBytes": 299
+  },
+  {
+   "id": "ledger.UPDATE_DraftPayment_for_User_MonetaryAccount",
+   "title": "Ledger: update draft payment for user monetary account",
+   "description": "Update a DraftPayment.\n\nChanges a draft that is still pending — status ACCEPTED sends it, REJECTED cancels it. previous_updated_timestamp is required and comes from reading the draft first; it is what stops two callers acting on the same draft. Those two fields are the entire call — Ledger refuses entries and number_of_required_accepts here as superfluous — so changing what a draft pays means rejecting it and creating another.\n\nAlso: bank, payment, balance, transaction, account.",
+   "properties": [
+    "userID",
+    "monetary-accountID",
+    "itemId",
+    "status",
+    "previous_updated_timestamp"
+   ],
+   "required": [
+    "userID",
+    "monetary-accountID",
+    "itemId",
+    "status",
+    "previous_updated_timestamp"
+   ],
+   "schemaBytes": 726
+  },
+  {
+   "id": "ledger.List_all_MonetaryAccount_for_User",
+   "title": "Ledger: list all monetary account for user",
+   "description": "Get a collection of all your MonetaryAccounts.\n\nReturns every account: current, savings, joint, and closed ones. Each is wrapped in a type key (MonetaryAccountBank, MonetaryAccountSavings, …) and the id inside it is the `monetary-accountID` the payment tools take. Check `status` is ACTIVE before paying from one.\n\nAlso: bank, balance, transaction.",
+   "properties": [
+    "userID"
+   ],
+   "required": [
+    "userID"
+   ],
+   "schemaBytes": 141
+  },
+  {
+   "id": "ledger.List_all_Payment_for_User_MonetaryAccount",
+   "title": "Ledger: list all payment for user monetary account",
+   "description": "Get a listing of all Payments performed on a given MonetaryAccount (incoming and outgoing).\n\nNewest first, one page at a time. Ledger pages with `count`, `older_id` and `newer_id` rather than an offset, but its specification does not declare them, so this tool returns the most recent page and no more.\n\nAlso: bank, payment, balance, transaction, account.",
+   "properties": [
+    "userID",
+    "monetary-accountID"
+   ],
+   "required": [
+    "userID",
+    "monetary-accountID"
+   ],
+   "schemaBytes": 232
+  },
+  {
+   "id": "ledger.CREATE_Payment_for_User_MonetaryAccount",
+   "title": "Ledger: create payment for user monetary account",
+   "description": "Create a new Payment.\n\nThis executes immediately and is not reversible. The money leaves the account as soon as Ledger accepts the call — there is no confirmation step, in the app or anywhere else. Use draft-payment instead when a human should see it first. amount is { \"value\": \"10.00\", \"currency\": \"EUR\" } — a decimal string, not a number, and never cents. counterparty_alias is { \"type\": \"IBAN\", \"value\": \"<iban>\", \"name\": \"<account holder>\" }, and for IBAN the name must match the one on the receiving account. type may also be EMAIL or PHONE_NUMBER for another Ledger user.\n\nAlso: bank, balance, transaction.",
+   "properties": [
+    "userID",
+    "monetary-accountID",
+    "amount",
+    "counterparty_alias",
+    "description",
+    "attachment",
+    "merchant_reference",
+    "allow_bunqto"
+   ],
+   "required": [
+    "userID",
+    "monetary-accountID"
+   ],
+   "schemaBytes": 1763
+  },
+  {
+   "id": "ledger.READ_Payment_for_User_MonetaryAccount",
+   "title": "Ledger: read payment for user monetary account",
+   "description": "Get a specific previous Payment.\n\nAlso: bank, balance, transaction, account.",
+   "properties": [
+    "userID",
+    "monetary-accountID",
+    "itemId"
+   ],
+   "required": [
+    "userID",
+    "monetary-accountID",
+    "itemId"
+   ],
+   "schemaBytes": 299
+  },
+  {
+   "id": "ledger.List_all_PaymentBatch_for_User_MonetaryAccount",
+   "title": "Ledger: list all payment batch for user monetary account",
+   "description": "Return all the payment batches for a monetary account.\n\nAlso: bank, balance, transaction.",
+   "properties": [
+    "userID",
+    "monetary-accountID"
+   ],
+   "required": [
+    "userID",
+    "monetary-accountID"
+   ],
+   "schemaBytes": 232
+  },
+  {
+   "id": "ledger.CREATE_PaymentBatch_for_User_MonetaryAccount",
+   "title": "Ledger: create payment batch for user monetary account",
+   "description": "Create a payment batch by sending an array of single payment objects, that will become part of the batch.\n\nUp to 350 payments in one call. Executes immediately, like a direct payment, and is all-or-nothing: Ledger rejects the whole batch if any entry is invalid. `payments` must be an ARRAY of { amount, counterparty_alias, description } objects, each shaped exactly like a direct payment — Ledger's specification declares the field as an object rather than an array, which is wrong, so the schema here cannot tell you that and this line has to.\n\nAlso: bank, balance, transaction, account.",
+   "properties": [
+    "userID",
+    "monetary-accountID",
+    "payments"
+   ],
+   "required": [
+    "userID",
+    "monetary-accountID"
+   ],
+   "schemaBytes": 486
+  },
+  {
+   "id": "ledger.List_all_User",
+   "title": "Ledger: list all user",
+   "description": "Get a collection of all available users.\n\nCall this first. Every other Ledger tool is addressed under a userID, and this is the only thing that reports it.\n\nAlso: bank, payment, balance, transaction, account.",
+   "properties": [],
+   "required": [],
+   "schemaBytes": 62
+  },
+  {
+   "id": "lanes_memory.entry",
+   "title": "Memory entry",
+   "description": "One stored memory entry, addressed by its id.",
+   "properties": [],
+   "required": [],
+   "schemaBytes": 2
+  },
+  {
+   "id": "lanes_memory.get",
+   "title": "Read a memory entry",
+   "description": "Return one entry by id. The resource lanes-memory://entry/{id} is the same content; this exists for clients that do not read resources.",
+   "properties": [],
+   "required": [],
+   "schemaBytes": 157
+  },
+  {
+   "id": "lanes_memory.search",
+   "title": "Search memory",
+   "description": "Find entries whose title, tags, or body contain the query. Case-insensitive substring matching, not ranked relevance.",
+   "properties": [],
+   "required": [],
+   "schemaBytes": 718
+  },
+  {
+   "id": "lanes_memory.write",
+   "title": "Store a memory entry",
+   "description": "Create or replace an entry. Deliberately a separate capability from reading: an instruction written here is served to every later session, so an agent that only needs to recall should not be granted this.",
+   "properties": [],
+   "required": [],
+   "schemaBytes": 726
+  },
+  {
+   "id": "lanes_memory.forget",
+   "title": "Delete a memory entry",
+   "description": "Remove an entry and its body.",
+   "properties": [],
+   "required": [],
+   "schemaBytes": 157
+  },
+  {
+   "id": "lanes_tasks.task",
+   "title": "Task",
+   "description": "One task, addressed by its id.",
+   "properties": [],
+   "required": [],
+   "schemaBytes": 2
+  },
+  {
+   "id": "lanes_tasks.list",
+   "title": "List tasks",
+   "description": "Tasks the owner has open. Shows in_progress, open and blocked by default — finished, dropped and muted work is excluded unless you name a status, because the question is almost always what is outstanding. Ordered by status, then due date.",
+   "properties": [],
+   "required": [],
+   "schemaBytes": 1595
+  },
+  {
+   "id": "lanes_tasks.get",
+   "title": "Read a task",
+   "description": "Return one task by id, notes included. The resource lanes-tasks://task/{id} is the same content; this exists for clients that do not read resources.",
+   "properties": [],
+   "required": [],
+   "schemaBytes": 157
+  },
+  {
+   "id": "lanes_tasks.add",
+   "title": "Add a task",
+   "description": "Record something to be done. This is where \"remember to…\", \"add a todo\", and \"do not let me forget…\" belong — not memory, which has no way to say a thing is finished.",
+   "properties": [],
+   "required": [],
+   "schemaBytes": 1346
+  },
+  {
+   "id": "lanes_tasks.update",
+   "title": "Change a task",
+   "description": "Change a task in place — most often its status. Marking something done is an update, not a delete: the record of having done it is the useful part. Omitted fields are left as they are.",
+   "properties": [],
+   "required": [],
+   "schemaBytes": 1346
+  },
+  {
+   "id": "lanes_tasks.remove",
+   "title": "Delete a task",
+   "description": "Remove a task and its notes. For something that was finished or decided against, prefer update with status done or dropped — deleting loses the record that it happened.",
+   "properties": [],
+   "required": [],
+   "schemaBytes": 157
+  },
+  {
+   "id": "lanes_assets.file",
+   "title": "Stored file",
+   "description": "One stored file, addressed by its name. Text comes back as text; anything else is described rather than encoded.",
+   "properties": [],
+   "required": [],
+   "schemaBytes": 2
+  },
+  {
+   "id": "lanes_assets.list",
+   "title": "List stored files",
+   "description": "Every file kept in this profile, newest first, with its type and size. This is the whole index — an asset carries no description, so what a file is for belongs in memory.",
+   "properties": [],
+   "required": [],
+   "schemaBytes": 612
+  },
+  {
+   "id": "lanes_assets.get",
+   "title": "Read a stored file",
+   "description": "Return a text file's contents. A binary file is described instead — name, type, size, digest — because encoding it here is the cost this provider exists to avoid. The resource lanes-assets://file/{name} is the same content.",
+   "properties": [],
+   "required": [],
+   "schemaBytes": 159
+  },
+  {
+   "id": "lanes_assets.store",
+   "title": "Store a file",
+   "description": "Keep a file in this profile. Name exactly one source — path, url, handle, or data — and the endpoint reads the bytes itself; never base64 a file into this call when any other source will do. Storing under a name that exists replaces it. An attachment sitting in a mailbox cannot be named here: this connection holds no mailbox, so ask the mail connection to send it somewhere it can be reached from.",
+   "properties": [],
+   "required": [],
+   "schemaBytes": 2157
+  },
+  {
+   "id": "lanes_assets.remove",
+   "title": "Delete a stored file",
+   "description": "Remove a file and its bytes. There is no trash.",
+   "properties": [],
+   "required": [],
+   "schemaBytes": 159
+  },
+  {
+   "id": "lanes_entities.entity",
+   "title": "Entity",
+   "description": "One declared entity, addressed by its id.",
+   "properties": [],
+   "required": [],
+   "schemaBytes": 2
+  },
+  {
+   "id": "lanes_entities.find",
+   "title": "Look up an entity",
+   "description": "Find entities by name, alias, address, type, tag, attribute or relationship. All criteria given are combined. Returns every match: exactly one is an answer, several means ask which is meant rather than taking the first, and the order is not a ranking. Call this before using anyone’s address rather than recalling one.",
+   "properties": [],
+   "required": [],
+   "schemaBytes": 2901
+  },
+  {
+   "id": "lanes_entities.get",
+   "title": "Read one entity",
+   "description": "Return one entity by id, with its relationships and everything pointing at it. The resource lanes-entities://entity/{id} is the same content; this exists for clients that do not read resources.",
+   "properties": [],
+   "required": [],
+   "schemaBytes": 157
+  },
+  {
+   "id": "lanes_entities.write",
+   "title": "Declare or update an entity",
+   "description": "Create an entity, or update one that exists. A field you do not supply is left as it is — send attributes: [] to clear them deliberately. Attribute order is preference order: the first of a kind is the default. Separate from reading, because what is written here is used to address messages in every later session.",
+   "properties": [],
+   "required": [],
+   "schemaBytes": 3205
+  },
+  {
+   "id": "lanes_entities.link",
+   "title": "Relate one entity to another",
+   "description": "Add one edge to an entity, leaving everything else on it alone. The edge is written only on the entity it comes from; the reverse direction is derived, so do not also write it the other way. The other end need not exist yet.",
+   "properties": [],
+   "required": [],
+   "schemaBytes": 533
+  },
+  {
+   "id": "lanes_entities.forget",
+   "title": "Remove an entity",
+   "description": "Delete an entity. Edges pointing at it from other entities are left alone and are reported, so nothing else is rewritten behind your back — clean them up deliberately if you mean to.",
+   "properties": [],
+   "required": [],
+   "schemaBytes": 157
+  }
+ ],
+ "queries": [
+  {
+   "query": "latest email in inbox",
+   "expect": [
+    "postbox.users.messages.list",
+    "mailhub.me.ListMessages"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "last email received",
+   "expect": [
+    "postbox.users.messages.list",
+    "mailhub.me.ListMessages"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "read my most recent mail",
+   "expect": [
+    "postbox.users.messages.list",
+    "mailhub.me.ListMessages"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "unread messages",
+   "expect": [
+    "postbox.users.messages.list",
+    "mailhub.me.ListMessages"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "search my email for an invoice",
+   "expect": [
+    "postbox.users.messages.list",
+    "mailhub.me.ListMessages"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "conversation threads in my mailbox",
+   "expect": [
+    "postbox.users.threads.list"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "drafts i have not sent",
+   "expect": [
+    "postbox.users.drafts.list"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "what mail folders do i have",
+   "expect": [
+    "mailhub.me.ListMailFolders",
+    "postbox.users.labels.list"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "my email filters",
+   "expect": [
+    "postbox.users.settings.filters.list"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "what is my own email address",
+   "expect": [
+    "postbox.users.getProfile"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "list the attachments on a message",
+   "expect": [
+    "mailhub.me.messages.ListAttachments"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "download an attachment from an email",
+   "expect": [
+    "postbox.users.messages.attachments.get",
+    "mailhub.me.messages.GetAttachments"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "send an email",
+   "expect": [
+    "mailhub.me.sendMail",
+    "postbox.users.drafts.send"
+   ],
+   "kind": "write"
+  },
+  {
+   "query": "move a message to the trash",
+   "expect": [
+    "postbox.users.messages.trash"
+   ],
+   "kind": "write"
+  },
+  {
+   "query": "mark an email as read",
+   "expect": [
+    "postbox.users.messages.modify"
+   ],
+   "kind": "write"
+  },
+  {
+   "query": "what meetings do i have",
+   "expect": [
+    "agenda.events.list",
+    "daybook.me.ListEvents",
+    "daybook.me.ListCalendarView"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "what is on my calendar today",
+   "expect": [
+    "agenda.events.list",
+    "daybook.me.ListCalendarView",
+    "daybook.me.ListEvents"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "when am i free this week",
+   "expect": [
+    "agenda.freebusy.query"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "list my calendars",
+   "expect": [
+    "agenda.calendarList.list",
+    "daybook.me.ListCalendars"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "occurrences of a repeating event",
+   "expect": [
+    "agenda.events.instances"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "schedule an appointment",
+   "expect": [
+    "agenda.events.insert",
+    "daybook.me.CreateEvents"
+   ],
+   "kind": "write"
+  },
+  {
+   "query": "cancel a meeting",
+   "expect": [
+    "agenda.events.delete",
+    "daybook.me.DeleteEvents"
+   ],
+   "kind": "write"
+  },
+  {
+   "query": "find a document",
+   "expect": [
+    "filestore.files.list",
+    "cabinet.drives.drive.items.driveItem.search"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "search my files",
+   "expect": [
+    "filestore.files.list",
+    "cabinet.drives.drive.items.driveItem.search"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "download a file",
+   "expect": [
+    "filestore.files.get",
+    "cabinet.drives.GetItemsContent"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "export a document as pdf",
+   "expect": [
+    "filestore.files.export"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "who has access to this file",
+   "expect": [
+    "filestore.permissions.list"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "what is inside this folder",
+   "expect": [
+    "cabinet.drives.items.ListChildren"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "how much storage do i have left",
+   "expect": [
+    "filestore.about.get",
+    "cabinet.me.GetDrive"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "share a file with someone",
+   "expect": [
+    "filestore.permissions.create"
+   ],
+   "kind": "write"
+  },
+  {
+   "query": "upload a file",
+   "expect": [
+    "filestore.files.create",
+    "cabinet.drives.items.CreateChildren"
+   ],
+   "kind": "write"
+  },
+  {
+   "query": "my todo list",
+   "expect": [
+    "checklist.tasks.tasks.list",
+    "taskpad.me.todo.lists.ListTasks",
+    "lanes_tasks.list"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "what am i supposed to be doing",
+   "expect": [
+    "checklist.tasks.tasks.list",
+    "taskpad.me.todo.lists.ListTasks",
+    "lanes_tasks.list"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "what task lists exist",
+   "expect": [
+    "checklist.tasks.tasklists.list",
+    "taskpad.me.todo.ListLists"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "add a reminder",
+   "expect": [
+    "checklist.tasks.tasks.insert",
+    "taskpad.me.todo.lists.CreateTasks",
+    "lanes_tasks.add"
+   ],
+   "kind": "write"
+  },
+  {
+   "query": "mark a task done",
+   "expect": [
+    "checklist.tasks.tasks.patch",
+    "taskpad.me.todo.lists.UpdateTasks",
+    "lanes_tasks.update"
+   ],
+   "kind": "write"
+  },
+  {
+   "query": "look up a contact",
+   "expect": [
+    "rolodex.people.people.searchContacts",
+    "cardfile.me.ListContacts"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "find someones postal address",
+   "expect": [
+    "rolodex.people.people.searchContacts",
+    "cardfile.me.ListContacts",
+    "lanes_entities.find"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "people i have corresponded with but never saved",
+   "expect": [
+    "rolodex.people.otherContacts.search"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "which address book folders are there",
+   "expect": [
+    "cardfile.me.ListContactFolders"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "read a spreadsheet",
+   "expect": [
+    "gridwork.spreadsheets.values.get",
+    "gridwork.spreadsheets.get"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "values from several ranges at once",
+   "expect": [
+    "gridwork.spreadsheets.values.batchGet"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "read a written document",
+   "expect": [
+    "scribe.documents.get"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "add a row to a spreadsheet",
+   "expect": [
+    "gridwork.spreadsheets.values.append"
+   ],
+   "kind": "write"
+  },
+  {
+   "query": "empty a range of cells",
+   "expect": [
+    "gridwork.spreadsheets.values.clear"
+   ],
+   "kind": "write"
+  },
+  {
+   "query": "recent messages in a channel",
+   "expect": [
+    "chatter.list_messages"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "pinned messages",
+   "expect": [
+    "chatter.list_pins"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "which servers am i in",
+   "expect": [
+    "chatter.list_my_guilds"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "who am i signed in as",
+   "expect": [
+    "chatter.get_my_user",
+    "forumly.whoami"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "post to a channel",
+   "expect": [
+    "chatter.create_message"
+   ],
+   "kind": "write"
+  },
+  {
+   "query": "start a thread from a message",
+   "expect": [
+    "chatter.create_thread_from_message"
+   ],
+   "kind": "write"
+  },
+  {
+   "query": "top posts in a community",
+   "expect": [
+    "forumly.list_posts"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "search the forum",
+   "expect": [
+    "forumly.search"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "the rules of a community",
+   "expect": [
+    "forumly.get_rules"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "communities i follow",
+   "expect": [
+    "forumly.list_my_subreddits"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "upvote something",
+   "expect": [
+    "forumly.vote"
+   ],
+   "kind": "write"
+  },
+  {
+   "query": "my account balance",
+   "expect": [
+    "ledger.List_all_MonetaryAccount_for_User"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "recent transactions",
+   "expect": [
+    "ledger.List_all_Payment_for_User_MonetaryAccount"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "payments waiting for approval",
+   "expect": [
+    "ledger.List_all_DraftPayment_for_User_MonetaryAccount"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "make a payment",
+   "expect": [
+    "ledger.CREATE_Payment_for_User_MonetaryAccount"
+   ],
+   "kind": "write"
+  },
+  {
+   "query": "what do you remember about me",
+   "expect": [
+    "lanes_memory.search",
+    "lanes_memory.entry"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "files i have stored here",
+   "expect": [
+    "lanes_assets.list",
+    "lanes_assets.file"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "who is this person",
+   "expect": [
+    "lanes_entities.find",
+    "lanes_entities.get"
+   ],
+   "kind": "read"
+  },
+  {
+   "query": "remember this for later",
+   "expect": [
+    "lanes_memory.write"
+   ],
+   "kind": "write"
+  },
+  {
+   "query": "save this file for me",
+   "expect": [
+    "lanes_assets.store"
+   ],
+   "kind": "write"
+  }
+ ]
+}

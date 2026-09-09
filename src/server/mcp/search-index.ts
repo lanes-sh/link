@@ -1,7 +1,8 @@
 import { isTool } from '#connectivity';
 import { z } from 'zod';
-import { toolNameFor } from './naming.ts';
+import { contextBox, reachOf } from './context-box.ts';
 import { sanitizeSchema } from './schema.ts';
+import { type Match, rank, summaryOf } from './ranking.ts';
 import type { MergedCapability } from './visibility.ts';
 
 /**
@@ -16,140 +17,27 @@ import type { MergedCapability } from './visibility.ts';
  * See `search.ts` for what the surface is for and why it exists (ADR-075).
  */
 
-/** How many matches come back with their whole schema attached. */
+/**
+ * How many matches come back with their whole schema attached, when the caller
+ * does not say.
+ *
+ * The caller decides, within bounds, because how many answers are useful is a
+ * property of the question and not of the endpoint. "read my mail" has one
+ * right answer per connected mailbox; "what can you do with a spreadsheet" has
+ * a dozen and a model that has to search again for each is spending a round
+ * trip to learn what one answer could have told it.
+ *
+ * Bounded at both ends. Below one there is no answer; above `MOST` the reply is
+ * a tool list by another name, which is the cost `surface: crunched` was
+ * introduced to avoid.
+ */
 const DETAILED = 5;
+
+/** The most any one answer will explain, whatever the caller asks for. */
+const MOST = 15;
 
 /** How many come back as a line each, after those. */
 const LISTED = 20;
-
-/**
- * Function words, dropped from a *query* and never from the text searched.
- *
- * The narrowing in `rank` requires every term to match, which makes a query's
- * grammar load-bearing: "send an email" asked for `an` as a whole word, matched
- * nothing that also had `send` and `email`, and fell back to the loose ranking
- * it was meant to replace — 93 matches out of 276 on a real endpoint. Removing
- * them is what a BM25 index does implicitly by weighting a term that appears
- * everywhere at nearly nothing; here it has to be explicit, because presence is
- * the test.
- *
- * Function words only. Nothing here can name a capability: `get`, `set`, `list`,
- * `read` and `send` are all verbs a caller means, and `all` is in a real
- * operation id, so none of them belongs on this list however common it is.
- *
- * Only applied where it leaves something behind — a query that is nothing but
- * these keeps them, so "all of it" searches for something rather than for
- * nothing.
- */
-const STOPWORDS = new Set([
-  'a', 'an', 'the', 'this', 'that', 'these', 'those',
-  'i', 'me', 'my', 'mine', 'we', 'our', 'you', 'your', 'it', 'its',
-  'and', 'or', 'but', 'if', 'then', 'than', 'so', 'as',
-  'of', 'to', 'for', 'from', 'in', 'into', 'on', 'at', 'by', 'with', 'about',
-  'is', 'are', 'was', 'be', 'been', 'do', 'does', 'did', 'can', 'could',
-  'would', 'should', 'will', 'shall', 'may', 'might', 'must',
-  'some', 'any', 'each', 'every', 'no', 'not',
-  // Question and request framing. A caller types "what meetings do i have",
-  // and `what` and `have` are as much grammar as `the` is.
-  'what', 'which', 'who', 'whom', 'when', 'where', 'why', 'how',
-  'have', 'has', 'had', 'please', 'want', 'wants', 'need', 'needs', 'let',
-]);
-
-/** The terms a query actually searches on. */
-function queryTerms(query: string): string[] {
-  const all = words(query);
-  const meaningful = all.filter((word) => !STOPWORDS.has(word));
-  return meaningful.length > 0 ? meaningful : all;
-}
-
-/**
- * A word, for matching.
- *
- * Split on everything that separates one in an identifier — `.`, `_`, `-`, and
- * a camelCase boundary — because the terms a caller searches for are words and
- * the text being searched is mostly identifiers. Without the camelCase split,
- * `copyTo` never matches *copy*.
- */
-function words(text: string): string[] {
-  return text
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((word) => word.length > 0);
-}
-
-/**
- * Whether a term is in a word list, allowing for one being a prefix of the other.
- *
- * The cheapest thing that stands in for stemming, and it is needed: a caller
- * types "meetings" and the manifest says "meeting", so exact equality found
- * nothing and the query landed on whatever else shared a word with it. Prefixes
- * cover the endings that actually come up — plurals, `-ing`, `-ed`, `-s` — in
- * both directions, since the query may be the longer or the shorter form.
- *
- * Four characters before a prefix counts, because three would make `get` match
- * `getting` and also `getaway`, and one would make every term match everything.
- * Equality is always enough, so short terms still work as themselves.
- */
-function holds(list: readonly string[], term: string): boolean {
-  return list.some(
-    (word) =>
-      word === term ||
-      (term.length >= 4 && word.startsWith(term)) ||
-      (word.length >= 4 && term.startsWith(word)),
-  );
-}
-
-/** What one capability's title and description are, whichever kind it is. */
-function summaryOf(entry: MergedCapability): { title: string | undefined; description: string } {
-  if (entry.discovered) {
-    return { title: entry.discovered.title, description: entry.discovered.description };
-  }
-
-  const capability = entry.capability;
-  if (!capability || !isTool(capability)) return { title: undefined, description: '' };
-
-  return { title: capability.title, description: capability.description };
-}
-
-/** Whether the search considers this entry at all. */
-function searchable(entry: MergedCapability): boolean {
-  return entry.discovered !== undefined || (!!entry.capability && isTool(entry.capability));
-}
-
-/**
- * How well one entry answers the query — the whole of the ranking.
- *
- * Its own function because two callers have to agree exactly: the search, and
- * the check in front of it that decides whether a miss is worth re-reading the
- * config for. A second reading of "does this match" would make the endpoint
- * reload for queries that then succeed anyway, and skip the reload for the ones
- * that needed it — both silent.
- *
- * Deliberately reads `summaryOf` rather than `shapeOf`: nothing here looks at a
- * schema, and `shapeOf` converts Zod to JSON Schema for every authored
- * capability it is handed.
- */
-function scoreEntry(id: string, entry: MergedCapability, terms: readonly string[]): number {
-  const summary = summaryOf(entry);
-  const name = words(id);
-  const title = words(summary.title ?? '');
-  // The connections block `describeWithConnections` appends is not part of
-  // what this searches — it is identical on every tool, so it would match
-  // every term in it against everything.
-  const description = words(summary.description.split('\n\nAvailable connections')[0] ?? '');
-
-  let score = 0;
-  for (const term of terms) {
-    // The name is worth most: it carries the provider id, which is how a
-    // query naming a vendor finds that vendor's tools at all.
-    if (holds(name, term)) score += 3;
-    else if (holds(title, term)) score += 2;
-    else if (holds(description, term)) score += 1;
-  }
-
-  return score;
-}
 
 /** What one capability's title, description and schema are, whichever kind it is. */
 function shapeOf(entry: MergedCapability): {
@@ -181,84 +69,6 @@ function shapeOf(entry: MergedCapability): {
   return { ...summary, inputSchema };
 }
 
-interface Match {
-  readonly id: string;
-  readonly tool: string;
-  readonly score: number;
-  readonly entry: MergedCapability;
-}
-
-/**
- * Rank the reachable capabilities against a query.
- *
- * Deliberately simple, and the reason is worth stating: a client that defers
- * tool loading already runs BM25 or a regex over the same names and
- * descriptions, locally, with no round trip. This is the fallback for clients
- * that do not, so it needs to be good enough to find the right provider rather
- * than good enough to replace an index. Term presence, weighted by where it
- * appears, and no tie-breaking beyond that.
- *
- * An exact capability id short-circuits, because "give me the schema for
- * `gmail.send_message`" is the second call a model makes after a search and it
- * should not be a search.
- */
-function rank(query: string, merged: Map<string, MergedCapability>): Match[] {
-  const exact = merged.get(query.trim());
-  if (exact) {
-    return [{ id: query.trim(), tool: toolNameFor(query.trim()), score: 1, entry: exact }];
-  }
-
-  const terms = queryTerms(query);
-  if (terms.length === 0) return [];
-
-  const matches: Match[] = [];
-
-  for (const [id, entry] of merged) {
-    if (!searchable(entry)) continue;
-
-    const score = scoreEntry(id, entry, terms);
-    if (score > 0) matches.push({ id, tool: toolNameFor(id), score, entry });
-  }
-
-  // Score first, then id, so the order is stable across calls — the same
-  // property `tools/list` is asked for, and for the same reason: a caller
-  // comparing two searches should be comparing results, not orderings.
-  matches.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
-
-  // Everything at least half as good as the best match, and nothing weaker.
-  //
-  // Measured against a real endpoint serving 276 tools, returning everything
-  // that scored at all made the search look useless while behaving correctly:
-  // "create a pull request" reported 213 matches, because `create` and
-  // `request` each appear all over a large surface. The top of the ranking was
-  // right every time — the count and the tail were the lie, and the tail is
-  // twenty tools of noise in the caller's context.
-  //
-  // Two narrower rules were tried and both were worse, which is why the cut is
-  // on the score rather than on how much of the query matched:
-  //
-  //   - *Every term* is brittle. One word the surface does not contain — a typo,
-  //     a product name, "please" — and nothing matches all of them, so the query
-  //     falls back to the loose ranking it was meant to replace.
-  //   - *The most terms* inverts the weighting. "please send a message to
-  //     someone" picked a mail-filter tool over the one that sends, because
-  //     `someone` happened to appear in its description and three weak
-  //     description hits outrank two strong ones.
-  //
-  // The score already carries both halves — more of the query matched is more
-  // points, and the name is worth three times the description — so cutting
-  // relative to the best score keeps a tool named for what was asked and drops
-  // one that merely mentions it. Half is a ratio rather than a threshold
-  // because scores scale with query length, and it leaves a genuine second
-  // candidate in: two strong hits survive beside three.
-  // Strictly more than half, not at least: on a two-term query naming a
-  // provider, a tool matching only the provider half scores exactly half of
-  // one matching both, and "every other tool this provider has" is not an
-  // answer to a query that named a capability too.
-  const best = matches[0]?.score ?? 0;
-  return matches.filter((match) => match.score * 2 > best);
-}
-
 /** Where a capability can be used, as the search reports it. */
 function whereReachable(entry: MergedCapability): string {
   return [...entry.reachable]
@@ -269,23 +79,37 @@ function whereReachable(entry: MergedCapability): string {
 function renderMatches(
   query: string,
   matches: readonly Match[],
-  surface?: 'full' | 'crunched',
+  merged: ReadonlyMap<string, MergedCapability>,
+  options: SearchOptions,
 ): string {
+  const surface = options.surface;
+  const box = contextBox(reachOf(merged), options.accounts ?? new Map());
+
   if (matches.length === 0) {
     return (
-      `Nothing reachable matches "${query}".\n\n` +
-      'This searched every capability this caller can reach, so a miss means it is ' +
-      'not connected or not granted rather than not spelled right. ' +
-      'Call lanes_setup_overview for what is connected and what connecting something else takes.'
+      [
+        `Nothing reachable matches "${query}".`,
+        '',
+        'This searched every capability this caller can reach, so a miss means it is ' +
+          'not connected or not granted rather than not spelled right. ' +
+          'Call lanes_setup_overview for what is connected and what connecting something else takes.',
+        '',
+        // The box is worth more on a miss than on a hit. "Nothing matches" and
+        // "here is everything you can reach" together say whether the query was
+        // wrong or the account is; either alone leaves the model guessing.
+        ...box,
+      ].join('\n')
     );
   }
 
-  const detailed = matches.slice(0, DETAILED);
-  const listed = matches.slice(DETAILED, DETAILED + LISTED);
+  const want = Math.max(1, Math.min(options.limit ?? DETAILED, MOST));
+  const detailed = matches.slice(0, want);
+  const listed = matches.slice(want, want + LISTED);
 
   const lines: string[] = [
     `${matches.length} match${matches.length === 1 ? '' : 'es'} for "${query}".`,
     '',
+    ...box,
     // Why the tool is missing differs by mode, and the reason is the part a
     // model acts on. Under `full` an absent tool means the client's list is
     // stale; under `crunched` it means the endpoint never advertised it and
@@ -351,44 +175,18 @@ function renderMatches(
 export function searchCapabilities(
   query: string,
   merged: Map<string, MergedCapability>,
-  surface?: 'full' | 'crunched',
+  options: SearchOptions = {},
 ): string {
-  return renderMatches(query, rank(query, merged), surface);
+  return renderMatches(query, rank(query, merged), merged, options);
 }
 
-/**
- * Whether anything at all would come back for this query.
- *
- * `searchCapabilities` renders "Nothing reachable matches" from an empty
- * ranking, and that sentence is a claim about what this *instance* holds rather
- * than about the account. An instance that missed the notify (ADR-029) makes it
- * about a provider connected minutes ago, and it is the answer a model acts on:
- * a search is how anything outside the owner layer is found under
- * `surface: crunched`, so a wrong miss here ends the attempt before a call is
- * ever composed.
- *
- * So the endpoint asks this before dispatching a search, and treats a miss the
- * way it already treats a call naming a tool it does not serve — see
- * `Generation.knows`.
- *
- * The same ranking `rank` runs, stopped at the first hit instead of sorted.
- * A query that matches costs a partial pass and no reload; only one that
- * matches nothing pays for the whole pass, and that is the query about to cost
- * a network round trip regardless.
- */
-export function matchesQuery(
-  query: string,
-  merged: ReadonlyMap<string, MergedCapability>,
-): boolean {
-  if (merged.has(query.trim())) return true;
-
-  const terms = queryTerms(query);
-  if (terms.length === 0) return false;
-
-  for (const [id, entry] of merged) {
-    if (!searchable(entry)) continue;
-    if (scoreEntry(id, entry, terms) > 0) return true;
-  }
-
-  return false;
+/** What a caller may decide about an answer, beyond the words they searched for. */
+export interface SearchOptions {
+  /** How much of the reachable surface this endpoint advertises. */
+  readonly surface?: 'full' | 'crunched' | undefined;
+  /** How many matches to explain in full. Bounded by `MOST`. */
+  readonly limit?: number | undefined;
+  /** Account names per profile, so the context box can say which mailbox. */
+  readonly accounts?: ReadonlyMap<string, ReadonlyMap<string, string>> | undefined;
 }
+
