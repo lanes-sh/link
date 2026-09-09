@@ -21,7 +21,7 @@ export { buildMcpServer } from './build.ts';
 export { serverInstructions } from './instructions.ts';
 export { SERVER_NAME, SURFACE_TOOL_NAMES, capabilityIdForToolName, toolNameFor } from './naming.ts';
 export { scopeResourceUri } from './routing.ts';
-export { matchesQuery } from './search-index.ts';
+export { matchesQuery } from './ranking.ts';
 export { sanitizeSchema } from './schema.ts';
 export {
   advertisedNames,
