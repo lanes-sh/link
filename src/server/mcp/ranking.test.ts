@@ -106,3 +106,59 @@ describe('how often the search is right', () => {
     );
   });
 });
+
+/**
+ * When more than one account can answer, both are offered.
+ *
+ * A real endpoint with two mail accounts answered "read most recent email in
+ * mailbox" with exactly one match. The reason was not a ranking error — the
+ * winning capability is *authored*, so its description says "mailbox", "most
+ * recent" and "reading" in those words and matched all five terms, while the
+ * other account's generated description says none of them and matched two. The
+ * gap was wide enough that the relevance cut removed the second account
+ * entirely.
+ *
+ * Which mailbox the caller meant is not something this endpoint knows. Offering
+ * one of them and calling it the answer is worse than offering both and letting
+ * the caller pick, which is what the `reachable:` line on every result is for.
+ */
+describe('when two accounts could answer', () => {
+  const providersIn = (query: string): string[] => [
+    ...new Set(
+      searchCapabilities(query, CORPUS)
+        .split('\n')
+        .flatMap((line) => {
+          const found = line.match(/^capability: (\S+)$/);
+          return found?.[1] ? [found[1].split('.')[0] as string] : [];
+        }),
+    ),
+  ];
+
+  test('a mail question reaches both mailboxes, not just the better-worded one', () => {
+    const answered = providersIn('read most recent email in mailbox');
+
+    expect(answered).toContain('postbox');
+    expect(answered).toContain('mailhub');
+  });
+
+  /**
+   * Breadth before depth: every provider that matched is offered before any
+   * provider gets a second slot. Otherwise the better-worded account fills the
+   * answer with three of its own operations and the other never appears.
+   */
+  test('each account is offered before any account is offered twice', () => {
+    const ids = searchCapabilities('latest email in inbox', CORPUS)
+      .split('\n')
+      .flatMap((line) => {
+        const found = line.match(/^capability: (\S+)$/);
+        return found?.[1] ? [found[1].split('.')[0] as string] : [];
+      });
+
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  /** And a question only one provider can answer still gets depth from it. */
+  test('a question with one plausible provider still gets its detail', () => {
+    expect(providersIn('leads in the pipeline')).toEqual(['acme_crm']);
+  });
+});

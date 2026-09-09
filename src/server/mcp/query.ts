@@ -231,3 +231,16 @@ export const ENUMERATE_MARKERS = new Set(['latest', 'recent', 'newest', 'last', 
 export const AMBIGUOUS_VERBS = new Set(['schedule', 'book', 'draft', 'reply', 'forward', 'share', 'invite']);
 /** The verbs that take something away, as distinct from the ones that add. */
 export const DESTRUCTIVE_VERBS = new Set(['delete', 'remove', 'trash', 'clear', 'archive', 'untrash']);
+
+/**
+ * Whether a capability only reads, as its own name says.
+ *
+ * The same reading `fit` uses to order results, exposed so a caller can ask for
+ * it outright. `readOnly: true` is a filter on the answer and never a claim
+ * about authority: policy decides what may be called, and a hint about
+ * behaviour cannot grant or withhold anything.
+ */
+export function reads(id: string): boolean {
+  const rest = id.split('.').slice(1);
+  return actionOf(rest.flatMap((segment) => words(segment))) === 'read';
+}

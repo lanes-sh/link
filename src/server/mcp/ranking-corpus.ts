@@ -142,10 +142,19 @@ export const CORPUS: Map<string, MergedCapability> = new Map([
     ['pages.retrieve', 'retrieve pages', 'Retrieves a page object.'],
     ['blocks.children.list', 'list block children', 'Returns a paginated array of child block objects.'],
   ]),
+  // An *authored* capability, whose description is written rather than generated
+  // — so it says "mailbox", "most recent" and "reading" in those words, where a
+  // vendored one says none of them. That asymmetry is what made a real endpoint
+  // answer a two-account question with one account.
   ...provider('mailhub', 'Mailhub', MAIL, [
     ['listMessages', 'list messages', 'Get the messages in the signed-in user’s mailbox.'],
     ['getMessage', 'get message', 'Retrieve the properties and relationships of a message object.'],
     ['sendMail', 'send mail', 'Send the message specified in the request body.'],
+    [
+      'search_messages',
+      'search messages',
+      'Search a mailbox and return message summaries, most recent first. Reading does not mark anything as read.',
+    ],
   ]),
   // A provider nobody has heard of, whose vocabulary nothing else shares.
   ...provider('acme_crm', 'Acme CRM', ['customer', 'lead', 'deal', 'pipeline'], [
@@ -164,17 +173,22 @@ export const CORPUS: Map<string, MergedCapability> = new Map([
 export const QUERIES: readonly { query: string; expect: string | readonly string[]; note?: string }[] = [
   {
     query: 'latest email in inbox',
+    // Three capabilities can honestly answer this and one of them is *better*
+    // than the two list operations: an authored `search_messages` says it
+    // returns summaries most recent first, which is the question. Accepting it
+    // is not widening the goalposts — it is the right answer arriving.
+    //
     // Two mail accounts are connected and the query names neither, so which
     // vendor answers is genuinely undetermined — the search returns both with
     // their accounts named, and the caller picks. What is *not* undetermined is
     // the operation: enumerating a mailbox, never fetching one message by an id
     // the caller does not have. Asserting the vendor here would be asserting a
     // preference the endpoint has no basis for.
-    expect: ['postbox.users.messages.list', 'mailhub.listMessages'],
+    expect: ['mailhub.search_messages', 'postbox.users.messages.list', 'mailhub.listMessages'],
     note: 'the query that started this',
   },
-  { query: 'last email received', expect: ['postbox.users.messages.list', 'mailhub.listMessages'] },
-  { query: 'read my most recent mail', expect: ['postbox.users.messages.list', 'mailhub.listMessages'] },
+  { query: 'last email received', expect: ['mailhub.search_messages', 'postbox.users.messages.list', 'mailhub.listMessages'] },
+  { query: 'read my most recent mail', expect: ['mailhub.search_messages', 'postbox.users.messages.list', 'mailhub.listMessages'] },
   { query: 'send an email', expect: ['postbox.send_message', 'mailhub.sendMail'] },
   { query: 'archive a message', expect: 'postbox.users.messages.modify', note: 'reachable only through the hint text' },
   { query: 'latest release', expect: 'forge.get_latest_release', note: 'must survive the fix for "latest email"' },

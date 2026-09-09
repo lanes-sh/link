@@ -263,3 +263,58 @@ describe('what comes back', () => {
     expect(capabilities[0]?.reachable[0]?.profile).toBe('personal');
   });
 });
+
+/**
+ * What an answer says about where a call can go.
+ *
+ * Every routing argument this endpoint takes is a profile and a connection, and
+ * a caller holding a capability id still has to find both before it can use
+ * one. That was its own round trip: on the exchange this work began with,
+ * `lanes_setup_overview` was the second of seven calls, asked before the search
+ * that found anything.
+ *
+ * It is a short, fixed list the search already knows, so it goes at the top of
+ * every answer — including the answer that found nothing, which is exactly when
+ * a caller most needs to know what *is* reachable.
+ */
+describe('the accounts an answer names', () => {
+  const accounts = new Map([
+    ['personal', new Map([['vendor_mail.main', 'ada.lovelace@example.com']])],
+    ['work', new Map([['vendor_chat.team', 'ada-lovelace']])],
+  ]);
+
+  test('every profile and account is named above the matches', () => {
+    const answer = searchCapabilities('spreadsheet', surface, undefined, {}, accounts);
+
+    expect(answer).toContain('Reachable from here');
+    expect(answer).toContain('personal');
+    expect(answer).toContain('vendor_mail.main — ada.lovelace@example.com');
+    expect(answer).toContain('work');
+    expect(answer).toContain('vendor_chat.team — ada-lovelace');
+    // Above the matches, so a caller reading top-down has the routing before
+    // the thing being routed.
+    expect(answer.indexOf('Reachable from here')).toBeLessThan(answer.indexOf('capability:'));
+  });
+
+  test('a miss names them too, which is when it matters most', () => {
+    const answer = searchCapabilities('nothing here at all', surface, undefined, {}, accounts);
+
+    expect(answer).toContain('Nothing reachable matches');
+    expect(answer).toContain('vendor_mail.main — ada.lovelace@example.com');
+  });
+
+  test('an endpoint with nothing connected says nothing rather than an empty box', () => {
+    expect(searchCapabilities('spreadsheet', surface, undefined, {}, new Map())).not.toContain(
+      'Reachable from here',
+    );
+  });
+
+  test('the structured copy carries the same list', () => {
+    const { reachable } = searchResults('spreadsheet', surface, {}, accounts);
+
+    expect(reachable).toEqual([
+      { profile: 'personal', connections: [{ connection: 'vendor_mail.main', account: 'ada.lovelace@example.com' }] },
+      { profile: 'work', connections: [{ connection: 'vendor_chat.team', account: 'ada-lovelace' }] },
+    ]);
+  });
+});

@@ -80,20 +80,18 @@ import {
  * How much each term narrows the field — IDF, and the fix for the whole failure.
  *
  * `withKeywords` appends a provider's vocabulary to every one of its
- * capabilities, identically. That is what makes Gmail findable at all, and it is
- * also why "latest email in inbox" scored all eight Gmail tools the same: `email`
- * and `inbox` matched the tail on every one of them, so the only thing left to
- * separate them was `localeCompare`, and `drafts` sorts before `messages`.
+ * capabilities, identically — which is what makes the provider findable, and
+ * also why every one of a mail provider's tools scored the same on "latest
+ * email in inbox", leaving `localeCompare` to pick, and `drafts` sorts before
+ * `messages`.
  *
- * A term matching every candidate carries no information about which candidate
- * to pick. That is Spärck Jones' 1972 observation and it is what every ranking
- * function since has been built on. Weighting by it means the shared tail still
- * finds the provider — it just stops deciding *which* of that provider's tools
- * wins, which was never something it could know.
+ * A term matching every candidate says nothing about which to pick: Spärck
+ * Jones, 1972. Weighting by it lets the shared tail keep finding the provider
+ * while it stops deciding which of that provider's tools wins.
  *
- * Floored rather than decayed to nothing: a word every candidate shares is
- * uninformative, not wrong, and zeroing it would let one incidental match on a
- * rare word outrank a tool that matched the whole query.
+ * Floored rather than decayed to nothing, because such a word is uninformative
+ * rather than wrong — zeroing it would let one incidental match on a rare word
+ * outrank a tool that answered the whole query.
  */
 function inverseFrequency(
   terms: readonly string[],
@@ -113,17 +111,14 @@ function inverseFrequency(
 /**
  * The ordering score: the same fields, weighted by what each term is worth.
  *
- * Two things differ from `scoreEntry`, and both are deliberate. Whether an entry
- * matches at all is still that function's answer and only that function's — this
- * one runs over entries already known to match, so it cannot promote a miss.
+ * Whether an entry matches at all is still `scoreEntry`'s answer and only its:
+ * this runs over entries already known to match, so it cannot promote a miss.
  *
- * The restriction is the second: **an inferred term matches descriptions only.**
- * A synonym is a claim about a domain's vocabulary, and a domain's vocabulary is
- * what descriptions carry — `withKeywords` puts it there on purpose. Names are
- * the vendor's own precise identifiers, and letting an inferred word match one
- * is where every wrong answer came from: expanding "email" reached `sendMail`
- * and `outlook_mail` by their spelling, so a query asking to *read* the newest
- * mail ranked the tool that *sends* it, twice over.
+ * What differs is that an inferred term is weighed as the inference it is. It
+ * may name the operation, and scores below a typed hit when it does; it may not
+ * name the *vendor*, which is where the wrong answers came from — expanding
+ * "email" reached `sendMail` and `outlook_mail` by their spelling, so a query
+ * to *read* the newest mail ranked the tool that *sends* it, twice over.
  */
 function weighted(
   id: string,
@@ -173,19 +168,14 @@ function weighted(
               : 0;
 
     // For an inferred term only, a word that *is* it outweighs one that merely
-    // starts with it.
+    // starts with it. `holds` cannot draw this line and should not — as the
+    // match test it has to find "meeting" from "meetings" — but between two
+    // otherwise identical candidates exactness is the last honest signal:
+    // *todo* expands to *task*, which is `tasks.list` exactly and
+    // `tasklists.list` only in its first four letters.
     //
-    // `holds` cannot draw this line and should not: as the match test it has to
-    // be generous, because "meetings" must find "meeting". But when the term was
-    // inferred rather than typed, and two candidates are otherwise identical,
-    // exactness is the last honest signal left — "my todo list" expands *todo*
-    // to *task*, which is exactly the word in `tasks.list` and merely the first
-    // four letters of `tasklists.list`.
-    //
-    // Confined to inferred terms because applying it to typed ones rewarded the
-    // wrong thing: *latest* is exactly a word in `get_latest_release`, and
-    // giving that extra credit put a release-notes tool back on top of a mail
-    // query — the original failure, returning by the other door.
+    // Typed terms are excluded because crediting them rewarded the wrong thing:
+    // *latest* is exactly a word in `get_latest_release`.
     const strength = !inferred || exactly(fields.name, term) || exactly(fields.title, term) ? 1 : 0.8;
     score += hit * strength * (specificity.get(term) ?? 1) * confidence;
     if (hit > 0 && !inferred) matched++;
@@ -205,8 +195,13 @@ function weighted(
   // one product name, one "please", and nothing matches at all. Scaling by the
   // fraction covered keeps a partial match in the running and puts the tool that
   // answers more of the question above it.
+  //
+  // The floor was raised from 0.4 to 0.25 when a second mail account joined the
+  // fixture. A gentler curve let the release tool — one term of three, and that
+  // term only in its name — sit above the *other mailbox* on a mail question.
+  // Answering more of what was asked has to count for more than that.
   const coverage = typedTerms === 0 ? 1 : matched / typedTerms;
-  return score * (0.4 + 0.6 * coverage);
+  return score * (0.25 + 0.75 * coverage);
 }
 
 /**
@@ -270,19 +265,6 @@ function fit(
 }
 
 /** One capability, with how well it answered and enough to render it. */
-/**
- * Whether a capability only reads, as its own name says.
- *
- * The same reading `fit` uses to order results, exposed so a caller can ask for
- * it outright. `readOnly: true` is a filter on the answer and never a claim
- * about authority: policy decides what may be called, and a hint about
- * behaviour cannot grant or withhold anything.
- */
-export function reads(id: string): boolean {
-  const rest = id.split('.').slice(1);
-  return actionOf(rest.flatMap((segment) => words(segment))) === 'read';
-}
-
 export interface Match {
   readonly id: string;
   readonly tool: string;
@@ -298,6 +280,12 @@ export function rank(query: string, merged: Map<string, MergedCapability>): Matc
 
   const terms = queryTerms(query);
   if (terms.length === 0) return [];
+
+  // Every provider id in the reachable set, as words, so a query naming one can
+  // be told from a query that does not.
+  const providers = new Set(
+    [...merged.keys()].flatMap((id) => words(id.split('.')[0] ?? '')),
+  );
 
   const candidates: { id: string; entry: MergedCapability; base: number }[] = [];
   for (const [id, entry] of merged) {
@@ -377,6 +365,28 @@ export function rank(query: string, merged: Map<string, MergedCapability>): Matc
   // provider, a tool matching only the provider half scores exactly half of
   // one matching both, and "every other tool this provider has" is not an
   // answer to a query that named a capability too.
+  //
+  // **Half was too strict once the scoring got better at separating things.**
+  // A real endpoint with two mail accounts answered "read most recent email in
+  // mailbox" with one match. The iCloud capability is authored, so its
+  // description says *mailbox*, *most recent* and *reading* in those words and
+  // it matched all five terms; Gmail's generated description says none of them
+  // and matched two. The gap was wide enough that the better answer cut the
+  // other account out of the reply entirely — and which mail account the caller
+  // meant is not something this endpoint knows.
+  //
+  // An eighth keeps the sibling in and still drops the tail the cut exists for.
+  // Measured rather than chosen: a quarter and a sixth both still answered
+  // "read my most recent mail" with one account.
+  // How hard to cut depends on whether the caller named a vendor.
+  //
+  // "vendor_chat" is a question about one provider, and answering it with a
+  // neighbour's tools is not an answer at all — so a query that names a
+  // provider still cuts at half. A query that names none may well be about
+  // several: two mail accounts both answer "read most recent email", and which
+  // one was meant is not something this endpoint knows.
+  const named = terms.some((term) => providers.has(term));
+  const ratio = named ? 2 : 8;
   const best = matches[0]?.score ?? 0;
-  return matches.filter((match) => match.score * 2 > best);
+  return matches.filter((match) => match.score * ratio > best);
 }

@@ -1,8 +1,9 @@
 import { isTool } from '#connectivity';
 import { z } from 'zod';
 import { toolNameFor } from './naming.ts';
-import { queryTerms } from './query.ts';
-import { type Match, rank, reads } from './ranking.ts';
+import { queryTerms, reads } from './query.ts';
+import { type Match, rank } from './ranking.ts';
+import { afford, type Accounts, DEFAULT, renderMatches } from './render.ts';
 import { sanitizeSchema } from './schema.ts';
 import { scoreEntry, searchable, summaryOf } from './searchable.ts';
 import type { MergedCapability } from './visibility.ts';
@@ -42,7 +43,7 @@ const MOST = 10;
 const FEWEST = 1;
 
 /** What one capability's title, description and schema are, whichever kind it is. */
-function shapeOf(entry: MergedCapability): {
+export function shapeOf(entry: MergedCapability): {
   title: string | undefined;
   description: string;
   inputSchema: Record<string, unknown>;
@@ -73,116 +74,6 @@ function shapeOf(entry: MergedCapability): {
 
 
 
-/** Where a capability can be used, as the search reports it. */
-function whereReachable(entry: MergedCapability): string {
-  return [...entry.reachable]
-    .map(([profile, connections]) => `${profile}: ${connections.join(', ')}`)
-    .join(' | ');
-}
-
-function renderMatches(
-  query: string,
-  matches: readonly Match[],
-  surface: 'full' | 'crunched' | undefined,
-  limit: number,
-): string {
-  if (matches.length === 0) {
-    return (
-      `Nothing reachable matches "${query}".\n\n` +
-      'This searched every capability this caller can reach, so a miss means it is ' +
-      'not connected or not granted rather than not spelled right. ' +
-      'Call lanes_setup_overview for what is connected and what connecting something else takes.'
-    );
-  }
-
-  const { detailed, omitted } = afford(matches, limit);
-
-  const lines: string[] = [
-    `${matches.length} match${matches.length === 1 ? '' : 'es'} for "${query}".`,
-    '',
-    // Why the tool is missing differs by mode, and the reason is the part a
-    // model acts on. Under `full` an absent tool means the client's list is
-    // stale; under `crunched` it means the endpoint never advertised it and
-    // never will, so telling the model to prefer a named tool would be telling
-    // it to wait for something that is not coming.
-    surface === 'crunched'
-      ? 'This endpoint advertises a small surface on purpose: the owner layer and these two ' +
-        'tools. Everything below is reachable through lanes_tools_call and will not appear in ' +
-        'your tool list, so call it with the capability id and the arguments shown.'
-      : 'Each one is invocable two ways. Prefer the named tool if your tool list has it; ' +
-        'use lanes_tools_call if it does not — which is the case when this endpoint ' +
-        'gained a connection after your client last read its tool list.',
-    '',
-  ];
-
-  for (const match of detailed) {
-    // The wire name is the address under `full`. Under `crunched` it names no
-    // tool the client can call, so the id — which is what `lanes_tools_call`
-    // takes — leads instead.
-    lines.push(`## ${surface === 'crunched' ? match.id : match.tool}`);
-    const shape = shapeOf(match.entry);
-    if (shape.title) lines.push(`${shape.title}`);
-    lines.push('');
-    lines.push(shape.description.split('\n\nAvailable connections')[0] ?? '');
-    lines.push('');
-    lines.push(`capability: ${match.id}`);
-    lines.push(`reachable:  ${whereReachable(match.entry)}`);
-    lines.push('');
-    lines.push('arguments (JSON Schema — `profile` and `connection` are added by this endpoint):');
-    lines.push('```json');
-    lines.push(JSON.stringify(shape.inputSchema, null, 2));
-    lines.push('```');
-    lines.push('');
-  }
-
-  // What is left is *counted*, never listed.
-  //
-  // The list used to run to twenty ids with no schemas under the line "Search
-  // again with a capability id for one of these to get its arguments" — which
-  // is an instruction to spend another round trip, printed twenty times. On the
-  // endpoint this work started from it was reached on the query that mattered:
-  // the capability that reads a mailbox was in that tail, so answering "what is
-  // the last email" cost two searches before the first call.
-  //
-  // Everything above is complete enough to invoke. Anything below it is a
-  // narrower query away, and saying so once is enough.
-  if (omitted > 0) {
-    lines.push(
-      `${omitted} further match${omitted === 1 ? '' : 'es'} scored lower and are not shown. ` +
-        'Narrow the query, or raise `limit`, if none of the above is what you meant.',
-    );
-  }
-
-  return lines.join('\n');
-}
-
-/**
- * How many matches this answer can afford to explain properly.
- *
- * Spends the budget on whole entries rather than trimming every entry to fit:
- * a schema with its properties removed does not cost less, it costs the same
- * and buys nothing, because the caller still cannot compose the call. Better
- * three capabilities the caller can invoke than eight they must ask about.
- */
-function afford(
-  matches: readonly Match[],
-  limit: number,
-): { detailed: Match[]; omitted: number } {
-  const ceiling = Math.max(FEWEST, Math.min(limit, MOST));
-  const detailed: Match[] = [];
-  let spent = 0;
-
-  for (const match of matches) {
-    if (detailed.length >= ceiling) break;
-    const cost = JSON.stringify(shapeOf(match.entry).inputSchema).length;
-    if (detailed.length >= FEWEST && spent + cost > BUDGET) break;
-    detailed.push(match);
-    spent += cost;
-  }
-
-  return { detailed, omitted: matches.length - detailed.length };
-}
-
 /**
  * Search, rendered.
  *
@@ -194,8 +85,15 @@ export function searchCapabilities(
   merged: Map<string, MergedCapability>,
   surface?: 'full' | 'crunched',
   filters: Filters = {},
+  accounts?: Accounts,
 ): string {
-  return renderMatches(query, select(query, merged, filters), surface, filters.limit ?? DEFAULT);
+  return renderMatches(
+    query,
+    select(query, merged, filters),
+    surface,
+    filters.limit ?? DEFAULT,
+    accounts,
+  );
 }
 
 /**
@@ -212,9 +110,11 @@ export function searchResults(
   query: string,
   merged: Map<string, MergedCapability>,
   filters: Filters = {},
+  accounts?: Accounts,
 ): {
   query: string;
   matched: number;
+  reachable: { profile: string; connections: { connection: string; account: string }[] }[];
   capabilities: {
     capability: string;
     tool: string;
@@ -230,6 +130,12 @@ export function searchResults(
   return {
     query,
     matched: matches.length,
+    // The same box the prose carries, as data. A caller building the next call
+    // needs a profile and a connection for it, and this is where both are.
+    reachable: [...(accounts ?? new Map())].map(([profile, connections]) => ({
+      profile,
+      connections: [...connections].map(([connection, account]) => ({ connection, account })),
+    })),
     capabilities: detailed.map((match) => {
       const shape = shapeOf(match.entry);
       return {
@@ -284,9 +190,6 @@ export const SEARCH_RESULT = {
           }),
         ),
 };
-
-/** How many matches an answer explains when the caller does not say. */
-const DEFAULT = 3;
 
 /**
  * What a caller may narrow a search by, beyond the words.

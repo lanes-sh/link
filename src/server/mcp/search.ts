@@ -11,7 +11,12 @@ import {
 import { expandIfReferences, sibling } from './expand-result.ts';
 import { validate } from './validate.ts';
 import { SURFACE_TOOL_NAMES, toolNameFor } from './naming.ts';
-import { mergeCapabilities, type BuildServerOptions, type MergedCapability } from './visibility.ts';
+import {
+  accountsByProfile,
+  mergeCapabilities,
+  type BuildServerOptions,
+  type MergedCapability,
+} from './visibility.ts';
 
 /**
  * The two tools whose names never change.
@@ -98,14 +103,10 @@ export function registerSearchSurface(
         idempotentHint: true,
         openWorldHint: false,
       },
-      // What the structured half of the answer looks like.
-      //
       // Declared because the answer is already structured and a client is
-      // entitled to validate it — the specification says a server MUST conform
-      // to an output schema it publishes, and says nothing about one that
-      // publishes structured content with no schema to check it against, which
-      // is what this was doing. It also documents the shape for a client
-      // building the next call, which is the only reason a search result exists.
+      // entitled to validate it: the specification says a server MUST conform to
+      // an output schema it publishes, and has nothing to say about one
+      // returning structured content with no schema to check it against.
       outputSchema: SEARCH_RESULT,
       description:
         'Find capabilities by keyword and get their argument schemas. ' +
@@ -153,17 +154,19 @@ export function registerSearchSurface(
     }) => {
       const { query, ...rest } = input;
       const filters: Filters = rest;
-      const structured = searchResults(query, merged, filters);
+      const accounts = accountsByProfile(options);
+      const structured = searchResults(query, merged, filters, accounts);
 
       // Both, deliberately. The text is what a model reads; the structured copy
-      // is what a client can act on without a regular expression, and a search
-      // result exists to become the next call. The spec asks for the serialized
-      // form in a text block as well for clients that predate it, and here the
-      // prose is more useful than the JSON would be, so the prose is what goes
-      // there.
+      // is what a client acts on without a regular expression. The spec asks for
+      // a serialized form in the text block too, and here the prose is the more
+      // useful thing to put there.
       return {
         content: [
-          { type: 'text' as const, text: searchCapabilities(query, merged, options.surface, filters) },
+          {
+            type: 'text' as const,
+            text: searchCapabilities(query, merged, options.surface, filters, accounts),
+          },
         ],
         structuredContent: structured as unknown as Record<string, unknown>,
       };
