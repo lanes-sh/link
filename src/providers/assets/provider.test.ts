@@ -381,6 +381,34 @@ describe('holding a file for a later call', () => {
     });
   });
 
+  test('the name given here decides the type, as it does when storing', async () => {
+    // Found against a live endpoint, not by a test: `filename` is a sibling of
+    // `source`, so the resolver never saw it and guessed the type from nothing.
+    // A .txt arriving as application/octet-stream is a file that downloads
+    // instead of opening.
+    const { staged, harness } = staging();
+
+    const result = await harness.invoke('stage', {
+      source: { data: Buffer.from('hello').toString('base64') },
+      filename: 'draft.txt',
+    });
+
+    expect(JSON.parse(textOf(result))['content_type']).toBe('text/plain');
+    expect(staged.get('stg_0')?.contentType).toBe('text/plain');
+  });
+
+  test('an explicit content_type still wins over the name', async () => {
+    const { harness } = staging();
+
+    const result = await harness.invoke('stage', {
+      source: { data: Buffer.from('hello').toString('base64') },
+      filename: 'draft.txt',
+      content_type: 'text/markdown',
+    });
+
+    expect(JSON.parse(textOf(result))['content_type']).toBe('text/markdown');
+  });
+
   test('an endpoint with no staging area refuses legibly rather than throwing', async () => {
     const result = await harnessFor(assetsProvider).invoke('stage', {
       source: { data: Buffer.from('hello').toString('base64') },

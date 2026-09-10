@@ -64,7 +64,18 @@ export function stageCapability(): ToolCapability<typeof schema> {
         };
       }
 
-      const [resolved] = await resolveAttachments([input.source], {
+      // Folded into the source rather than applied to the result. `filename` and
+      // `content_type` are siblings of `source` because that reads better than
+      // burying them inside it, but the resolver is where a name turns into a
+      // type — overriding afterwards left a `.txt` as octet-stream, because the
+      // type had already been guessed from a name the resolver never saw.
+      const source = {
+        ...input.source,
+        ...(input.filename ? { filename: input.filename } : {}),
+        ...(input.content_type ? { content_type: input.content_type } : {}),
+      };
+
+      const [resolved] = await resolveAttachments([source], {
         maxTotalBytes: MAX_STAGED_BYTES,
         storage: context.storage,
         shared: context.attachments,
@@ -72,8 +83,7 @@ export function stageCapability(): ToolCapability<typeof schema> {
       });
       if (!resolved) throw new Error('source named no file.');
 
-      const filename = input.filename ?? resolved.filename;
-      const contentType = input.content_type ?? resolved.contentType;
+      const { filename, contentType } = resolved;
 
       const receipt = await context.attachments.stage({
         bytes: resolved.bytes,
@@ -86,7 +96,7 @@ export function stageCapability(): ToolCapability<typeof schema> {
       // own disk, which is what makes "what entered this endpoint" answerable.
       context.audit.annotate({
         handle: receipt.handle,
-        ...receiptFor({ ...resolved, filename, contentType }),
+        ...receiptFor(resolved),
         origin: resolved.origin,
         expires_at: new Date(receipt.expiresAt).toISOString(),
       });
