@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { workspaceYaml } from '#profile/testing.ts';
 import { assertGrantsResolve, loadProfileConfig, readConnections } from '#profile';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -203,6 +203,52 @@ describe('createProfile', () => {
     await createProfile('personal', { targets: ['local'] });
 
     await expect(createProfile('personal', { targets: ['local'] })).rejects.toThrow(/already exists/);
+  });
+
+  /**
+   * The leftover, not the error — issue #219.
+   *
+   * A name the contract does not accept used to be written and *then* parsed
+   * back, so the command reported a failure and left a profile behind that
+   * nothing in the CLI could remove: `remove` and `doctor --fix` both resolve
+   * the profile first and failed on the same parse. So the assertion that
+   * matters here is the second one in each test. The first only says the
+   * command still complains.
+   */
+  test('a name the contract refuses leaves nothing behind', async () => {
+    const root = await workspace();
+
+    await expect(createProfile('my-profile', { targets: ['local'] })).rejects.toThrow(
+      /must be lowercase letters/,
+    );
+
+    expect(existsSync(join(root, 'profiles', 'my-profile'))).toBe(false);
+    expect((await readProfiles('local')).profiles).toEqual([]);
+  });
+
+  test('a refused name does not bring a workspace into existence', async () => {
+    // The sibling of the seeding test above, and the reason the guard is the
+    // first statement in `createProfile` rather than the line before the write:
+    // on a bare directory this command writes `workspaces.yaml` and
+    // `connections.yaml` before it gets anywhere near the profile, and a name
+    // that cannot be used should not leave either of them.
+    const root = await mkdtemp(join(tmpdir(), 'lanes-link-refused-'));
+    roots.push(root);
+    process.env['LANES_LINK_HOME'] = root;
+
+    await expect(createProfile('My.Profile', { targets: ['local'] })).rejects.toThrow(
+      /must be lowercase letters/,
+    );
+
+    expect(await readdir(root)).toEqual([]);
+  });
+
+  test('names the corrected name and the workspace it was asked for', async () => {
+    await workspace();
+
+    await expect(createProfile('my-profile', { targets: ['local'] })).rejects.toThrow(
+      'lanes link profile add my_profile --workspace local',
+    );
   });
 });
 
