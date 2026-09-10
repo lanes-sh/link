@@ -74,6 +74,10 @@ members: []
       // This fake declares no bundles, so nothing here reads-only. What is
       // under test is grants, and the read/write split does not enter into it.
       expandBundle: () => [],
+      // Nor a manifest, so no capability here declares a compact projection.
+      // Same reason: what a filled-in list asks the provider for is not what
+      // this file is about.
+      manifest: () => undefined,
     },
     policy: toPolicyDocument(config),
   } as unknown as ProfileRuntime;

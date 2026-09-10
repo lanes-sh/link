@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { credentialRefForConnection, defineProvider } from './index.ts';
+import { credentialRefForConnection, defineProvider, providerManifestSchema } from './index.ts';
 
 /**
  * Where a credential lives, which used to have two answers.
@@ -371,5 +371,36 @@ describe('connector headers may not carry the credential', () => {
         auth: { kind: 'bearer' },
       }),
     ).not.toThrow();
+  });
+});
+
+describe('a compact projection', () => {
+  const base = {
+    id: 'vendor_mail',
+    name: 'Vendor Mail',
+    connector: { kind: 'http' as const, base_url: 'https://api.example.com', openapi: '/tmp/x.json' },
+  };
+
+  test('is per capability, and holds the arguments a vendor takes', () => {
+    const manifest = providerManifestSchema.parse({
+      ...base,
+      compact: { 'messages.get': { format: 'metadata', metadataHeaders: ['From', 'Subject'] } },
+    });
+
+    expect(manifest.compact?.['messages.get']).toEqual({
+      format: 'metadata',
+      metadataHeaders: ['From', 'Subject'],
+    });
+  });
+
+  test('is optional, because most providers have nothing to say here', () => {
+    expect(providerManifestSchema.parse(base).compact).toBeUndefined();
+  });
+
+  /** A capability maps to a set of arguments, never to a single value. */
+  test('refuses a scalar where a projection belongs', () => {
+    expect(() =>
+      providerManifestSchema.parse({ ...base, compact: { 'messages.get': 'metadata' } }),
+    ).toThrow();
   });
 });
