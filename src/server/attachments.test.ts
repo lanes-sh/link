@@ -341,3 +341,14 @@ describe('the audit log', () => {
     });
   });
 });
+
+describe('a profile handle is not this route to serve', () => {
+  test('a stg_ handle is refused by its prefix, without a lookup', async () => {
+    const response = await collect(endpoint.server.url, { handle: 'stg_0123456789abcdef' });
+
+    // A prefix rule, not an existence check — so it discloses nothing about what
+    // the profile area holds, and replaces a 404 that reads as "expired".
+    expect(response.status).toBe(400);
+    expect(await response.text()).toMatch(/staged for this profile/);
+  });
+});

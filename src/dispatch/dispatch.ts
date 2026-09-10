@@ -16,6 +16,7 @@ import type {
 import { isToolResult, strategyContextFrom, strategyFor } from '#connectivity';
 import type { Config, ConnectionConfig } from '#profile';
 import { buildProviderContext, createProviderLogger } from './context.ts';
+import { createAttachmentBridge } from './attachments.ts';
 import { fetchStaged, stageAttachment } from './staging.ts';
 import type { FetchStagedRequest, StagedAttachment, StageRequest } from './staging.ts';
 import type { ProviderRegistry } from '#registry';
@@ -257,6 +258,22 @@ export class Dispatcher {
             ? this.#deps.authorizeRequest(providerId, declared.id, outbound)
             : Promise.resolve(outbound);
 
+      // The profile's own two file lookups, bound here because only dispatch may
+      // cross a connection boundary. `allows` is the same `evaluate` this call
+      // already passed, asked a second question — so a caller denied the asset
+      // store cannot reach it through an attachment argument on a send it *is*
+      // allowed to make.
+      const attachments = createAttachmentBridge({
+        storage: this.#deps.storage,
+        grants: config.grants,
+        allows: (capability, connection) =>
+          evaluate(
+            { principal: request.principal.id, capability, connection },
+            this.#deps.policy,
+            this.#deps.floor,
+          ).allowed,
+      });
+
       const providerContext = buildProviderContext({
         manifest: entry.manifest,
         definition: entry.definition,
@@ -276,6 +293,7 @@ export class Dispatcher {
         // honest answer a dispatcher can give for it without knowing what the
         // endpoint is serving.
         profiles: request.principal.profiles ?? [request.principal.profile],
+        attachments,
         ...(entry.manifest.connector.kind === 'local' ? {} : { authorize }),
       });
 

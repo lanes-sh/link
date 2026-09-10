@@ -246,7 +246,7 @@ async function assertDelegatable(
       `Workspace "${target}" is not bound to a Lanes workspace, so it can only delegate to you.\n` +
         '  Add yourself with: lanes link profile members add --me\n' +
         '  To delegate to somebody else, bind the workspace:\n' +
-        `    lanes_workspace: <id>   # in lanes-link.yaml, under workspaces.${target}\n` +
+        `    lanes_workspace: <id>   # in workspaces.yaml, under workspaces.${target}\n` +
         '  Run "lanes auth workspaces" for the ids you belong to.',
     );
   }

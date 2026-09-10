@@ -4,6 +4,7 @@ import { scopeSecrets } from '#secrets';
 import type { RuntimeState } from '#stores/state';
 import type { BlobStore } from '#stores/blobs';
 import { scopeBlobStore } from '#stores/blobs';
+import type { AttachmentBridge } from '#connectivity/mail';
 import type {
   ConnectionInfo,
   Logger,
@@ -133,6 +134,8 @@ export interface BuildContextOptions {
   readonly ownClients?: readonly string[] | undefined;
   /** Every profile the caller may reach. See `ProviderContext.profiles`. */
   readonly profiles: readonly string[];
+  /** The profile's file lookups. See `ProviderContext.attachments`. */
+  readonly attachments?: AttachmentBridge | undefined;
 }
 
 export function buildProviderContext(options: BuildContextOptions): ProviderContext {
@@ -159,6 +162,7 @@ export function buildProviderContext(options: BuildContextOptions): ProviderCont
     log: options.log,
     signal: options.signal,
     ...(options.authorize ? { authorize: options.authorize } : {}),
+    ...(options.attachments ? { attachments: options.attachments } : {}),
   };
 }
 

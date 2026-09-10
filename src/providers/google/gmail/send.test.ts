@@ -25,7 +25,9 @@ interface Call {
 }
 
 /** A harness whose `fetch` records what went out and answers as Gmail would. */
-const sending = (options: { answers?: Record<string, unknown>[] } = {}) => {
+const sending = (
+  options: { answers?: Record<string, unknown>[]; files?: Record<string, Uint8Array> } = {},
+) => {
   const calls: Call[] = [];
   const answers = [...(options.answers ?? [])];
 
@@ -44,9 +46,18 @@ const sending = (options: { answers?: Record<string, unknown>[] } = {}) => {
     }) as never,
   });
 
+  const files = options.files ?? {};
   const harness = harnessFor(
     defineProviderWithCapabilities({ manifest: manifestOf(gmail), capabilities: [capability] }),
     'main',
+    {
+      attachments: {
+        stage: async () => ({ handle: 'stg_x', sha256: '', expiresAt: 0 }),
+        staged: async () => null,
+        asset: async (name: string) =>
+          files[name] ? { bytes: files[name]!, filename: name, contentType: null } : null,
+      },
+    },
   );
 
   return { calls, harness };
@@ -532,5 +543,44 @@ describe('when Gmail refuses', () => {
     const text = (result.content[0] as { text: string }).text;
     expect(text).toContain('400');
     expect(text).toContain('Invalid to header');
+  });
+});
+
+describe('a file this profile keeps', () => {
+  test('is attached by name, and the log records the asset store as its origin', async () => {
+    const { calls, harness } = sending({
+      files: { 'invoice-2026.pdf': new Uint8Array([1, 2, 3, 4]) },
+    });
+
+    const result = await harness.invoke('send_message', {
+      to: ['sam@example.com'],
+      subject: 'Invoice',
+      text: 'Attached.',
+      attachments: [{ asset: 'invoice-2026.pdf' }],
+    });
+
+    expect(rawOf(calls[0]!)).toMatch(
+      /Content-Disposition: attachment; filename="?invoice-2026\.pdf"?/,
+    );
+    // A receipt, never the bytes — and the log says which store it came out of.
+    expect(parsed(result)['attachments']).toMatchObject([
+      { filename: 'invoice-2026.pdf', bytes: 4 },
+    ]);
+    expect(harness.annotations()).toMatchObject({
+      attachments: [{ filename: 'invoice-2026.pdf', origin: 'asset:invoice-2026.pdf' }],
+    });
+  });
+
+  test('a name this profile does not keep refuses instead of sending an empty file', async () => {
+    const { calls, harness } = sending();
+
+    const result = await harness.invoke('send_message', {
+      to: ['sam@example.com'],
+      subject: 'Invoice',
+      attachments: [{ asset: 'gone.pdf' }],
+    });
+
+    expect(JSON.stringify(result)).toMatch(/no asset .*gone\.pdf/);
+    expect(calls).toHaveLength(0);
   });
 });

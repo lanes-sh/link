@@ -113,7 +113,7 @@ instance:
 # This file says nothing about where it runs, and that is the point.
 #
 # A profile lives in exactly one workspace, and that workspace declares its own
-# adapters, once, in lanes-link.yaml beside the profiles/ directory (ADR-052).
+# adapters, once, in workspaces.yaml beside the profiles/ directory (ADR-052).
 # Moving this profile somewhere else is copying the file there.
 #
 #     lanes link status --profile ${profile} --workspace <name>

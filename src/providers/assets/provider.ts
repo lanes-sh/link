@@ -15,6 +15,7 @@ import {
   humanBytes,
   isTextual,
 } from './store.ts';
+import { stageCapability } from './stage.ts';
 
 /**
  * `assets` — files the owner wants kept.
@@ -48,12 +49,18 @@ import {
  * offered a route the handler never had. The description above now says so, and
  * the refusal in `#connectivity/mail` names what does work instead.
  *
- * The reason it cannot is real rather than incidental. A staged handle is scoped to `<provider>/<connection>`
- * (`#dispatch`'s `stageAttachment`), so a handle minted under `assets/main` is
- * deliberately unresolvable from `gmail/main` — bridging the two means crossing
- * the isolation every provider relies on, and that belongs in dispatch if it
- * belongs anywhere. `lanes link attach <file> --connection <provider>.<account>`
- * already prints a handle the mail tools accept.
+ * Mailbox → this store is still not done here, and for the same reason: a staged
+ * handle is scoped to `<provider>/<connection>` (`#dispatch`'s
+ * `stageAttachment`), so one minted under `gmail/main` is deliberately
+ * unresolvable from here.
+ *
+ * What has changed is the other direction. `stage` and the `asset` source do
+ * cross that boundary, built in `#dispatch` — which is exactly where the earlier
+ * version of this paragraph said such a thing would belong if it belonged
+ * anywhere. The crossing is narrow on purpose: only bytes the caller supplied,
+ * or bytes this profile already owns, ever reach the shared area. A mailbox
+ * attachment still stages under a connection-scoped `att_` handle, and nothing
+ * promotes one, so the direction that is closed stays closed.
  */
 
 const DEFAULT_LIMIT = 30;
@@ -93,7 +100,7 @@ export const assetsProvider: ProviderDefinition = defineLocalProvider({
       name: 'write',
       description: 'Store and delete files.',
       oauth_scopes: [],
-      capabilities: ['store', 'remove'],
+      capabilities: ['store', 'stage', 'remove'],
     },
   ],
 
@@ -218,10 +225,10 @@ export const assetsProvider: ProviderDefinition = defineLocalProvider({
       name: 'store',
       title: 'Store a file',
       description:
-        'Keep a file in this profile. Name exactly one source — path, url, handle, or data — and the endpoint reads the bytes itself; never base64 a file into this call when any other source will do. Storing under a name that exists replaces it. An attachment sitting in a mailbox cannot be named here: this connection holds no mailbox, so ask the mail connection to send it somewhere it can be reached from.',
+        'Keep a file in this profile, permanently and by name. Name exactly one source — path, url, handle, asset, or data — and the endpoint reads the bytes itself. Storing under a name that exists replaces it. A stored file attaches to anything afterwards as { "asset": "<name>" }. For a file needed once rather than kept, use stage. An attachment sitting in a mailbox cannot be named here: this connection holds no mailbox, so ask the mail connection to send it somewhere it can be reached from.',
       inputSchema: z.object({
         source: attachmentRefSchema.describe(
-          'Where the bytes come from. Exactly one of path, url, handle, or data. The mailbox sources — message_id and uid — are part of the shared shape but cannot resolve here.',
+          'Where the bytes come from. Exactly one of path, url, handle, asset, or data. The mailbox sources — message_id and uid — are part of the shared shape but cannot resolve here.',
         ),
         name: z
           .string()
@@ -236,6 +243,7 @@ export const assetsProvider: ProviderDefinition = defineLocalProvider({
         const [resolved] = await resolveAttachments([source], {
           maxTotalBytes: MAX_ASSET_BYTES,
           storage: context.storage,
+          shared: context.attachments,
           signal: context.signal,
         });
 
@@ -278,6 +286,8 @@ export const assetsProvider: ProviderDefinition = defineLocalProvider({
         };
       },
     },
+
+    stageCapability(),
 
     {
       kind: 'tool',
@@ -336,8 +346,7 @@ function textOrSummary(
     text:
       `${name} — ${contentType}, ${humanBytes(bytes.byteLength)}, sha256 ${digestOf(bytes)}.\n` +
       `Its contents are ${why}, so they are not returned. ` +
-      'To attach it to something, ask the owner for a handle: ' +
-      'lanes link attach <file> --connection <provider>.<account>',
+      'To attach it to something, name it as { "asset": "<name>" }.',
   };
 }
 

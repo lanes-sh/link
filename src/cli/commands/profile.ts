@@ -372,7 +372,7 @@ export function profileDefault(name: string | undefined): never {
     'lanes link profile default was removed.\n' +
       '  Nothing reads default_profile any more — pass --profile on every command:\n' +
       `    lanes link status --profile ${name ?? '<name>'} --workspace <name>\n` +
-      '  If the key is still in lanes-link.yaml it is inert, and safe to delete.',
+      '  If the key is still in workspaces.yaml it is inert, and safe to delete.',
   );
 }
 

@@ -1,11 +1,11 @@
 import { createHash } from 'node:crypto';
-import { readFile } from 'node:fs/promises';
 import { z } from 'zod';
 import type { BlobStore } from '#stores/blobs';
 import type { ResolvedAttachment } from './message.ts';
-import { getStaged } from './staging.ts';
-import { fetchFromUrl, type AddressLookup } from './url.ts';
-import { basename, guessContentType } from './content-type.ts';
+import type { StagedFile } from './staging.ts';
+import type { AddressLookup } from './url.ts';
+import { guessContentType } from './content-type.ts';
+import { bytesFor } from './sources.ts';
 
 /**
  * Turning a named attachment into bytes.
@@ -36,7 +36,10 @@ import { basename, guessContentType } from './content-type.ts';
  */
 
 /** The source keys, in the order they are reported when a caller supplies two. */
-const SOURCE_KEYS = ['path', 'url', 'handle', 'message_id', 'uid', 'data'] as const;
+const SOURCE_KEYS = ['path', 'url', 'handle', 'asset', 'message_id', 'uid', 'data'] as const;
+
+/** Which source a reference named. */
+export type SourceKey = (typeof SOURCE_KEYS)[number];
 
 export const attachmentRefSchema = z
   .strictObject({
@@ -45,7 +48,16 @@ export const attachmentRefSchema = z
       .optional()
       .describe('Path to a file on the machine running this endpoint. Read as-is.'),
     url: z.string().optional().describe('HTTPS URL. The endpoint fetches it; you do not.'),
-    handle: z.string().optional().describe('Handle returned by a staged upload.'),
+    handle: z
+      .string()
+      .optional()
+      .describe(
+        'Handle from lanes_assets_stage, an upload to POST /attachments, or a get_attachment.',
+      ),
+    asset: z
+      .string()
+      .optional()
+      .describe('A file this profile keeps by name, as lanes_assets_list reports it.'),
     message_id: z
       .string()
       .optional()
@@ -70,12 +82,14 @@ export const attachmentRefSchema = z
       .string()
       .optional()
       .describe(
-        'Base64 file content, for small files only. Prefer path, url, handle, or message_id — those keep the bytes out of the conversation entirely.',
+        'Base64 file content. Right when the file exists nowhere this endpoint can reach — and then hold it once with lanes_assets_stage and name the handle afterwards, rather than encoding it into every call.',
       ),
     filename: z.string().optional().describe('Overrides the name derived from the source.'),
     content_type: z.string().optional().describe('Overrides the type derived from the source.'),
   })
-  .describe('One attachment, named by exactly one of path, url, handle, message_id, uid, or data.');
+  .describe(
+    'One attachment, named by exactly one of path, url, handle, asset, message_id, uid, or data.',
+  );
 
 export type AttachmentRef = z.infer<typeof attachmentRefSchema>;
 
@@ -120,6 +134,36 @@ export type MailboxAttachmentSource = (reference: {
   readonly contentType: string | null;
 }>;
 
+/**
+ * The two lookups a connection-scoped store cannot serve.
+ *
+ * Both reach past `<provider>/<connection>` to something the *profile* holds, so
+ * neither is built here: dispatch binds them and hands them over on the context,
+ * which is what keeps `#providers` unable to reach another connection on its own.
+ *
+ * What makes the crossing safe is not the plumbing but what may pass through it.
+ * A profile-level handle only ever holds bytes the caller supplied (`data`,
+ * `url`, `path`) or bytes the profile already owns (`asset`) — never bytes read
+ * out of a third party's account. `get_attachment` keeps minting a
+ * connection-scoped handle for exactly that reason, so a mailbox attachment
+ * stays where it landed and nothing promotes it.
+ */
+export interface SharedAttachments {
+  /** A handle staged for the whole profile, not for one connection. */
+  readonly staged?: ((handle: string) => Promise<StagedFile | null>) | undefined;
+  /** A file this profile keeps by name in `lanes_assets`. */
+  readonly asset?: ((name: string) => Promise<StagedFile | null>) | undefined;
+}
+
+/** The same, plus the write half. Only dispatch builds one. */
+export interface AttachmentBridge extends SharedAttachments {
+  stage(input: {
+    readonly bytes: Uint8Array;
+    readonly filename: string;
+    readonly contentType: string;
+  }): Promise<{ readonly handle: string; readonly sha256: string; readonly expiresAt: number }>;
+}
+
 export interface ResolveOptions {
   /**
    * Total raw bytes allowed across every attachment.
@@ -131,6 +175,12 @@ export interface ResolveOptions {
    */
   readonly maxTotalBytes: number;
   readonly storage?: BlobStore | undefined;
+  /**
+   * What the connection-scoped store cannot see. Supplied by dispatch on
+   * `ProviderContext.attachments` and passed straight through — a provider
+   * neither builds one nor can widen the one it is given.
+   */
+  readonly shared?: SharedAttachments | undefined;
   readonly mailbox?: MailboxAttachmentSource | undefined;
   readonly fetch?: typeof globalThis.fetch | undefined;
   readonly addresses?: AddressLookup | undefined;
@@ -203,139 +253,4 @@ async function resolveOne(
     sha256: createHash('sha256').update(found.bytes).digest('hex'),
     origin: found.origin,
   };
-}
-
-interface FoundBytes {
-  readonly bytes: Uint8Array;
-  readonly filename: string | null;
-  readonly contentType: string | null;
-  readonly origin: string;
-}
-
-async function bytesFor(
-  source: (typeof SOURCE_KEYS)[number],
-  ref: AttachmentRef,
-  where: string,
-  options: ResolveOptions,
-): Promise<FoundBytes> {
-  switch (source) {
-    case 'path':
-      return await fromPath(ref.path!, where, options.maxTotalBytes);
-
-    case 'url': {
-      const fetched = await fetchFromUrl({
-        url: ref.url!,
-        maxBytes: options.maxTotalBytes,
-        ...(options.fetch ? { fetch: options.fetch } : {}),
-        ...(options.addresses ? { addresses: options.addresses } : {}),
-        signal: options.signal,
-      });
-      return {
-        bytes: fetched.bytes,
-        filename: fetched.filename ?? basename(new URL(ref.url!).pathname),
-        contentType: fetched.contentType,
-        origin: `url:${ref.url!}`,
-      };
-    }
-
-    case 'handle':
-      return await fromHandle(ref.handle!, where, options.storage);
-
-    case 'message_id':
-    case 'uid': {
-      if (!options.mailbox) {
-        throw new Error(
-          `${where} uses ${source}, which only a mail connection can resolve — this one holds no mailbox. ` +
-            `Name the file with path, url, or handle instead, or ask the mail connection itself to send it somewhere.`,
-        );
-      }
-      const found = await options.mailbox({
-        messageId: ref.message_id,
-        mailbox: ref.mailbox,
-        uid: ref.uid,
-        attachmentId: ref.attachment_id,
-      });
-      return {
-        bytes: found.bytes,
-        filename: found.filename,
-        contentType: found.contentType,
-        origin: source === 'uid' ? `mailbox:${ref.mailbox ?? 'INBOX'}:${ref.uid!}` : `mailbox:${ref.message_id!}`,
-      };
-    }
-
-    case 'data': {
-      const bytes = decodeBase64(ref.data!, where);
-      return { bytes, filename: null, contentType: null, origin: 'inline' };
-    }
-  }
-}
-
-async function fromPath(path: string, where: string, maxBytes: number): Promise<FoundBytes> {
-  let bytes: Uint8Array;
-  try {
-    bytes = new Uint8Array(await readFile(path));
-  } catch (failure) {
-    const code = (failure as { code?: string }).code;
-    if (code === 'ENOENT') throw new Error(`${where}: no file at ${path}.`);
-    if (code === 'EACCES') throw new Error(`${where}: ${path} is not readable by this endpoint.`);
-    if (code === 'EISDIR') throw new Error(`${where}: ${path} is a directory, not a file.`);
-    throw new Error(`${where}: could not read ${path} — ${(failure as Error).message}`);
-  }
-
-  if (bytes.byteLength > maxBytes) {
-    throw new Error(
-      `${where}: ${path} is ${bytes.byteLength} bytes, over the ${maxBytes} byte limit for one message.`,
-    );
-  }
-
-  return {
-    bytes,
-    filename: basename(path),
-    contentType: null,
-    origin: `path:${path}`,
-  };
-}
-
-async function fromHandle(
-  handle: string,
-  where: string,
-  storage: BlobStore | undefined,
-): Promise<FoundBytes> {
-  if (!storage) {
-    throw new Error(`${where} uses a handle, but this provider has no staging store.`);
-  }
-
-  const stored = await getStaged(storage, handle);
-  if (!stored) {
-    throw new Error(
-      `${where}: no staged attachment "${handle}". Handles expire, so stage the file again.`,
-    );
-  }
-
-  return {
-    bytes: stored.bytes,
-    filename: stored.filename,
-    contentType: stored.contentType,
-    origin: `handle:${handle}`,
-  };
-}
-
-function decodeBase64(value: string, where: string): Uint8Array {
-  // Both alphabets, because the two obvious places a caller gets base64 from
-  // disagree: a mail API hands back base64url (RFC 4648 §5) while every
-  // general-purpose encoder emits the standard one. Rejecting the former would
-  // be a correct-looking failure with a corrupt-file outcome.
-  const normalized = value.replaceAll('-', '+').replaceAll('_', '/').replaceAll(/\s+/g, '');
-
-  try {
-    const buffer = Buffer.from(normalized, 'base64');
-    // Buffer.from is lenient and silently drops invalid characters, so a typo
-    // becomes a shorter file rather than an error. Re-encoding and comparing
-    // lengths catches that.
-    const expected = Math.floor((normalized.replace(/=+$/, '').length * 3) / 4);
-    if (buffer.byteLength !== expected) throw new Error('not base64');
-    return new Uint8Array(buffer);
-  } catch {
-    throw new Error(`${where}: data is not valid base64.`);
-  }
 }

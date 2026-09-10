@@ -39,7 +39,7 @@ export function isRemoteWorkspace(root: string): boolean {
 /**
  * The workspace's files.
  *
- * Rooted at the workspace, so every caller addresses `lanes-link.yaml` and
+ * Rooted at the workspace, so every caller addresses `workspaces.yaml` and
  * `profiles/<name>.yaml` by the same relative key whichever backing it has.
  */
 export function workspaceFiles(root: string): BlobStore {

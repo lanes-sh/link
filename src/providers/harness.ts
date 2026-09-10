@@ -1,5 +1,6 @@
 import { createLocalConnector } from '#connectivity/transports';
 import { buildProviderContext } from '#dispatch';
+import type { AttachmentBridge } from '#connectivity/mail';
 import { createMemoryCredentials, createMemoryState } from '#stores/state/testing.ts';
 import { createMemoryBlobStore } from '#stores/blobs/testing.ts';
 import type {
@@ -29,6 +30,14 @@ export interface ProviderHarness {
 export function harnessFor(
   definition: ProviderDefinition,
   connectionId = 'owner',
+  /**
+   * The profile's file lookups, which the real runtime binds in `#dispatch`.
+   *
+   * A stub here rather than the real bridge, deliberately: this harness must not
+   * import `#dispatch`, and a provider only ever sees the two closures anyway.
+   * `src/dispatch/attachments.test.ts` is what tests the real one.
+   */
+  options: { attachments?: AttachmentBridge } = {},
 ): ProviderHarness {
   const annotations: Record<string, unknown> = {};
 
@@ -55,6 +64,7 @@ export function harnessFor(
     // The runtime hands this to any provider that is not `local`, so a provider
     // authoring a capability against its own vendor's API has it here too.
     authorize: async (request) => request,
+    ...(options.attachments ? { attachments: options.attachments } : {}),
   });
 
   const connector = createLocalConnector(definition);
