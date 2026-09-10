@@ -94,12 +94,20 @@ calling*, and there was already exactly one place that answers.
 
 Two things follow, and both are small:
 
-**`/register` and `/token` need CORS.** Every client before this was
-server-side or native — a connector calls both from its own backend, and
-`/authorize` and the callback are top-level navigations that carry no `Origin`.
-A page's `fetch` is not exempt, so without a grant the flow fails at
-registration with an opaque network error. They take `READ_ORIGINS`, the same
-list the reads take, imported rather than restated.
+**The authorization paths already had the CORS they need**, and this is worth
+recording because it was got wrong first. `cors.ts`'s `surfaceOf` has always
+classified them `public` and answered with a wildcard, for a reason stated
+there: they answer without a credential by design, so a wildcard hands a page
+exactly what `curl` already has. A second, *named* grant was written into
+`oauth.ts` for the dashboard's sake, and it was redundant on every bind where
+`corsAware` runs — which overwrote it — and needed on exactly one bind, the
+loopback read listener, which does not run `corsAware` at all. So the listener
+wraps its handler in `corsAware` instead, and there is still one CORS decision
+in the codebase rather than two.
+
+The reads keep their own *named* grant, and the contrast is the point: an
+authorization document is public, while `/state` returns every connection,
+profile and audit entry the workspace holds.
 
 **On loopback the authorization paths ride the TLS read port.** A page on
 `https://lanes.sh` cannot fetch `http://127.0.0.1:7337/register` — mixed

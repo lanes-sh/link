@@ -1,5 +1,6 @@
-import { readRoutes, type ReadDeps } from './routes.ts';
+import { READ_ORIGINS, readRoutes, type ReadDeps } from './routes.ts';
 import { handleAuthorization, isAuthorizationPath, type AuthorizationSurface } from '../oauth.ts';
+import { corsAware } from '../cors.ts';
 
 /**
  * The read surface on loopback: its own port, over TLS (ADR-063).
@@ -29,6 +30,16 @@ import { handleAuthorization, isAuthorizationPath, type AuthorizationSurface } f
  * `OAuthStore` sits behind both, so which port minted a token does not matter
  * to what the token opens — and the MCP listener keeps answering its own copy
  * of these paths for every client already registered against it.
+ *
+ * **Their CORS is `corsAware`'s, not this file's.** `surfaceOf` has always
+ * called the authorization paths `public` and answered them with a wildcard,
+ * for a reason `cors.ts` states: they answer without a credential by design, so
+ * a wildcard hands a page what `curl` already has. Wrapping the handler is
+ * therefore the whole of it — the alternative, a second grant written here, was
+ * tried and is redundant on any bind where `corsAware` runs, which is every
+ * bind but this one. Everything `corsAware` does not classify falls through
+ * untouched, and `readRoutes` answers those with its own *named* grant, because
+ * what they return is the workspace rather than a public document.
  */
 
 export { READ_ORIGINS, type AuditTail, type ReadDeps } from './routes.ts';
@@ -66,13 +77,20 @@ export function serveRead(options: ReadListenerOptions): RunningReadListener {
     // discovers how to authenticate, so requiring a credential to reach the
     // document that says where credentials come from would close the loop it
     // exists to open. `server/index.ts` orders them the same way.
-    fetch: (request) => {
-      const url = new URL(request.url);
-      if (options.authorization && isAuthorizationPath(url.pathname)) {
-        return handleAuthorization(request, options.authorization);
-      }
-      return readRoutes(request, options);
-    },
+    fetch: corsAware(
+      async (request) => {
+        const url = new URL(request.url);
+        if (options.authorization && isAuthorizationPath(url.pathname)) {
+          return await handleAuthorization(request, options.authorization);
+        }
+        return await readRoutes(request, options);
+      },
+      // No credentialed paths: `readRoutes` grants its own, by name. This is
+      // here only so the authorization paths get the `public` treatment they
+      // get everywhere else.
+      [],
+      { allowedOrigins: READ_ORIGINS },
+    ),
   });
 
   return {

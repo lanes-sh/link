@@ -75,6 +75,27 @@ export async function refresh(
     return invalid('invalid_grant', 'That refresh token is unknown or expired.');
   }
 
+  // **A chain that cannot name its holder ends here** (ADR-079). `who` carries
+  // `subject` only when the record has one, so a refresh minted before subjects
+  // existed would rotate into a *new* access token with no subject — which
+  // `IssuedTokenAuthenticator` refuses. The client then sees a `200` from this
+  // endpoint followed by a `401` on every call it makes with what it was just
+  // given, retries the refresh, and gets the same pair again. That presents as
+  // a connector stuck in a loop rather than as one that needs signing in, which
+  // is what happened to the first connector this shipped to.
+  //
+  // Refused here instead, and `invalid_grant` is the right code: it is the one
+  // answer that tells a client to discard the grant and start the authorization
+  // flow again, which is exactly the single step that fixes this.
+  if (record.subject === undefined) {
+    context.log?.warn('refresh token names nobody', { clientId: record.clientId, family: record.family });
+    return invalid(
+      'invalid_grant',
+      'That authorization was granted before this endpoint recorded who a token belongs to. ' +
+        'Sign in again to replace it.',
+    );
+  }
+
   // A spent token presented again used to take its whole family with it, on
   // the reading that a replay is a theft. Against a real connector that was
   // wrong twice over, and ADR-035 has the evidence. Two answers replace it,

@@ -5,8 +5,6 @@ import {
   type OAuthServer,
 } from '#auth';
 import { noticePage } from '#cli/callback-page.ts';
-import { cors } from './read/http.ts';
-import { READ_ORIGINS } from './read/routes.ts';
 
 /**
  * The HTTP surface of the authorization flow.
@@ -96,37 +94,6 @@ export function resourceMetadataUrl(request: Request): string {
   return `${publicOrigin(request)}${PROTECTED_RESOURCE_PATH}`;
 }
 
-/**
- * The two paths a browser client calls with `fetch`, and so the two that need CORS.
- *
- * Until ADR-079 every client here was server-side or native: a connector calls
- * `/register` and `/token` from its own backend, and `/authorize` and the
- * callback are top-level navigations that carry no `Origin` and need no grant.
- * The dashboard is the first client that is a *page*, and a page's `fetch` is
- * subject to the same-origin policy — so without this the flow fails at
- * registration with an opaque network error rather than a refusal.
- *
- * The metadata documents are deliberately not in the set. They are public by
- * design (a client reads them before it holds anything) and are fetched
- * cross-origin without a grant.
- */
-const BROWSER_PATHS: readonly string[] = [REGISTER_PATH, TOKEN_PATH];
-
-/**
- * The origins allowed to drive the flow from a page.
- *
- * The same list the read surface uses, imported rather than restated: the
- * dashboard is the one page that does either of these, so two lists would be
- * two places to add the next origin and one place to forget it.
- */
-function browserGrant(request: Request, path: string): Record<string, string> {
-  if (!BROWSER_PATHS.includes(path)) return {};
-
-  const origin = request.headers.get('origin');
-  const allowed = origin !== null && READ_ORIGINS.includes(origin);
-  return cors(origin, allowed, 'POST, OPTIONS', 'authorization, content-type');
-}
-
 export async function handleAuthorization(
   request: Request,
   surface: AuthorizationSurface,
@@ -135,15 +102,6 @@ export async function handleAuthorization(
   const origin = publicOrigin(request);
   const path = url.pathname;
 
-  // Answered before anything reads the request, because a preflight carries no
-  // body and no credential — that is what it is for.
-  if (request.method === 'OPTIONS' && BROWSER_PATHS.includes(path)) {
-    const grant = browserGrant(request, path);
-    // `cors` returns `Vary: Origin` even on a refusal, so the presence of the
-    // allow header — not of any header — is what says the origin was named.
-    const named = grant['access-control-allow-origin'] !== undefined;
-    return new Response(null, { status: named ? 204 : 403, headers: grant });
-  }
 
   // Both spellings: the bare document, and the one suffixed with the resource's
   // own path, which is what a client probes first when the `401` pointed it
@@ -169,10 +127,7 @@ export async function handleAuthorization(
   if (!server) return new Response('Not found', { status: 404 });
 
   if (path === REGISTER_PATH && request.method === 'POST') {
-    return withHeaders(
-      render(await server.register(await safeJson(request)), request),
-      browserGrant(request, path),
-    );
+    return render(await server.register(await safeJson(request)), request);
   }
 
   // Who this endpoint is, from the point of view of *this* request. Derived
@@ -196,10 +151,7 @@ export async function handleAuthorization(
   }
 
   if (path === TOKEN_PATH && request.method === 'POST') {
-    return withHeaders(
-      render(await server.token(new URLSearchParams(await request.text())), request),
-      browserGrant(request, path),
-    );
+    return render(await server.token(new URLSearchParams(await request.text())), request);
   }
 
   return new Response('Method not allowed', { status: 405 });
@@ -240,24 +192,5 @@ function json(body: unknown, status = 200): Response {
       // and it is the default for a POST anyway.
       'cache-control': 'no-store',
     },
-  });
-}
-
-/**
- * Add headers to a response without rebuilding it.
- *
- * `render` decides status and body; this decides who may read the result. Kept
- * apart so the CORS grant cannot change either — a helper that reconstructed
- * the response would have to know about every `OAuthResult` kind.
- */
-function withHeaders(response: Response, headers: Record<string, string>): Response {
-  if (Object.keys(headers).length === 0) return response;
-
-  const merged = new Headers(response.headers);
-  for (const [name, value] of Object.entries(headers)) merged.set(name, value);
-  return new Response(response.body, {
-    status: response.status,
-    statusText: response.statusText,
-    headers: merged,
   });
 }
