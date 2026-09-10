@@ -8,7 +8,7 @@ import {
   renderOutcome,
   type RemovalOutcome,
   type RunDeps,
-} from './remove.ts';
+} from './perform.ts';
 import { confirmedByName } from './confirm.ts';
 
 /**
@@ -58,11 +58,23 @@ function blobs(keys: string[] = [], failOn?: string): BlobStore & { deleted: str
 const item = (over: Partial<RemovalItem>): RemovalItem =>
   ({ target: 'local', kind: 'secret', id: 'gmail/someone', ...over }) as RemovalItem;
 
-const plan = (items: RemovalItem[]): RemovalPlan => ({
+const plan = (items: RemovalItem[], over: Partial<RemovalPlan> = {}): RemovalPlan => ({
   profile: 'personal',
   items,
   untouched: [],
   warnings: [],
+  unreachable: [],
+  subject: {
+    loaded: true,
+    name: 'personal',
+    assumedName: false,
+    vaultConnection: null,
+    clientIdRef: null,
+    knowledgeRepo: null,
+    unread: [],
+    refusal: null,
+  },
+  ...over,
 });
 
 function deps(over: Partial<RunDeps> = {}): RunDeps & { removedConfig: string[]; cleared: number } {
@@ -215,6 +227,7 @@ const outcome = (over: Partial<RemovalOutcome> = {}): RemovalOutcome => ({
   profile: 'personal',
   results: [{ item: item({ kind: 'secret', id: 'gmail/someone' }), status: 'removed' }],
   survived: 0,
+  unreachable: [],
   ...over,
 });
 
@@ -302,6 +315,48 @@ function prompter(answer: string, interactive = true): Prompter & { asked: strin
     confirm: async () => true,
   };
 }
+
+/**
+ * The exit-code rule, both ways — #219.
+ *
+ * Exit 0 iff every item was removed *and* nothing was unreachable, which is
+ * deliberately not the same as "iff the config parsed". The contract this file
+ * already states is "something is left must not look like success to a script",
+ * and a config that would not load is only a way of *not knowing* whether
+ * something is left.
+ */
+describe('renderOutcome, on a removal whose config would not load', () => {
+  test('a clean degraded run is success, because nothing was left', () => {
+    // The case #219 actually produces: every field reads, so the removal named
+    // everything it could have and left nothing. Reporting failure here would
+    // mean the cleanup script that hit the bug still fails afterwards.
+    const before = process.exitCode;
+    const { out } = captured(() => renderOutcome(outcome()));
+
+    expect(out).toContain('Removed profile');
+    expect(out).not.toContain('Not reachable');
+    expect(process.exitCode).toBe(before);
+  });
+
+  test('something it could not see is not success, and says re-running will not help', () => {
+    const before = process.exitCode;
+    const { out } = captured(() =>
+      renderOutcome(outcome({ unreachable: ['a sealed vault document, if this profile granted one'] })),
+    );
+
+    expect(out).toContain('Not reachable');
+    expect(out).toContain('a sealed vault document');
+
+    // The distinction from a *failed* item, which keeps the config and can be
+    // retried. Here the profile is gone, so the same advice would send somebody
+    // to a command that can no longer help them.
+    expect(out).toContain('Running this again will not find them');
+    expect(out).not.toContain('run the same command again');
+
+    expect(process.exitCode).toBe(1);
+    process.exitCode = before;
+  });
+});
 
 describe('confirmedByName', () => {
   test('--yes proceeds without asking anything', async () => {

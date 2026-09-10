@@ -8,7 +8,7 @@ import {
 } from '#profile';
 import { newConnectionsTemplate } from './config-templates.ts';
 import { ConfigDocument } from './config-edit.ts';
-import { ok, print, style, warn } from './output.ts';
+import { ok, print, reasonOf, style, warn } from './output.ts';
 import { DEFAULT_SURFACES, ensureOwnerLayer, repairLines, repaired } from './config-repair.ts';
 
 /**
@@ -66,23 +66,6 @@ export async function ensureRegistryContract(
   document.setIn(['contract'], contract);
   await document.save();
   return true;
-}
-
-/**
- * The first line of an error that actually says something.
- *
- * `message.split('\n')[0]` was the whole of this, and a `ConfigError` from a
- * schema failure is `<path>:\n  <field>: <reason>` — so the warning rendered as
- * "could not give personal its owner layer: /…/personal.yaml:" and named no
- * reason at all. Seen for real on an upgrade, twice, with nothing after the
- * colon.
- */
-function reasonOf(error: unknown): string {
-  if (!(error instanceof Error)) return String(error);
-
-  const lines = error.message.split('\n').map((line) => line.trim());
-  const said = lines.find((line) => line !== '' && !line.endsWith(':'));
-  return said ?? lines.find((line) => line !== '') ?? error.message;
 }
 
 /** `memory, tasks, assets, skills, vault, setup and entities`, in repair order. */

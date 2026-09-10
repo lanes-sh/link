@@ -249,7 +249,7 @@ export async function removeConnection(
     // the account away from every profile that named it, and a row saying only
     // "gmail.work removed" would leave a reader to work out which agents
     // stopped being able to reach it.
-    await recordConfigChange(runtime.config, root, target, {
+    await recordConfigChange(runtime.config.instance.profile, root, target, {
       capability: 'config.connection.remove',
       scope: target,
       connection: key,

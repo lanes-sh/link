@@ -1,8 +1,7 @@
-import type { SecretStore } from '#secrets';
-import type { BlobStore } from '#stores/blobs';
 import {
   ConfigError,
   WORKSPACE_FILE,
+  loadWorkspaceProfiles,
   openTarget,
   readWorkspace,
   readWorkspaceFile,
@@ -16,219 +15,33 @@ import { terminalPrompter, type Prompter } from '../../prompt.ts';
 import { confirmedByName } from './confirm.ts';
 import { recordConfigChange } from '../../audit-change.ts';
 import { nextAfterEdit, publishProfileEdit } from '../../publish.ts';
-import { announceProfile, emit, fail, ok, print, style } from '../../output.ts';
+import { announceProfile, emit, print, style } from '../../output.ts';
 import {
-  buildRegistryWithWorkspace,
+  locateProfile,
   openBlobStoreFor,
   openSecretStoreFor,
-  resolveProfileOnly,
   type GlobalFlags,
 } from '../../runtime.ts';
-import { loadWorkspaceProfiles } from '#profile';
-import { removalPlan, renderPlan, type RemovalItem, type RemovalPlan } from './removal.ts';
-import { settleDisposition, type Disposition } from './disposition.ts';
+import { executeRemoval, renderOutcome, retryCommand } from './perform.ts';
+import { removalPlan } from './removal.ts';
+import { renderPlan } from './preview.ts';
+import { removalSubject, subjectOf } from './subject.ts';
+import { settleDisposition } from './disposition.ts';
 
 /**
- * Performing a removal, and being honest about the parts that did not happen.
+ * `lanes link profile remove`, and the one thing it must never refuse.
  *
- * Best effort by choice: a target whose project has been deleted must not be
- * able to strand a profile on the machine forever, so one refusal does not stop
- * the rest. The price is real — a deletion that fails leaves a live credential
- * behind — and everything here exists to make that visible rather than quiet.
- */
-
-export interface RemovalResult {
-  readonly item: RemovalItem;
-  /** `kept` is deliberate: not attempted, because something before it failed. */
-  readonly status: 'removed' | 'failed' | 'kept';
-  readonly error?: string;
-  /** The exact command that finishes this one by hand. */
-  readonly retry?: string;
-}
-
-export interface RemovalOutcome {
-  readonly profile: string;
-  readonly results: readonly RemovalResult[];
-  /** How many items are still there. Non-zero means a credential is still live. */
-  readonly survived: number;
-}
-
-export interface RunDeps {
-  openSecrets: (target: string) => Promise<SecretStore>;
-  openBlobs: (target: string, area?: string) => Promise<BlobStore>;
-  removeConfig: (path: string) => Promise<void>;
-  /** The emptied profile directory. A blob delete cannot remove a directory. */
-  removeDirectory: (path: string) => Promise<void>;
-  clearDefaultProfile: () => Promise<void>;
-  retry?: ((item: RemovalItem, cause: string) => string | undefined) | undefined;
-}
-
-const reason = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause));
-
-/**
- * The items that only make sense once everything else is actually gone.
+ * The command resolves the profile by *existence* and reads its config
+ * separately, because until it did, a `profile.yaml` the schema refused could
+ * be listed and never removed: every command that might have taken it away
+ * parsed it first and died on the same error, so the only way out was deleting
+ * the file by hand — or the bucket object, on a deployed workspace (#219).
  *
- * **`file` is in here, and that is the whole of its reason.** It is
- * `rm -rf profiles/<profile>`, and it carries a target rather than `null`, so
- * the original `target === null` test let it run after a failed object — taking
- * the bytes a `--migrate-to` had not managed to copy, and `profile.yaml`, which
- * the sweep deliberately leaves for last. `renderOutcome` then printed "the
- * profile's config was kept, so nothing is stranded" about a directory that no
- * longer existed. Same shape as the defect this file records having shipped
- * once already.
+ * What makes that safe is in `subject.ts`, and it is one property: a field the
+ * file did not yield removes a line from the plan and can never add a wrong
+ * one. The preview says so before anything is confirmed, and anything this
+ * could not see is reported and carried into the exit code.
  */
-const isRecordOfWhereThingsAre = (item: RemovalItem): boolean =>
-  item.kind === 'file' ||
-  (item.target === null && (item.kind === 'config' || item.kind === 'workspace-key'));
-
-export async function executeRemoval(
-  plan: RemovalPlan,
-  deps: RunDeps,
-): Promise<RemovalOutcome> {
-  const results: RemovalResult[] = [];
-  let failed = 0;
-
-  // One store per target, however many items it holds. Opening a Secret
-  // Manager client per secret would turn a tidy removal into a rate limit.
-  const secrets = new Map<string, Promise<SecretStore>>();
-  const blobs = new Map<string, Promise<BlobStore>>();
-
-  const secretStore = (target: string): Promise<SecretStore> => {
-    const existing = secrets.get(target) ?? deps.openSecrets(target);
-    secrets.set(target, existing);
-    return existing;
-  };
-
-  const blobStore = (target: string, area?: string): Promise<BlobStore> => {
-    const key = `${target}:${area ?? ''}`;
-    const existing = blobs.get(key) ?? deps.openBlobs(target, area);
-    blobs.set(key, existing);
-    return existing;
-  };
-
-  for (const item of plan.items) {
-    // The config is the only record of where everything else lives. Deleting it
-    // after a failure would strand precisely the credential that failed: still
-    // live, and nothing left that knows where it is. Keeping it means the retry
-    // is this same command rather than a hand-assembled console session.
-    if (failed > 0 && isRecordOfWhereThingsAre(item)) {
-      results.push({ item, status: 'kept' });
-      continue;
-    }
-
-    try {
-      switch (item.kind) {
-        case 'secret':
-          await (await secretStore(item.target!)).delete(item.id);
-          break;
-
-        case 'blob': {
-          const store = await blobStore(item.target!, item.area);
-
-          // Read across *before* deleting, and verify it landed — the same rule
-          // the contract migrations follow, for the same reason: a copy that
-          // half happened and a source that is already gone is the one state
-          // with nothing to retry from. A collision was resolved while this was
-          // still a plan, so the destination is free.
-          if (item.movedTo !== undefined) {
-            const [area, key] = item.movedTo;
-            const bytes = await store.get(item.id);
-
-            if (bytes !== null) {
-              const into = await blobStore(item.target!, area);
-              await into.put(key, bytes);
-              if ((await into.get(key)) === null) {
-                throw new Error(`${area}/${key} did not read back after being written`);
-              }
-            }
-          }
-
-          await store.delete(item.id);
-          break;
-        }
-
-        case 'config':
-          if (item.target === null) await deps.removeConfig(item.id);
-          else {
-            // `profiles/<name>.yaml` in the target's bucket — outside the
-            // profile's blob tree, so it needs its own area.
-            const [area, ...rest] = item.id.split('/');
-            await (await blobStore(item.target, area)).delete(rest.join('/'));
-          }
-          break;
-
-        case 'workspace-key':
-          await deps.clearDefaultProfile();
-          break;
-
-        case 'file':
-          await deps.removeDirectory(item.id);
-          break;
-      }
-
-      results.push({ item, status: 'removed' });
-    } catch (cause) {
-      const error = reason(cause);
-      const retry = deps.retry?.(item, error);
-      failed += 1;
-      results.push({ item, status: 'failed', error, ...(retry ? { retry } : {}) });
-    }
-  }
-
-  return {
-    profile: plan.profile,
-    results,
-    survived: results.filter((result) => result.status !== 'removed').length,
-  };
-}
-
-/**
- * What happened, and what is still out there.
- *
- * The exit code is the load-bearing part. Best effort means the command can
- * finish having left a live credential behind, and to a script silence is
- * indistinguishable from success — so anything that survived makes this exit
- * non-zero, and names itself with the command that finishes it.
- */
-export function renderOutcome(outcome: RemovalOutcome): void {
-  const removed = outcome.results.filter((result) => result.status === 'removed');
-  const failed = outcome.results.filter((result) => result.status === 'failed');
-  const kept = outcome.results.filter((result) => result.status === 'kept');
-
-  print();
-  if (outcome.survived === 0) {
-    print(ok(`Removed profile ${style.bold(outcome.profile)} — ${removed.length} item(s).`));
-    print();
-    return;
-  }
-
-  print(
-    fail(
-      `Removed ${removed.length} item(s) of profile ${style.bold(outcome.profile)}, and ${failed.length} refused.`,
-    ),
-  );
-  print();
-
-  for (const result of failed) {
-    print(`  ${result.item.id}`);
-    if (result.error) print(style.dim(`    ${result.error}`));
-    if (result.retry) print(style.dim(`    finish it with: ${result.retry}`));
-  }
-  print();
-
-  if (kept.length > 0) {
-    // Said plainly, because the alternative reading — that the profile is
-    // half-gone and needs unpicking by hand — is the one an operator will
-    // assume from a failure report.
-    print(
-      `The profile's config was kept, so nothing is stranded: fix the above and run the same command again.`,
-    );
-    print();
-  }
-
-  // A live credential left behind must not look like success to a script.
-  process.exitCode = 1;
-}
 
 export interface RemoveFlags extends GlobalFlags {
   readonly dryRun?: boolean | undefined;
@@ -251,17 +64,31 @@ export interface RemoveFlags extends GlobalFlags {
  * in the tool.
  */
 export async function removeProfile(name: string, flags: RemoveFlags): Promise<void> {
-  const { selection, config, target } = await resolveProfileOnly({ ...flags, profile: name });
-  announceProfile(selection);
+  // Located, not resolved. Everything up to and including finding the file
+  // throws exactly as it always did — a workspace that is not declared, a
+  // pointer that will not follow, a profile that is not there. Only the *parse*
+  // is allowed to fail softly, and only here. A `try` around the whole
+  // resolution would have read "you typed the wrong workspace" as "this profile
+  // is broken", and `--yes --delete-data` would then have run a removal to
+  // completion somewhere nobody meant.
+  const found = await locateProfile({ ...flags, profile: name });
+  announceProfile(found.selection);
 
-  const root = selection.workspaceRoot;
-  const registry = await buildRegistryWithWorkspace(root);
+  const subject = await removalSubject(found);
+  const target = found.target;
+  const root = found.selection.workspaceRoot;
   const files = workspaceFiles(root);
   const { declared } = await openTarget(root, target);
 
   const prompter = flags.prompter ?? terminalPrompter;
   const someoneToAsk = flags.prompter ? prompter.interactive : process.stdin.isTTY;
-  const disposition = await settleDisposition(name, flags, prompter, someoneToAsk);
+  const disposition = await settleDisposition(
+    name,
+    flags,
+    prompter,
+    someoneToAsk,
+    migrationRefusal(subject.config === null, name, target),
+  );
 
   if (disposition === null) {
     print(style.dim('  cancelled — nothing was removed'));
@@ -280,18 +107,20 @@ export async function removeProfile(name: string, flags: RemoveFlags): Promise<v
     }
   }
 
-  const plan = await removalPlan(config, root, name, registry, {
+  const plan = await removalPlan(subject, root, name, {
     target,
     declared,
     disposition,
     openSecrets: (target) => openSecretStoreFor(root, target),
-    openBlobs: (target, area) => openBlobStoreFor(config, root, target, area),
+    openBlobs: (target, area) => openBlobStoreFor(name, root, target, area),
     readDefaultProfile: async () => (await readWorkspace(root))?.default_profile,
     // What the workspace keeps. The credential store is one file for all of
     // them now, so anything a survivor declares is not this removal's to delete.
+    // Survivors always parse — `loaded` is the ones that did — so the kept set
+    // is exact even when the subject's own file is not.
     survivors: (await loadWorkspaceProfiles(root)).loaded
       .filter((one) => one.profile !== name)
-      .map((one) => one.config),
+      .map((one) => subjectOf(one.config)),
   });
 
   renderPlan(plan);
@@ -306,19 +135,24 @@ export async function removeProfile(name: string, flags: RemoveFlags): Promise<v
 
   const outcome = await executeRemoval(plan, {
     openSecrets: (target) => openSecretStoreFor(root, target),
-    openBlobs: (target, area) => openBlobStoreFor(config, root, target, area),
+    openBlobs: (target, area) => openBlobStoreFor(name, root, target, area),
     removeConfig: async (path) => await files.delete(relativeToRoot(root, path)),
     removeDirectory: async (path) => await rm(workspacePath(root, path), { recursive: true, force: true }),
     clearDefaultProfile: async () => await clearDefault(root),
     retry: retryCommand,
   });
 
-  // Before the render, and against the config loaded above — the profile's file
-  // is gone by now, so a helper that re-read it would find nothing.
-  await recordConfigChange(config, root, target, {
+  // Before the render, and against what was read above — the profile's file is
+  // gone by now, so a helper that re-read it would find nothing. A removal
+  // whose config would not load records the row anyway, without the connection
+  // list it could not read: the removal that most deserves a row is the one
+  // nothing could account for.
+  await recordConfigChange(name, root, target, {
     capability: 'config.profile.remove',
     scope: name,
-    arguments: { connections: config.grants.map((grant) => grant.connection) },
+    arguments: subject.config
+      ? { connections: subject.config.grants.map((grant) => grant.connection) }
+      : { unreadable: subject.refusal ?? 'the config would not load' },
   });
 
   // And the endpoint is told, as it is told about every other config edit
@@ -326,14 +160,24 @@ export async function removeProfile(name: string, flags: RemoveFlags): Promise<v
   // listed at boot, so without this a profile that has been *removed*, with its
   // credentials and its stores deleted, stayed reachable until the revision
   // happened to restart: the operator believing they had revoked something they
-  // had not. Wrapped because the removal has already happened and a failure to
-  // announce it cannot undo it; `publishWorkspace` copies what the local store
-  // has, which no longer includes this profile, so nothing here can put the
-  // file back. A throw is reported as nothing — `renderOutcome` owns the exit
-  // code, derived from what survived on the stores.
+  // had not.
+  //
+  // **A config that will not load today is not a profile that was never
+  // served**, which is the reading that would make skipping this look safe. The
+  // set is built at boot and at `/reload` and at no other time, so a file that
+  // parsed at the last boot is being served right now, from memory, with live
+  // credentials — and this reload is the only thing that drops it before a
+  // restart. So the notify matters *more* here, not less.
+  //
+  // Wrapped because the removal has already happened and a failure to announce
+  // it cannot undo it; `publishWorkspace` copies what the local store has, which
+  // no longer includes this profile, so nothing here can put the file back. A
+  // throw is reported as nothing — `renderOutcome` owns the exit code, derived
+  // from what survived on the stores.
   let published: string | undefined;
   try {
     const resolution = { workspaceRoot: root, profile: name };
+    const config = subject.config ?? undefined;
     published = nextAfterEdit(await publishProfileEdit({ resolution, config, target }));
   } catch {
     // See above.
@@ -367,8 +211,27 @@ async function clearDefault(root: string): Promise<void> {
   await writeWorkspaceFile(workspaceFiles(root), WORKSPACE_FILE, String(document));
 }
 
-/** The command that finishes a refusal by hand, where one can be named. */
-function retryCommand(item: RemovalItem): string | undefined {
-  if (item.kind !== 'secret') return undefined;
-  return `lanes link profile remove <name> --target ${item.target} # or delete ${item.id} in that store`;
+/**
+ * Why a broken profile's bytes will not be moved into a working one.
+ *
+ * Not because the mechanics fail — `migratesAcross` is a key-prefix test and
+ * `resolveCollisions` opens the destination by name, so both work perfectly well
+ * here. It is the asymmetry in what going wrong costs. `--delete-data` fails
+ * toward having deleted less than it should, which is the direction everything
+ * else in this design already leans. `--migrate-to` fails toward putting bytes
+ * nobody could account for into a profile that is currently correct, under a
+ * connection it may not even grant — invisible to every command that reads it,
+ * and with nothing to undo it.
+ */
+function migrationRefusal(degraded: boolean, name: string, target: string): string | undefined {
+  if (!degraded) return undefined;
+
+  return (
+    `"${name}"'s config will not load, so this will not move its bytes into another profile. ` +
+    'Which connection each note sits under is something only that file says — and a note ' +
+    'arriving under a connection the destination does not grant is invisible to every command, ' +
+    'in a profile that is currently correct.\n' +
+    `  See what is there:  lanes link profile remove ${name} --workspace ${target} --dry-run\n` +
+    `  Remove it as it is: lanes link profile remove ${name} --workspace ${target} --delete-data`
+  );
 }

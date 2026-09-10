@@ -61,7 +61,18 @@ export interface PublishOutcome {
  * should read has landed would reload the previous config and report success.
  */
 export async function publishAndNotify(input: {
-  readonly config: Config;
+  /**
+   * Absent where the profile's config would not load (#219).
+   *
+   * `publishWorkspace` never reads it — it copies what the local store holds —
+   * and `notifyReload` wants it only for `localUrl`, the last of three answers
+   * to "where is the endpoint" and the one that only applies when nothing is
+   * recorded as running. So a removal whose config would not parse still
+   * publishes and still notifies a deployed target or a recorded local one,
+   * which is exactly when the notify matters most: the endpoint may be serving
+   * that profile right now from a config that parsed at its last boot.
+   */
+  readonly config?: Config | undefined;
   readonly workspaceRoot: string;
   readonly target: string;
   /** Every profile the edit touched. See `publishWorkspace`. */
@@ -108,7 +119,8 @@ export function publishRuntimeEdit(runtime: Runtime): Promise<PublishOutcome> {
  */
 export async function publishProfileEdit(input: {
   readonly resolution: { readonly workspaceRoot: string; readonly profile: string };
-  readonly config: Config;
+  /** Absent where the profile's config would not load — see `publishAndNotify`. */
+  readonly config?: Config | undefined;
   readonly target: string;
   /** Every profile the edit touched, where it reached more than the one named. */
   readonly touched?: readonly string[] | undefined;
@@ -126,7 +138,7 @@ export async function publishProfileEdit(input: {
 
 /** Ask a running endpoint to re-read its config. Never throws. */
 async function notifyReload(input: {
-  readonly config: Config;
+  readonly config?: Config | undefined;
   readonly workspaceRoot: string;
   readonly target: string;
   /**
@@ -160,7 +172,19 @@ async function notifyReload(input: {
     const { declared } = await openTarget(input.workspaceRoot, input.target);
     const deployed = await deployedUrl(declared.deploy);
     const recorded = deployed ? null : await readEndpointRecord(input.workspaceRoot);
-    const base = deployed ?? recorded?.url ?? localUrl(input.config);
+    const local = input.config ? localUrl(input.config) : null;
+    const base = deployed ?? recorded?.url ?? local;
+
+    // Nothing deployed, nothing recorded, and no config to derive a port from.
+    // There is no endpoint to tell, and saying so is better than guessing at a
+    // port — this is only reachable from a removal whose config would not load.
+    if (base === null) {
+      return {
+        served: false,
+        reason:
+          'nothing is recorded as listening for this workspace, so there is no endpoint to tell',
+      };
+    }
     url = base.replace(/\/mcp$/, '/reload');
   } catch (error) {
     return { served: false, reason: `could not work out where the endpoint is: ${message(error)}` };

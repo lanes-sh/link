@@ -32,11 +32,46 @@ import { createBlobAuditStore } from './adapters/audit-blob.ts';
  * cannot fail a `lanes link start` that was never going to talk to Google.
  */
 
-export interface TargetInput {
+/**
+ * What opening a store needs, without the config it used to be read out of.
+ *
+ * `openStorage` reads exactly one thing off a profile — its *name*, to work out
+ * whose blob root an omitted `area` means. Taking the whole `Config` for that
+ * is what stopped a removal opening the store of a profile whose config will
+ * not parse (#219), because there was no config to hand it and synthesising one
+ * meant inventing a name.
+ *
+ * The narrowing is the one `openSecrets` below already made, for the same
+ * reason it gives: a caller that must work while the file on disk will not
+ * parse cannot be asked for the parsed file. Keep them the same shape.
+ */
+export interface StorageInput {
+  readonly declared: TargetConfig;
+  readonly root: string;
+  readonly target: string;
+  /** Whose blob root an omitted `area` means. */
+  readonly profile: string;
+}
+
+export interface TargetInput extends StorageInput {
+  readonly config: Config;
+}
+
+/**
+ * A `TargetInput` from the two things that used to disagree.
+ *
+ * `profile` and `config.instance.profile` are the same fact written twice, and
+ * the whole value of narrowing `openStorage` is lost if a caller can set them
+ * to different strings. Every construction site goes through here so they
+ * cannot.
+ */
+export function targetInput(input: {
   readonly declared: TargetConfig;
   readonly config: Config;
   readonly root: string;
   readonly target: string;
+}): TargetInput {
+  return { ...input, profile: input.config.instance.profile };
 }
 
 /**
@@ -214,15 +249,15 @@ function parseHeaders(raw: string, ref: string): Record<string, string> {
 }
 
 export async function openStorage(
-  input: TargetInput,
+  input: StorageInput,
   secrets: SecretStore,
 ): Promise<StorageFactory> {
-  const { declared, config, root, target } = input;
+  const { declared, profile, root, target } = input;
 
   switch (declared.storage.adapter) {
     case 'filesystem': {
       const { createFilesystemBlobStore } = await import('./adapters/filesystem.ts');
-      const base = declared.storage.path ?? layout.blobs(config.instance.profile);
+      const base = declared.storage.path ?? layout.blobs(profile);
       return (area) =>
         createFilesystemBlobStore({ root: workspacePath(root, area === undefined ? base : area) });
     }
@@ -240,7 +275,7 @@ export async function openStorage(
 
       const { createGcsBlobStore } = await import('./adapters/gcs.ts');
       const base = prefix ?? '';
-      const root = layout.blobs(config.instance.profile);
+      const root = layout.blobs(profile);
 
       return (area) =>
         createGcsBlobStore({
@@ -270,7 +305,7 @@ export async function openStorage(
 
       const { createS3BlobStore } = await import('./adapters/s3.ts');
       const base = prefix ?? '';
-      const root = layout.blobs(config.instance.profile);
+      const root = layout.blobs(profile);
 
       return (area) =>
         createS3BlobStore({

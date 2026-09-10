@@ -268,8 +268,29 @@ export function vaultRef(declared: TargetConfig | undefined, config: Config): st
   //
   // A `ref` the target states outright still wins: a deployment already sealing
   // under one name has to keep opening it.
-  const connection = soleGrantFor(config, 'lanes_vault') ?? 'main';
-  return declared?.vault?.ref ?? `vault/${config.instance.profile}/${connection}`;
+  return sealedVaultRef(declared, config.instance.profile, soleGrantFor(config, 'lanes_vault'));
+}
+
+/**
+ * The same name, for a caller holding a profile and a connection.
+ *
+ * `vaultRef` above is this with both read off a `Config`, and it delegates
+ * rather than respelling the pattern for the reason its own docstring records:
+ * two derivations of this name once disagreed and cost every deployed workspace
+ * its vault. There is one spelling, and it is here.
+ *
+ * The caller that cannot use `vaultRef` is a removal working from a config that
+ * will not parse (#219) — it has the profile's name and, where the file could
+ * still be read as YAML, the granted connection. `null` for the connection is
+ * "the file did not say", which falls back to `main` exactly as an absent grant
+ * does.
+ */
+export function sealedVaultRef(
+  declared: TargetConfig | undefined,
+  profile: string,
+  connection: string | null | undefined,
+): string {
+  return declared?.vault?.ref ?? `vault/${profile}/${connection ?? 'main'}`;
 }
 
 /**

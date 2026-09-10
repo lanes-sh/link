@@ -47,7 +47,7 @@ describe('openBlobStoreFor', () => {
   test('opens the target storage, rooted where the layout says', async () => {
     const root = await workspace();
 
-    const store = await openBlobStoreFor(config(), root, 'local');
+    const store = await openBlobStoreFor(config().instance.profile, root, 'local');
     await store.put('note.txt', new TextEncoder().encode('x'));
 
     expect((await store.list()).map((blob) => blob.key)).toContain('note.txt');
@@ -59,8 +59,8 @@ describe('openBlobStoreFor', () => {
     // needs a store that is not rooted at `data/<profile>`.
     const root = await workspace();
 
-    const own = await openBlobStoreFor(config(), root, 'local');
-    const elsewhere = await openBlobStoreFor(config(), root, 'local', 'profiles');
+    const own = await openBlobStoreFor(config().instance.profile, root, 'local');
+    const elsewhere = await openBlobStoreFor(config().instance.profile, root, 'local', 'profiles');
 
     await own.put('a.txt', new TextEncoder().encode('x'));
 
@@ -74,7 +74,7 @@ describe('openBlobStoreFor', () => {
     // any profile that declares somewhere else.
     const root = await workspace('elsewhere/mine');
 
-    const store = await openBlobStoreFor(config(), root, 'local');
+    const store = await openBlobStoreFor(config().instance.profile, root, 'local');
     await store.put('note.txt', new TextEncoder().encode('x'));
 
     expect(existsSync(join(root, 'elsewhere/mine/note.txt'))).toBe(true);
@@ -84,6 +84,6 @@ describe('openBlobStoreFor', () => {
   test('refuses a target the workspace does not declare', async () => {
     const root = await workspace();
 
-    await expect(openBlobStoreFor(config(), root, 'cloud')).rejects.toThrow(/cloud/);
+    await expect(openBlobStoreFor(config().instance.profile, root, 'cloud')).rejects.toThrow(/cloud/);
   });
 });

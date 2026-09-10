@@ -131,7 +131,7 @@ export async function profileAdd(
   // creates cloud resources and edits nothing here, so recording it as an `add`
   // would put a config change in the log that no file reflects.
   if (created) {
-    await recordConfigChange(config, resolution.workspaceRoot, primary, {
+    await recordConfigChange(config.instance.profile, resolution.workspaceRoot, primary, {
       capability: 'config.profile.add',
       scope: name,
       arguments: { port: created.port, workspace: primary },

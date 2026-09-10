@@ -155,7 +155,7 @@ export async function membersAdd(
   await document.save();
 
   await recordConfigChange(
-    config,
+    config.instance.profile,
     resolution.workspaceRoot,
     target,
     {
@@ -194,7 +194,7 @@ export async function membersRemove(
   await document.save();
 
   await recordConfigChange(
-    config,
+    config.instance.profile,
     resolution.workspaceRoot,
     target,
     { capability: 'config.member.remove', scope: resolution.profile, arguments: { subject } },
