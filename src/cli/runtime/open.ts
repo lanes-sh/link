@@ -30,6 +30,7 @@ import {
   openSecrets,
   openStorage,
   type StorageFactory,
+  targetInput,
   type TargetInput,
 } from '#deployments/target.ts';
 import { knowledgeRoutes, openKnowledge, type FetchLike, type KnowledgeStores } from '#deployments/knowledge.ts';
@@ -95,7 +96,7 @@ export async function openRuntime(
 
   const declared = resolved.declared;
   const root = resolved.workspaceRoot;
-  const adapters: TargetInput = { declared, config, root, target };
+  const adapters: TargetInput = targetInput({ declared, config, root, target });
 
   // The workspace's accounts, and the check that this profile's grants name
   // real ones (ADR-057). Read here rather than inside `resolveProfile` because

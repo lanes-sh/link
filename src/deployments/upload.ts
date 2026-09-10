@@ -177,7 +177,16 @@ export async function uploadWorkspace(
  * surprise nobody asked for.
  */
 export async function publishWorkspace(input: {
-  readonly config: Config;
+  /**
+   * Unused, and optional for the caller that has none.
+   *
+   * This copies what the local store holds rather than anything off a parsed
+   * config, and always has. Keeping the parameter required meant a removal
+   * could not publish for a profile whose config would not load (#219) — which
+   * is the removal whose publish matters most, because the endpoint may be
+   * serving that profile from a config that parsed at its last boot.
+   */
+  readonly config?: Config | undefined;
   readonly workspaceRoot: string;
   readonly target: string;
   /**

@@ -52,6 +52,7 @@ export {
   sameAccount,
   selectConnections,
   soleGrantFor,
+  sealedVaultRef,
   vaultRef,
   type SelectedConnection,
 } from './connections.ts';

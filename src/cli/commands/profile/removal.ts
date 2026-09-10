@@ -2,15 +2,11 @@ import {
   layout,
   PROFILE_FILE,
   profilePath,
-  vaultRef,
-  workspacePath,
-  type Config,
   type TargetConfig,
 } from '#profile';
 import type { SecretStore } from '#secrets';
 import type { BlobStore } from '#stores/blobs';
-import { credentialRefFor, ownClientRefsFor, type ProviderRegistry } from '#registry';
-import { print, style, warn } from '../../output.ts';
+import { declaredRefs, unreachableRefs, type RemovalSubject } from './subject.ts';
 import {
   migratesAcross,
   refuseSealedVault,
@@ -27,90 +23,6 @@ import {
  * shown and what runs from drifting apart. `../../../deployments/driver.ts`
  * gives the same reason for the same shape.
  */
-
-/**
- * The credential references this profile declares, and only those.
- *
- * Locally the profile is the boundary: its credentials are a file inside its own
- * directory, and deleting the directory is the whole operation. In Secret
- * Manager they are flat names in one project, so two profiles deployed to the
- * same project share a namespace and `list()` hands back the other one's as
- * readily as its own. Deriving from what this profile declares is the only
- * answer that cannot delete something that was never ours, and a secret deleted
- * in the wrong project is not recoverable.
- *
- * The cost is that a genuinely orphaned ref — one whose connection was removed
- * from config long ago — is not derivable and so is not deleted. The caller
- * reports those rather than guessing, which is the honest position: a guess
- * here is indistinguishable from another profile's credential.
- */
-export function declaredRefs(
-  config: Config,
-  declared: TargetConfig,
-  /**
-   * What the profiles that are staying declare.
-   *
-   * Nothing in here is deleted, however plainly the profile being removed also
-   * declares it. The vault ref is read off the target and is identical for every
-   * profile there, which once made a sibling's sealed items unrecoverable in
-   * this command.
-   *
-   * **The endpoint token was the sharpest case here and is no longer a case.**
-   * Every profile took the default `token_ref: profile/token` out of one
-   * per-workspace store, so removing one deleted the token its siblings were
-   * served by. What fixed it is not a better survivor check: the token was never
-   * a profile's to declare (ADR-068), so removing one cannot reach it now.
-   */
-  survivors: readonly Config[] = [],
-): string[] {
-  const refs = new Set<string>();
-
-  // Read off the *target*, not the profile. `vaultTargetSchema` sits inside
-  // `targetSchema`, so two targets may seal the same items in different places;
-  // taking it from the profile would attach one target's vault to another
-  // target's removal.
-  //
-  // **Through `vaultRef`, because the name carries the connection.** This said
-  // `vault/document`, the contract-2 constant, while `openVault` seals under
-  // `vault/<connection>` (ADR-059) — so removing a profile queued a ref nothing
-  // had ever written and left the real document behind. Under-deletion rather
-  // than over, since the survivor set was wrong the same way and they cancelled,
-  // but what stayed behind is sealed credential material belonging to a profile
-  // the operator asked to be gone. Per connection also makes the survivor check
-  // mean something: two profiles granting different vaults no longer look like
-  // one document to it.
-  if (declared.vault?.adapter === 'secret') {
-    refs.add(vaultRef(declared, config));
-  }
-
-  // **No connection credentials.** They belong to the workspace now (ADR-057),
-  // and every one of them may be granted by a profile that is staying. Removing
-  // a profile therefore removes no account and no credential — `lanes link
-  // disconnect` is the command that does that, and it is the one that knows how
-  // to check whether anybody else still needs the credential first.
-  //
-  // This is the sharpest edge in the whole decoupling, so `renderPlan` says it
-  // out loud rather than leaving an operator to infer it from a short list:
-  // "remove the work profile" used to mean "revoke what work could reach", and
-  // it does not any more.
-  if (config.auth.authorization?.mode === 'oidc') {
-    refs.add(config.auth.authorization.client_id_ref);
-  }
-
-  // Shared with a profile that is staying, so not ours to delete. Computed the
-  // same way for the survivors as for this one, because "what does a profile
-  // declare" has to have one answer.
-  const kept = new Set(
-    survivors.flatMap((other) => [
-      ...(declared.vault?.adapter === 'secret' ? [vaultRef(declared, other)] : []),
-      ...(other.auth.authorization?.mode === 'oidc'
-        ? [other.auth.authorization.client_id_ref]
-        : []),
-    ]),
-  );
-
-  return [...refs].filter((ref) => !kept.has(ref));
-}
 
 export interface RemovalItem {
   /** `null` for a workspace-level item — the config file, the default-profile key. */
@@ -139,6 +51,31 @@ export interface RemovalPlan {
   /** Present in a target's store, not declared by this profile. Left alone. */
   readonly untouched: readonly { readonly target: string; readonly refs: readonly string[] }[];
   readonly warnings: readonly string[];
+  /**
+   * What a config that would not load stopped this from being able to name.
+   *
+   * **Not folded into `warnings`, deliberately.** A warning says "this survives
+   * by design" — the repository, the deployed service, the accounts every
+   * profile shares — and is true of a perfectly ordinary removal. One of these
+   * says "this removal cannot see whether it survives", which is a different
+   * sentence and the one that decides the exit code.
+   */
+  readonly unreachable: readonly string[];
+  /** What could be read of the profile, for `--json` and for the preview. */
+  readonly subject: SubjectReport;
+}
+
+/** The degraded read, in a shape fit to print and to serialise. */
+export interface SubjectReport {
+  readonly loaded: boolean;
+  readonly name: string;
+  readonly assumedName: boolean;
+  readonly vaultConnection: string | null;
+  /** A reference name, never a value — the plan prints refs everywhere else too. */
+  readonly clientIdRef: string | null;
+  readonly knowledgeRepo: string | null;
+  readonly unread: readonly string[];
+  readonly refusal: string | null;
 }
 
 export interface PlanOptions {
@@ -165,7 +102,7 @@ export interface PlanOptions {
    * `declaredRefs`. Defaulted to empty, which is the single-profile workspace
    * and the shape every existing caller had.
    */
-  readonly survivors?: readonly Config[] | undefined;
+  readonly survivors?: readonly RemovalSubject[] | undefined;
 }
 
 const reason = (cause: unknown): string => (cause instanceof Error ? cause.message : String(cause));
@@ -180,10 +117,9 @@ const reason = (cause: unknown): string => (cause instanceof Error ? cause.messa
  * before they confirm, rather than discovering it half way through.
  */
 export async function removalPlan(
-  config: Config,
+  subject: RemovalSubject,
   root: string,
   profile: string,
-  registry: ProviderRegistry,
   options: PlanOptions,
 ): Promise<RemovalPlan> {
   const items: RemovalItem[] = [];
@@ -210,9 +146,9 @@ export async function removalPlan(
     // `rm -r data/<profile>` used to be the whole of "what could this profile
     // reach". So it is said before the operator confirms rather than discovered
     // afterwards.
-    if (config.knowledge) {
+    if (subject.knowledgeRepo !== null) {
       warnings.push(
-        `This profile keeps its memory and skills in ${config.knowledge.repo}. ` +
+        `This profile keeps its memory and skills in ${subject.knowledgeRepo}. ` +
           'Nothing here touches a repository, so they survive this removal — delete them there ' +
           'if you want them gone.',
       );
@@ -227,7 +163,7 @@ export async function removalPlan(
     try {
       const secrets = await options.openSecrets(name);
       const present = await secrets.list();
-      const mine = new Set(declaredRefs(config, declared, options.survivors ?? []));
+      const mine = new Set(declaredRefs(subject, declared, options.survivors ?? []));
 
       for (const ref of present) if (mine.has(ref)) items.push({ target: name, kind: 'secret', id: ref });
 
@@ -343,55 +279,21 @@ export async function removalPlan(
   // before this point leaves data a later run can still find.
   items.push({ target: null, kind: 'config', id: profilePath(root, profile) });
 
-  return { profile, items, untouched, warnings };
-}
-
-const KIND_LABEL: Record<RemovalItem['kind'], string> = {
-  secret: 'credential',
-  blob: 'object',
-  file: 'file',
-  config: 'config',
-  'workspace-key': 'workspace',
-};
-
-/**
- * The plan, as the thing an operator decides from.
- *
- * Rendered from the same value that is executed, so there is no second
- * description of the work to fall out of step with the first. It prints
- * references and keys and never a value — the plan holds no values to print.
- */
-export function renderPlan(plan: RemovalPlan): void {
-  print();
-  print(`Removing profile ${style.bold(plan.profile)} would delete:`);
-  print();
-
-  if (plan.items.length === 0) {
-    print(style.dim('  nothing — there is no trace of this profile left to remove.'));
-  }
-
-  const targets = [...new Set(plan.items.map((item) => item.target))];
-  for (const target of targets) {
-    const items = plan.items.filter((item) => item.target === target);
-    print(`  ${style.bold(target ?? 'workspace')}`);
-    for (const item of items) {
-      const note = item.note ? style.dim(` — ${item.note}`) : '';
-      const shown = item.area === undefined ? item.id : `${item.area}/${item.id}`;
-      const into = item.movedTo ? style.dim(` → ${item.movedTo[0]}/${item.movedTo[1]}`) : '';
-      print(`    ${KIND_LABEL[item.kind].padEnd(10)} ${shown}${into}${note}`);
-    }
-    print();
-  }
-
-  for (const { target, refs } of plan.untouched) {
-    // Named rather than counted, because the operator is the only one who can
-    // tell an orphan from another profile's live credential — and this command
-    // deliberately will not guess.
-    print(`  ${style.bold(target)}: present but not declared by this profile, so left alone`);
-    for (const ref of refs) print(style.dim(`    ${ref}`));
-    print();
-  }
-
-  for (const warning of plan.warnings) print(warn(warning));
-  if (plan.warnings.length > 0) print();
+  return {
+    profile,
+    items,
+    untouched,
+    warnings,
+    unreachable: unreachableRefs(subject, declared, options.target),
+    subject: {
+      loaded: subject.config !== null,
+      name: subject.name,
+      assumedName: subject.assumedName,
+      vaultConnection: subject.vaultConnection,
+      clientIdRef: subject.clientIdRef,
+      knowledgeRepo: subject.knowledgeRepo,
+      unread: [...subject.unread],
+      refusal: subject.refusal,
+    },
+  };
 }

@@ -216,7 +216,7 @@ export async function pair(flags: PairFlags, deps: PairDeps = {}): Promise<void>
   // rotation, that whatever a browser was holding stopped working at that
   // moment.
   if (existing === null) {
-    await recordConfigChange(chosen.config, root, target, {
+    await recordConfigChange(chosen.config.instance.profile, root, target, {
       capability: rotating ? 'config.pair.rotate' : 'config.pair.mint',
       scope: target,
       arguments: { readPort, certificate },
@@ -310,7 +310,7 @@ async function pairDeployed(input: {
   if (existing === null) await credentials.set(PAIR_TOKEN_REF, token);
 
   if (existing === null) {
-    await recordConfigChange(chosen.config, root, target, {
+    await recordConfigChange(chosen.config.instance.profile, root, target, {
       capability: rotating ? 'config.pair.rotate' : 'config.pair.mint',
       scope: target,
       arguments: { endpoint },

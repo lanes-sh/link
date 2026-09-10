@@ -362,7 +362,7 @@ export async function runConnect(
     // workspace even when a profile was granted it in the same breath — the
     // grant is its own event, written by `grant`.
     await recordConfigChange(
-      runtime.config,
+      runtime.config.instance.profile,
       runtime.resolution.workspaceRoot,
       runtime.target,
       {

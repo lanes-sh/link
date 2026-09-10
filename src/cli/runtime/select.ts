@@ -1,4 +1,4 @@
-import { generateProfileToken, ownerPrincipal } from '#auth';
+import { ownerPrincipal } from '#auth';
 import type { SecretStore } from '#secrets';
 import type { BlobStore } from '#stores/blobs';
 import {
@@ -10,6 +10,7 @@ import {
   resolveWorkspaceRoot,
   requireTarget,
   type Config,
+  type LoadedConfig,
   type ProfileSelection,
   type ResolvedTarget,
   type Resolution,
@@ -106,6 +107,53 @@ export async function resolveProfileOnly(
   flags: GlobalFlags,
   options: { env?: Record<string, string | undefined> } = {},
 ): Promise<{ selection: ProfileSelection; config: Config; target: string }> {
+  const found = await locateProfile(flags, options);
+  if (found.loaded === null) throw found.refusal;
+
+  return { selection: found.selection, config: found.loaded.config, target: found.target };
+}
+
+/**
+ * The profile that was named, and the config only if it would load.
+ *
+ * `resolveProfileOnly` above is this plus a rethrow, and that is the whole
+ * point: one resolution path, so the caller that has to survive a config which
+ * will not parse cannot drift from the eight that do not.
+ *
+ * **It exists because catching around `resolveProfileOnly` is not safe.**
+ * `ConfigError` comes out of that call for a missing `--workspace`, a target
+ * the registry does not declare, a pointer chain that will not follow, a
+ * contract-3 layout, and a profile that is simply not there — as well as for
+ * the parse. A `try` around the whole thing would read "you typed the wrong
+ * workspace" as "this profile is broken", and `profile remove --yes
+ * --delete-data` would then run a removal to completion in a workspace nobody
+ * meant. Everything up to and including `resolveSelection` therefore still
+ * throws exactly as it did; only the parse is caught, and only here.
+ *
+ * `resolveSelection` never reads a profile's config — it asks the workspace
+ * whether the file exists — which is the property that makes this split
+ * possible at all, and the same one `migratedRenamedProviders` relies on.
+ *
+ * `refusal` is `unknown` so it can be rethrown verbatim: a `ConfigError`
+ * carries `findings`, and re-wrapping it would drop them.
+ */
+export type LocatedProfile =
+  | {
+      readonly selection: ProfileSelection;
+      readonly target: string;
+      readonly loaded: LoadedConfig;
+    }
+  | {
+      readonly selection: ProfileSelection;
+      readonly target: string;
+      readonly loaded: null;
+      readonly refusal: unknown;
+    };
+
+export async function locateProfile(
+  flags: GlobalFlags,
+  options: { env?: Record<string, string | undefined> } = {},
+): Promise<LocatedProfile> {
   const env = options.env !== undefined ? { env: options.env } : {};
   const localRoot = resolveWorkspaceRoot(env);
   const registry = await readRegistry(localRoot);
@@ -113,9 +161,12 @@ export async function resolveProfileOnly(
   const root = await resolveTargetWorkspace(localRoot, target);
 
   const selection = await resolveSelection({ profileFlag: flags.profile, root, ...env });
-  const { config } = await loadProfileConfig(root, selection.profile);
 
-  return { selection, config, target };
+  try {
+    return { selection, target, loaded: await loadProfileConfig(root, selection.profile) };
+  } catch (refusal) {
+    return { selection, target, loaded: null, refusal };
+  }
 }
 
 /**
@@ -145,16 +196,23 @@ export async function openSecretStoreFor(root: string, target: string): Promise<
  * profile's blob tree; `profiles` is where a deployed revision reads its config
  * from (ADR-023), which lives outside that tree and still belongs to the
  * profile being removed.
+ *
+ * **A name, not the config it is written in.** The name is the whole of what
+ * reaches the store — `layout.blobs(profile)` is the default area and nothing
+ * else was ever read — and taking a `Config` for it meant a removal could not
+ * open the stores of the one profile it most needs to: the one whose config
+ * will not parse (#219). `openSecrets` above was narrowed for the same reason
+ * and says so; this is that argument applied to the other store.
  */
 export async function openBlobStoreFor(
-  config: Config,
+  profile: string,
   root: string,
   target: string,
   area?: string,
 ): Promise<BlobStore> {
   const resolved = await openTarget(root, target);
 
-  const input = { declared: resolved.declared, config, root: resolved.workspaceRoot, target };
+  const input = { declared: resolved.declared, profile, root: resolved.workspaceRoot, target };
   const storage = await openStorage(input, await openSecrets(input));
   return area === undefined ? storage() : storage(area);
 }

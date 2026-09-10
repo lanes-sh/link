@@ -341,3 +341,24 @@ export function table(rows: ReadonlyArray<readonly string[]>): void {
 export const ok = (text: string) => `${style.green('ok')}    ${text}`;
 export const warn = (text: string) => `${style.yellow('warn')}  ${text}`;
 export const fail = (text: string) => `${style.red('fail')}  ${text}`;
+
+/**
+ * The first line of an error that actually says something.
+ *
+ * `message.split('\n')[0]` was the whole of this, and a `ConfigError` from a
+ * schema failure is `<path>:\n  <field>: <reason>` — so a warning rendered as
+ * "could not give personal its owner layer: /…/personal.yaml:" and named no
+ * reason at all. Seen for real on an upgrade, twice, with nothing after the
+ * colon.
+ *
+ * Promoted out of `config-repair-sweep.ts` when `removalSubject` became the
+ * second caller that has to squash a `ConfigError` into one line an operator
+ * can read. Two copies of this is the failure above, waiting.
+ */
+export function reasonOf(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+
+  const lines = error.message.split('\n').map((line) => line.trim());
+  const said = lines.find((line) => line !== '' && !line.endsWith(':'));
+  return said ?? lines.find((line) => line !== '') ?? error.message;
+}
