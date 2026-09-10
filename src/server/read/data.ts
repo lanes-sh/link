@@ -1,6 +1,6 @@
 import { isDataStore, type Answer, type DataStoreName, type DataSurface } from '#cli/owner-data/surface.ts';
 import { json } from './http.ts';
-import { reaches, type PairedCaller } from './session.ts';
+import { mayReach, type Principal } from '#auth';
 
 /**
  * The owner's own data, over the pairing credential (ADR-069).
@@ -82,7 +82,7 @@ export async function dataRoutes(
   url: URL,
   surface: DataSurface,
   headers: Record<string, string>,
-  caller: PairedCaller,
+  caller: Principal,
 ): Promise<Response> {
   const route = parse(url.pathname);
   const profile = url.searchParams.get('profile');
@@ -101,7 +101,7 @@ export async function dataRoutes(
   // had — `profile` arrived on the query string and was passed to the store,
   // so whoever held the pairing token read and wrote every profile in the
   // workspace (ADR-079).
-  if (!reaches(caller, profile)) {
+  if (!mayReach(caller, profile)) {
     return json({ error: 'not_found' }, 404, headers);
   }
 

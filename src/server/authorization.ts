@@ -1,4 +1,5 @@
 import {
+  AuthenticatorChain,
   IssuedTokenAuthenticator,
   OAuthServer,
   OAuthStore,
@@ -91,4 +92,29 @@ export async function openAuthorization(
     surface: { server, issuer: (origin) => origin, mcpPath: MCP_PATH, target: primary.target },
     authenticator: new IssuedTokenAuthenticator(store, profile),
   };
+}
+
+/**
+ * The one authenticator every surface resolves a caller through.
+ *
+ * Here rather than in `endpoint.ts` because this file is the subject — which of
+ * three models the profile declared — and the composition is the last step of
+ * answering it. `endpoint.ts` is bind, serve, reload, stop.
+ *
+ * **Every surface, and that is ADR-079.** `/mcp`, `/health`, `/state`,
+ * `/audit` and `/data` all ask this the same question, so a bearer that opens
+ * one opens all of them and there is no second set of rules to keep in step.
+ * The dashboard used to have a credential of its own that named no person, and
+ * the surfaces it reached were the ones nothing filtered.
+ *
+ * Null gate means bearer-token-only: the workspace's static API keys, each
+ * naming the uid it was issued to (ADR-068), and no chain to build.
+ */
+export function endpointAuthenticator(
+  primary: Runtime,
+  gate: { readonly authenticator: Authenticator } | null,
+): Authenticator {
+  return gate
+    ? new AuthenticatorChain([primary.authenticator, gate.authenticator])
+    : primary.authenticator;
 }

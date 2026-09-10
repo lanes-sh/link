@@ -248,20 +248,21 @@ export async function pair(flags: PairFlags, deps: PairDeps = {}): Promise<void>
     print(style.dim('      The previous pairing link no longer works. Re-open the new one.'));
   }
   print('');
-  print(ok(`the dashboard may now read ${style.bold(address)}`));
+  print(ok(`the dashboard may now sign in to ${style.bold(address)}`));
   print('');
   print(pairingLink(token, address));
   print('');
   print(
     style.dim(
-      '      Open that in a browser on this machine. The token is in the URL fragment,\n' +
-        '      so it never reaches a Lanes server.\n' +
+      '      Open that in a browser on this machine. The link carries the address,\n' +
+        '      so the page knows which endpoint to ask; it is not a key to it.\n' +
         '      Whoever opens it signs in with Lanes, and reaches the profiles that list\n' +
         '      them as a member — their connections, their audit entries, and the memory,\n' +
         '      tasks, files, skills and entities inside them, to read, edit and delete.\n' +
         '      A profile listing nobody is reachable by nobody. It changes no connection,\n' +
         '      token, policy rule or configuration, and never reads a vault value.\n' +
-        '      Take it back with: lanes link pair --rotate\n' +
+        '      To end their access: lanes link profile members remove <subject>\n' +
+        `      then lanes link token rotate --workspace ${target}\n` +
         '\n' +
         `      The endpoint has to be running: lanes link start --workspace ${target}`,
     ),

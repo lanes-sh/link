@@ -12,8 +12,8 @@ import { ATTACHMENTS_PATH } from '../attachments.ts';
 import { ANY_ORIGIN, corsAware } from '../cors.ts';
 import { Generations } from '../generations.ts';
 import { silentLogger } from '../logging.ts';
-import { fixedSessions } from './testing.ts';
-import { directPairingCredential } from './credential.ts';
+import { fixedAuthenticator } from './testing.ts';
+import { memberPrincipal } from '#auth';
 import type { AuditTail, ReadDeps } from './routes.ts';
 
 /**
@@ -33,10 +33,9 @@ import type { AuditTail, ReadDeps } from './routes.ts';
 
 const ORIGIN = 'https://lanes.sh';
 const HOSTILE = 'https://evil.example';
-const SESSION_TOKEN = 'llps_a-dashboard-session';
+const BEARER = 'llo_a-dashboard-bearer';
 /** The caller every case below is, unless it says otherwise. */
-const CALLER = { subject: 'lanes:HER', profiles: ['personal'] };
-const PAIR_TOKEN = 'llp_a-data-pairing-token';
+const CALLER = memberPrincipal('lanes:HER', 'personal', ['personal']);
 
 const AUDIT: AuditTail = { tail: async () => [] };
 
@@ -84,8 +83,7 @@ function readDeps(overrides: Partial<ReadDeps> = {}): ReadDeps {
     profiles: () => new Map(),
     audit: AUDIT,
     connections: async () => [],
-    credential: directPairingCredential({ read: async () => PAIR_TOKEN }),
-    sessions: fixedSessions(SESSION_TOKEN, CALLER),
+    authenticate: fixedAuthenticator(BEARER, CALLER),
     endpoint: { kind: 'deployed', version: '0.0.0-test', certificateExpiresAt: null },
     ...overrides,
   };
@@ -129,7 +127,7 @@ function send(
   init: { method?: string; body?: unknown; origin?: string; token?: string | null } = {},
 ): Request {
   const headers: Record<string, string> = { origin: init.origin ?? ORIGIN };
-  const token = init.token === undefined ? SESSION_TOKEN : init.token;
+  const token = init.token === undefined ? BEARER : init.token;
   if (token !== null) headers['authorization'] = `Bearer ${token}`;
   if (init.body !== undefined) headers['content-type'] = 'application/json';
 
@@ -141,14 +139,14 @@ function send(
 }
 
 describe('the credential', () => {
-  test('an unpaired write is refused, and the surface is never asked', async () => {
+  test('an unauthenticated write is refused, and the surface is never asked', async () => {
     const surface = stub();
     const response = await deployed(readDeps({ data: surface }))(
       send('/data/memory/a?profile=personal', { method: 'PUT', body: { body: 'x' }, token: null }),
     );
 
     expect(response.status).toBe(401);
-    expect(await response.json()).toMatchObject({ error: 'unpaired', run: 'lanes link pair' });
+    expect(await response.json()).toMatchObject({ error: 'unauthorized', signIn: true });
     // The gate is above the store, so a stranger costs nothing.
     expect(surface.calls).toEqual([]);
   });
@@ -352,7 +350,7 @@ describe('a deployment-only grant stays one', () => {
     try {
       const response = await fetch(
         `${server.url.replace(MCP_PATH, '')}/data/memory?profile=personal`,
-        { method: 'PUT', headers: { authorization: `Bearer ${SESSION_TOKEN}` } },
+        { method: 'PUT', headers: { authorization: `Bearer ${BEARER}` } },
       );
 
       // `serve()` discards `read` on loopback, so the write surface is not on

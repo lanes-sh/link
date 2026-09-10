@@ -6,7 +6,7 @@ import {
   type ReadEndpoint,
 } from './state.ts';
 import type { ProfileRuntime } from '../mcp/visibility.ts';
-import type { PairedCaller } from './session.ts';
+import { memberPrincipal, type Principal } from '#auth';
 
 /**
  * `readState` for somebody every profile in the map names.
@@ -23,7 +23,7 @@ function stateFor(
   endpoint: ReadEndpoint,
   names?: ProviderNames,
 ) {
-  const caller: PairedCaller = { subject: 'lanes:HER', profiles: [...profiles.keys()] };
+  const caller: Principal = memberPrincipal('lanes:HER', 'personal', [...profiles.keys()]);
   return readState(workspace, profiles, rows, endpoint, caller, names);
 }
 
@@ -232,7 +232,8 @@ describe('what one caller is told the workspace holds', () => {
     ['work', profile(['gmail.ada'])],
   ]);
 
-  const asking = (...profiles: string[]): PairedCaller => ({ subject: 'lanes:HER', profiles });
+  const asking = (...profiles: string[]): Principal =>
+    memberPrincipal('lanes:HER', profiles[0] ?? 'personal', profiles);
 
   test('only the profiles that name them', () => {
     const state = readState('local', TWO, ROWS, ENDPOINT, asking('personal'));

@@ -58,26 +58,62 @@ subject was discarded in favour of the owner.
 
 **A credential names a person. On every surface, and deny is what it fails to.**
 
-### Pairing becomes two steps
+### The dashboard signs in, with the credential `/mcp` already takes
 
-The token `lanes link pair` mints opens the exchange and nothing else.
+There is no new credential and no new exchange. This endpoint already runs an
+OAuth 2.1 authorization server in `self` mode (ADR-062) and already mints exactly
+what the dashboard needs:
 
 ```
-GET  /pair/challenge   → a nonce
-POST /pair/session     → nonce + assertion → a session naming the subject
+POST /register     → a client, registered dynamically
+GET  /authorize    → 302 to lanes.sh; the person signs in
+GET  /authorize/callback → the assertion comes back, verified against JWKS
+POST /token        → an access token carrying { subject, profiles }
 ```
 
-Every other path takes the session, which carries the subject and the profiles
-whose `members:` name it. The workspace token still names a workspace; it simply
-stops being an answer to a question about a person.
+`IssuedToken` in `auth/oauth/store.ts` has carried `subject` and `profiles` since
+ADR-060, resolved from `members:` at the moment the code is minted. `/state`,
+`/audit` and `/data` now resolve their bearer through `endpointAuthenticator` —
+the same chain `/mcp` and `/health` use — and filter on `mayReach`. The pairing
+token stops being a credential: it tells the page which endpoint to ask, and on
+loopback it records that somebody ran `pair`.
 
-**Nothing new verifies the assertion.** `Federation` already does it for the
-endpoint's own consent flow (ADR-062), and it is handed in narrowed to the half
-that answers *who*. `profilesFor` is deliberately not taken: the live generation
-is already the right answer to which profiles name a subject, and a second
-resolver would be a second answer waiting to disagree with the first. The
-audience is this surface's own address, never the MCP one, so a statement minted
-to open the dashboard cannot be replayed into an authorization at `/mcp`.
+**The first draft of this ADR did add an exchange** — `/pair/challenge` for a
+nonce, `/pair/session` for an assertion, an `llps_` session token, two new KV
+namespaces, a `PairedCaller` beside `Principal` and a `reaches()` beside
+`mayReach`. It was rejected on review, and the reason is worth keeping: a second
+credential shape is a second set of rules to keep in step, and the reason given
+for not reusing `OAuthStore` — that `auth.authorization` is "rarely declared" —
+was simply out of date. The profile template has written `authorization: mode:
+self` since 0.12. Every profile already had the server.
+
+So the fix is subtraction. What closes the hole is that the surface asks *who is
+calling*, and there was already exactly one place that answers.
+
+### The browser is the first client that is a page
+
+Two things follow, and both are small:
+
+**`/register` and `/token` need CORS.** Every client before this was
+server-side or native — a connector calls both from its own backend, and
+`/authorize` and the callback are top-level navigations that carry no `Origin`.
+A page's `fetch` is not exempt, so without a grant the flow fails at
+registration with an opaque network error. They take `READ_ORIGINS`, the same
+list the reads take, imported rather than restated.
+
+**On loopback the authorization paths ride the TLS read port.** A page on
+`https://lanes.sh` cannot fetch `http://127.0.0.1:7337/register` — mixed
+content, which is the same reason the read listener exists at all — and
+`rebinding.ts` refuses a foreign `Origin` on the MCP bind anyway (ADR-039),
+correctly. So `serveRead` delegates them to the same `handleAuthorization` the
+endpoint's router calls. One `OAuthStore` sits behind both ports, so which one
+minted a token does not matter to what it opens, and the MCP listener keeps
+serving its own copy for every client already registered against it.
+
+Nothing validates the `resource` a client passes, and nothing needs to: the
+audience an assertion is minted for is derived from the request's own origin on
+both sides of the check, so a flow driven against the read port is internally
+consistent.
 
 ### `EVERY_PROFILE` is a value, not an absence
 
@@ -123,9 +159,16 @@ else.
 ## What this costs
 
 **Every pairing already in a browser stops working.** `lanes link pair` has to be
-run again and the link re-opened. That is the shape of the fix rather than a
-price paid for it: the old token is the thing being withdrawn, and a grace
-window would be a window in which it still opened everything.
+run again and the link re-opened, and then the person signs in. That is the shape
+of the fix rather than a price paid for it: the old token is the thing being
+withdrawn, and a grace window would be a window in which it still opened
+everything.
+
+**A profile declaring no `auth.authorization` cannot be signed in to at all.**
+There is no authorization server for it, so there is nothing to register
+against. Every profile `profile add` has ever written declares `mode: self`, so
+this is only reachable by a hand edit or a profile old enough to predate the
+template — and `doctor --fix` repairs it.
 
 **A profile whose `members:` is empty disappears from the dashboard.** It was
 already unreachable over MCP — empty is nobody, not everybody — but the dashboard
@@ -134,10 +177,10 @@ one vanishes from a page its owner was reading. `pair` warns at mint time,
 naming the profiles and the command that fixes them, because that is the last
 moment before somebody opens the link and finds a shorter list.
 
-**`profile members remove` still does not end a live session.** The window is the
-session TTL rather than a token rotation, which is shorter than what ADR-060
-states for an OAuth token but is not zero. `lanes link pair --rotate` closes it
-now.
+**`profile members remove` still does not end a live session.** Unchanged from
+ADR-060, and now literally the same window rather than a second one beside it:
+the dashboard holds an access token, so `lanes link token rotate` is what closes
+it, exactly as for any other client.
 
 ## Alternatives rejected
 
@@ -152,10 +195,22 @@ check — two sources of truth for one sentence.
 ends the product's claim that this data does not transit Lanes. A deployed
 endpoint behind a firewall also stops being reachable.
 
-**Send the assertion on every request instead of minting a session.** Its
-lifetime is sixty seconds, which crosses one redirect and not one working
-session, so the page would re-mint continuously. Verifying JWKS per request would
-also cost a deployed endpoint a network round trip on every read.
+**Send the assertion on every request instead of minting a token.** Its lifetime
+is sixty seconds, which crosses one redirect and not one working session, so the
+page would re-mint continuously. Verifying JWKS per request would also cost a
+deployed endpoint a network round trip on every read. This is what `/token`
+already solves.
+
+**A pairing-token → session exchange of its own.** The first draft, described
+above. It duplicated the authorization-code flow with a nonce table, a session
+table, a third credential prefix and a parallel principal type, and its stated
+reason for not reusing the OAuth store no longer held. Two credentials also meant
+two places to apply every future rule about who may reach what — and the bug
+being fixed is precisely that one of two surfaces was not applying the rule.
+
+**Keep the pairing token for loopback and use OAuth only when deployed.** Halves
+the work and reinstates the thing being removed: two mechanisms, of which the
+weaker one is the one running on the operator's own machine.
 
 **A grace period for old pairing tokens.** The vulnerability stays open for
 exactly as long as the grace lasts, on the credential whose reach is the problem.

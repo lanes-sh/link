@@ -1,6 +1,6 @@
 import { allowedConnections } from '#policy';
 import { defaultConnectionLabel } from '#profile';
-import { reaches, type PairedCaller } from './session.ts';
+import { mayReach, type Principal } from '#auth';
 import type { ProfileRuntime } from '../mcp/visibility.ts';
 
 /**
@@ -149,7 +149,7 @@ export function readState(
   profiles: ReadonlyMap<string, ProfileRuntime>,
   rows: readonly ConnectionRow[],
   endpoint: ReadEndpoint,
-  caller: PairedCaller,
+  caller: Principal,
   providerName: ProviderNames = () => undefined,
 ): ReadState {
   // The workspace's own list is the source of truth for *which connections
@@ -168,7 +168,7 @@ export function readState(
     // dispatcher hide the same set. This loop used to run over every profile
     // the endpoint served, which is how a member of no profile read the whole
     // workspace's grants and rosters (ADR-079).
-    if (!reaches(caller, name)) continue;
+    if (!mayReach(caller, name)) continue;
 
     const grants: ReadGrant[] = [];
 
