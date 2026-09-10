@@ -92,6 +92,7 @@ export type {
   AnyConnector,
   Connector,
   ConnectorContext,
+  VerifyOutcome,
   ConnectorKind,
   DiscoveryContext,
   DiscoveredCapability,

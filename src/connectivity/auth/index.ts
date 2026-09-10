@@ -25,6 +25,7 @@ export { bearerToken, bearerTokenAsStored } from './token.ts';
 export {
   CredentialOAuthProvider,
   clearUpstreamTokens,
+  distrustUpstreamToken,
   upstreamAccessToken,
   type OAuthProviderOptions,
 } from './oauth-authcode/provider.ts';

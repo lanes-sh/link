@@ -252,6 +252,27 @@ const accessTokens = new Map<string, { token: string; expiresAt: number }>();
 
 export function clearUpstreamTokens(): void {
   accessTokens.clear();
+  rejected.clear();
+}
+
+/**
+ * Connections whose current token the vendor has refused.
+ *
+ * The stored `expires_at` is a claim about the future, not a fact: a token can
+ * be rotated, revoked or superseded while our clock still calls it valid, and
+ * the only thing that knows is the vendor. Without somewhere to record that
+ * answer, a 401 changed nothing — the next call read the same stored token,
+ * saw the same unexpired clock, and sent it again until the hour was up.
+ *
+ * A set of keys rather than a deletion, because deleting the cached token is
+ * not enough on its own: the stored blob would be re-read and believed. This is
+ * the flag that makes the *stored* clock skippable, exactly once.
+ */
+const rejected = new Set<string>();
+
+/** Record that the vendor refused this connection's token. Spent on next use. */
+export function distrustUpstreamToken(connectionKey: string): void {
+  rejected.add(connectionKey);
 }
 
 const EXPIRY_MARGIN_MS = 60_000;
@@ -263,13 +284,21 @@ export async function upstreamAccessToken(options: {
   now?: () => number;
 }): Promise<string | null> {
   const now = (options.now ?? Date.now)();
+
+  // Spent on read. A flag that stayed set would refresh on every call for the
+  // rest of the process; one that is consumed costs exactly one refresh, and a
+  // token that is still dead simply gets refused again and sets it again.
+  const distrusted = rejected.delete(options.connectionKey);
+  if (distrusted) accessTokens.delete(options.connectionKey);
+
   const cached = accessTokens.get(options.connectionKey);
   if (cached && cached.expiresAt > now + EXPIRY_MARGIN_MS) return cached.token;
 
   const stored = await options.provider.tokens();
   const expiresAt = typeof stored?.['expires_at'] === 'number' ? (stored['expires_at'] as number) : 0;
 
-  if (stored?.access_token && expiresAt > now + EXPIRY_MARGIN_MS) {
+  // The clock is only consulted where the vendor has not already contradicted it.
+  if (!distrusted && stored?.access_token && expiresAt > now + EXPIRY_MARGIN_MS) {
     accessTokens.set(options.connectionKey, { token: stored.access_token, expiresAt });
     return stored.access_token;
   }

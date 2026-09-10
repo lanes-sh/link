@@ -16,6 +16,8 @@ import type {
 import { isToolResult, strategyContextFrom, strategyFor } from '#connectivity';
 import type { Config, ConnectionConfig } from '#profile';
 import { buildProviderContext, createProviderLogger } from './context.ts';
+import { responseVerifier } from './reauthorize.ts';
+import { distrustUpstreamToken } from '#connectivity/auth/index.ts';
 import { fetchStaged, stageAttachment } from './staging.ts';
 import type { FetchStagedRequest, StagedAttachment, StageRequest } from './staging.ts';
 import type { ProviderRegistry } from '#registry';
@@ -290,18 +292,26 @@ export class Dispatcher {
         });
       }
 
-      // Only where the strategy asks for it. A vendor that signs its replies
-      // expects them verified, and the transport clones the response so the
-      // check costs the caller nothing.
-      const verifyResponse = strategy?.verify?.bind(strategy);
+      // Two reasons to read a response before the caller does: a vendor that
+      // signs its replies expects them verified, and a token the vendor refuses
+      // has to be distrusted or the next call sends it again. They compose.
+      const verifyStrategy = strategy?.verify?.bind(strategy);
+      const verify = responseVerifier({
+        // Built from what was resolved, not from what was asked for: this has
+        // to be the key the token cache uses, `<manifest>.<connection>`.
+        connectionKey: `${providerId}.${declared.id}`,
+        oauth: entry.manifest.auth.kind === 'oauth',
+        distrust: distrustUpstreamToken,
+        ...(verifyStrategy
+          ? { strategy: (response: Response) => verifyStrategy(response, forStrategy()) }
+          : {}),
+      });
 
       const connectorContext: ConnectorContext = {
         manifest: entry.manifest,
         provider: providerContext,
         authorize,
-        ...(verifyResponse
-          ? { verify: (response: Response) => verifyResponse(response, forStrategy()) }
-          : {}),
+        ...(verify ? { verify } : {}),
       };
 
       // The connector owns argument validation: a local provider validates

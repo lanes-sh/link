@@ -259,22 +259,32 @@ export function createHttpConnector(options: HttpConnectorOptions): Connector {
       // silently changed it would be a bug nobody could see from the manifest.
       if (hasBody) headers.set('content-type', contentType);
 
-      // Auth is attached by core, from the manifest's auth kind or its strategy.
-      // A connector never sees a raw credential.
-      const request = await context.authorize(
+      // Built per attempt rather than once: a `Request` body can only be read
+      // once, so a retry needs its own.
+      const outbound = (): Request =>
         new Request(url.href, {
           method,
           headers,
           ...(hasBody ? { body: encodeBody(body, contentType) } : {}),
           signal: context.provider.signal,
-        }),
-      );
+        });
 
       const doFetch = options.fetch ?? globalThis.fetch;
-      const response = await doFetch(request);
+
+      // Auth is attached by core, from the manifest's auth kind or its strategy.
+      // A connector never sees a raw credential.
+      let response = await doFetch(await context.authorize(outbound()));
 
       // Cloned so a verifier can read the body without consuming it for us.
-      await context.verify?.(response.clone() as unknown as Response);
+      const outcome = await context.verify?.(response.clone() as unknown as Response);
+
+      // At most one, and only where the verifier asked. It stopped trusting
+      // something on the strength of this response — a token the vendor
+      // refused — so authorising again hands out a replacement rather than the
+      // value that just failed. A second refusal is the answer.
+      if (outcome?.retry) {
+        response = await doFetch(await context.authorize(outbound()));
+      }
 
       const text = await response.text();
       if (!response.ok) {

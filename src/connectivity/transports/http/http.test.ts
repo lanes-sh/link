@@ -574,3 +574,98 @@ describe('headers declared on the connector', () => {
     expect(record.request!.headers.get('content-type')).toBe('application/json');
   });
 });
+
+describe('a credential the vendor refuses mid-flight', () => {
+  /**
+   * The token a call goes out with can be dead while our clock still calls it
+   * valid. Core learns that only from the 401, so a verifier that asks for one
+   * retry turns an hour of refusals into a single re-authorised call.
+   */
+  const refusingOnce = async (options: { verifyRetries: boolean }) => {
+    const tokens: string[] = [];
+    let attempt = 0;
+
+    const connector = createHttpConnector({
+      baseUrl: 'https://api.acme.test/v1',
+      openapi: await specFile(),
+      fetch: (async (request: Request) => {
+        tokens.push(request.headers.get('authorization') ?? '');
+        attempt += 1;
+        return attempt === 1
+          ? new Response('{"error":"Invalid Credentials"}', {
+              status: 401,
+              statusText: 'Unauthorized',
+            })
+          : new Response('{"accounts":[]}', {
+              status: 200,
+              headers: { 'content-type': 'application/json' },
+            });
+      }) as never,
+    });
+
+    let issued = 0;
+    const context = {
+      manifest: { id: 'acme', name: 'Acme' } as never,
+      provider: { signal: new AbortController().signal } as never,
+      async authorize(request: Request) {
+        issued += 1;
+        const authorised = new Request(request, { headers: new Headers(request.headers) });
+        // A second call gets a different token, exactly as a refresh would.
+        authorised.headers.set('authorization', `Bearer token-${issued}`);
+        return authorised;
+      },
+      async verify(response: Response) {
+        if (!options.verifyRetries || response.status !== 401) return;
+        return { retry: true };
+      },
+    } as unknown as ConnectorContext;
+
+    const listAccounts = (await connector.discover(CONTEXT)).find(
+      (c) => c.name === 'listAccounts',
+    )!;
+
+    return { result: await connector.invoke(listAccounts, {}, context), tokens };
+  };
+
+  test('is retried once, with a token the verifier caused to be reissued', async () => {
+    const { result, tokens } = await refusingOnce({ verifyRetries: true });
+
+    expect(result.isError).toBeFalsy();
+    expect(tokens).toEqual(['Bearer token-1', 'Bearer token-2']);
+  });
+
+  test('is not retried when the verifier does not ask, so nothing else changes', async () => {
+    const { result, tokens } = await refusingOnce({ verifyRetries: false });
+
+    expect(result.isError).toBe(true);
+    expect(tokens).toEqual(['Bearer token-1']);
+  });
+
+  test('a second refusal is the answer, rather than a loop', async () => {
+    let attempts = 0;
+    const connector = createHttpConnector({
+      baseUrl: 'https://api.acme.test/v1',
+      openapi: await specFile(),
+      fetch: (async () => {
+        attempts += 1;
+        return new Response('{"error":"nope"}', { status: 401, statusText: 'Unauthorized' });
+      }) as never,
+    });
+
+    const context = {
+      manifest: { id: 'acme', name: 'Acme' } as never,
+      provider: { signal: new AbortController().signal } as never,
+      authorize: async (request: Request) => request,
+      verify: async (response: Response) => (response.status === 401 ? { retry: true } : undefined),
+    } as unknown as ConnectorContext;
+
+    const listAccounts = (await connector.discover(CONTEXT)).find(
+      (c) => c.name === 'listAccounts',
+    )!;
+    const result = await connector.invoke(listAccounts, {}, context);
+
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain('401');
+    expect(attempts).toBe(2);
+  });
+});
