@@ -14,9 +14,11 @@ import { join } from 'node:path';
  * little while the binary and the command were the same word; `lanes link`
  * peels a token before dispatching, and peeling the wrong one is silent.
  *
- * These three cases need no workspace, but `LANES_LINK_HOME` is set anyway:
- * `resolveWorkspaceRoot` falls back to the operator's real `~/.lanes-link`,
- * and a test must never be one bug away from reading it.
+ * These three cases need no workspace, but `LANES_LINK_HOME` is set anyway.
+ * Dev mode means an unset one now falls back to `~/.lanes-dev/link` rather than
+ * to the operator's real workspace — but that holds because the suite runs from
+ * a checkout, which is a property of how it is invoked rather than of this file.
+ * Pinning it costs one line and does not depend on that staying true.
  */
 
 const BIN = fileURLToPath(new URL('./lanes.ts', import.meta.url));

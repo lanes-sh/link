@@ -1,3 +1,4 @@
+import { legacyRootNotice, onLegacyRoot } from './workspace-home-migrate.ts';
 import { wasDefaulted } from './selection-require.ts';
 import { columns, style, width } from './terminal.ts';
 import { numbered, rule, truncate, visibleWidth, wrap } from './typeset.ts';
@@ -139,6 +140,24 @@ export function announceProfile(selection: {
   readonly workspaceRoot: string;
 }): void {
   print(style.dim(`profile ${style.bold(selection.profile)}  ${selection.workspaceRoot}`));
+  sayIfLegacyRoot(selection.workspaceRoot);
+}
+
+/**
+ * The second dim line, on a workspace that has not been moved yet.
+ *
+ * Here rather than in a `doctor` finding because the audience is different:
+ * `doctor` is what somebody runs when they already suspect something, and this
+ * has to reach the person who suspects nothing. It sits under the line that
+ * already prints the root on every command, which is the one place a reader is
+ * looking at that path anyway.
+ *
+ * It says nothing on a workspace that is already at `~/.lanes/link`, which is
+ * almost all of them almost all of the time — so this is a string compare per
+ * command and silence thereafter, not a permanent second line for everyone.
+ */
+function sayIfLegacyRoot(workspaceRoot: string): void {
+  if (onLegacyRoot(workspaceRoot)) print(style.dim(`  ${legacyRootNotice()}`));
 }
 
 /**
@@ -161,6 +180,7 @@ export function announce(resolution: Resolution): void {
         `${resolution.workspaceRoot}`,
     ),
   );
+  sayIfLegacyRoot(resolution.workspaceRoot);
 }
 
 /**
@@ -181,6 +201,7 @@ export function announceWorkspace(resolution: Resolution): void {
       `workspace ${style.bold(resolution.target)}${provenance}  ${resolution.workspaceRoot}`,
     ),
   );
+  sayIfLegacyRoot(resolution.workspaceRoot);
 }
 
 /**

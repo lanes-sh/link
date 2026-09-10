@@ -14,7 +14,7 @@ import {
  *
  * A target names an adapter set. Under contract 1 a *profile* declared one per
  * target it could be opened against, which is what made a deploy leave two
- * copies of every profile — one in `~/.lanes-link`, one in the bucket the
+ * copies of every profile — one under the Lanes home, one in the bucket the
  * endpoint reads — with nothing keeping them honest. The reported failure is in
  * `sync-apply.ts`'s header and it happened again while this was being written:
  * a rewritten local file reported seven connections for a target whose bucket

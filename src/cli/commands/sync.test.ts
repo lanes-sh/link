@@ -22,10 +22,12 @@ afterAll(async () => {
 /**
  * A throwaway workspace, and the env var pointing at it.
  *
- * `syncTargets` calls `resolveWorkspaceRoot()` with no argument, so an unset
- * `LANES_LINK_HOME` walks up to `~/.lanes-link` — the operator's real profiles,
- * credentials and audit log. Every test here goes through this helper so that
- * cannot happen.
+ * `syncTargets` calls `resolveWorkspaceRoot()` with no argument, and this used
+ * to be the only thing standing between the suite and `~/.lanes-link` — the
+ * operator's real profiles, credentials and audit log. Dev mode moved that
+ * floor: a checkout resolves to `~/.lanes-dev/link` and cannot reach the real
+ * root at all. This helper stays because `sync` *writes*, and a test that writes
+ * should name where.
  */
 async function workspace(declares = '{}'): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'lanes-link-sync-'));

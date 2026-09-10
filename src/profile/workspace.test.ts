@@ -2,7 +2,8 @@ import { workspaceYaml, writeProfileFixture } from '#profile/testing.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
+import { defaultWorkspaceRoot } from '#home';
 import {
   listProfiles,
   loadWorkspaceProfiles,
@@ -45,9 +46,22 @@ describe('workspace root resolution', () => {
     expect(resolveWorkspaceRoot({ env: {}, cwd: nested })).toBe(root);
   });
 
-  test('falls back to ~/.lanes-link when there is no workspace above', () => {
-    const resolved = resolveWorkspaceRoot({ env: {}, cwd: tmpdir() });
-    expect(resolved.endsWith('.lanes-link')).toBe(true);
+  test('falls back to the workspace root under the Lanes home', () => {
+    // Against `#home`'s own answer rather than a literal, because the literal
+    // is what the three-branch chain in `homeWorkspaceRoot` decides — and
+    // `home.test.ts` is where each of its branches is pinned, with a `$HOME`
+    // it controls. This asserts the join, which is the part `resolveWorkspaceRoot`
+    // is responsible for.
+    expect(resolveWorkspaceRoot({ env: {}, cwd: tmpdir() })).toBe(defaultWorkspaceRoot({ env: {} }));
+  });
+
+  test('which under `bun test` is the dev home, so the suite cannot reach a real workspace', () => {
+    // Worth asserting rather than assuming. Before dev mode, a test that forgot
+    // to pin `LANES_LINK_HOME` fell through to the operator's live profiles,
+    // credentials and audit log — which is why three test files carry a
+    // docstring warning about it. The suite runs from a checkout, so this is
+    // now structurally impossible, and this is the line that keeps it so.
+    expect(resolveWorkspaceRoot({ env: {}, cwd: tmpdir() }).split(sep)).toContain('.lanes-dev');
   });
 });
 

@@ -1,7 +1,7 @@
 import { formatPlan, planIsNoop, planReconcile } from '#registry';
 import { readEndpointTokens, type ConnectionConfig, type SelectedConnection } from '#profile';
 import { DEFAULT_SURFACES } from '../../config-repair.ts';
-import { announce, announceProfile, emit, fail, ok, print, warn } from '../../output.ts';
+import { announce, announceProfile, emit, fail, ok, print, progress, warn } from '../../output.ts';
 import { staleNudge } from '../../release.ts';
 import { openRuntime, resolveProfileOnly, type GlobalFlags, type Runtime } from '../../runtime.ts';
 import type { FetchLike } from '#deployments/knowledge.ts';
@@ -9,6 +9,7 @@ import { unboundRotatableRefs } from '#deployments/bind.ts';
 import { duplicateAccountFindings, reportCapabilityDrift } from './findings.ts';
 import { probeConnections } from './auth.ts';
 import { migratedContract, migratedRenamedProviders } from './migrate.ts';
+import { reportWorkspaceHomeMove } from '../../workspace-home-migrate.ts';
 
 /**
  * The gate order — check, doctor, plan, start — exists so failures surface in
@@ -92,6 +93,16 @@ export interface DoctorFinding {
  * touch nothing.
  */
 export async function doctor(flags: DoctorFlags): Promise<void> {
+  // Before the runtime, not after, and not as a finding. `--fix` moves the
+  // workspace directory itself, and doing that underneath a runtime would be
+  // relocating the files its stores are already holding open. Reported either
+  // way, because someone who does not pass `--fix` still needs to know their
+  // workspace is at an address the next release will stop looking at.
+  const moved = await reportWorkspaceHomeMove(flags.json === true ? progress : print, {
+    apply: flags.fix === true,
+  });
+  if (moved.blocked.length > 0) process.exitCode = 1;
+
   // The one check that cannot use a runtime, because it answers for the profiles
   // that cannot open one. A provider rename left in the config refuses at load,
   // which takes every command down together — including the rest of this one —

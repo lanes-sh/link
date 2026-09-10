@@ -70,6 +70,7 @@
     "#connectivity/transports": "./src/connectivity/transports/index.ts",
     "#deployments/*": "./src/deployments/*",
     "#dispatch": "./src/dispatch/index.ts",
+    "#home": "./src/home/index.ts",
     "#policy": "./src/policy/index.ts",
     "#profile": "./src/profile/index.ts",
     "#profile/*": "./src/profile/*",

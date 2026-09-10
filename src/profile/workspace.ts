@@ -3,7 +3,7 @@ import { layout, legacyProfileConfig, LEGACY_WORKSPACE_FILE, PROFILE_FILE } from
 import { isRemoteWorkspace, readWorkspaceFile, workspaceFiles } from './files.ts';
 import { parseConfig, type LoadedConfig } from './load.ts';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
-import { homedir } from 'node:os';
+import { homeWorkspaceRoot } from '#home';
 import { parse as parseYaml } from 'yaml';
 import { ConfigError } from './load.ts';
 import {
@@ -38,7 +38,7 @@ import { findSecrets, formatSecretFindings } from './secret-detection.ts';
  *
  * The workspace root is deliberately not part of this and keeps its chain —
  * `LANES_LINK_HOME`, then an ancestor holding `workspaces.yaml` (or the
- * `lanes-link.yaml` it was called before contract 4), then `~/.lanes-link`.
+ * `lanes-link.yaml` it was called before contract 4), then `~/.lanes/link`.
  * Getting it wrong yields "no profiles here" rather than an
  * action against the wrong account, it is the only channel a container has for
  * its bucket (ADR-023), and the ancestor walk is what makes a per-repository
@@ -84,8 +84,34 @@ export interface ResolveOptions {
 }
 
 /**
- * `LANES_LINK_HOME`, else the nearest ancestor containing `lanes-link.yaml`,
- * else `~/.lanes-link`.
+ * Whether a directory is a workspace, by the only evidence there is.
+ *
+ * A marker file, never the directory itself. `existsSync`, not
+ * `Bun.file(path).size`: a missing file reports size 0, so a `>= 0` check would
+ * call every candidate a workspace and stop at the first directory it looked at.
+ *
+ * **Either name.** A root that cannot be found cannot be migrated, so the walk
+ * and the fallback both have to recognise the registry contract 3 wrote.
+ *
+ * Hoisted out of the walk because the fallback needs the identical test:
+ * `~/.lanes` belongs to the desktop app, so `~/.lanes/link` existing is not
+ * evidence that a workspace is in it, and an interrupted move leaves exactly
+ * that directory. Asking the same question in both places is what stops the
+ * fallback preferring an empty new root over an intact old one.
+ */
+function holdsWorkspace(directory: string): boolean {
+  return (
+    existsSync(join(directory, WORKSPACE_FILE)) || existsSync(join(directory, LEGACY_WORKSPACE_FILE))
+  );
+}
+
+/**
+ * `LANES_LINK_HOME`, else the nearest ancestor holding a registry, else the
+ * default root under the Lanes home.
+ *
+ * `homeWorkspaceRoot` is the last step, and its docstring carries what that
+ * step now decides — the new root, the legacy one, and why a checkout may not
+ * be given the second.
  */
 export function resolveWorkspaceRoot(options: ResolveOptions = {}): string {
   const env = options.env ?? (process.env as Record<string, string | undefined>);
@@ -97,40 +123,13 @@ export function resolveWorkspaceRoot(options: ResolveOptions = {}): string {
 
   let directory = resolve(options.cwd ?? process.cwd());
   for (;;) {
-    // `existsSync`, not `Bun.file(path).size`: a missing file reports size 0,
-    // so a `>= 0` check would call every candidate a workspace and stop at the
-    // first directory it looked at.
-    // Either name: a root that cannot be found cannot be migrated.
-    const marker = (name: string): boolean => existsSync(join(directory, name));
-    if (marker(WORKSPACE_FILE) || marker(LEGACY_WORKSPACE_FILE)) return directory;
+    if (holdsWorkspace(directory)) return directory;
     const parent = dirname(directory);
     if (parent === directory) break;
     directory = parent;
   }
 
-  return join(homedir(), '.lanes-link');
-}
-
-/**
- * Where Lanes Link itself is installed — the directory with `package.json`,
- * and with it `skills/` and `docs/`.
- *
- * Not the workspace: this is the code, not the operator's data. Found by
- * walking up rather than by counting `..` segments, because the count is a
- * function of where the calling file sits and a file that moves one level takes
- * a silently wrong path with it. Both callers had already been through that
- * once.
- */
-export function installRoot(from: string): string {
-  let directory = resolve(from);
-  for (;;) {
-    if (existsSync(join(directory, 'package.json'))) return directory;
-    const parent = dirname(directory);
-    if (parent === directory) {
-      throw new Error(`No package.json in any directory above ${from}`);
-    }
-    directory = parent;
-  }
+  return homeWorkspaceRoot(holdsWorkspace, { env });
 }
 
 /**

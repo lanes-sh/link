@@ -3,6 +3,7 @@ import { join, sep } from 'node:path';
 import { installRoot, resolveWorkspaceRoot } from '#profile';
 import { repairOwnerLayer } from '../config-repair-sweep.ts';
 import { migrateToCurrentContract, needsMigration, type ContractMigration } from '../workspace-migrate.ts';
+import { reportWorkspaceHomeMove } from '../workspace-home-migrate.ts';
 import { needsContract3, type Contract3Migration } from '../contract3.ts';
 import { needsContract4 } from '../contract4.ts';
 import { sayContract3, sayContract4 } from './update-migration.ts';
@@ -174,6 +175,11 @@ export async function update(flags: UpdateFlags): Promise<void> {
   // profile of someone already on the latest version is exactly the one this was
   // reported against.
   if (flags.check !== true) {
+    // Before the root is resolved, because it is the root that moves. Everything
+    // below then reads the new location, and a workspace that did not move —
+    // most of them — resolves exactly as it did.
+    await reportWorkspaceHomeMove(flags.json === true ? progress : print, { apply: true });
+
     const root = resolveWorkspaceRoot();
 
     // The contract migration before the owner-layer repair, and the order is not

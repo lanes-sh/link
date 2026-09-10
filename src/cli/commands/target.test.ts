@@ -62,9 +62,10 @@ workspaces:
  *
  * Both, deliberately. An injected `env` replaces `process.env` wholesale — so
  * `{ env: {} }` does not mean "no variables set", it means `LANES_LINK_HOME` is
- * gone too, and `resolveWorkspaceRoot` then walks up to `~/.lanes-link`: the
- * operator's real profiles, credentials and audit log. Every call here passes
- * `env` from this helper so that cannot happen.
+ * gone too and the fallback decides. That fallback is `~/.lanes-dev/link` while
+ * the suite runs from a checkout, rather than the operator's real workspace as
+ * it once was; every call here still passes `env` from this helper, so the root
+ * under test is named rather than inferred.
  */
 async function workspace(): Promise<{
   root: string;

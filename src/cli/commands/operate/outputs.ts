@@ -187,14 +187,21 @@ export async function tokenInvocation(
       // Pinned to the workspace this command already resolved, rather than
       // letting the child resolve its own. `resolveWorkspaceRoot` checks
       // `LANES_LINK_HOME`, then walks ancestors, then falls back to
-      // `~/.lanes-link` — so a bare spawn asks a *different* question than the
+      // `~/.lanes/link` — so a bare spawn asks a *different* question than the
       // one being answered, and the answer it gives is about somebody else's
       // workspace. That is the failure this function's own history records:
       // the equality check that used to catch "a `lanes` on PATH belonging to a
       // different workspace" had to be dropped, and nothing replaced it.
       //
-      // It also stops the test suite reaching the operator's real workspace.
-      // `bun test` from a worktree ran this against `~/.lanes-link` with
+      // The child is the *installed* `lanes`, so it is not in dev mode even
+      // when this process is. Pinning the root is what keeps the two agreeing
+      // about the workspace; they still disagree about the Lanes session, which
+      // costs nothing here because `token show --raw` needs none.
+      //
+      // It also stops the test suite reaching the operator's real workspace —
+      // belt to dev mode's braces, now that a checkout resolves to
+      // `~/.lanes-dev/link` and cannot reach the real one by accident at all.
+      // `bun test` from a worktree used to run this against the old root with
       // `--workspace cloud`, which is a network call to a live bucket from a
       // unit test — and the five-second timeout it hit is what made a green
       // checkout look red.
