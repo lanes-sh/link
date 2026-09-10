@@ -7,7 +7,7 @@ import {
   resolveWorkspaceRoot,
 } from '#profile';
 import { ConfigDocument } from '../config-edit.ts';
-import { describeMember, workspaceMembers } from '#auth/lanes/members.ts';
+import { describeMember, workspaceMembers, type WorkspaceMember } from '#auth/lanes/members.ts';
 import { announce, emit, heading, ok, print, style, table, warn } from '../output.ts';
 import { nextAfterEdit, publishProfileEdit } from '../publish.ts';
 import { resolveProfile, type GlobalFlags } from '../runtime.ts';
@@ -148,6 +148,7 @@ export async function membersAdd(
     return;
   }
 
+  await assertMayManage(target, session?.subject);
   await assertDelegatable(wanted, target, session?.subject);
 
   const document = await ConfigDocument.open(resolution.workspaceRoot, resolution.profile);
@@ -189,6 +190,8 @@ export async function membersRemove(
     return;
   }
 
+  await assertMayManage(target, (await readSession())?.subject);
+
   const document = await ConfigDocument.open(resolution.workspaceRoot, resolution.profile);
   document.removeFrom(['members'], at);
   await document.save();
@@ -218,6 +221,71 @@ export async function membersRemove(
     );
     if (published) print(style.dim(`      ${published}`));
   });
+}
+
+/**
+ * Whether the person at the keyboard may edit who a profile lists.
+ *
+ * **Workspace `admin` may; `editor` may not.** The roles come from the Lanes
+ * workspace this one is bound to, which is where they are already managed,
+ * rather than from a second role system beside `members:` — the argument
+ * `memberSchema` makes for its own `role` field gating nothing.
+ *
+ * **This is intent rather than a boundary, and saying so is the point.**
+ * `members:` is a line in a YAML file, and anybody who can run this command can
+ * also open that file in an editor. What the check buys is that widening your
+ * own reach has to be deliberate rather than a command you happened to be
+ * allowed to run, and that the refusal names somebody who can do it for you.
+ * The boundary that holds is who may write the workspace's files: an IAM grant
+ * on a deployed workspace, the machine on a local one.
+ *
+ * Unbound, there is no list to ask and no roles to read, and `assertDelegatable`
+ * already refuses everybody but the person signed in.
+ */
+async function assertMayManage(target: string, signedIn: string | undefined): Promise<void> {
+  const bound = await boundWorkspace(target);
+  if (bound === undefined) return;
+
+  const held = await workspaceMembers(bound);
+
+  // Warned about and allowed, exactly as `assertDelegatable` treats the same
+  // failure and for the same reason: a local edit must not depend on our uptime.
+  if (held.unavailable !== null) return;
+
+  const refusal = manageRefusal(held.members, signedIn, target);
+  if (refusal !== null) throw new ConfigError(refusal);
+}
+
+/**
+ * The decision, without the network in front of it.
+ *
+ * Split out so it can be tested: everything above it is a session read and an
+ * HTTP call, and everything in it is the rule. `null` means go ahead.
+ *
+ * A subject the workspace does not list at all is **not** refused here. It is
+ * the ordinary state of a workspace whose list could not name you — a local one
+ * bound to an id you belong to under a different account, say — and
+ * `assertDelegatable` is the check that has an answer for it. Refusing twice
+ * for one cause produces the worse of the two messages.
+ */
+export function manageRefusal(
+  members: readonly WorkspaceMember[],
+  signedIn: string | undefined,
+  target: string,
+): string | null {
+  const me = members.find((member) => member.subject === signedIn);
+  if (me === undefined || me.role === 'admin') return null;
+
+  const admins = members.filter((member) => member.role === 'admin');
+
+  return (
+    `Editing who may consume a profile is for admins of the Lanes workspace behind "${target}", ` +
+    `and you are ${me.role} there.\n` +
+    (admins.length > 0
+      ? `  Ask one of: ${admins.map(describeMember).join(', ')}\n`
+      : '  It lists no admin, which is a workspace problem rather than a profile one.\n') +
+    '  Unchanged: everything inside the profiles that already list you.'
+  );
 }
 
 /**
