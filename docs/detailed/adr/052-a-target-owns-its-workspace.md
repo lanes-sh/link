@@ -24,8 +24,8 @@ personal  cloud declared  7 connection(s)
 ```
 
 ```console
-$ LANES_LINK_HOME=gs://personal-lanes lanes link profile list
-gs://personal-lanes  personal   # 15 connections: gmail ×2, drive, calendar, sheets,
+$ LANES_LINK_HOME=gs://your-bucket lanes link profile list
+gs://your-bucket  personal   # 15 connections: gmail ×2, drive, calendar, sheets,
                                 # tasks, contacts, slack, icloud ×3, bunq, memory, skills
 ```
 
@@ -43,8 +43,8 @@ targets:
     credentials: { adapter: file, path: ./data/personal/credentials.enc }
     storage: { adapter: filesystem, path: ./data/personal }
   cloud:
-    credentials: { adapter: gcp-secret-manager, project: personal-lanes }
-    storage: { adapter: gcs, bucket: personal-lanes }
+    credentials: { adapter: gcp-secret-manager, project: my-project }
+    storage: { adapter: gcs, bucket: your-bucket }
     deploy: { platform: cloudrun, region: europe-west1, service: lanes-link-personal-mcp }
 ```
 
@@ -74,16 +74,16 @@ targets:
     credentials: { adapter: file }
     storage: { adapter: filesystem }
   cloud:
-    workspace: gs://personal-lanes      # a pointer, and nothing else
+    workspace: gs://your-bucket      # a pointer, and nothing else
 ```
 
 ```yaml
-# gs://personal-lanes/lanes-link.yaml — authoritative for itself
+# gs://your-bucket/lanes-link.yaml — authoritative for itself
 contract: 2
 targets:
   cloud:
-    credentials: { adapter: gcp-secret-manager, project: personal-lanes }
-    storage: { adapter: gcs, bucket: personal-lanes }
+    credentials: { adapter: gcp-secret-manager, project: my-project }
+    storage: { adapter: gcs, bucket: your-bucket }
     deploy: { platform: cloudrun, region: europe-west1, service: lanes-link-personal-mcp }
 ```
 

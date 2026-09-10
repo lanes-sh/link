@@ -144,7 +144,7 @@ describe('which failures are worth waiting out', () => {
   test('the shapes Google uses for an API that is not ready', () => {
     for (const message of [
       'PERMISSION_DENIED: The caller does not have permission',
-      'Cloud Build API has not been used in project personal-lanes before or it is disabled',
+      'Cloud Build API has not been used in project my-project before or it is disabled',
       'SERVICE_DISABLED',
       'Error 403: Cloud Run Admin API is not enabled',
     ]) {
