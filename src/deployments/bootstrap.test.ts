@@ -21,7 +21,7 @@ import {
 
 const target = (vault?: TargetConfig['vault']): TargetConfig =>
   ({
-    credentials: { adapter: 'gcp-secret-manager', project: 'personal-lanes' },
+    credentials: { adapter: 'gcp-secret-manager', project: 'my-project' },
     storage: { adapter: 'gcs', bucket: 'lanes-link-demo-data' },
     ...(vault ? { vault } : {}),
   }) as TargetConfig;
@@ -55,10 +55,10 @@ describe('writing a surveyed target into YAML', () => {
     expect(
       deepWithoutUndefined({
         platform: 'cloudrun',
-        project: 'personal-lanes',
+        project: 'my-project',
         service_account: undefined,
       }),
-    ).toEqual({ platform: 'cloudrun', project: 'personal-lanes' });
+    ).toEqual({ platform: 'cloudrun', project: 'my-project' });
   });
 
   test('nested blocks are cleaned too, because a target is blocks of blocks', () => {
