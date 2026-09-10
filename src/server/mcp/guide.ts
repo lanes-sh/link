@@ -136,8 +136,19 @@ owner's audit log.
 
 ## Files are named, not carried
 
-Where a tool takes attachments, give a path, an HTTPS URL, or an attachment
-already on another message. Do not base64 a file into an argument: it is recorded
-in the audit log, and the log is something the owner reads.
+Where a tool takes attachments, give a path, an HTTPS URL, an attachment already
+on another message, or a file this profile keeps, as \`{ "asset": "<name>" }\`.
+
+**A file you hold and nothing here can reach is staged once.** Call
+\`lanes_assets_stage\` with the bytes and you get back a handle — not the bytes —
+which names that file in any send from this profile for the next 24 hours. If
+your client can make an HTTP call of its own,
+\`POST /attachments?profile=<name>&connection=<provider>.<account>\` takes the
+bytes out of band and returns a handle for that one connection, which costs
+nothing in the conversation at all.
+
+What you must not do is base64 the same file into call after call. Once, to stage
+it, is a cost; every time is the cost this whole mechanism exists to remove — and
+each one is recorded in a log the owner reads.
 `;
 }

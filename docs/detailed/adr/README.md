@@ -33,7 +33,7 @@ Run.
 | [014](014-owner-layer-is-managed.md) | Skills can be written under policy; all three owner stores follow the target |
 | [015](015-one-package-under-src.md) | One package under `src/`; a provider owns its vendor code; an architecture test replaces the package graph |
 | [016](016-what-the-endpoint-says-about-itself.md) | The endpoint describes itself in `instructions`; `mcp add` writes the documents no harness has a command for |
-| [017](017-attachments-by-reference.md) | An attachment is named, not carried, so its bytes never pass through the model; and a remote provider may author a capability its vendor's document cannot express |
+| [017](017-attachments-by-reference.md) | An attachment is named, not carried, so its bytes never pass through the model; a client may hand one over once and name it afterwards; and a remote provider may author a capability its vendor's document cannot express |
 | [018](018-the-gate-is-in-the-application.md) | A deployed instance is gated inside the application rather than by the platform's front door, and issues its own tokens by default |
 | [019](019-describing-setup-is-not-performing-it.md) | A read-only setup surface describes what connecting involves; describing setup authorises nothing, so the control-plane wall has not moved |
 | [020](020-the-log-is-objects.md) | The audit log is one object per event, hash-chained, in the same layout locally and deployed |

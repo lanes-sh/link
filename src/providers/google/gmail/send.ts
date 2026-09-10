@@ -70,7 +70,7 @@ const schema = z.object({
     .array(attachmentRefSchema)
     .optional()
     .describe(
-      'Files to attach, each named by reference. This endpoint reads the bytes itself — never encode a file into this call.',
+      'Files to attach, each named by reference — a path, an HTTPS URL, a staged handle, a file this profile keeps, or another message in this mailbox. This endpoint reads the bytes itself. A file you hold and nothing here can reach is staged once with lanes_assets_stage, then named by handle.',
     ),
   // The warning in the description is there because the failure happened. A
   // draft carrying a 204 KB PDF took 19 seconds — the bytes were pulled back
@@ -110,7 +110,7 @@ export function gmailSend(
     kind: 'tool',
     name: 'send_message',
     description:
-      'Send a message, with attachments, or save it as a draft. Attachments are named by reference — a path on this machine, an HTTPS URL, a staged handle, or another message in this mailbox — and this endpoint fetches the bytes itself, so never encode a file into the call.',
+      'Send a message, with attachments, or save it as a draft. Attachments are named by reference — a path on this machine, an HTTPS URL, a staged handle, a file this profile keeps, or another message in this mailbox — and this endpoint fetches the bytes itself. A file that exists only where you are goes through lanes_assets_stage once and travels as a handle.',
     inputSchema: schema,
 
     async handler(input, context): Promise<ToolResult> {
@@ -132,6 +132,7 @@ export function gmailSend(
           signal: context.signal,
           mailbox: gmailAttachments({ authorize, fetch: doFetch, signal: context.signal }),
           storage: context.storage,
+          shared: context.attachments,
         });
       } catch (failure) {
         return fail((failure as Error).message);
