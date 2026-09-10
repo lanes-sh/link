@@ -63,6 +63,36 @@ export const providerManifestSchema = z.object({
    * not silently discarded.
    */
   hints: z.record(z.string(), z.string()).optional(),
+
+  /**
+   * Per-capability arguments that ask a vendor for a smaller record: capability
+   * name → the vendor's own projection parameters.
+   *
+   * Keyed exactly like `redact` and `hints`, and read on a call this endpoint
+   * makes *for* the caller rather than one the caller wrote. When a list comes
+   * back as bare identifiers the gateway fills it in, and without this it does
+   * so at whatever representation the vendor defaults to — which for a mail API
+   * is the entire message, transport headers and base64 body included. Five of
+   * those measured 193,271 characters and overflowed the reply.
+   *
+   * These are the vendor's argument names, not ours, because the saving has to
+   * happen at the source: trimming a response we already paid to receive spends
+   * the owner's quota to save our own bytes. The parameters exist and are
+   * deliberately preserved by the vendoring script — Google's `fields` and
+   * `format`, Graph's `$select` — and nothing used them until now.
+   *
+   * A key that misses does nothing at all, which is the same trap `redact`
+   * carries, so two tests hold it: one that every key names a capability that
+   * exists, and one that every argument it names is a real parameter of that
+   * capability. Nothing checks them against a *response* schema, because the
+   * vendored specs have none — `vendor-spec.ts` explains why they cannot.
+   */
+  compact: z
+    .record(
+      z.string(),
+      z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.string())])),
+    )
+    .optional(),
   /**
    * The words a person would search for that the vendor never writes.
    *
@@ -87,53 +117,6 @@ export const providerManifestSchema = z.object({
 });
 
 export type ProviderManifest = z.infer<typeof providerManifestSchema>;
-
-/**
- * The owner layer's provider ids — Lanes' own surfaces.
- *
- * **`lanes_` on each, which is what stops them needing to be reserved.** They
- * were `memory`, `tasks`, `assets`, `skills`, `vault`, `entities` — six of the
- * most obvious words a vendor manifest might want, held back from every
- * operator so the built-ins could have them. `buildRegistry` registers these
- * before `PROVIDERS`, so a manifest claiming one threw at startup rather than
- * being shadowed (ADR-051); the reservation is what made that a refusal instead
- * of a collision. Prefixed, there is nothing to reserve: an operator's own
- * `memory` connector is now a legal thing to declare.
- *
- * It is also the shape the vendor-qualified providers already use —
- * `google_tasks`, `gmail_imap`, `icloud_mail` — and it reads the same way: the
- * half before the underscore says whose surface this is.
- *
- * The order is read: `#server/mcp`'s instructions emit one paragraph per
- * reachable id in this sequence, so it is the order an agent meets them in.
- * `lanes_entities` is appended rather than inserted alphabetically so that it
- * lands beside `lanes_identity`: the two answer the same question about
- * different people, and the instructions collapse them into one paragraph when
- * both are reachable.
- */
-export const RESERVED_PROVIDER_IDS: readonly string[] = [
-  'lanes_memory',
-  'lanes_tasks',
-  'lanes_assets',
-  'lanes_skills',
-  'lanes_vault',
-  'lanes_setup',
-  'lanes_identity',
-  'lanes_entities',
-];
-
-/**
- * Old id to new, for a refusal that can name what a stale client is asking for.
- *
- * Nothing consumes it yet. The migration builds its own map from
- * `C3_OWNER_PROVIDERS` (`src/cli/contract4-rename.ts`), and a `tools/call` on a
- * pre-0.9.0 name is answered by the SDK's exact-match lookup before anything
- * here sees it — so the refusal this exists for is still unwritten. ADR-066
- * records the failure it would address.
- */
-export const RENAMED_OWNER_PROVIDERS: ReadonlyMap<string, string> = new Map(
-  RESERVED_PROVIDER_IDS.map((id) => [id.slice('lanes_'.length), id]),
-);
 
 /**
  * Validate a manifest, with the cross-field rules the schema alone cannot

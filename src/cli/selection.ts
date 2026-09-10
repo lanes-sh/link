@@ -210,7 +210,10 @@ export const SELECTION: Record<string, Requires> = {
   // What it pairs is the workspace: the surface it opens lists every connection
   // and profile there, and the credential it mints reads all of them. Asking
   // which profile was a question with no answer. `--profile` still narrows, and
-  // is how a port is chosen when profiles disagree about one.
+  // is how a port is chosen when profiles disagree about one *and* a port is
+  // what the address is built from — which is loopback only. A deployed
+  // workspace has one address for the whole of it, so the flag decides nothing
+  // there and is not asked for.
   pair: 'workspace',
   'token show': 'workspace',
   'token rotate': 'workspace',

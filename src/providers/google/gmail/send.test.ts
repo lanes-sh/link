@@ -584,3 +584,60 @@ describe('a file this profile keeps', () => {
     expect(calls).toHaveLength(0);
   });
 });
+
+describe('a credential the vendor refuses mid-send', () => {
+  /**
+   * This capability is authored, so it calls Gmail itself and skipped the one
+   * thing every transported call gets: a refused token being distrusted. Left
+   * as it was, a send that came back 401 left that token trusted for the rest
+   * of the hour — and sending is exactly where an agent then retries.
+   */
+  const refusing = () => {
+    const seen: number[] = [];
+    const capability = gmailSend({
+      fetch: (async () =>
+        new Response('{"error":{"code":401,"message":"Invalid Credentials"}}', {
+          status: 401,
+          statusText: 'Unauthorized',
+        })) as never,
+    });
+
+    const harness = harnessFor(
+      defineProviderWithCapabilities({ manifest: manifestOf(gmail), capabilities: [capability] }),
+      'main',
+      { verify: async (response) => void seen.push(response.status) },
+    );
+
+    return { seen, harness };
+  };
+
+  test('is handed back for the same check a transported reply gets', async () => {
+    const { seen, harness } = refusing();
+
+    const result = await harness.invoke('send_message', {
+      to: ['ada.lovelace@example.com'],
+      subject: 'x',
+      text: 'y',
+    });
+
+    expect((result as ToolResult).isError).toBe(true);
+    expect(seen).toEqual([401]);
+  });
+
+  /**
+   * Distrust without retry, and the asymmetry is deliberate: a send that was
+   * refused may still have been delivered, so repeating it is not a decision
+   * this layer gets to make. The connection is repaired for the *next* call.
+   */
+  test('and the send is not repeated', async () => {
+    const { seen, harness } = refusing();
+
+    await harness.invoke('send_message', {
+      to: ['ada.lovelace@example.com'],
+      subject: 'x',
+      text: 'y',
+    });
+
+    expect(seen).toHaveLength(1);
+  });
+});

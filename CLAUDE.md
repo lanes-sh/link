@@ -243,6 +243,17 @@ It is a data change, not code: an entry in `SELECTION` in
   (`https://sheets.googleapis.com` + `/v4/spreadsheets/...`). Copying the wrong one 404s every
   call.
 
+A read capability the gateway may *fill in* needs a `compact` block, and it is the third record
+keyed the same way as `redact` and `hints` — so it carries the same trap, one step quieter. When a
+list comes back as bare identifiers, `lanes_tools_call` fetches the rows before returning them, and
+without a `compact` entry it does so at whatever the vendor's default representation is. For Gmail
+that was `format=full` — five messages, 193,271 characters, and an overflowed reply. `compact` names
+the vendor's *own* projection arguments (`format`, `metadataHeaders`, `fields`, `$select`), because
+the saving has to happen at the source. A key that misses does not error; it asks for the default and
+reads exactly like working expansion. Two tests in `specs.test.ts` hold it: every key names a real
+capability, and every argument it names is a real parameter of that capability. Only a `<x>.list`
+with an `<x>.get` beside it can ever reach this, which across the vendored surface is seven pairs.
+
 New write capabilities need a `redact` block on the manifest. The default withholds every
 value, which makes a write log useless — it records that something changed without recording
 what. Keep identifiers, withhold the user's content.

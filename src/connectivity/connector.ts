@@ -174,8 +174,16 @@ export interface AuthStrategy {
   /** Per-request: sign it, add headers, refresh a session if one has expired. */
   authorize(request: Request, context: AuthStrategyContext): Promise<Request>;
 
-  /** Optional response check — bunq signs its replies and expects them verified. */
-  verify?(response: Response, context: AuthStrategyContext): Promise<void>;
+  /**
+   * Optional response check — bunq signs its replies and expects them verified.
+   *
+   * Returns the same outcome a connector's own verifier does, so a strategy
+   * that recognises a refused credential can ask for the one retry rather than
+   * only recording it. It was declared `Promise<void>` while the composing
+   * verifier already read `retry` off it, which made asking for one impossible
+   * to write down.
+   */
+  verify?(response: Response, context: AuthStrategyContext): Promise<VerifyOutcome | void>;
 }
 
 export interface AuthStrategyContext {

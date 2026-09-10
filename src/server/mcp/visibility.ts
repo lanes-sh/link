@@ -132,6 +132,13 @@ export interface MergedCapability {
    * three places need it and only this one holds the registry.
    */
   readonly reads: boolean;
+
+  /**
+   * The arguments that ask this capability's provider for a smaller record.
+   * Resolved here for the same reason `reads` is: the gateway that fills in a
+   * list holds the merged entry and not the registry.
+   */
+  readonly compact?: Readonly<Record<string, unknown>>;
 }
 
 export function mergeCapabilities(options: BuildServerOptions): Map<string, MergedCapability> {
@@ -167,6 +174,7 @@ export function mergeCapabilities(options: BuildServerOptions): Map<string, Merg
         capability,
         discovered,
         reads: readsOnly(id, discovered, runtime.registry),
+        ...compactFor(id, capability, discovered, runtime.registry),
       });
     }
   }
@@ -367,4 +375,24 @@ export function accountsByProfile(
   }
 
   return accounts;
+}
+
+/**
+ * The projection a provider declared for one capability, if it declared one.
+ * Keyed by the unqualified name, exactly as `redact` and `hints` are.
+ */
+function compactFor(
+  id: string,
+  capability: ReturnType<ProviderRegistry['capabilities']>[number]['capability'],
+  discovered: ReturnType<ProviderRegistry['capabilities']>[number]['discovered'],
+  registry: ProviderRegistry,
+): { compact?: Record<string, unknown> } {
+  const [provider] = id.split('.');
+  const name = capability?.name ?? discovered?.name;
+  if (provider === undefined || name === undefined) return {};
+
+  // Spread rather than assigned, because `exactOptionalPropertyTypes` refuses
+  // an explicit `undefined` where the field is declared optional.
+  const compact = registry.manifest(provider)?.compact?.[name];
+  return compact === undefined ? {} : { compact };
 }

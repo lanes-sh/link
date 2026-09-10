@@ -118,6 +118,23 @@ export function clearMintedTokens(): void {
   minted.clear();
 }
 
+/**
+ * Stop trusting this connection's minted token.
+ *
+ * Simpler than the authorization-code side, and for a reason worth stating: the
+ * only thing that remembers a token here is the map above. There is no stored
+ * blob carrying an `expires_at` for a later call to read and believe, so there
+ * is nothing to mark skippable — dropping the entry *is* the distrust, and the
+ * next call signs a fresh assertion.
+ *
+ * Without this a service-account connection was the one arrangement that kept
+ * the behaviour the 401 handling was written to remove: a token the vendor had
+ * already refused, resent until the clock aged it out.
+ */
+export function distrustMintedToken(connectionKey: string): void {
+  minted.delete(connectionKey);
+}
+
 interface TokenResponse {
   readonly access_token?: string;
   readonly expires_in?: number;

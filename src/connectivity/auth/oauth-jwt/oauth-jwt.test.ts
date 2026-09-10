@@ -1,10 +1,12 @@
 import { describe, expect, test, beforeEach } from 'bun:test';
 import { defineProvider, type ProviderManifest } from '#connectivity';
+import { distrustConnectionToken } from '../distrust.ts';
 import { parseAssertionKey, signAssertion } from './key.ts';
 import {
   ASSERTION_GRANT,
   clearMintedTokens,
   isStoredAssertion,
+  distrustMintedToken,
   resolveAssertionToken,
   storedAssertionFor,
 } from './index.ts';
@@ -276,6 +278,63 @@ describe('the exchange', () => {
     expect(await mint()).toBe('minted-1');
     expect(await mint()).toBe('minted-1');
     expect(calls).toBe(1);
+  });
+
+  /**
+   * The arrangement that kept the old behaviour after the 401 handling landed.
+   * A service-account connection caches here and nowhere else, so a distrust
+   * that only reached the authorization-code caches left it resending a token
+   * the vendor had already refused until the clock aged it out.
+   */
+  test('mints again once the vendor has refused what was cached', async () => {
+    const { manifest, secrets, stored } = await fixture();
+    let calls = 0;
+
+    const mint = () =>
+      resolveAssertionToken({
+        manifest,
+        connectionId: 'main',
+        stored,
+        credentials: secrets,
+        fetch: (async () => {
+          calls += 1;
+          return Response.json({ access_token: `minted-${calls}`, expires_in: 3600 });
+        }) as unknown as typeof fetch,
+      });
+
+    expect(await mint()).toBe('minted-1');
+
+    // Through the combined entry point the dispatcher actually calls, not the
+    // half of it this file owns: reaching only one cache was the defect.
+    distrustConnectionToken('vendor_thing.main');
+    expect(await mint()).toBe('minted-2');
+    expect(calls).toBe(2);
+  });
+
+  /** Keyed per connection, so distrusting one leaves its sibling alone. */
+  test('one connection being refused does not disturb another', async () => {
+    const { manifest, secrets, stored } = await fixture();
+    let calls = 0;
+
+    const mint = (connectionId: string) =>
+      resolveAssertionToken({
+        manifest,
+        connectionId,
+        stored,
+        credentials: secrets,
+        fetch: (async () => {
+          calls += 1;
+          return Response.json({ access_token: `minted-${calls}`, expires_in: 3600 });
+        }) as unknown as typeof fetch,
+      });
+
+    expect(await mint('main')).toBe('minted-1');
+    expect(await mint('other')).toBe('minted-2');
+
+    distrustMintedToken('vendor_thing.main');
+
+    expect(await mint('other')).toBe('minted-2');
+    expect(await mint('main')).toBe('minted-3');
   });
 
   test('mints again once the cached token is close to expiring', async () => {
