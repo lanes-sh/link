@@ -13,7 +13,8 @@ import { resolveTarget, vaultEnv } from './bootstrap.ts';
 import { recordDeployment, type DeploymentRecord } from './record.ts';
 import { printSteps, runSteps } from './steps.ts';
 import { driverFor } from './drivers.ts';
-import { prepareSecrets, readableRefs, rotatableRefs } from './prepare.ts';
+import { prepareSecrets } from './prepare.ts';
+import { provisionStepsFor } from './provision-profile.ts';
 import { repairOwnerLayer } from '#cli/config-repair-sweep.ts';
 import { migrateToCurrentContract } from '#cli/workspace-migrate.ts';
 import { deployedWorkspace, uploadWorkspace } from './upload.ts';
@@ -149,19 +150,19 @@ export async function deploy(flags: DeployFlags): Promise<void> {
 
   const tag = flags.tag ?? new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 14);
 
-  // Which credentials the revision will rewrite, so the steps below can grant
-  // each one. Scoped by `flags.profile` exactly as the upload and the repair
-  // below are, and read from config and manifests before anything opens a
+  // Which credentials the revision will read and rewrite, so the steps below can
+  // grant each one. Scoped by `flags.profile` exactly as the upload and the
+  // repair below are, and read from config and manifests before anything opens a
   // store — `--dry-run` must reach the printed step list without touching a
   // credential.
-  const rotatable = await rotatableRefs(resolution.workspaceRoot, serving, declared);
-  const readable = await readableRefs(resolution.workspaceRoot, serving, declared);
-  const provision = await driver.provision({
-    deploy: deployConfig,
-    declared,
+  //
+  // Shared with `profile add`, which needs this half and not the rollout: what a
+  // profile created since the last deploy is missing is the grant, not the
+  // revision. See `./provision-profile.ts`.
+  const provision = await provisionStepsFor({
+    workspaceRoot: resolution.workspaceRoot,
     target,
-    rotatable,
-    readable,
+    declared,
     profiles: serving,
   });
 
