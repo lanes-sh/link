@@ -264,6 +264,45 @@ describe.each([
       declared.filter((name) => !capabilities.has(name) && !authored.has(name)),
     ).toEqual([]);
   });
+
+  test('compact names capabilities that exist, and arguments they actually take', async () => {
+    // The third record keyed this way, and the one whose miss is quietest of
+    // all: `redact` withholds, `hints` says nothing, and a missed `compact` key
+    // simply asks the vendor for its default — which is the behaviour this
+    // exists to stop, arriving as though nothing were wrong.
+    //
+    // The second half has no counterpart on the other two, because these are
+    // the *vendor's* argument names rather than ours. `collect()` drops
+    // anything the operation's mapper does not declare, so a parameter spelled
+    // singular, or renamed upstream, is discarded on the way out with no error
+    // anywhere.
+    const declared = Object.entries(manifest.compact ?? {});
+    if (declared.length === 0) return;
+
+    const operations = new Map(
+      (await operationsOf(manifest)).flatMap((operation) => {
+        const id = operation.operationId;
+        if (typeof id !== 'string') return [];
+
+        const parameters = (operation as { parameters?: { name?: string }[] }).parameters ?? [];
+        const names = parameters
+          .map((parameter) => parameter.name)
+          .filter((name): name is string => typeof name === 'string');
+
+        const short = id.startsWith(`${manifest.id}.`) ? id.slice(manifest.id.length + 1) : id;
+        return [[short, new Set(names)] as const];
+      }),
+    );
+
+    expect(declared.filter(([name]) => !operations.has(name)).map(([name]) => name)).toEqual([]);
+
+    const unknown = declared.flatMap(([name, projection]) =>
+      Object.keys(projection)
+        .filter((argument) => !operations.get(name)?.has(argument))
+        .map((argument) => `${name} takes no ${argument}`),
+    );
+    expect(unknown).toEqual([]);
+  });
 });
 
 /**

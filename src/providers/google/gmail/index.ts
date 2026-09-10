@@ -4,6 +4,7 @@ import { GMAIL_IDENTITY, GOOGLE_APP, GOOGLE_OAUTH, specPath } from '../shared/oa
 import { googleServiceAccount } from '../shared/service-account.ts';
 import { googleSetup } from '../shared/setup.ts';
 import { GMAIL_HOST } from './api.ts';
+import { GMAIL_COMPACT } from './compact.ts';
 import { GMAIL_HINTS } from './hints.ts';
 import { GMAIL_REDACT } from './redact.ts';
 import { gmailSendMessage } from './send.ts';
@@ -96,6 +97,7 @@ const manifest = defineProvider({
   setup: googleSetup('Gmail', GMAIL_SCOPES),
   redact: GMAIL_REDACT,
   hints: GMAIL_HINTS,
+  compact: GMAIL_COMPACT,
   // Named here because an `http` connector otherwise assigns bundles by HTTP
   // method during discovery, and an authored capability is never discovered.
   bundles: [{ name: 'write', capabilities: ['send_message'] }],
