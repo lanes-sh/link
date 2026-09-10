@@ -20,6 +20,7 @@ import {
   layout,
 } from '#profile';
 import { readSession } from '#auth/lanes/session.ts';
+import { assertProfileName } from './name.ts';
 
 /**
  * Writing the profile, as opposed to the command that writes one.
@@ -110,8 +111,16 @@ export async function createProfile(
   name: string,
   options: { targets: readonly string[]; nonInteractive?: boolean },
 ): Promise<ProfileCreated> {
-  const local = resolveWorkspaceRoot();
   const target = options.targets[0]!;
+
+  // Before the workspace root is even resolved, because on an empty directory
+  // this call is what brings a workspace into existence and a name that cannot
+  // be used should not leave one behind on its way to being refused. The rule
+  // lives in the schema, so until this guard existed it was enforced by reading
+  // the profile back — after it had been written (#219).
+  assertProfileName(name, target);
+
+  const local = resolveWorkspaceRoot();
 
   // The workspace file before the target is resolved, not after. `profile add
   // <name> --workspace local` on an empty directory is how a workspace comes into
