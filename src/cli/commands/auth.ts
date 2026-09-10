@@ -202,7 +202,7 @@ export async function authWorkspaces(flags: AuthFlags = {}): Promise<void> {
 
   print('');
   prose(
-    'A remote lanes link workspace binds to one of these with `lanes_workspace:` in lanes-link.yaml, which is whose members a profile may delegate to.',
+    'A remote lanes link workspace binds to one of these with `lanes_workspace:` in workspaces.yaml, which is whose members a profile may delegate to.',
     { paint: style.dim },
   );
 }

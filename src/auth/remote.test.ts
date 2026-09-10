@@ -133,3 +133,84 @@ describe('a credential that is not an access token', () => {
     expect(await auth.authenticate(null)).toEqual({ ok: false, reason: 'missing' });
   });
 });
+
+/**
+ * How often an issued token costs a store read.
+ *
+ * Every authenticated request resolves one, and every resolution was a read —
+ * on a deployed target a bucket round trip before any of the caller's work
+ * begins. The record is immutable until it expires: it is written once at mint
+ * and nothing rewrites it, which is what makes remembering it safe.
+ *
+ * The reason to test it is not the saving. It is that a cache in front of an
+ * authorization decision is exactly the kind that must not outlive what it
+ * caches, so the tests that matter are the ones about forgetting.
+ */
+describe('resolving the same token twice', () => {
+  function counting(): { store: OAuthStore; reads: () => number } {
+    const inner = memoryStore();
+    let reads = 0;
+    const counted: KeyValueStore = {
+      ...inner,
+      get: async (namespace, key) => {
+        reads++;
+        return inner.get(namespace, key);
+      },
+    };
+    return { store: new OAuthStore(counted), reads: () => reads };
+  }
+
+  const record = (expiresAt: number) =>
+    ({ kind: 'access', subject: 'lanes:abc', client: 'c1', family: 'f1', expiresAt }) as never;
+
+  test('the second resolution does not read the store', async () => {
+    const { store, reads } = counting();
+    await store.putToken('tok', record(Date.now() + 60_000));
+
+    expect(await store.token('tok')).not.toBeNull();
+    const after = reads();
+    expect(await store.token('tok')).not.toBeNull();
+
+    expect(reads()).toBe(after);
+  });
+
+  /**
+   * The one that would matter if it were wrong. A revoked token must stop
+   * working on the next call, not when something happens to evict it.
+   */
+  test('a revoked token stops resolving immediately', async () => {
+    const { store } = counting();
+    await store.putToken('tok', record(Date.now() + 60_000));
+    expect(await store.token('tok')).not.toBeNull();
+
+    await store.revokeToken('tok');
+
+    expect(await store.token('tok')).toBeNull();
+  });
+
+  /** And a spent refresh token is seen as spent, not as it was before. */
+  test('consuming a token is visible to the next resolution', async () => {
+    const { store } = counting();
+    await store.putToken('tok', record(Date.now() + 60_000));
+    expect(await store.token('tok')).not.toBeNull();
+
+    await store.consumeToken('tok');
+
+    expect((await store.token('tok'))?.kind).toBe('consumed');
+  });
+
+  /**
+   * A cached copy cannot outlive the grant it stands for: expiry is checked
+   * against the record's own field before it is served, so a token that ran out
+   * while it sat in memory is refused rather than honoured.
+   */
+  test('a cached token that has expired is not served', async () => {
+    const { store } = counting();
+    await store.putToken('tok', record(Date.now() + 20));
+    expect(await store.token('tok')).not.toBeNull();
+
+    await new Promise((resolve) => setTimeout(resolve, 40));
+
+    expect(await store.token('tok')).toBeNull();
+  });
+});

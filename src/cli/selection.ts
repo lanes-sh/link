@@ -193,8 +193,9 @@ export const SELECTION: Record<string, Requires> = {
   // profile's (ADR-068) — and `--only` is what narrows what is served.
   start: 'workspace',
   deploy: 'workspace',
-  // Both spellings: `sync` alone is `sync targets`, which is the only thing
-  // there is to sync, and naming it leaves room for the next one.
+  // Both spellings, and bare `sync` too. `workspaces` is the word since
+  // ADR-061 retired `target`; `targets` still parses so nothing anyone has
+  // typed breaks, but nothing prints it any more.
   sync: 'workspace',
   'sync targets': 'workspace',
   'sync workspaces': 'workspace',

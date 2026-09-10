@@ -6,6 +6,10 @@ import { createMemoryBlobStore } from '#stores/blobs/testing.ts';
 import {
   composeMime,
   isBlocked,
+  isHandle,
+  isProfileHandle,
+  newHandle,
+  PROFILE_HANDLE,
   putStaged,
   resolveAttachments,
   stagedBytesKey,
@@ -13,6 +17,7 @@ import {
   sweepStaged,
   STAGED_TTL_MS,
   type ResolvedAttachment,
+  type StagedFile,
 } from './index.ts';
 
 /**
@@ -303,7 +308,7 @@ describe('a mailbox reference', () => {
       /only a mail connection can resolve/,
     );
     await expect(resolveAttachments([{ message_id: '<a@b>' }], BUDGET)).rejects.toThrow(
-      /path, url, or handle/,
+      /path, url, handle, or asset/,
     );
   });
 
@@ -616,5 +621,125 @@ describe('composing the message', () => {
 
     expect(raw).toContain('In-Reply-To: <original@example.com>');
     expect(raw).toContain('References: <original@example.com>');
+  });
+});
+
+describe('which store a handle belongs to', () => {
+  test('a handle minted for one connection carries the att_ prefix', () => {
+    expect(newHandle()).toMatch(/^att_[0-9a-f]{32}$/);
+    expect(isProfileHandle(newHandle())).toBe(false);
+  });
+
+  test('a handle minted for the whole profile carries the stg_ prefix', () => {
+    expect(newHandle(PROFILE_HANDLE)).toMatch(/^stg_[0-9a-f]{32}$/);
+    expect(isProfileHandle(newHandle(PROFILE_HANDLE))).toBe(true);
+  });
+
+  test('both prefixes are still handles, so neither is refused at the store', () => {
+    expect(isHandle(newHandle())).toBe(true);
+    expect(isHandle(newHandle(PROFILE_HANDLE))).toBe(true);
+  });
+});
+
+describe('a file this profile keeps', () => {
+  const shared = (files: Record<string, StagedFile>) => ({
+    asset: async (name: string) => files[name] ?? null,
+  });
+
+  test('resolves by name, and records that the asset store is where it came from', async () => {
+    const attachment = only(
+      await resolveAttachments([{ asset: 'invoice-2026.pdf' }], {
+        ...BUDGET,
+        shared: shared({
+          'invoice-2026.pdf': { bytes: PDF, filename: 'invoice-2026.pdf', contentType: 'application/pdf' },
+        }),
+      }),
+    );
+
+    expect(attachment.bytes).toEqual(PDF);
+    expect(attachment.filename).toBe('invoice-2026.pdf');
+    expect(attachment.sha256).toBe(PDF_SHA256);
+    expect(attachment.origin).toBe('asset:invoice-2026.pdf');
+  });
+
+  test('a name nothing holds does not read as an empty attachment', async () => {
+    await expect(
+      resolveAttachments([{ asset: 'gone.pdf' }], { ...BUDGET, shared: shared({}) }),
+    ).rejects.toThrow(/no asset "gone.pdf"/);
+  });
+
+  test('a connection with no bridge says so rather than reading as absent', async () => {
+    await expect(
+      resolveAttachments([{ asset: 'invoice-2026.pdf' }], BUDGET),
+    ).rejects.toThrow(/cannot reach this profile's files/);
+  });
+
+  test('it is an alternative to the other sources, not a layer over them', async () => {
+    await expect(
+      resolveAttachments([{ path: '/tmp/a.pdf', asset: 'b.pdf' }], BUDGET),
+    ).rejects.toThrow(/names 2 sources \(path, asset\)/);
+  });
+});
+
+describe('which store a handle is looked up in', () => {
+  // Routing is on the prefix, never "try one and fall back". A fallback would let
+  // a mailbox-minted att_ handle be promoted into a profile-wide one for the same
+  // bytes; these two tests are what stops that being reintroduced.
+  const poisoned = () => ({
+    ...createMemoryBlobStore(),
+    get: () => {
+      throw new Error('the connection store was read');
+    },
+  });
+
+  test('a profile handle is read from the bridge, never from the connection', async () => {
+    const attachment = only(
+      await resolveAttachments([{ handle: 'stg_01j7k' }], {
+        ...BUDGET,
+        storage: poisoned(),
+        shared: { staged: async () => ({ bytes: PDF, filename: 'q.pdf', contentType: null }) },
+      }),
+    );
+
+    expect(attachment.filename).toBe('q.pdf');
+    expect(attachment.origin).toBe('handle:stg_01j7k');
+  });
+
+  test('a connection handle is read from the connection, never from the bridge', async () => {
+    const storage = createMemoryBlobStore();
+    await storage.put(stagedBytesKey('att_01j7k'), PDF);
+    await storage.put(
+      stagedMetaKey('att_01j7k'),
+      new TextEncoder().encode(JSON.stringify({ filename: 'q.pdf' })),
+    );
+
+    const attachment = only(
+      await resolveAttachments([{ handle: 'att_01j7k' }], {
+        ...BUDGET,
+        storage,
+        shared: {
+          staged: () => {
+            throw new Error('the profile bridge was read');
+          },
+        },
+      }),
+    );
+
+    expect(attachment.origin).toBe('handle:att_01j7k');
+  });
+
+  test('a profile handle with no bridge says which kind of handle this is', async () => {
+    await expect(
+      resolveAttachments([{ handle: 'stg_01j7k' }], { ...BUDGET, storage: poisoned() }),
+    ).rejects.toThrow(/no profile staging area/);
+  });
+
+  test('a missing connection handle explains that it belongs to one connection', async () => {
+    await expect(
+      resolveAttachments([{ handle: 'att_nope' }], {
+        ...BUDGET,
+        storage: createMemoryBlobStore(),
+      }),
+    ).rejects.toThrow(/belongs to one connection/);
   });
 });

@@ -155,7 +155,7 @@ export function imapCapabilities(input: {
         capabilities.push({
           name: OPERATIONS.sendMessage,
           description:
-            'Send a message, with attachments, filing a copy in the Sent mailbox. Attachments are named by reference — a path, an HTTPS URL, or another message in this mailbox — and this endpoint reads the bytes itself, so never encode a file into the call.',
+            'Send a message, with attachments, filing a copy in the Sent mailbox. Attachments are named by reference — a path, an HTTPS URL, a staged handle, a file this profile keeps, or another message in this mailbox — and this endpoint reads the bytes itself. A file that exists only where you are goes through lanes_assets_stage once and travels as a handle.',
           bundle: WRITE_BUNDLE,
           inputSchema: object(
             {

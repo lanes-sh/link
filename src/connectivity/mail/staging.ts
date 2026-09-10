@@ -53,9 +53,26 @@ export function isHandle(value: string): boolean {
   return HANDLE.test(value);
 }
 
-/** `att_` plus 128 bits, which is unguessable and still fits on one line. */
-export function newHandle(): string {
-  return `att_${randomBytes(16).toString('hex')}`;
+/**
+ * Which store a handle belongs to, written into the handle itself.
+ *
+ * Resolution routes on the prefix rather than trying one store and falling back
+ * to the other. A fallback would let `lanes_assets.stage` be handed an `att_`
+ * handle minted from a *mailbox* and hand back a profile-wide one for the same
+ * bytes — laundering a connection-scoped file into every connection in the
+ * profile. Routing on the prefix means that promotion has nowhere to happen.
+ */
+export const CONNECTION_HANDLE = 'att_';
+export const PROFILE_HANDLE = 'stg_';
+
+/** A prefix plus 128 bits, which is unguessable and still fits on one line. */
+export function newHandle(prefix: string = CONNECTION_HANDLE): string {
+  return `${prefix}${randomBytes(16).toString('hex')}`;
+}
+
+/** Whether this handle names the profile-level area rather than one connection. */
+export function isProfileHandle(value: string): boolean {
+  return value.startsWith(PROFILE_HANDLE);
 }
 
 export async function putStaged(

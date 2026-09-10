@@ -1,4 +1,4 @@
-import { isHandle } from '#connectivity/mail';
+import { isHandle, isProfileHandle } from '#connectivity/mail';
 import { mergeCapabilities, type ProfileRuntime } from './mcp/index.ts';
 import type { Principal } from '#auth';
 
@@ -25,6 +25,14 @@ import type { Principal } from '#auth';
  * shared area would quietly widen it. So an upload names its target, the
  * principal has to be able to reach that target, and the handle resolves only
  * from there.
+ *
+ * That still holds for this route, and deliberately did not change when a
+ * profile-level area was added beside it. `lanes_assets.stage` serves the caller
+ * who cannot make an HTTP request at all, and it is gated as a capability —
+ * policy, grants, one audit row. This route's whole authorization derives from
+ * `?connection=`, so widening it to the profile would mean a second gate and a
+ * second refusal vocabulary for a case a capability already answers. A `stg_`
+ * handle is therefore refused here by prefix rather than served.
  *
  * This file does HTTP and authorization; the write itself is
  * `Dispatcher.stageAttachment`. Not a split for its own sake — `server` may not
@@ -167,6 +175,16 @@ async function fetchAttachment(input: {
   }
   if (!isHandle(handle)) {
     return problem(400, `"${handle}" is not a handle.`);
+  }
+  // Refused on the prefix rather than looked up and missed. This route serves
+  // one connection's staging area; a profile-level handle is resolvable only by
+  // naming it in a call, so a 404 here would read as "expired" and send the
+  // caller to stage the file again.
+  if (isProfileHandle(handle)) {
+    return problem(
+      400,
+      `"${handle}" is staged for this profile, not for one connection, so it is not fetched here. Name it directly in the call that needs it.`,
+    );
   }
 
   const found = await input.runtime.dispatcher.fetchStagedAttachment({

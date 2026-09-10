@@ -1,7 +1,11 @@
 import { isTool } from '#connectivity';
 import { z } from 'zod';
 import { toolNameFor } from './naming.ts';
+import { queryTerms, reads } from './query.ts';
+import { type Match, rank } from './ranking.ts';
+import { afford, type Accounts, DEFAULT, renderMatches } from './render.ts';
 import { sanitizeSchema } from './schema.ts';
+import { scoreEntry, searchable, summaryOf } from './searchable.ts';
 import type { MergedCapability } from './visibility.ts';
 
 /**
@@ -16,143 +20,30 @@ import type { MergedCapability } from './visibility.ts';
  * See `search.ts` for what the surface is for and why it exists (ADR-075).
  */
 
-/** How many matches come back with their whole schema attached. */
-const DETAILED = 5;
+/**
+ * What an answer may cost, in bytes of the caller's context.
+ *
+ * A count was the wrong unit. Five matches is 900 bytes of one provider's
+ * schemas and 40 KB of another's, so a fixed number either truncates the useful
+ * answer or floods the context — and which it does depends on whose API the
+ * caller happened to ask about.
+ */
+const BUDGET = 16 * 1024;
 
-/** How many come back as a line each, after those. */
-const LISTED = 20;
+/** The most any one query will explain, however small the schemas are. */
+const MOST = 10;
 
 /**
- * Function words, dropped from a *query* and never from the text searched.
+ * The fewest, however large.
  *
- * The narrowing in `rank` requires every term to match, which makes a query's
- * grammar load-bearing: "send an email" asked for `an` as a whole word, matched
- * nothing that also had `send` and `email`, and fell back to the loose ranking
- * it was meant to replace — 93 matches out of 276 on a real endpoint. Removing
- * them is what a BM25 index does implicitly by weighting a term that appears
- * everywhere at nearly nothing; here it has to be explicit, because presence is
- * the test.
- *
- * Function words only. Nothing here can name a capability: `get`, `set`, `list`,
- * `read` and `send` are all verbs a caller means, and `all` is in a real
- * operation id, so none of them belongs on this list however common it is.
- *
- * Only applied where it leaves something behind — a query that is nothing but
- * these keeps them, so "all of it" searches for something rather than for
- * nothing.
+ * The best match is rendered in full even when it alone exceeds the budget. An
+ * answer that names the right capability and withholds its arguments is the
+ * expensive kind of wrong: it costs a round trip *and* looks like an answer.
  */
-const STOPWORDS = new Set([
-  'a', 'an', 'the', 'this', 'that', 'these', 'those',
-  'i', 'me', 'my', 'mine', 'we', 'our', 'you', 'your', 'it', 'its',
-  'and', 'or', 'but', 'if', 'then', 'than', 'so', 'as',
-  'of', 'to', 'for', 'from', 'in', 'into', 'on', 'at', 'by', 'with', 'about',
-  'is', 'are', 'was', 'be', 'been', 'do', 'does', 'did', 'can', 'could',
-  'would', 'should', 'will', 'shall', 'may', 'might', 'must',
-  'some', 'any', 'each', 'every', 'no', 'not',
-  // Question and request framing. A caller types "what meetings do i have",
-  // and `what` and `have` are as much grammar as `the` is.
-  'what', 'which', 'who', 'whom', 'when', 'where', 'why', 'how',
-  'have', 'has', 'had', 'please', 'want', 'wants', 'need', 'needs', 'let',
-]);
-
-/** The terms a query actually searches on. */
-function queryTerms(query: string): string[] {
-  const all = words(query);
-  const meaningful = all.filter((word) => !STOPWORDS.has(word));
-  return meaningful.length > 0 ? meaningful : all;
-}
-
-/**
- * A word, for matching.
- *
- * Split on everything that separates one in an identifier — `.`, `_`, `-`, and
- * a camelCase boundary — because the terms a caller searches for are words and
- * the text being searched is mostly identifiers. Without the camelCase split,
- * `copyTo` never matches *copy*.
- */
-function words(text: string): string[] {
-  return text
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((word) => word.length > 0);
-}
-
-/**
- * Whether a term is in a word list, allowing for one being a prefix of the other.
- *
- * The cheapest thing that stands in for stemming, and it is needed: a caller
- * types "meetings" and the manifest says "meeting", so exact equality found
- * nothing and the query landed on whatever else shared a word with it. Prefixes
- * cover the endings that actually come up — plurals, `-ing`, `-ed`, `-s` — in
- * both directions, since the query may be the longer or the shorter form.
- *
- * Four characters before a prefix counts, because three would make `get` match
- * `getting` and also `getaway`, and one would make every term match everything.
- * Equality is always enough, so short terms still work as themselves.
- */
-function holds(list: readonly string[], term: string): boolean {
-  return list.some(
-    (word) =>
-      word === term ||
-      (term.length >= 4 && word.startsWith(term)) ||
-      (word.length >= 4 && term.startsWith(word)),
-  );
-}
-
-/** What one capability's title and description are, whichever kind it is. */
-function summaryOf(entry: MergedCapability): { title: string | undefined; description: string } {
-  if (entry.discovered) {
-    return { title: entry.discovered.title, description: entry.discovered.description };
-  }
-
-  const capability = entry.capability;
-  if (!capability || !isTool(capability)) return { title: undefined, description: '' };
-
-  return { title: capability.title, description: capability.description };
-}
-
-/** Whether the search considers this entry at all. */
-function searchable(entry: MergedCapability): boolean {
-  return entry.discovered !== undefined || (!!entry.capability && isTool(entry.capability));
-}
-
-/**
- * How well one entry answers the query — the whole of the ranking.
- *
- * Its own function because two callers have to agree exactly: the search, and
- * the check in front of it that decides whether a miss is worth re-reading the
- * config for. A second reading of "does this match" would make the endpoint
- * reload for queries that then succeed anyway, and skip the reload for the ones
- * that needed it — both silent.
- *
- * Deliberately reads `summaryOf` rather than `shapeOf`: nothing here looks at a
- * schema, and `shapeOf` converts Zod to JSON Schema for every authored
- * capability it is handed.
- */
-function scoreEntry(id: string, entry: MergedCapability, terms: readonly string[]): number {
-  const summary = summaryOf(entry);
-  const name = words(id);
-  const title = words(summary.title ?? '');
-  // The connections block `describeWithConnections` appends is not part of
-  // what this searches — it is identical on every tool, so it would match
-  // every term in it against everything.
-  const description = words(summary.description.split('\n\nAvailable connections')[0] ?? '');
-
-  let score = 0;
-  for (const term of terms) {
-    // The name is worth most: it carries the provider id, which is how a
-    // query naming a vendor finds that vendor's tools at all.
-    if (holds(name, term)) score += 3;
-    else if (holds(title, term)) score += 2;
-    else if (holds(description, term)) score += 1;
-  }
-
-  return score;
-}
+const FEWEST = 1;
 
 /** What one capability's title, description and schema are, whichever kind it is. */
-function shapeOf(entry: MergedCapability): {
+export function shapeOf(entry: MergedCapability): {
   title: string | undefined;
   description: string;
   inputSchema: Record<string, unknown>;
@@ -181,166 +72,7 @@ function shapeOf(entry: MergedCapability): {
   return { ...summary, inputSchema };
 }
 
-interface Match {
-  readonly id: string;
-  readonly tool: string;
-  readonly score: number;
-  readonly entry: MergedCapability;
-}
 
-/**
- * Rank the reachable capabilities against a query.
- *
- * Deliberately simple, and the reason is worth stating: a client that defers
- * tool loading already runs BM25 or a regex over the same names and
- * descriptions, locally, with no round trip. This is the fallback for clients
- * that do not, so it needs to be good enough to find the right provider rather
- * than good enough to replace an index. Term presence, weighted by where it
- * appears, and no tie-breaking beyond that.
- *
- * An exact capability id short-circuits, because "give me the schema for
- * `gmail.send_message`" is the second call a model makes after a search and it
- * should not be a search.
- */
-function rank(query: string, merged: Map<string, MergedCapability>): Match[] {
-  const exact = merged.get(query.trim());
-  if (exact) {
-    return [{ id: query.trim(), tool: toolNameFor(query.trim()), score: 1, entry: exact }];
-  }
-
-  const terms = queryTerms(query);
-  if (terms.length === 0) return [];
-
-  const matches: Match[] = [];
-
-  for (const [id, entry] of merged) {
-    if (!searchable(entry)) continue;
-
-    const score = scoreEntry(id, entry, terms);
-    if (score > 0) matches.push({ id, tool: toolNameFor(id), score, entry });
-  }
-
-  // Score first, then id, so the order is stable across calls — the same
-  // property `tools/list` is asked for, and for the same reason: a caller
-  // comparing two searches should be comparing results, not orderings.
-  matches.sort((a, b) => b.score - a.score || a.id.localeCompare(b.id));
-
-  // Everything at least half as good as the best match, and nothing weaker.
-  //
-  // Measured against a real endpoint serving 276 tools, returning everything
-  // that scored at all made the search look useless while behaving correctly:
-  // "create a pull request" reported 213 matches, because `create` and
-  // `request` each appear all over a large surface. The top of the ranking was
-  // right every time — the count and the tail were the lie, and the tail is
-  // twenty tools of noise in the caller's context.
-  //
-  // Two narrower rules were tried and both were worse, which is why the cut is
-  // on the score rather than on how much of the query matched:
-  //
-  //   - *Every term* is brittle. One word the surface does not contain — a typo,
-  //     a product name, "please" — and nothing matches all of them, so the query
-  //     falls back to the loose ranking it was meant to replace.
-  //   - *The most terms* inverts the weighting. "please send a message to
-  //     someone" picked a mail-filter tool over the one that sends, because
-  //     `someone` happened to appear in its description and three weak
-  //     description hits outrank two strong ones.
-  //
-  // The score already carries both halves — more of the query matched is more
-  // points, and the name is worth three times the description — so cutting
-  // relative to the best score keeps a tool named for what was asked and drops
-  // one that merely mentions it. Half is a ratio rather than a threshold
-  // because scores scale with query length, and it leaves a genuine second
-  // candidate in: two strong hits survive beside three.
-  // Strictly more than half, not at least: on a two-term query naming a
-  // provider, a tool matching only the provider half scores exactly half of
-  // one matching both, and "every other tool this provider has" is not an
-  // answer to a query that named a capability too.
-  const best = matches[0]?.score ?? 0;
-  return matches.filter((match) => match.score * 2 > best);
-}
-
-/** Where a capability can be used, as the search reports it. */
-function whereReachable(entry: MergedCapability): string {
-  return [...entry.reachable]
-    .map(([profile, connections]) => `${profile}: ${connections.join(', ')}`)
-    .join(' | ');
-}
-
-function renderMatches(
-  query: string,
-  matches: readonly Match[],
-  surface?: 'full' | 'crunched',
-): string {
-  if (matches.length === 0) {
-    return (
-      `Nothing reachable matches "${query}".\n\n` +
-      'This searched every capability this caller can reach, so a miss means it is ' +
-      'not connected or not granted rather than not spelled right. ' +
-      'Call lanes_setup_overview for what is connected and what connecting something else takes.'
-    );
-  }
-
-  const detailed = matches.slice(0, DETAILED);
-  const listed = matches.slice(DETAILED, DETAILED + LISTED);
-
-  const lines: string[] = [
-    `${matches.length} match${matches.length === 1 ? '' : 'es'} for "${query}".`,
-    '',
-    // Why the tool is missing differs by mode, and the reason is the part a
-    // model acts on. Under `full` an absent tool means the client's list is
-    // stale; under `crunched` it means the endpoint never advertised it and
-    // never will, so telling the model to prefer a named tool would be telling
-    // it to wait for something that is not coming.
-    surface === 'crunched'
-      ? 'This endpoint advertises a small surface on purpose: the owner layer and these two ' +
-        'tools. Everything below is reachable through lanes_tools_call and will not appear in ' +
-        'your tool list, so call it with the capability id and the arguments shown.'
-      : 'Each one is invocable two ways. Prefer the named tool if your tool list has it; ' +
-        'use lanes_tools_call if it does not — which is the case when this endpoint ' +
-        'gained a connection after your client last read its tool list.',
-    '',
-  ];
-
-  for (const match of detailed) {
-    // The wire name is the address under `full`. Under `crunched` it names no
-    // tool the client can call, so the id — which is what `lanes_tools_call`
-    // takes — leads instead.
-    lines.push(`## ${surface === 'crunched' ? match.id : match.tool}`);
-    const shape = shapeOf(match.entry);
-    if (shape.title) lines.push(`${shape.title}`);
-    lines.push('');
-    lines.push(shape.description.split('\n\nAvailable connections')[0] ?? '');
-    lines.push('');
-    lines.push(`capability: ${match.id}`);
-    lines.push(`reachable:  ${whereReachable(match.entry)}`);
-    lines.push('');
-    lines.push('arguments (JSON Schema — `profile` and `connection` are added by this endpoint):');
-    lines.push('```json');
-    lines.push(JSON.stringify(shape.inputSchema, null, 2));
-    lines.push('```');
-    lines.push('');
-  }
-
-  if (listed.length > 0) {
-    lines.push(`## ${listed.length} more, without schemas`);
-    lines.push('');
-    lines.push('Search again with a capability id for one of these to get its arguments.');
-    lines.push('');
-    for (const match of listed) {
-      const shape = shapeOf(match.entry);
-      const summary = (shape.description.split('\n')[0] ?? '').slice(0, 100);
-      lines.push(`- \`${match.id}\` — ${summary}`);
-    }
-    lines.push('');
-  }
-
-  const hidden = matches.length - detailed.length - listed.length;
-  if (hidden > 0) {
-    lines.push(`${hidden} further match${hidden === 1 ? '' : 'es'} not shown. Narrow the query.`);
-  }
-
-  return lines.join('\n');
-}
 
 /**
  * Search, rendered.
@@ -352,8 +84,147 @@ export function searchCapabilities(
   query: string,
   merged: Map<string, MergedCapability>,
   surface?: 'full' | 'crunched',
+  filters: Filters = {},
+  accounts?: Accounts,
 ): string {
-  return renderMatches(query, rank(query, merged), surface);
+  return renderMatches(
+    query,
+    select(query, merged, filters),
+    surface,
+    filters.limit ?? DEFAULT,
+    accounts,
+  );
+}
+
+/**
+ * The same answer as data, for a client that would rather not parse prose.
+ *
+ * `tools/call` may carry `structuredContent` beside its text since the
+ * 2026-07-28 revision, and a search result is the strongest case for it on this
+ * endpoint: its whole purpose is to be read and turned into the *next* call, so
+ * every field a client has to recover with a regular expression is a chance to
+ * recover it wrongly. The text stays — it is what a model reads, and older
+ * clients get nothing else.
+ */
+export function searchResults(
+  query: string,
+  merged: Map<string, MergedCapability>,
+  filters: Filters = {},
+  accounts?: Accounts,
+): {
+  query: string;
+  matched: number;
+  reachable: { profile: string; connections: { connection: string; account: string }[] }[];
+  capabilities: {
+    capability: string;
+    tool: string;
+    title: string | undefined;
+    description: string;
+    reachable: { profile: string; connections: string[] }[];
+    inputSchema: Record<string, unknown>;
+  }[];
+} {
+  const matches = select(query, merged, filters);
+  const { detailed } = afford(matches, filters.limit ?? DEFAULT);
+
+  return {
+    query,
+    matched: matches.length,
+    // The same box the prose carries, as data. A caller building the next call
+    // needs a profile and a connection for it, and this is where both are.
+    reachable: [...(accounts ?? new Map())].map(([profile, connections]) => ({
+      profile,
+      connections: [...connections].map(([connection, account]) => ({ connection, account })),
+    })),
+    capabilities: detailed.map((match) => {
+      const shape = shapeOf(match.entry);
+      return {
+        capability: match.id,
+        tool: match.tool,
+        title: shape.title,
+        description: shape.description.split('\n\nAvailable connections')[0] ?? '',
+        reachable: [...match.entry.reachable].map(([profile, connections]) => ({
+          profile,
+          connections: [...connections],
+        })),
+        inputSchema: shape.inputSchema,
+      };
+    }),
+  };
+}
+
+/**
+ * The arguments a capability accepts, as the search would print them.
+ *
+ * Exported so the gateway can validate against exactly what it advertised. A
+ * second derivation of "what this takes" would let the two disagree, and the
+ * disagreement would read as the caller getting the schema wrong.
+ */
+export function schemaFor(entry: MergedCapability): Record<string, unknown> {
+  return shapeOf(entry).inputSchema;
+}
+
+/**
+ * The shape `searchResults` promises, as the tool advertises it.
+ *
+ * Beside the function that produces it rather than beside the registration that
+ * publishes it, because the specification requires a server to conform to an
+ * output schema it declares — and a schema kept next to the declaration drifts
+ * from the code that has to satisfy it.
+ */
+export const SEARCH_RESULT = {
+        query: z.string(),
+        matched: z.number().int().describe('How many capabilities matched, including any not explained below.'),
+        capabilities: z.array(
+          z.object({
+            capability: z.string().describe('The id to pass to lanes_tools_call.'),
+            tool: z.string().describe('The tool name, if this endpoint advertises one for it.'),
+            title: z.string().optional(),
+            description: z.string(),
+            reachable: z
+              .array(z.object({ profile: z.string(), connections: z.array(z.string()) }))
+              .describe('Where it can be called, and as which account.'),
+            inputSchema: z
+              .record(z.string(), z.unknown())
+              .describe('Its arguments. `profile` and `connection` are added by this endpoint.'),
+          }),
+        ),
+};
+
+/**
+ * What a caller may narrow a search by, beyond the words.
+ *
+ * All optional, and none of them can widen what is reachable — they filter the
+ * ranking, which was already built only from what this caller may reach. A
+ * filter naming something they cannot reach returns nothing, which is the same
+ * answer they would get for a capability that does not exist (ADR-007).
+ */
+export type Filters = {
+  readonly provider?: string | undefined;
+  readonly profile?: string | undefined;
+  readonly connection?: string | undefined;
+  readonly readOnly?: boolean | undefined;
+  readonly limit?: number | undefined;
+};
+
+/** The ranking, narrowed by whatever the caller pinned down. */
+function select(
+  query: string,
+  merged: Map<string, MergedCapability>,
+  filters: Filters,
+): Match[] {
+  return rank(query, merged).filter((match) => {
+    if (filters.provider !== undefined && match.id.split('.')[0] !== filters.provider) return false;
+    if (filters.readOnly === true && !reads(match.id)) return false;
+    if (filters.profile !== undefined && !match.entry.reachable.has(filters.profile)) return false;
+    if (filters.connection !== undefined) {
+      const named = [...match.entry.reachable.values()].some((all) =>
+        all.includes(filters.connection as string),
+      );
+      if (!named) return false;
+    }
+    return true;
+  });
 }
 
 /**

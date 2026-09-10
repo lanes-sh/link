@@ -6,6 +6,7 @@ import { createMemoryBlobStore } from '#stores/blobs/testing.ts';
 import { createBlobAuditStore } from '#deployments/adapters/audit-blob.ts';
 import { RateLimiter } from '#policy';
 import { createLocalConnector } from '#connectivity/transports';
+import { resolveAttachments } from '#connectivity/mail';
 import {
   defineLocalProvider,
   isToolResult,
@@ -70,6 +71,31 @@ const testProvider = defineLocalProvider({
       },
     },
     {
+      // Round-trips a file through the profile-level area: stage it, then name
+      // the handle the way a *different* connection's send would. The point
+      // under test is that dispatch hands over a working bridge at all.
+      kind: 'tool',
+      name: 'round_trip',
+      description: 'stage a file and name it back',
+      inputSchema: z.object({ text: z.string() }),
+      async handler({ text }, context) {
+        const receipt = await context.attachments!.stage({
+          bytes: new TextEncoder().encode(text),
+          filename: 'note.txt',
+          contentType: 'text/plain',
+        });
+        const [attachment] = await resolveAttachments([{ handle: receipt.handle }], {
+          maxTotalBytes: 1_000_000,
+          shared: context.attachments,
+        });
+        return {
+          content: [
+            { type: 'text', text: `${receipt.handle} ${attachment!.filename} ${new TextDecoder().decode(attachment!.bytes)}` },
+          ],
+        };
+      },
+    },
+    {
       kind: 'tool',
       name: 'get_note',
       description: 'read a note',
@@ -127,7 +153,12 @@ const CONNECTIONS = [
 const PRINCIPAL = ownerPrincipal('personal');
 const silent = { debug() {}, info() {}, warn() {}, error() {} };
 
-function harness(overrides: { limits?: { profile: number; connection: number } } = {}) {
+function harness(
+  overrides: {
+    limits?: { profile: number; connection: number };
+    storage?: ReturnType<typeof createMemoryBlobStore>;
+  } = {},
+) {
   const state = createMemoryState();
   const audit = createBlobAuditStore({ storage: createMemoryBlobStore() });
   const registry = new ProviderRegistry();
@@ -156,7 +187,7 @@ function harness(overrides: { limits?: { profile: number; connection: number } }
     state,
     audit,
     credentials: createMemoryCredentials(),
-    storage: createMemoryBlobStore(),
+    storage: overrides.storage ?? createMemoryBlobStore(),
     limiter: new RateLimiter(),
     log: silent,
   });
@@ -585,5 +616,30 @@ describe('logging', () => {
 
     expect(written.join('')).not.toContain('invisible');
     expect(written.join('')).toContain('visible');
+  });
+});
+
+describe('the profile-level file area', () => {
+  test('a provider is handed a bridge, and what it stages it can name back', async () => {
+    const { dispatcher } = harness();
+    const outcome = await dispatcher.invoke(
+      call('example.round_trip', 'example.a', { text: 'hello' }),
+    );
+
+    expect(outcome.ok).toBe(true);
+    expect(firstBlock(outcome)).toEqual({
+      type: 'text',
+      text: expect.stringMatching(/^stg_[0-9a-f]{32} note\.txt hello$/) as unknown as string,
+    });
+  });
+
+  test('the bytes land in the profile area, not under the connection that staged them', async () => {
+    const storage = createMemoryBlobStore();
+    const { dispatcher } = harness({ storage });
+    await dispatcher.invoke(call('example.round_trip', 'example.a', { text: 'hello' }));
+
+    const keys = (await storage.list('')).map((blob) => blob.key);
+    expect(keys.some((key) => key.startsWith('attachments.d/attachments/stg_'))).toBe(true);
+    expect(keys.some((key) => key.startsWith('example/a/attachments/'))).toBe(false);
   });
 });

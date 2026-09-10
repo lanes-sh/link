@@ -157,9 +157,9 @@ They manage these with `lanes link tasks list --profile <name> --workspace <name
 
 ## Assets are files kept by name
 
-Storing one names a source and the endpoint reads the bytes — the same five
-sources the attachments section below describes, and the same rule: **never
-encode a file into the call.** The name is the address; there is no id and no
+Storing one names a source and the endpoint reads the bytes — the same sources
+the attachments section below describes, and the same rule: do not encode a file
+into a call you could name it in. The name is the address; there is no id and no
 description, so what a file is *for* belongs in memory, next to its name.
 
 Reading gives you text when the file is text. Anything else comes back described
@@ -167,10 +167,14 @@ Reading gives you text when the file is text. Anything else comes back described
 no form of a read that hands you a PDF, and a megabyte of base64 in the
 conversation would not help you if there were.
 
-To attach a stored file to something you are sending, ask the owner to run
-`lanes link attach <file> --profile <name> --workspace <name> --connection <provider>.<account>`,
-which prints a handle the send tools take. An asset's own store is not reachable
-from a mailbox's, deliberately.
+To attach a stored file to something you are sending, name it as
+`{ "asset": "<name>" }`. A mailbox's attachments are still not reachable from
+here, deliberately: ask the mail connection itself for those.
+
+`lanes_assets_stage` is the other half, and a different question. `store` keeps a
+file because the owner wants it kept; `stage` holds one for a day because a call
+is about to name it. Use `stage` for something you were handed and are passing
+straight on, so their files stay theirs.
 
 They manage these with `lanes link assets list --profile <name> --workspace <name>`.
 
@@ -245,18 +249,26 @@ reads the bytes itself. Naming two is refused rather than resolved.
 { "path": "/Users/them/Downloads/invoice.pdf" }         // on the endpoint's own machine
 { "url": "https://example.com/invoice.pdf" }            // fetched here, HTTPS only
 { "message_id": "18f…", "attachment_id": "quote.pdf" }  // already on a message in that mailbox
-{ "handle": "att_01j7k…" }                              // staged out of band
-{ "data": "JVBERi0…", "filename": "invoice.pdf" }       // base64, and a last resort
+{ "asset": "invoice-2026.pdf" }                         // a file this profile keeps
+{ "handle": "stg_01j7k…" }                              // one you handed over with lanes_assets_stage
+{ "handle": "att_01j7k…" }                              // staged out of band, for one connection
+{ "data": "JVBERi0…", "filename": "invoice.pdf" }       // base64, and only when nothing else can reach it
 ```
 
 `attachment_id` takes a filename, a position, or the vendor's own id, and can be
 omitted when the message has one attachment. `filename` and `content_type`
 override what the source implies.
 
-**Never encode a file into a call.** A 239 KB PDF is roughly 320,000 characters
-of base64 — more than you can write in one message — and the way that fails is a
-mail which mentions an attachment and does not have one. The other four sources
-exist so you never have to.
+**Do not encode the same file into call after call.** A 239 KB PDF is roughly
+320,000 characters of base64 — more than you can write in one message — and the
+way that fails is a mail which mentions an attachment and does not have one. The
+other sources exist so you rarely have to.
+
+**A file only you can see is handed over once.** If it is in your own sandbox and
+nothing above can reach it, call `lanes_assets_stage` with the bytes. You get back
+a handle, not the file, and that handle names it in any send from this profile for
+the next 24 hours. That is the one time base64 is the right answer: once, to hand
+it over, rather than every time you send it.
 
 **Forwarding something that arrived by mail is free.** Use `message_id` rather
 than fetching the attachment and passing its bytes along. Reading them is not
@@ -264,9 +276,11 @@ offered anyway: the read tools report each attachment's name, type and size, not
 its content.
 
 **If the endpoint is not on the same machine as the file**, `path` names the
-*server's* filesystem rather than theirs, and will not find it. Ask them to run
-`lanes link attach <file> --profile <name> --workspace <name> --connection <provider>.<account>`, which prints a
-handle to use instead.
+*server's* filesystem rather than theirs, and will not find it. If you hold the
+file, `lanes_assets_stage` is the answer and needs nobody. If *they* hold it, ask
+them to run
+`lanes link attach <file> --profile <name> --workspace <name> --connection <provider>.<account>`,
+which prints a handle to use instead.
 
 **`draft_only: true`** saves instead of sending, where they should see it before
 it goes out.

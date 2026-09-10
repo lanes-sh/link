@@ -214,3 +214,76 @@ The rule this ADR exists for is unchanged and applies in the new direction: **th
 the tool result**. A model that must read a file in order to have it has not been handed anything —
 239 KB of PDF is around 320,000 characters of base64 — so what travels through the conversation is
 a handle, exactly as it does on the way in.
+
+## Amendment: an area for the profile, and an asset as a source
+
+The six sources all assume the endpoint can already reach the bytes. A client that holds a file
+nothing else can see has none of them: `path` names the endpoint's disk, which on a hosted
+deployment is a container; `url` must be fetchable; `handle` needs a stage that only the HTTP route
+and the CLI could perform; and the mailbox sources need the file already in a mailbox. That leaves
+`data`, which is the one channel MCP actually offers a client — there is still no
+client-to-server binary transfer in the protocol, and a tool argument is the only thing that
+travels.
+
+`data` worked the whole time. What defeated it was our own copy. `gmail.send_message` described
+four of the six sources and did not list `data` among them; the IMAP description listed three and
+did not mention `handle` at all, on the providers that are the only ones able to mint one. Every
+field around `data` said to prefer something else, and the assets tool said never to use it. A
+capable client read all of that, concluded correctly that no route existed, and reported a design
+gap rather than trying the source that would have worked. Copy that is right about the common case
+and silent about the only case that matters is a defect, not a nicety.
+
+Two things change, and one deliberately does not.
+
+**`lanes_assets.stage` holds a file for the profile.** It takes the same source shape, writes into
+`attachments.d/` under the profile rather than under `<provider>/<connection>`, and returns a
+handle, a digest and an expiry — never the bytes. Bytes still cross as base64 once, because there
+is no other channel; what changes is that once is no longer once *per send*. The `.d` suffix is
+load-bearing: a provider id may be `[a-z][a-z0-9_]*`, so a bare `attachments_tmp` would be a legal
+provider id sharing that key space.
+
+**`asset` becomes a seventh source.** A file the profile keeps attaches as
+`{ "asset": "<name>" }`. It is resolved in `#dispatch`, not by a provider reaching sideways, and it
+is gated on `lanes_assets.get` for the calling principal — without that check a caller denied the
+asset store but allowed a send could read the store through an attachment argument. This is the
+case the Consequences above anticipated when they noted that staging would let cross-provider
+sources work "by staging rather than by reaching another connection's credential", and it is the
+narrow form of what `drive_file_id` was rejected for.
+
+**`POST /attachments` does not change.** Its authorization derives entirely from `?connection=`, so
+widening it to the profile would mean a second gate and a second refusal vocabulary for a case a
+capability already answers — and it answers it for the caller who cannot make an HTTP request at
+all, which is the caller this amendment exists for. A `stg_` handle is refused there by prefix
+rather than looked up and missed, so the refusal reads as "wrong door" instead of "expired".
+
+### What the per-connection scope was protecting, and what still holds
+
+The scope exists so one account's bytes are not addressable from another. That property is
+unchanged for everything that had it. The line that keeps it true is narrow enough to state in one
+sentence, and worth stating because a later change could break it without noticing:
+
+> The profile-level area only ever holds bytes the **caller** supplied — `data`, `url`, `path` on
+> `lanes_assets.stage` — or bytes the **profile already owns**, through `asset`. It never holds
+> bytes read out of a third party's account.
+
+`get_attachment` therefore keeps minting a connection-scoped `att_` handle, and nothing promotes
+one. Resolution routes on the handle prefix and never falls back between the two areas, because a
+fallback is exactly the promotion path: `lanes_assets.stage` handed a mailbox-minted `att_` handle
+would hand back a `stg_` one for the same bytes. Prefix routing leaves that nowhere to happen.
+
+What is genuinely given up is that a principal who may reach a profile, and who holds a `stg_`
+handle, can name that file on any connection in the profile they may already use. Since the bytes
+were either supplied by that caller or already sitting in that profile's store, nothing crosses a
+boundary the caller did not already hold. What remains is `mayReach`, 128 bits of unguessability,
+and the 24-hour expiry.
+
+### Consequences
+
+- An existing IMAP connection must be re-connected once before `asset` appears in its
+  `send_message` schema, for the reason recorded above: those capabilities are discovered and
+  cached. Gmail's are authored, so it picks the change up immediately.
+- "What entered this endpoint" is now two capabilities: `attachments.stage` for the HTTP and CLI
+  routes, and `lanes_assets.stage` for the tool. That shape already existed — `get_attachment`
+  stages from inside a dispatched capability and annotates rather than writing a second row.
+- The staged area is swept on the next stage, as the connection-scoped one is, because there is
+  still no scheduler in the process.

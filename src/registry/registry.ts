@@ -165,7 +165,49 @@ export class ProviderRegistry {
    * Authored wins on a name collision. The overlap is the reason to author one at
    * all: the discovered version is the thing being replaced.
    */
+  /**
+   * Every capability this registry holds, memoised on the revision.
+   *
+   * Rebuilt from nothing on every call before this: a sort of every provider, a
+   * flatMap over each one's authored and discovered lists, and a `Set` per
+   * provider. That is once per `findCapability` — which is once per dispatch —
+   * and twice more per request from the merged set the MCP surface builds. On
+   * an endpoint advertising a few hundred capabilities it was the largest
+   * repeated allocation on the warm path, and it computed the same answer every
+   * time.
+   *
+   * `#revision` already existed and already moved on every register and every
+   * discovery write, which is exactly when this answer can change.
+   */
   capabilities(): RegisteredCapability[] {
+    if (this.#capabilities?.revision === this.#revision) return this.#capabilities.value;
+
+    const value = this.#buildCapabilities();
+    this.#capabilities = { revision: this.#revision, value };
+    return value;
+  }
+
+  #capabilities: { revision: number; value: RegisteredCapability[] } | undefined;
+
+  /**
+   * The same, by id, without the scan.
+   *
+   * `findCapability` was `capabilities().find(...)`, so a dispatch paid a full
+   * rebuild and then a linear walk of it. Both are now one lookup.
+   */
+  findCapabilityIndexed(id: string): RegisteredCapability | undefined {
+    if (this.#byId?.revision !== this.#revision) {
+      this.#byId = {
+        revision: this.#revision,
+        value: new Map(this.capabilities().map((entry) => [entry.id, entry])),
+      };
+    }
+    return this.#byId.value.get(id);
+  }
+
+  #byId: { revision: number; value: Map<string, RegisteredCapability> } | undefined;
+
+  #buildCapabilities(): RegisteredCapability[] {
     return this.list().flatMap((entry): RegisteredCapability[] => {
       const providerId = entry.manifest.id;
       const authored = entry.definition?.capabilities ?? [];
@@ -189,7 +231,7 @@ export class ProviderRegistry {
   }
 
   findCapability(id: string): RegisteredCapability | undefined {
-    return this.capabilities().find((entry) => entry.id === id);
+    return this.findCapabilityIndexed(id);
   }
 
   /**

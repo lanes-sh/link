@@ -232,3 +232,65 @@ describe('what it cannot do', () => {
     }
   });
 });
+
+/**
+ * What the gateway refuses before it reaches anything.
+ *
+ * The typed tools have always had an argument check: the SDK compiles their
+ * input schema at registration and refuses a malformed call itself. Reaching
+ * the same capability through `lanes_tools_call` had none — its `arguments` is
+ * an open record — so a misspelled field travelled to the vendor, spent a
+ * rate-limit unit and an audit row, and came back as whatever error that vendor
+ * writes. Under `surface: crunched` every provider call takes this path.
+ */
+describe('what is checked before the call goes out', () => {
+  test('a malformed call is refused, and the refusal carries the schema', async () => {
+    const outcome = await call(personal.server.url, {
+      capability: 'example.echo',
+      profile: 'personal',
+      connection: 'example.a',
+      // `message` is required; this is the misspelling that used to reach the
+      // provider and be answered by it.
+      arguments: { mesage: 'typo' },
+    });
+
+    expect(outcome.isError).toBe(true);
+    expect(outcome.text).toContain('example.echo was not called');
+    // The schema comes back with the refusal, so the next turn is a corrected
+    // call rather than another search for something the caller already found.
+    expect(outcome.text).toContain('```json');
+    expect(outcome.text).toContain('message');
+    expect(outcome.text).toContain('try again rather than searching for it again');
+  });
+
+  test('a well-formed call is untouched by the check', async () => {
+    const outcome = await call(personal.server.url, {
+      capability: 'example.echo',
+      profile: 'personal',
+      connection: 'example.a',
+      arguments: { message: 'still fine' },
+    });
+
+    expect(outcome.isError).toBe(false);
+    expect(outcome.text).toContain('still fine');
+  });
+
+  /**
+   * A refusal that names the schema must still not name what the caller may not
+   * reach. The check runs after the reachability tests, so a capability this
+   * caller cannot use is refused as unreachable and never gets far enough to
+   * have its arguments described.
+   */
+  test('a denied capability is refused before its schema is described', async () => {
+    const outcome = await call(personal.server.url, {
+      capability: 'example.list_notes',
+      profile: 'personal',
+      connection: 'example.a',
+      arguments: { nonsense: true },
+    });
+
+    expect(outcome.isError).toBe(true);
+    expect(outcome.text).not.toContain('was not called');
+    expect(outcome.text).not.toContain('json');
+  });
+});

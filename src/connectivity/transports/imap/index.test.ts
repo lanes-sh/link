@@ -129,6 +129,20 @@ const CONTEXT = {
     // Scoped to this provider and connection by the time a connector sees it,
     // which is what confines a staged handle to the account it was staged for.
     storage,
+    signal: new AbortController().signal,
+    // The profile's own two file lookups, which dispatch binds. A mail send
+    // resolves them exactly as Gmail's does, because both share one resolver.
+    attachments: {
+      stage: async () => ({ handle: 'stg_x', sha256: '', expiresAt: 0 }),
+      staged: async (handle: string) =>
+        handle === 'stg_known'
+          ? { bytes: new Uint8Array([9, 9]), filename: 'staged.txt', contentType: 'text/plain' }
+          : null,
+      asset: async (name: string) =>
+        name === 'invoice-2026.pdf'
+          ? { bytes: new Uint8Array([1, 2, 3, 4]), filename: name, contentType: null }
+          : null,
+    },
     // `config` is where a connection keeps its own settings — `from_name` among
     // them, which is how the From header gets a display name.
     connection: {
@@ -1100,5 +1114,46 @@ describe('search criteria', () => {
     expect(searchCriteria({ unseen: true, since: '2026-08-01', from: 'sam' })).toBe(
       'FROM "sam" SINCE 1-Aug-2026 UNSEEN',
     );
+  });
+});
+
+describe('a mail send reaches the files this profile keeps', () => {
+  test('an asset is attached by name, exactly as it is on the other mail provider', async () => {
+    let handed: OutgoingMessage | undefined;
+    const { connector } = sendingConnector(async ({ message }) => {
+      handed = message;
+      return { messageId: '<generated@example.com>', raw: new TextEncoder().encode('raw') };
+    });
+
+    await connector.invoke(
+      SEND as never,
+      {
+        to: ['sam@example.com'],
+        subject: 'Invoice',
+        attachments: [{ asset: 'invoice-2026.pdf' }],
+      },
+      CONTEXT as never,
+    );
+
+    expect(handed?.attachments?.[0]?.bytes).toEqual(new Uint8Array([1, 2, 3, 4]));
+    expect(handed?.attachments?.[0]?.filename).toBe('invoice-2026.pdf');
+    await connector.close?.();
+  });
+
+  test('a profile handle resolves, so a file staged from a chat can be mailed', async () => {
+    let handed: OutgoingMessage | undefined;
+    const { connector } = sendingConnector(async ({ message }) => {
+      handed = message;
+      return { messageId: '<generated@example.com>', raw: new TextEncoder().encode('raw') };
+    });
+
+    await connector.invoke(
+      SEND as never,
+      { to: ['sam@example.com'], subject: 'Draft', attachments: [{ handle: 'stg_known' }] },
+      CONTEXT as never,
+    );
+
+    expect(handed?.attachments?.[0]?.filename).toBe('staged.txt');
+    await connector.close?.();
   });
 });

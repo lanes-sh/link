@@ -175,6 +175,18 @@ export const layout = {
   /** One skills connection's procedures — `<name>.md` or `<name>/SKILL.md`, either layout. */
   skills: (profile: string, connection: string): string =>
     `${PROFILES_DIR}/${profile}/skills.d/${connection}`,
+  /**
+   * Files handed to the endpoint for a later call, for this profile.
+   *
+   * Profile-level rather than under `<provider>/<connection>`, because the point
+   * of it is that a file handed over in one place is nameable in another. The
+   * `.d` suffix is load-bearing: a provider id may be `[a-z][a-z0-9_]*`, so a
+   * bare `attachments_tmp` would be a legal provider id sharing this key space,
+   * and a provider by that name would collide with the area.
+   */
+  attachmentsRoot: (profile: string): string => `${PROFILES_DIR}/${profile}/attachments.d`,
+  /** The same area, keyed relative to the blob store — see `vaultKey`. */
+  attachmentsKey: (): string => 'attachments.d',
   /** The blob root this profile's providers are namespaced under. */
   blobs: (profile: string): string => `${PROFILES_DIR}/${profile}`,
 } as const;

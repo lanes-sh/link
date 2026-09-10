@@ -152,7 +152,7 @@ export const SECTIONS: readonly Section[] = [
         description: "one workspace's adapters, and its address",
       },
       {
-        command: 'sync workspaces --workspace <name> [--from gs://bucket] [--discover] [--prefer local|remote] [--dry-run]',
+        command: 'sync workspaces --workspace <name> [--from gs://bucket] [--discover] [--dry-run]',
         description: 'reconcile this workspace with the copy the deployment reads; recovers one a profile has lost',
       },
     ],

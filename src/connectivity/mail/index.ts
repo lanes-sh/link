@@ -10,6 +10,7 @@
  * Nothing here names a vendor.
  */
 
+export type { AttachmentBridge, SharedAttachments, SourceKey } from './attachments.ts';
 export type {
   AttachmentReceipt,
   ComposedMessage,
@@ -32,8 +33,11 @@ export type { StagedFile, StagedMetadata } from './staging.ts';
 export {
   getStaged,
   isHandle,
+  isProfileHandle,
   newHandle,
   putStaged,
+  CONNECTION_HANDLE,
+  PROFILE_HANDLE,
   stagedBytesKey,
   stagedMetaKey,
   sweepStaged,

@@ -34,6 +34,14 @@ export interface DiscoveredCapability {
   readonly title?: string;
   readonly description: string;
   readonly inputSchema: Record<string, unknown>;
+  /**
+   * What comes back, where the provider says.
+   *
+   * Optional because most do not say. An upstream MCP server may declare one
+   * and this endpoint was discarding it, so a client that could have validated
+   * a result — or simply read it as data instead of parsing prose — got neither.
+   */
+  readonly outputSchema?: Record<string, unknown>;
   /** Which bundle this belongs to, decided by the connector. */
   readonly bundle?: string;
   /**

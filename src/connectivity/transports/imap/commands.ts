@@ -1,7 +1,5 @@
 import PostalMime from 'postal-mime';
-import type { AuditLogger } from '#audit';
-import type { ConnectionInfo, ToolResult } from '#connectivity';
-import type { BlobStore } from '#stores/blobs';
+import type { ProviderContext, ToolResult } from '#connectivity';
 import { receiptFor, resolveAttachments } from '#connectivity/mail';
 import { mailboxAttachments } from './attachment.ts';
 import { quoted, type ImapClient, type ImapSession } from './client.ts';
@@ -236,10 +234,18 @@ export async function sendMessage(
   options: ImapConnectorOptions,
   send: Sender,
   args: Readonly<Record<string, unknown>>,
-  audit: AuditLogger,
-  storage: BlobStore,
-  connection: ConnectionInfo,
+  /**
+   * The whole provider context rather than three fields off it.
+   *
+   * It was `audit`, `storage`, `connection`; resolving an attachment now also
+   * needs the profile's file lookups and the request's abort signal, and five
+   * positional arguments of one object is worse than the object. The signal in
+   * particular was simply missing before: a `url` attachment here could not be
+   * cancelled, while the same argument on the other mail provider could.
+   */
+  context: ProviderContext,
 ): Promise<ToolResult> {
+  const { audit, storage, connection } = context;
   if (!options.smtp) return error('This account has no SMTP server configured, so it cannot send.');
 
   const to = (args['to'] as string[] | undefined) ?? [];
@@ -258,6 +264,8 @@ export async function sendMessage(
     maxTotalBytes: Math.floor((encodedLimit * 3) / 4),
     mailbox: mailboxAttachments(client),
     storage,
+    shared: context.attachments,
+    signal: context.signal,
   });
 
   // Recorded before the send, so an attachment that was read off disk is in the
