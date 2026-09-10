@@ -1,7 +1,20 @@
 import type { Logger } from '#connectivity';
+import { mayReach, memberPrincipal, type Principal } from '#auth';
+import type { Federation } from '#auth';
+
+/**
+ * Only the half of `Federation` this surface needs.
+ *
+ * `profilesFor` is deliberately not taken: this file answers that from the
+ * runtimes it is already holding. Asking for less is what keeps the two
+ * sources of "which profiles name this person" from becoming two answers.
+ */
+export type AssertionCheck = Pick<Federation, 'verify' | 'consentUrl'>;
 import type { ProfileRuntime } from '../mcp/visibility.ts';
 import type { PairingCredential } from './credential.ts';
+import { reaches, type PairedCaller, type PairingSessions } from './session.ts';
 import { bearer, cors, json } from './http.ts';
+import { isPairingPath, pairingRoutes, SESSION_PATH } from './pairing.ts';
 import { dataRoutes, isDataPath, DATA_HEADERS, DATA_METHODS } from './data.ts';
 import type { DataSurface } from '#cli/owner-data/surface.ts';
 import {
@@ -50,6 +63,7 @@ export const READ_ORIGINS: readonly string[] = ['https://lanes.sh', 'http://loca
 export const STATE_PATH = '/state';
 export const AUDIT_PATH = '/audit';
 
+
 /**
  * Whether the router should hand this path over.
  *
@@ -70,8 +84,9 @@ export function isReadPath(pathname: string): boolean {
  * disagreement between a name and a behaviour this file exists to prevent.
  */
 export function isPairedPath(pathname: string): boolean {
-  return isReadPath(pathname) || isDataPath(pathname);
+  return isReadPath(pathname) || isDataPath(pathname) || isPairingPath(pathname);
 }
+
 
 /** The most entries `/audit` will return, however many are asked for. */
 const AUDIT_CEILING = 500;
@@ -121,6 +136,42 @@ export interface ReadDeps {
   readonly connections: () => Promise<readonly ConnectionRow[]>;
   readonly credential: PairingCredential;
   /**
+   * Where a pairing token becomes a person, and where a session is resolved.
+   *
+   * Optional so a harness may omit it. Absent, the exchange is a `404` and
+   * every gated path answers `401` — which is the honest state for an endpoint
+   * that cannot tell one caller from another, and is what an old build looks
+   * like to a dashboard that has learned to ask.
+   */
+  readonly sessions?: PairingSessions | undefined;
+  /**
+   * Who lanes.sh says is at the browser, and which profiles name them.
+   *
+   * The same `Federation` the endpoint's own OAuth consent flow is handed
+   * (`auth/lanes/federation.ts`), passed in rather than rebuilt, so the two
+   * surfaces cannot come to disagree about who signed an assertion.
+   *
+   * Narrowed to the half that answers *who*. Which profiles that subject
+   * reaches is read from `profiles()` below instead — the live generation,
+   * which is the same set the endpoint serves and is already reload-aware, so
+   * there is no second cache to go stale against a `profile members remove`.
+   */
+  readonly federation?: AssertionCheck | undefined;
+  /**
+   * What an assertion must name as its audience.
+   *
+   * This surface's own base URL, never the MCP one: a statement minted to open
+   * the dashboard must not be replayable into an authorization at `/mcp`, and
+   * the audience is the field that decides it.
+   *
+   * Optional because only one bind can know it up front. A loopback listener
+   * chooses its own address and pins it here. A deployed one is reached at
+   * whatever the platform assigned, which is not known when the deps are built,
+   * so it falls back to the origin of the request being served — the address
+   * the browser actually used, which is the one it asked lanes.sh to mint for.
+   */
+  readonly resource?: string | undefined;
+  /**
    * What each provider is called, for the row nobody has labelled.
    *
    * Optional so a harness can omit it: absent, an unlabelled row reports a null
@@ -165,7 +216,11 @@ export async function readRoutes(request: Request, deps: ReadDeps): Promise<Resp
   // unknown one, which is the same shape as an unpaired workspace and needs no
   // second code path.
   const writable = deps.data !== undefined && isDataPath(url.pathname);
-  const methods = writable ? DATA_METHODS : 'GET, OPTIONS';
+  // The exchange takes a POST and nothing else does. Named here rather than
+  // folded into `writable`, because the two are different grants: one is the
+  // owner's own data, the other is the step that decides whose data it is.
+  const pairing = isPairingPath(url.pathname);
+  const methods = pairing ? 'GET, POST, OPTIONS' : writable ? DATA_METHODS : 'GET, OPTIONS';
   const permitted = (headers = 'authorization'): Record<string, string> =>
     cors(origin, allowed, methods, headers);
 
@@ -184,7 +239,12 @@ export async function readRoutes(request: Request, deps: ReadDeps): Promise<Resp
   // to any page that a Lanes read surface is here; a page that is not the
   // dashboard learns nothing it did not send. `/state` and `/audit` are still
   // reads only: the widening below is scoped to the paths `isDataPath` matched.
-  if (request.method !== 'GET' && !(writable && DATA_METHODS.includes(request.method))) {
+  const posting = pairing && request.method === 'POST' && url.pathname === SESSION_PATH;
+  if (
+    request.method !== 'GET' &&
+    !posting &&
+    !(writable && DATA_METHODS.includes(request.method))
+  ) {
     return json({ error: 'not_found' }, 404, permitted());
   }
 
@@ -200,31 +260,38 @@ export async function readRoutes(request: Request, deps: ReadDeps): Promise<Resp
   // for the same reason.
   const presented = bearer(request);
 
-  if (presented === null || !(await deps.credential.verify(presented))) {
-    return json(
-      {
-        error: 'unpaired',
-        // The page shows this verbatim. Every failure looks the same from a
-        // browser — an expired certificate, a rotated token, a listener that is
-        // not running — so the answer is always the command that fixes all of
-        // them rather than a diagnosis the page cannot make.
-        run: 'lanes link pair',
-      },
-      401,
-      permitted(),
-    );
+  // The page shows this verbatim. Every failure looks the same from a browser —
+  // an expired certificate, a rotated token, a listener that is not running —
+  // so the answer is always the command that fixes all of them rather than a
+  // diagnosis the page cannot make.
+  const unpaired = (): Response =>
+    json({ error: 'unpaired', run: 'lanes link pair' }, 401, permitted());
+
+  if (presented === null) return unpaired();
+
+  // **The pairing token opens the exchange and nothing else.** It names a
+  // workspace, not a person, so everything below it is gated on the session the
+  // exchange hands back instead. That is the whole of ADR-078: this credential
+  // used to answer `/state`, `/audit` and `/data` directly, which made it a
+  // key to every profile in the workspace for whoever held it.
+  if (pairing) {
+    if (!(await deps.credential.verify(presented))) return unpaired();
+    return pairingRoutes(request, url, deps, permitted());
   }
 
-  // Below the credential check, so one place verifies a pairing token and the
-  // two surfaces cannot come to disagree about who may reach them.
+  const caller = (await deps.sessions?.resolve(presented)) ?? null;
+  if (caller === null) return unpaired();
+
+  // Below the session check, so one place decides who is calling and the two
+  // surfaces cannot come to disagree about what they may reach.
   if (writable && deps.data) {
-    return dataRoutes(request, url, deps.data, permitted(DATA_HEADERS));
+    return dataRoutes(request, url, deps.data, permitted(DATA_HEADERS), caller);
   }
 
   if (url.pathname === STATE_PATH) {
     const rows = await deps.connections().catch(() => []);
     return json(
-      readState(deps.workspace, deps.profiles(), rows, deps.endpoint, deps.providerName),
+      readState(deps.workspace, deps.profiles(), rows, deps.endpoint, caller, deps.providerName),
       200,
       permitted(),
     );
@@ -238,7 +305,13 @@ export async function readRoutes(request: Request, deps: ReadDeps): Promise<Resp
     const profile = url.searchParams.get('profile');
 
     const events = await deps.audit.tail({ limit });
-    const shown = profile ? events.filter((event) => event.profile === profile) : events;
+    // Filtered by what the caller reaches before the `profile` argument narrows
+    // it further. The log is the workspace's (ADR-063), but an entry names the
+    // profile it happened in, so an unfiltered tail would report the existence
+    // of every profile and every capability called in it to somebody no member
+    // list names.
+    const mine = events.filter((event) => reaches(caller, event.profile));
+    const shown = profile ? mine.filter((event) => event.profile === profile) : mine;
 
     return json(
       {

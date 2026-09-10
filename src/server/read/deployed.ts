@@ -4,6 +4,8 @@ import type { Logger } from '#connectivity';
 import type { ProfileRuntime } from '../mcp/visibility.ts';
 import { connectionRows } from './connections.ts';
 import { cachedPairingCredential } from './credential.ts';
+import { pairingSessions } from './session.ts';
+import { lanesFederation } from '#auth';
 import type { ReadDeps } from './routes.ts';
 import type { DataSurface } from '#cli/owner-data/surface.ts';
 
@@ -57,6 +59,15 @@ export function deployedReadDeps(input: {
       refresh: () => primary.credentials.refresh?.(),
       onError: (reason) => log.warn('could not read the pairing credential', { reason }),
     }),
+    // The exchange that turns this workspace's pairing token into a person.
+    // Over the workspace's own state store, so a session survives a revision
+    // rolling and is shared by every instance behind the service.
+    sessions: pairingSessions(primary.state.kv),
+    // Only the half that says who signed. Which profiles that subject reaches
+    // is read from the live generation by the routes themselves, so the empty
+    // resolver here is never called and is not a second answer waiting to
+    // disagree with the first.
+    federation: lanesFederation({ profilesFor: async () => [] }),
     endpoint: { kind: 'deployed', version: input.version, certificateExpiresAt: null },
     ...(input.data ? { data: input.data } : {}),
     log,

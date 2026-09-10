@@ -1,4 +1,4 @@
-import { forProfile } from '#auth';
+import { forProfile, mayReach } from '#auth';
 import { isTool, isToolResult } from '#connectivity';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
@@ -87,7 +87,15 @@ export function registerSearchSurface(
   catalogue?: Map<string, MergedCapability>,
 ): void {
   const merged = catalogue ?? mergeCapabilities(options);
-  const profiles = [...options.profiles.keys()];
+  // **Filtered, like every other enum this server advertises.** Built from the
+  // whole map, these two schemas named every profile the endpoint served to a
+  // caller no member list names — the only place a profile name still leaked
+  // after ADR-060, because `mergeCapabilities` filters what it returns and this
+  // read the map beside it. Dispatch refused the call either way; what was
+  // disclosed was that the profile is there to ask about (ADR-078).
+  const profiles = [...options.profiles.keys()].filter((name) =>
+    mayReach(options.principal, name),
+  );
 
   server.registerTool(
     SURFACE_TOOL_NAMES[0]!,

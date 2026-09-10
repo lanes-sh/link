@@ -7,6 +7,8 @@ import type { ProfileRuntime } from '../mcp/visibility.ts';
 import type { DataSurface } from '#cli/owner-data/surface.ts';
 import { connectionRows } from './connections.ts';
 import { directPairingCredential } from './credential.ts';
+import { pairingSessions } from './session.ts';
+import { lanesFederation } from '#auth';
 import { serveRead, type RunningReadListener } from './listener.ts';
 
 /**
@@ -78,6 +80,14 @@ export async function openReadListener(
         refresh: () => primary.credentials.refresh?.(),
         onError: (reason) => log.warn('could not read the pairing credential', { reason }),
       }),
+      // What turns that token into a person. Over the workspace's own state
+      // store, so a session outlives a `lanes link start` and is the same one
+      // whichever bind answered.
+      sessions: pairingSessions(primary.state.kv),
+      federation: lanesFederation({ profilesFor: async () => [] }),
+      // Pinned, because this bind chose its own address. The deployed sibling
+      // cannot and reads the request's origin instead.
+      resource: `https://${bound.hostname}:${Number(bound.port) + 1}`,
       endpoint: { kind: 'local', version, certificateExpiresAt: expiryOf(cert) },
       ...(data ? { data } : {}),
       tls: { cert, key },

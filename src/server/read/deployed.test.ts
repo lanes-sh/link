@@ -7,6 +7,7 @@ import { ANY_ORIGIN, corsAware } from '../cors.ts';
 import { Generations } from '../generations.ts';
 import { silentLogger } from '../logging.ts';
 import { cachedPairingCredential, directPairingCredential } from './credential.ts';
+import { fixedSessions } from './testing.ts';
 import type { AuditTail, ReadDeps } from './routes.ts';
 
 /**
@@ -27,6 +28,9 @@ import type { AuditTail, ReadDeps } from './routes.ts';
 
 const ORIGIN = 'https://lanes.sh';
 const HOSTILE = 'https://evil.example';
+const SESSION_TOKEN = 'llps_a-dashboard-session';
+/** The caller every case below is, unless it says otherwise. */
+const CALLER = { subject: 'lanes:HER', profiles: ['personal'] };
 const PAIR_TOKEN = 'llp_a-deployed-pairing-token';
 
 const AUDIT: AuditTail = {
@@ -53,6 +57,7 @@ function readDeps(overrides: Partial<ReadDeps> = {}): ReadDeps {
     audit: AUDIT,
     connections: async () => [],
     credential: directPairingCredential({ read: async () => PAIR_TOKEN }),
+    sessions: fixedSessions(SESSION_TOKEN, CALLER),
     endpoint: { kind: 'deployed', version: '0.0.0-test', certificateExpiresAt: null },
     ...overrides,
   };
@@ -103,6 +108,16 @@ function get(path: string, headers: Record<string, string> = {}): Request {
 }
 
 const paired = (path: string, origin = ORIGIN): Request =>
+  get(path, { origin, authorization: `Bearer ${SESSION_TOKEN}` });
+
+/**
+ * A request carrying the workspace's pairing token rather than a session.
+ *
+ * It opens the exchange and nothing else now, so the cases about *reading the
+ * credential* — a secret with no version, a store that throws — send it to the
+ * path that still consults one.
+ */
+const pairing = (path = '/pair/challenge', origin = ORIGIN): Request =>
   get(path, { origin, authorization: `Bearer ${PAIR_TOKEN}` });
 
 describe('one origin, named, never a wildcard', () => {
@@ -148,7 +163,7 @@ describe('a credential that cannot call a tool', () => {
     const response = await deployed(readDeps())(
       new Request(`https://endpoint.example${MCP_PATH}`, {
         method: 'POST',
-        headers: { origin: ORIGIN, authorization: `Bearer ${PAIR_TOKEN}` },
+        headers: { origin: ORIGIN, authorization: `Bearer ${SESSION_TOKEN}` },
       }),
     );
 
@@ -207,7 +222,7 @@ describe('the control plane is still unreachable', () => {
     const response = await deployed(readDeps())(
       new Request('https://endpoint.example/state', {
         method: 'POST',
-        headers: { origin: ORIGIN, authorization: `Bearer ${PAIR_TOKEN}` },
+        headers: { origin: ORIGIN, authorization: `Bearer ${SESSION_TOKEN}` },
       }),
     );
 
@@ -261,7 +276,7 @@ describe('a deployment-only grant stays one', () => {
 
     try {
       const response = await fetch(`${server.url.replace(MCP_PATH, '')}/state`, {
-        headers: { authorization: `Bearer ${PAIR_TOKEN}` },
+        headers: { authorization: `Bearer ${SESSION_TOKEN}` },
       });
 
       expect(response.status).toBe(404);
@@ -277,7 +292,7 @@ describe('the never-paired workspace', () => {
     // reads back as null; unbound it would be a 403 the adapter throws on.
     const response = await deployed(
       readDeps({ credential: cachedPairingCredential({ read: async () => null }) }),
-    )(paired('/state'));
+    )(pairing());
 
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ error: 'unpaired', run: 'lanes link pair' });
@@ -294,7 +309,7 @@ describe('the never-paired workspace', () => {
           },
         }),
       }),
-    )(paired('/state'));
+    )(pairing());
 
     expect(response.status).toBe(401);
   });

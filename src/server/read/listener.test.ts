@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { serveRead, type AuditTail, type RunningReadListener } from './listener.ts';
 import { directPairingCredential } from './credential.ts';
+import { fixedSessions } from './testing.ts';
+import { lanesFederation } from '#auth';
 import type { ProfileRuntime } from '../mcp/visibility.ts';
 
 /**
@@ -18,6 +20,10 @@ import type { ProfileRuntime } from '../mcp/visibility.ts';
 
 const ORIGIN = 'https://lanes.sh';
 const TOKEN = 'llp_a-pairing-token';
+/** What the exchange hands back, and what every read below presents. */
+const SESSION = 'llps_a-dashboard-session';
+/** On both profiles the audit fixtures name, so this file stays about the wire. */
+const CALLER = { subject: 'lanes:HER', profiles: ['personal', 'work'] };
 
 let listener: RunningReadListener;
 
@@ -96,6 +102,11 @@ beforeAll(() => {
     // so a change to how a rotation lands is caught here rather than only in
     // production. `current` is the mutable half a rotation test moves.
     credential: directPairingCredential({ read: async () => current }),
+    sessions: fixedSessions(SESSION, CALLER),
+    // The real one, as `open.ts` builds it. Nothing here presents an assertion,
+    // so no key is ever fetched; what it supplies is the consent URL the
+    // challenge hands back.
+    federation: lanesFederation({ profilesFor: async () => [] }),
     endpoint: { kind: 'local', version: '0.0.0-test', certificateExpiresAt: null },
     tls: selfSigned(),
   });
@@ -111,7 +122,7 @@ function at(path: string): string {
 function read(path: string, init: RequestInit = {}): Promise<Response> {
   return fetch(at(path), {
     ...init,
-    headers: { origin: ORIGIN, authorization: `Bearer ${TOKEN}`, ...(init.headers ?? {}) },
+    headers: { origin: ORIGIN, authorization: `Bearer ${SESSION}`, ...(init.headers ?? {}) },
     tls: { rejectUnauthorized: false },
   } as RequestInit);
 }
@@ -272,10 +283,15 @@ describe('rotating the pairing token', () => {
 
     current = 'llp_rotated';
 
-    const old = await read('/state');
+    // Against `/pair/challenge` rather than `/state`, because that is what the
+    // pairing token opens now: it names a workspace, and the session it buys is
+    // what names a person (ADR-078).
+    const old = await read('/pair/challenge', {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
     expect(old.status).toBe(401);
 
-    const rotated = await read('/state', {
+    const rotated = await read('/pair/challenge', {
       headers: { authorization: 'Bearer llp_rotated' },
     });
     expect(rotated.status).toBe(200);
@@ -288,7 +304,9 @@ describe('rotating the pairing token', () => {
     // cannot be opened. Null is not a token to compare against.
     current = null as unknown as string;
 
-    expect((await read('/state')).status).toBe(401);
+    expect(
+      (await read('/pair/challenge', { headers: { authorization: `Bearer ${TOKEN}` } })).status,
+    ).toBe(401);
 
     current = TOKEN;
   });

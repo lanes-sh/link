@@ -1,5 +1,6 @@
 import { isDataStore, type Answer, type DataStoreName, type DataSurface } from '#cli/owner-data/surface.ts';
 import { json } from './http.ts';
+import { reaches, type PairedCaller } from './session.ts';
 
 /**
  * The owner's own data, over the pairing credential (ADR-069).
@@ -81,6 +82,7 @@ export async function dataRoutes(
   url: URL,
   surface: DataSurface,
   headers: Record<string, string>,
+  caller: PairedCaller,
 ): Promise<Response> {
   const route = parse(url.pathname);
   const profile = url.searchParams.get('profile');
@@ -89,6 +91,17 @@ export async function dataRoutes(
   // malformed path and a profile this endpoint does not serve are one answer,
   // so none of them tells a page that is not the dashboard what does exist.
   if (route === null || profile === null || profile === '') {
+    return json({ error: 'not_found' }, 404, headers);
+  }
+
+  // **A profile no member list names this caller for is one that does not
+  // exist, from here.** The same `404`, deliberately: a distinguishable
+  // refusal would confirm the profile is there, which is the one fact a caller
+  // who may not reach it has not earned. This is the check the surface never
+  // had — `profile` arrived on the query string and was passed to the store,
+  // so whoever held the pairing token read and wrote every profile in the
+  // workspace (ADR-078).
+  if (!reaches(caller, profile)) {
     return json({ error: 'not_found' }, 404, headers);
   }
 

@@ -1,5 +1,6 @@
 import { allowedConnections } from '#policy';
 import { defaultConnectionLabel } from '#profile';
+import { reaches, type PairedCaller } from './session.ts';
 import type { ProfileRuntime } from '../mcp/visibility.ts';
 
 /**
@@ -148,6 +149,7 @@ export function readState(
   profiles: ReadonlyMap<string, ProfileRuntime>,
   rows: readonly ConnectionRow[],
   endpoint: ReadEndpoint,
+  caller: PairedCaller,
   providerName: ProviderNames = () => undefined,
 ): ReadState {
   // The workspace's own list is the source of truth for *which connections
@@ -160,6 +162,14 @@ export function readState(
   const described: ReadProfile[] = [];
 
   for (const [name, runtime] of profiles) {
+    // **A profile that does not name this caller is not described at all.**
+    // Not listed and then greyed out: absent, exactly as `mergeCapabilities`
+    // omits it from a tool's `profile` enum, so the dashboard and the
+    // dispatcher hide the same set. This loop used to run over every profile
+    // the endpoint served, which is how a member of no profile read the whole
+    // workspace's grants and rosters (ADR-078).
+    if (!reaches(caller, name)) continue;
+
     const grants: ReadGrant[] = [];
 
     for (const grant of runtime.config.grants) {
@@ -186,6 +196,21 @@ export function readState(
         role: member.role,
       })),
     });
+  }
+
+  // A caller who reaches none of the profiles that exist reaches no connections
+  // either. The connection list is the workspace's rather than a profile's
+  // (ADR-057), so it is not filtered per profile — but a row carries an account
+  // name, and handing that to somebody nothing here belongs to would describe
+  // the workspace to a person who has only proved they signed in.
+  //
+  // A workspace holding **no profiles at all** is the other case and keeps its
+  // listing. There is nothing to be a member of yet, so an empty result would
+  // not be a boundary being enforced; it would be `lanes link connect` run
+  // without `--profile` looking like it did nothing, which is the failure the
+  // rest of this function exists to avoid.
+  if (profiles.size > 0 && described.length === 0) {
+    return { workspace, endpoint, connections: [], profiles: [] };
   }
 
   const connections: ReadConnection[] = rows.map((row) => {
