@@ -331,7 +331,13 @@ describe('signing in is reachable from the browser', () => {
     expect(await response.json()).toMatchObject({ resource: `${base}/mcp` });
   });
 
-  test('a preflight on /register from the dashboard is granted', async () => {
+  test('a preflight on /register is granted, without naming an origin', async () => {
+    // **Wildcarded, and that is `corsAware`'s long-standing answer for this
+    // surface** (`cors.ts`, `surfaceOf`): these paths answer without a
+    // credential by design, so a wildcard hands a page exactly what `curl`
+    // already has. Reusing it is what keeps one CORS decision in the codebase
+    // rather than two — a second, named grant written for this bind was tried
+    // and was redundant everywhere `corsAware` runs.
     const response = await fetch(`${base}/register`, {
       method: 'OPTIONS',
       headers: { origin: ORIGIN, 'access-control-request-method': 'POST' },
@@ -339,34 +345,45 @@ describe('signing in is reachable from the browser', () => {
     } as RequestInit);
 
     expect(response.status).toBe(204);
-    expect(response.headers.get('access-control-allow-origin')).toBe(ORIGIN);
-    // Never a wildcard, never ambient — the same two the reads hold.
+    expect(response.headers.get('access-control-allow-origin')).toBe('*');
+    // Never ambient, wildcard or not: with `*` a browser refuses to send
+    // credentials anyway, and the header is absent so nothing relies on that.
     expect(response.headers.get('access-control-allow-credentials')).toBeNull();
   });
 
-  test('a preflight from anywhere else is refused, and told nothing', async () => {
-    const response = await fetch(`${base}/token`, {
-      method: 'OPTIONS',
-      headers: { origin: HOSTILE, 'access-control-request-method': 'POST' },
+  test('the reads are named, so the two surfaces are graded differently', async () => {
+    // The contrast worth pinning. `/register` is public and wildcarded; `/state`
+    // returns every connection, profile and audit entry this workspace holds,
+    // so it names one origin and echoes it.
+    const permitted = await fetch(`${base}/state`, {
+      headers: { origin: ORIGIN },
       tls: { rejectUnauthorized: false },
     } as RequestInit);
 
-    expect(response.status).toBe(403);
-    expect(response.headers.get('access-control-allow-origin')).toBeNull();
+    expect(permitted.headers.get('access-control-allow-origin')).toBe(ORIGIN);
+
+    const refused = await fetch(`${base}/state`, {
+      headers: { origin: HOSTILE },
+      tls: { rejectUnauthorized: false },
+    } as RequestInit);
+
+    expect(refused.status).toBe(403);
+    expect(refused.headers.get('access-control-allow-origin')).toBeNull();
     // Set even on a refusal, or a cache in between serves one origin's answer
     // to another.
-    expect(response.headers.get('vary')).toBe('Origin');
+    expect(refused.headers.get('vary')).toBe('Origin');
   });
 
-  test('the reads are still gated, so delegating these opened nothing', async () => {
-    // The authorization paths answer before the credential check, deliberately:
-    // the first request a client makes is the one that discovers how to
-    // authenticate. This asserts that widening did not reach past them.
+  test('the reads are still gated, so delegating the flow opened nothing', async () => {
+    // The authorization paths answer before any credential check, deliberately:
+    // a client's first request is the one that discovers how to authenticate.
+    // This asserts the widening did not reach past them.
     const response = await fetch(`${base}/state`, {
       headers: { origin: ORIGIN },
       tls: { rejectUnauthorized: false },
     } as RequestInit);
 
     expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ error: 'unauthorized', signIn: true });
   });
 });

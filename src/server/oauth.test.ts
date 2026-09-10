@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { pkceChallengeFor } from '#auth';
+import { OAuthStore, pkceChallengeFor } from '#auth';
 import { allocatePort, startHarness, STRANGER, TEST_TOKEN, type Harness } from './harness.ts';
 
 /**
@@ -781,5 +781,78 @@ describe('the static token still works', () => {
     });
 
     expect(await response.json()).toMatchObject({ reason: 'invalid' });
+  });
+});
+
+/**
+ * A grant made before this endpoint recorded who a token belongs to.
+ *
+ * `IssuedTokenAuthenticator` refuses a subject-less access token (ADR-079), and
+ * `who` carries `subject` only when the record has one — so without the check
+ * below a legacy refresh rotates cleanly into a token that is refused on every
+ * call. The client sees a `200` here, a `401` on the next request, retries, and
+ * gets the same pair again: a connector stuck in a loop rather than one that
+ * needs signing in. That is what the first real connector this shipped to did.
+ *
+ * `invalid_grant` is the answer because it is the one code that tells a client
+ * to discard the grant and start the authorization flow, which is the single
+ * step that fixes it.
+ */
+describe('a refresh token that names nobody', () => {
+  /** A record as 0.7 wrote them: a family, a scope, and no subject. */
+  async function legacyRefresh(clientId: string): Promise<string> {
+    // On the harness's clock, not the wall's: earlier tests move `skewMs`
+    // forward past the reuse window, so a record stamped from `Date.now()`
+    // alone reads as already expired and the refusal under test never runs.
+    const store = new OAuthStore(harness.state.kv, () => Date.now() + skewMs);
+    const token = 'llr_a_grant_from_before_subjects';
+
+    await store.putToken(token, {
+      clientId,
+      kind: 'refresh',
+      scope: 'mcp',
+      family: 'llf_legacy',
+      expiresAt: Date.now() + skewMs + 600_000,
+    });
+
+    return token;
+  }
+
+  test('is refused, rather than rotated into a token that cannot be used', async () => {
+    const clientId = await register();
+
+    const response = await tokenRequest({
+      grant_type: 'refresh_token',
+      refresh_token: await legacyRefresh(clientId),
+      client_id: clientId,
+    });
+
+    expect(response.status).toBe(400);
+    const body = (await response.json()) as { error?: string; error_description?: string };
+    expect(body.error).toBe('invalid_grant');
+    // The message has to say what to do, because the client cannot work it out:
+    // nothing about a rotation that succeeds explains a 401 on the next call.
+    expect(body.error_description).toContain('Sign in again');
+  });
+
+  test('a refresh that does name somebody still rotates', async () => {
+    // The other half, so the check above cannot be passing for the wrong reason.
+    const clientId = await register();
+    const first = await tokenRequest({
+      grant_type: 'authorization_code',
+      code: await codeFrom(await authorise(clientId)),
+      client_id: clientId,
+      code_verifier: VERIFIER,
+      redirect_uri: REDIRECT,
+    });
+    const { refresh_token } = (await first.json()) as { refresh_token: string };
+
+    const rotated = await tokenRequest({
+      grant_type: 'refresh_token',
+      refresh_token,
+      client_id: clientId,
+    });
+
+    expect(rotated.status).toBe(200);
   });
 });
