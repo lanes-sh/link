@@ -318,6 +318,33 @@ describe('a created profile is published to the endpoint that serves it', () => 
     expect(parsed.published).toBeUndefined();
     expect(existsSync(join(root, 'profiles', 'personal', 'profile.yaml'))).toBe(true);
   });
+
+  test('adding a profile that is already there provisions it instead of refusing', async () => {
+    // Why there is no second verb for this. What a deployed target needs doing
+    // before it can serve a profile is the same work whether the profile was
+    // written a moment ago or last month — so a command that only did it while
+    // creating would leave every profile predating this change reachable by
+    // nothing short of a full deploy. `add` is "make this profile usable here".
+    //
+    // Local here, so nothing reaches a cloud: `provisionProfiles` reports
+    // `applicable: false` for a target that declares no deployment, which is the
+    // same check that makes this unconditional elsewhere.
+    const root = await workspace();
+    await profileAdd('personal', { targets: ['local'], nonInteractive: true, json: true });
+
+    const printed = await captureStdout(async () => {
+      await profileAdd('personal', { targets: ['local'], nonInteractive: true, json: true });
+    });
+
+    const parsed = JSON.parse(printed) as { name: string; existed?: boolean; port: number };
+    expect(parsed.name).toBe('personal');
+    expect(parsed.existed).toBe(true);
+
+    // Still not an overwrite: the port it reports is the one on disk, read back
+    // rather than freshly assigned.
+    expect(parsed.port).toBe(7337);
+    expect(existsSync(join(root, 'profiles', 'personal', 'profile.yaml'))).toBe(true);
+  });
 });
 
 /**

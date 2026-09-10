@@ -186,7 +186,6 @@ export async function run(argv: readonly string[]): Promise<void> {
             // --target would be naming a second place to put the same file.
             targets: [text(flags, 'workspace')!],
             nonInteractive: flags['non-interactive'] === true,
-            provision: flags['no-provision'] !== true,
             json,
           });
         case 'list':

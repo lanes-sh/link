@@ -88,13 +88,7 @@ export function publishedAfterCreate(outcome: PublishOutcome): string | undefine
 
 export async function profileAdd(
   name: string,
-  options: {
-    targets: readonly string[];
-    nonInteractive?: boolean;
-    /** `--no-provision`. Default true; see the call below. */
-    provision?: boolean;
-    json?: boolean;
-  },
+  options: { targets: readonly string[]; nonInteractive?: boolean; json?: boolean },
 ): Promise<void> {
   if (options.targets.length === 0) {
     throw new ConfigError(
@@ -107,17 +101,42 @@ export async function profileAdd(
     );
   }
 
-  const created = await createProfile(name, options);
+  const primary = options.targets[0]!;
+
+  // **A profile that is already there is provisioned rather than refused**, and
+  // that is why there is no second verb for it. What a deployed target needs
+  // doing to serve a profile is the same work whether the profile was written a
+  // moment ago or last month — so a command that only did it while creating
+  // would leave every profile that predates this one reachable by nothing but a
+  // full deploy. `add` is the word for "make this profile usable here".
+  //
+  // It is still not an overwrite: nothing is rewritten, and `createProfile`
+  // keeps refusing to write a second file over an existing one.
+  const already = await declaredAlready(primary, name);
+  const created = already ? null : await createProfile(name, options);
 
   // Re-read rather than assembled from `created`, because the file on disk is
   // what a workspace with a remote credential store needs to open one.
-  const primary = created.targets[0]!;
-  const { resolution, config } = await resolveProfile({ profile: created.name, target: primary });
-  await recordConfigChange(config, resolution.workspaceRoot, primary, {
-    capability: 'config.profile.add',
-    scope: created.name,
-    arguments: { port: created.port, workspace: primary },
-  });
+  const { resolution, config } = await resolveProfile({ profile: name, target: primary });
+  const facts = {
+    name,
+    path: resolution.profilePath,
+    port: config.instance.port,
+    targets: options.targets,
+    copiedFrom: created?.copiedFrom ?? {},
+    ...(already ? { existed: true } : {}),
+  };
+
+  // Only what actually changed the config. Provisioning an existing profile
+  // creates cloud resources and edits nothing here, so recording it as an `add`
+  // would put a config change in the log that no file reflects.
+  if (created) {
+    await recordConfigChange(config, resolution.workspaceRoot, primary, {
+      capability: 'config.profile.add',
+      scope: name,
+      arguments: { port: created.port, workspace: primary },
+    });
+  }
 
   // **Before the notify, and that ordering is the whole of it.** A running
   // revision reads a credential by reference at request time, so what a profile
@@ -128,22 +147,30 @@ export async function profileAdd(
   // generation. It would then have been *told* about a profile it had just
   // decided it could not open.
   //
+  // Unconditional, because "which targets need this" is a question the target
+  // already answers: `provisionProfiles` returns `applicable: false` for one
+  // that declares no deployment, so a local workspace reaches no cloud and a
+  // deployed one always gets what it needs. A flag here would only let somebody
+  // create the broken state on purpose.
+  //
   // Never fatal, for the same reason the publish below is not: the profile is on
   // disk either way. A missing cloud CLI or a refused IAM call comes back as a
   // reason and is printed as a next step. See `provisionProfiles`.
-  const provisioned =
-    options.provision === false
-      ? undefined
-      : await provisionProfiles({
-          workspaceRoot: resolution.workspaceRoot,
-          target: primary,
-          profiles: [created.name],
-        });
+  const provisioned = await provisionProfiles({
+    workspaceRoot: resolution.workspaceRoot,
+    target: primary,
+    profiles: [name],
+  });
 
   // Told to the endpoint that has to serve it, exactly as every other config
   // edit tells it (ADR-029). This was the one edit that did not, and a profile
   // created against a live workspace was invisible until the endpoint next
   // started — see the header.
+  //
+  // It matters just as much on the path where nothing was created: a generation
+  // that already skipped this profile holds that decision until it re-reads, so
+  // provisioning without the reload would fix the credentials and change
+  // nothing anybody can see.
   //
   // **Wrapped, because this must not be able to fail the creation.** `profile
   // add` is the command that may have *just written* the workspace it is
@@ -166,17 +193,23 @@ export async function profileAdd(
   return emit(
     options.json,
     {
-      ...created,
+      ...facts,
       ...(published ? { published } : {}),
-      ...(provisioned?.reason ? { provisioning: provisioned.reason } : {}),
+      ...(provisioned.reason ? { provisioning: provisioned.reason } : {}),
     },
     () => {
-      print(ok(`created profile ${style.bold(created.name)}`));
-      print(`      config   ${created.path}`);
-      print(`      port     ${created.port}`);
-      print(`      workspace  ${created.targets.join(', ')}`);
+      print(
+        ok(
+          already
+            ? `${style.bold(name)} already exists — made sure ${primary} can serve it`
+            : `created profile ${style.bold(name)}`,
+        ),
+      );
+      print(`      config   ${facts.path}`);
+      print(`      port     ${facts.port}`);
+      print(`      workspace  ${options.targets.join(', ')}`);
 
-      for (const [target, from] of Object.entries(created.copiedFrom)) {
+      for (const [target, from] of Object.entries(facts.copiedFrom)) {
         print(`      ${style.dim(`${target} adapters copied from profile "${from}"`)}`);
       }
 
@@ -184,12 +217,12 @@ export async function profileAdd(
       // independently: provisioning can succeed against a target whose endpoint
       // is not answering, and a reachable endpoint can refuse a profile whose
       // grants were never provisioned. One line each says which happened.
-      if (provisioned?.reason) {
-        print(warn(`could not provision credentials for ${created.name}: ${provisioned.reason}`));
+      if (provisioned.reason) {
+        print(warn(`could not provision credentials for ${name}: ${provisioned.reason}`));
         print(
           style.dim(
             `      The endpoint cannot open it until this is fixed. Retry with: ` +
-              `lanes link deploy --workspace ${primary}`,
+              `lanes link profile add ${name} --workspace ${primary}`,
           ),
         );
       }
@@ -198,12 +231,28 @@ export async function profileAdd(
 
       print();
       print(
-        style.dim(
-          `Next: lanes link connect example --profile ${created.name} --workspace ${created.targets[0]}`,
-        ),
+        style.dim(`Next: lanes link connect example --profile ${name} --workspace ${primary}`),
       );
     },
   );
+}
+
+/**
+ * Whether this target's workspace already holds a profile by this name.
+ *
+ * False on any failure, deliberately. A workspace that does not exist yet and a
+ * target nothing declares both land here on the first `profile add` of a new
+ * install — and neither is a reason to refuse, because `createProfile` is what
+ * bootstraps the first workspace and what reports a target properly when it
+ * cannot. Guessing "not there" sends both to the path that handles them.
+ */
+async function declaredAlready(target: string, name: string): Promise<boolean> {
+  try {
+    const root = await resolveTargetWorkspace(resolveWorkspaceRoot(), target);
+    return (await listProfiles(root)).includes(name);
+  } catch {
+    return false;
+  }
 }
 
 export async function profileList(

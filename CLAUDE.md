@@ -97,7 +97,12 @@ A profile is the case that keeps proving this, and what it proves is not what th
 say. A revision does **not** carry a per-profile secret: it reads a credential by reference at
 request time, so what a profile created since the last deploy lacks is the secret container and the
 resource-level grant that lets the runtime identity read it. Neither is a property of a revision,
-and creating them rolls none — `profile add` does it, and `--no-provision` opts out.
+and creating them rolls none — `profile add` does it, unconditionally, and on a profile that
+already exists as readily as on a new one. There is deliberately no separate `provision` verb and
+no flag to skip it: what a deployed target needs before it can serve a profile does not depend on
+how old the profile is, and a target that declares no deployment reports `applicable: false` and
+reaches no cloud. So `profile add <existing> --workspace <target>` is how a profile that predates
+this — or one whose provisioning failed — is made servable.
 
 What made it look like a redeploy is the shape of the failure. Secret Manager answers a missing
 binding with 403 rather than 404, so that an identity cannot enumerate secrets by their error
