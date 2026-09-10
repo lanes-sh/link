@@ -41,6 +41,17 @@ export interface PublishOutcome {
   readonly url?: string;
   /** Why it is not being served yet, in a form fit to print. */
   readonly reason?: string;
+  /**
+   * Whether the endpoint answered and left the edit out, as opposed to not
+   * answering at all.
+   *
+   * The two need different last sentences and that is the whole of why this
+   * exists. "The endpoint will serve this when it next starts" is true of a
+   * notify that could not land — the config is published and the next boot
+   * reads it — and false of a reload that ran and refused the profile, because
+   * a restart re-runs the same open and fails it the same way.
+   */
+  readonly refused?: boolean;
 }
 
 /**
@@ -118,6 +129,12 @@ async function notifyReload(input: {
   readonly config: Config;
   readonly workspaceRoot: string;
   readonly target: string;
+  /**
+   * Every profile the edit touched, checked against what the reload actually
+   * opened. Optional because `publishRuntimeEdit` and the local paths have
+   * nothing to check — see `missingFrom`.
+   */
+  readonly profile?: string | readonly string[] | undefined;
   readonly credentials: SecretStore;
 }): Promise<PublishOutcome> {
   let url: string;
@@ -182,6 +199,7 @@ async function notifyReload(input: {
       reloaded?: unknown;
       reason?: unknown;
       tools?: unknown;
+      profiles?: unknown;
     };
     if (body.reloaded !== true) {
       return {
@@ -192,6 +210,16 @@ async function notifyReload(input: {
             ? `the endpoint could not reload: ${body.reason}`
             : 'the endpoint did not reload',
       };
+    }
+
+    // `reloaded: true` says a generation swapped, not that this edit is in it.
+    // `openReconciled` skips a profile it cannot open rather than failing the
+    // endpoint for its siblings, so a reload that answers success is exactly
+    // what a skipped profile looks like from here — which is why this was
+    // reported as served for as long as the field went unread.
+    const missing = missingFrom(body.profiles, input.profile);
+    if (missing.length > 0) {
+      return { served: false, refused: true, url, reason: notServing(missing) };
     }
 
     return {
@@ -209,6 +237,54 @@ async function notifyReload(input: {
 
 function message(error: unknown): string {
   return error instanceof Error ? (error.message.split('\n')[0] ?? error.message) : String(error);
+}
+
+/**
+ * Which of the touched profiles the reload did not open.
+ *
+ * **Silent unless the endpoint answered the question.** An endpoint from before
+ * `/reload` carried `profiles` returns no such field, and an older one is
+ * exactly what a workspace mid-upgrade is talking to — so an absent or
+ * non-array field means "not answered" and yields nothing, rather than
+ * reporting every profile as missing. The check can only ever *demote* a claim
+ * the endpoint actively contradicted.
+ *
+ * `profiles` here is `Generation.names()` unfiltered, unlike the per-principal
+ * list `/health` returns, so a name absent from it really was not opened rather
+ * than merely not visible to this caller.
+ *
+ * Exported for its tests: the decision is the whole of the fix, and reaching it
+ * through `notifyReload` would mean standing up a credential store and a target
+ * to resolve a URL that the case under test never depends on.
+ */
+export function missingFrom(
+  reported: unknown,
+  touched: string | readonly string[] | undefined,
+): readonly string[] {
+  if (!Array.isArray(reported) || touched === undefined) return [];
+
+  const served = new Set(reported.filter((name): name is string => typeof name === 'string'));
+  const names = typeof touched === 'string' ? [touched] : touched;
+  return names.filter((name) => !served.has(name));
+}
+
+/**
+ * What to say when the endpoint reloaded and left the edit out.
+ *
+ * Deliberately not the "will serve this when it next starts" tail
+ * `nextAfterEdit` ends on: a restart re-runs the same open and fails it the same
+ * way. The two causes are a profile whose grants name a connection this
+ * workspace does not hold, and a profile whose per-profile credentials no
+ * binding covers — the second of which `profile add` now provisions, and which
+ * is worth naming because it is otherwise indistinguishable from the first.
+ */
+function notServing(missing: readonly string[]): string {
+  const which = missing.length === 1 ? `"${missing[0]}"` : missing.map((n) => `"${n}"`).join(', ');
+  return (
+    `the endpoint reloaded and did not open ${which} — the config is published, and the ` +
+    'endpoint refused it. Its log says why, on a line starting "not serving"; the usual cause ' +
+    'is credentials nothing has provisioned yet'
+  );
 }
 
 /**
@@ -252,5 +328,10 @@ export function nextAfterEdit(outcome: PublishOutcome): string {
   // endpoint is somewhere else: `lanes link start --port` moves the socket
   // without moving `instance.port`, which is where this address comes from.
   const where = outcome.url ? ` at ${outcome.url}` : '';
+
+  // An endpoint that answered and refused is not waiting for a restart to fix
+  // it, so it does not get the sentence that says so. See `refused`.
+  if (outcome.refused === true) return `${outcome.reason ?? 'the edit is not being served'}${where}.`;
+
   return `${outcome.reason ?? 'no endpoint answered'}${where} — saved, and the endpoint will serve this when it next starts.`;
 }

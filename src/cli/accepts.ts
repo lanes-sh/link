@@ -38,7 +38,11 @@ export const ACCEPTS: Record<string, readonly string[]> = {
     'auth',
   ],
   setup: ['id'],
-  'profile add': ['workspace', 'non-interactive'],
+  // `--no-provision` keeps this command off a cloud project. On a deployed
+  // target it otherwise creates the new profile's secret containers and grants
+  // the runtime identity read on them, which is what the running revision needs
+  // before it can open the profile at all — see `provisionProfiles`.
+  'profile add': ['workspace', 'non-interactive', 'no-provision'],
   // `--delete-data` and `--migrate-to` say what becomes of the bytes the
   // profile owns (ADR-066). Neither is optional in effect: `--yes` skips
   // confirmations of things the command was told to do, and this is a question

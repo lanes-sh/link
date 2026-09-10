@@ -93,11 +93,23 @@ That builds an image from the branch and rolls a revision on a real target. Thre
   same question filtered to the caller's own member profiles, so a profile missing from it may be a
   membership problem rather than a serving one. Check both before believing either.
 
-A profile is the case that keeps proving this. `deploy` binds one secret per profile into the
-revision, so a profile created *since* the last deploy cannot be opened by the running one however
-many times it re-reads its config — and `openReconciled` skips a profile it cannot open rather
-than failing the endpoint for its siblings. Adding a profile to a deployed target is therefore two
-steps, and the second one is a deploy.
+A profile is the case that keeps proving this, and what it proves is not what this file used to
+say. A revision does **not** carry a per-profile secret: it reads a credential by reference at
+request time, so what a profile created since the last deploy lacks is the secret container and the
+resource-level grant that lets the runtime identity read it. Neither is a property of a revision,
+and creating them rolls none — `profile add` does it, and `--no-provision` opts out.
+
+What made it look like a redeploy is the shape of the failure. Secret Manager answers a missing
+binding with 403 rather than 404, so that an identity cannot enumerate secrets by their error
+codes; the adapter returns null for a 404 and *throws* for a 403. So an unprovisioned ref throws on
+the open path, `openReconciled` skips the profile rather than failing the endpoint for its
+siblings, and from outside that reads exactly like a profile that does not exist. Bound, the same
+read becomes the 404 — a secret with no version, which reads back as null and opens an empty vault.
+
+The endpoint reports the skip (`not serving <profile>: <reason>` in its log) and `/reload` returns
+the set that actually opened, so those are the two places to look. `notifyReload` compares what it
+published against that set, which is why a command no longer says "Serving it now" for a profile
+the endpoint refused.
 
 ## A release publishes, and npm does not give a version back
 
