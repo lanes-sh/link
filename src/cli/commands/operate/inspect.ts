@@ -10,6 +10,7 @@ import { duplicateAccountFindings, reportCapabilityDrift } from './findings.ts';
 import { probeConnections } from './auth.ts';
 import { migratedContract, migratedRenamedProviders } from './migrate.ts';
 import { reportWorkspaceHomeMove } from '../../workspace-home-migrate.ts';
+import { reachabilityFindings } from './reachability.ts';
 
 /**
  * The gate order — check, doctor, plan, start — exists so failures surface in
@@ -156,6 +157,7 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
     }
 
     warnings.push(...duplicateAccountFindings(runtime.workspaceConnections));
+    warnings.push(...reachabilityFindings(runtime));
 
     // Whether each credential still works, asked rather than dated.
     //

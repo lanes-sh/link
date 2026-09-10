@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { manageRefusal } from './members.ts';
+import { delegationNote, manageRefusal } from './members.ts';
 import type { WorkspaceMember } from '#auth/lanes/members.ts';
 
 /**
@@ -76,5 +76,64 @@ describe('editing who may consume a profile', () => {
     const held = [member(HER, 'editor'), member(ADMIN, 'admin')];
 
     expect(manageRefusal(held, HER, 'cloud')).toContain('"cloud"');
+  });
+});
+
+/**
+ * What is said about a uid the bound workspace does not list — and, more to the
+ * point, that nothing is refused.
+ *
+ * `assertDelegatable` used to refuse twice: unbound, everybody but the operator;
+ * bound, everybody off the Lanes workspace's roster. Both are gone. An admin
+ * attaches a uid and the endpoint checks, per request, that the uid calling it
+ * is on the profile — there is no third thing to establish here.
+ *
+ * Each refusal looked like a safety property and was not. It is not a boundary
+ * (ADR-079: `members:` is a line in a YAML file and whoever runs the command can
+ * open it); the shape is checked by `subjectRef` either way, which is also what
+ * keeps a pasted credential out of the field; a wrong uid writes a row nothing
+ * can match, because no assertion names that subject; and the remedy it printed
+ * — add `lanes_workspace:` — named a field no command writes, in a file that
+ * lives in the bucket once a target is deployed.
+ */
+describe('a uid the workspace does not list', () => {
+  const HIM = 'lanes:HIM';
+
+  test('a listed subject draws no note at all', () => {
+    const held = [member(HER, 'admin'), member(HIM, 'editor')];
+
+    expect(delegationNote(held, HIM, 'cloud')).toBeNull();
+  });
+
+  test('an unlisted one is written anyway, and the note says to check it', () => {
+    const held = [member(HER, 'admin')];
+
+    const note = delegationNote(held, HIM, 'cloud');
+
+    expect(note).not.toBeNull();
+    // The two things the operator needs: it happened, and why it might be wrong.
+    expect(note).toContain('written either way');
+    expect(note).toContain('nothing can');
+  });
+
+  test('a pending invitation is named, because that one looks like it worked', () => {
+    // The person exists and the operator can see them on the dashboard. There is
+    // still no uid, so a guessed row reads as a working delegation right up until
+    // they try to use it.
+    const held: WorkspaceMember[] = [
+      member(HER, 'admin'),
+      { subject: null, email: 'ada.lovelace@example.com', role: 'editor', status: 'pending', displayName: null },
+    ];
+
+    const note = delegationNote(held, HIM, 'cloud');
+
+    expect(note).toContain('not accepted an invitation');
+    expect(note).toContain('ada.lovelace@example.com');
+  });
+
+  test('no pending invitations leaves that sentence out', () => {
+    const held = [member(HER, 'admin')];
+
+    expect(delegationNote(held, HIM, 'cloud')).not.toContain('invitation');
   });
 });
