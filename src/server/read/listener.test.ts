@@ -285,7 +285,7 @@ describe('rotating the pairing token', () => {
 
     // Against `/pair/challenge` rather than `/state`, because that is what the
     // pairing token opens now: it names a workspace, and the session it buys is
-    // what names a person (ADR-078).
+    // what names a person (ADR-079).
     const old = await read('/pair/challenge', {
       headers: { authorization: `Bearer ${TOKEN}` },
     });

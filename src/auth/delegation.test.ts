@@ -62,7 +62,7 @@ describe('the callers that are not people', () => {
     // and the CLI, which reach everything and say so. `[]` is a person
     // delegated nothing. There is no third state that means "unset", because an
     // unset one used to read as the first and that is what let a credential
-    // naming nobody open every profile in the workspace (ADR-078).
+    // naming nobody open every profile in the workspace (ADR-079).
     expect(
       mayReach(
         { id: 'ci', profile: 'personal', kind: 'machine', profiles: EVERY_PROFILE },

@@ -12,7 +12,7 @@
 /**
  * Every profile the workspace holds, as a value rather than as an absence.
  *
- * This used to be `undefined`, and the difference is the whole of ADR-078. An
+ * This used to be `undefined`, and the difference is the whole of ADR-079. An
  * optional field defaults to the widest possible answer when nobody sets it, so
  * *forgetting* to resolve a member list read as "reaches everything" — which is
  * exactly what a subject-less token did, twice, on the two paths in

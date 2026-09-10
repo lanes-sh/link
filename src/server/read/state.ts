@@ -167,7 +167,7 @@ export function readState(
     // omits it from a tool's `profile` enum, so the dashboard and the
     // dispatcher hide the same set. This loop used to run over every profile
     // the endpoint served, which is how a member of no profile read the whole
-    // workspace's grants and rosters (ADR-078).
+    // workspace's grants and rosters (ADR-079).
     if (!reaches(caller, name)) continue;
 
     const grants: ReadGrant[] = [];

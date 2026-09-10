@@ -92,7 +92,7 @@ export function registerSearchSurface(
   // caller no member list names — the only place a profile name still leaked
   // after ADR-060, because `mergeCapabilities` filters what it returns and this
   // read the map beside it. Dispatch refused the call either way; what was
-  // disclosed was that the profile is there to ask about (ADR-078).
+  // disclosed was that the profile is there to ask about (ADR-079).
   const profiles = [...options.profiles.keys()].filter((name) =>
     mayReach(options.principal, name),
   );

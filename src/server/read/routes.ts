@@ -271,7 +271,7 @@ export async function readRoutes(request: Request, deps: ReadDeps): Promise<Resp
 
   // **The pairing token opens the exchange and nothing else.** It names a
   // workspace, not a person, so everything below it is gated on the session the
-  // exchange hands back instead. That is the whole of ADR-078: this credential
+  // exchange hands back instead. That is the whole of ADR-079: this credential
   // used to answer `/state`, `/audit` and `/data` directly, which made it a
   // key to every profile in the workspace for whoever held it.
   if (pairing) {

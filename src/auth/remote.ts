@@ -16,7 +16,7 @@ import type { OidcVerifier } from './oidc.ts';
  * endpoint — which stopped being true the moment a profile could declare
  * somebody else may consume it.
  *
- * **A token without a subject is refused** (ADR-078). It used to resolve to the
+ * **A token without a subject is refused** (ADR-079). It used to resolve to the
  * owner, so that a token minted before 0.8.0 kept working until it expired
  * rather than logging its holder out on upgrade. That was a kindness on a
  * single-operator endpoint and a skeleton key on a shared one: `ownerPrincipal`
@@ -65,7 +65,7 @@ export class IssuedTokenAuthenticator implements Authenticator {
     // who it belongs to now. Refused rather than promoted to the owner: the
     // holder re-authorises, which costs one browser round trip, and nothing in
     // the workspace is reachable in the meantime by a credential that cannot
-    // name a person. ADR-078.
+    // name a person. ADR-079.
     if (record.subject === undefined) return { ok: false, reason: 'invalid' };
 
     // The list resolved when the code was minted, not now. Re-reading it here

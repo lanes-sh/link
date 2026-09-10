@@ -55,7 +55,7 @@ describe('a token that names nobody', () => {
     // upgrade. The owner principal reaches every profile in the workspace, so
     // the kindness was a standing bypass of `members:` on the one credential
     // that could not name a person. Refused instead: the holder re-authorises,
-    // which is one browser round trip. ADR-078.
+    // which is one browser round trip. ADR-079.
     const { store, auth } = authenticator();
     await store.putToken('lla_old', {
       clientId: 'llc_x',

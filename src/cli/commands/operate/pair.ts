@@ -49,11 +49,12 @@ import { openSecretStoreFor, type GlobalFlags } from '../../runtime.ts';
  * deployed endpoint does not need, because the platform terminates TLS with a
  * certificate a browser already trusts. What remains is a token and an address.
  *
- * **It names a workspace, not a profile**, because that is what it pairs. The
- * surface it opens lists every connection and every profile the workspace holds,
- * and the credential it mints reads all of them — so asking which profile was
- * asking a question with no answer, and implying a per-profile pairing that does
- * not exist. `--profile` is still accepted, and picks the port when profiles
+ * **It names a workspace, not a profile**, because that is what it pairs. It
+ * does not follow that it *reaches* every profile, and it no longer does: the
+ * token opens an exchange, and what that hands back is a session naming the
+ * person at the browser and the profiles whose `members:` name them back
+ * (ADR-079). Asking which profile at mint time would still be a question with
+ * no answer — the answer belongs to whoever opens the link, and is read then. `--profile` is still accepted, and picks the port when profiles
  * disagree about one *and a port is what the address is built from*. Deployed,
  * it is not: the platform assigns one address for the whole workspace, so the
  * flag decides nothing there and is not asked for. It was asked for, for one
@@ -126,6 +127,25 @@ export async function pair(flags: PairFlags, deps: PairDeps = {}): Promise<void>
     throw new ConfigError(
       `Workspace "${target}" has no profile "${flags.profile}".\n` +
         `  It holds: ${profiles.map((one: LoadedProfile) => one.profile).join(', ')}`,
+    );
+  }
+
+  // **A profile naming nobody is now a profile nobody can open.** It always was
+  // over MCP — empty `members:` is deny, not allow — but the dashboard used to
+  // read every profile regardless, so this is the first release where an
+  // untouched one disappears from a page its owner was reading. Said at mint
+  // time, where it can still be fixed before anybody opens the link, rather
+  // than discovered as an empty list.
+  const unreachable = profiles
+    .filter((one: LoadedProfile) => one.config.members.length === 0)
+    .map((one: LoadedProfile) => one.profile);
+
+  if (unreachable.length > 0) {
+    print(
+      style.dim(
+        `warn  ${unreachable.join(', ')} ${unreachable.length === 1 ? 'lists' : 'list'} no members, so nobody reaches ${unreachable.length === 1 ? 'it' : 'them'}.\n` +
+          `      Put yourself on one with: lanes link profile members add --me --profile <name>`,
+      ),
     );
   }
 
@@ -236,10 +256,11 @@ export async function pair(flags: PairFlags, deps: PairDeps = {}): Promise<void>
     style.dim(
       '      Open that in a browser on this machine. The token is in the URL fragment,\n' +
         '      so it never reaches a Lanes server.\n' +
-        '      It reads every connection, profile and audit entry in this workspace, and\n' +
-        '      can edit and delete your memory, tasks, files, skills and entities in every\n' +
-        '      profile here. It changes no connection, token, policy rule or configuration,\n' +
-        '      and never reads a vault value.\n' +
+        '      Whoever opens it signs in with Lanes, and reaches the profiles that list\n' +
+        '      them as a member — their connections, their audit entries, and the memory,\n' +
+        '      tasks, files, skills and entities inside them, to read, edit and delete.\n' +
+        '      A profile listing nobody is reachable by nobody. It changes no connection,\n' +
+        '      token, policy rule or configuration, and never reads a vault value.\n' +
         '      Take it back with: lanes link pair --rotate\n' +
         '\n' +
         `      The endpoint has to be running: lanes link start --workspace ${target}`,

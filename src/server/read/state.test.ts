@@ -224,7 +224,7 @@ describe('when a connection arrived', () => {
  * `/state` was gated on holding the workspace's pairing token and then
  * described every profile the endpoint served, each with its `members:` roster
  * and every capability its grants reached. A workspace member on no profile
- * read all of it. These are the cases that would have caught that (ADR-078).
+ * read all of it. These are the cases that would have caught that (ADR-079).
  */
 describe('what one caller is told the workspace holds', () => {
   const TWO = new Map([

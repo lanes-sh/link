@@ -100,7 +100,7 @@ export async function dataRoutes(
   // who may not reach it has not earned. This is the check the surface never
   // had — `profile` arrived on the query string and was passed to the store,
   // so whoever held the pairing token read and wrote every profile in the
-  // workspace (ADR-078).
+  // workspace (ADR-079).
   if (!reaches(caller, profile)) {
     return json({ error: 'not_found' }, 404, headers);
   }

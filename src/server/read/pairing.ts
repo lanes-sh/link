@@ -7,7 +7,7 @@ import type { ReadDeps } from './routes.ts';
  * `challenge` mints a nonce; `session` spends it against an assertion lanes.sh
  * signed for this endpoint, and answers with a session naming the subject.
  * These are the only paths the bare pairing token opens, and the session is the
- * only credential every other path accepts (ADR-078).
+ * only credential every other path accepts (ADR-079).
  *
  * The paths live here rather than in `./routes.ts` so that the import runs one
  * way. That file needs these two constants at runtime; this one needs only

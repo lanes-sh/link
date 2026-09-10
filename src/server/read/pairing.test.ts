@@ -11,7 +11,7 @@ import type { ProfileRuntime } from '../mcp/visibility.ts';
  * workspace and it named nobody, so `/state`, `/audit` and `/data` answered
  * whoever held it with every profile the endpoint served. Now it opens the two
  * paths below and nothing else, and what it buys is a session carrying a
- * subject and the profiles that subject's `members:` name back (ADR-078).
+ * subject and the profiles that subject's `members:` name back (ADR-079).
  *
  * Driven over `readRoutes` rather than over `pairingRoutes` directly, because
  * the properties worth pinning are the ones the whole gate has: which
