@@ -301,7 +301,7 @@ export function targetUse(name: string | undefined): never {
   throw new ConfigError(
     'lanes link workspace use was removed, and came back under a new name.\n' +
       '  `instance.default_target` is still inert — nothing reads it. What does\n' +
-      '  read a default is `default_workspace` in lanes-link.yaml (ADR-061):\n' +
+      '  read a default is `default_workspace` in workspaces.yaml (ADR-061):\n' +
       `    lanes set-workspace ${name ?? '<name>'}\n` +
       '  Or name it per command:\n' +
       `    lanes link status --profile <name> --workspace ${name ?? '<name>'}\n` +

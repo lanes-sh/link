@@ -1,5 +1,8 @@
-import { readWorkspaceFile, workspaceFiles, WORKSPACE_FILE } from '#profile';
+import { LEGACY_WORKSPACE_FILE, workspaceFiles, WORKSPACE_FILE } from '#profile';
+import type { BlobStore } from '#stores/blobs';
+import { GoogleCredentialsError } from './adapters/gcp-secret-manager.ts';
 import { captureGcloud } from './gcp/gcloud.ts';
+import type { CommandResult } from './driver.ts';
 
 /**
  * Finding a deployment nothing in the workspace mentions any more.
@@ -31,18 +34,35 @@ export interface Candidate {
  * named it anything, and a name filter would hide exactly the deployment whose
  * naming convention nobody remembers.
  */
-export async function discoverDeployments(
-  onProgress?: (project: string) => void,
-): Promise<Candidate[]> {
-  const projects = await captureGcloud(['projects', 'list', '--format', 'value(projectId)']);
-  if (!projects.ok) return [];
+export interface DiscoverOptions {
+  readonly onProgress?: ((project: string) => void) | undefined;
+  /** The gcloud runner. Injected in tests; the real one when absent. */
+  readonly gcloud?: ((argv: readonly string[]) => Promise<CommandResult>) | undefined;
+}
+
+export async function discoverDeployments(options: DiscoverOptions = {}): Promise<Candidate[]> {
+  const run: (argv: readonly string[]) => Promise<CommandResult> = options.gcloud ?? captureGcloud;
+  const onProgress = options.onProgress;
+
+  const projects = await run(['projects', 'list', '--format', 'value(projectId)']);
+  // Not an empty list. "gcloud is not on your PATH" and "you are not logged in"
+  // are both failures to *ask*, and reporting them as an answer produces the
+  // sentence this used to end at: no deployment in any project this login can
+  // see, about a list nobody obtained.
+  if (!projects.ok) {
+    throw new Error(
+      `Could not list your Google Cloud projects, so there was nowhere to search.\n  ${
+        projects.stderr || 'gcloud exited non-zero and said nothing.'
+      }`,
+    );
+  }
 
   const found: Candidate[] = [];
 
   for (const project of projects.stdout.split('\n').map((line) => line.trim()).filter(Boolean)) {
     onProgress?.(project);
 
-    const services = await captureGcloud([
+    const services = await run([
       'run',
       'services',
       'list',
@@ -57,7 +77,7 @@ export async function discoverDeployments(
       const [service = '', region = ''] = line.split(/\s+/);
       if (!service || !region) continue;
 
-      found.push({ project, region, service, workspace: await workspaceBeside(project) });
+      found.push({ project, region, service, workspace: await workspaceBeside(project, run) });
     }
   }
 
@@ -71,10 +91,13 @@ export async function discoverDeployments(
  * is almost always the answer. Falling back to listing every bucket costs a
  * second call and covers a workspace whose bucket was named by hand.
  */
-async function workspaceBeside(project: string): Promise<string | undefined> {
+async function workspaceBeside(
+  project: string,
+  run: (argv: readonly string[]) => Promise<CommandResult>,
+): Promise<string | undefined> {
   if (await holdsWorkspace(`gs://${project}`)) return `gs://${project}`;
 
-  const buckets = await captureGcloud([
+  const buckets = await run([
     'storage',
     'buckets',
     'list',
@@ -93,11 +116,76 @@ async function workspaceBeside(project: string): Promise<string | undefined> {
   return undefined;
 }
 
-/** A bucket is a workspace when it has the file that says so. Never throws. */
-export async function holdsWorkspace(url: string): Promise<boolean> {
+/**
+ * What a bucket turned out to hold, including "could not tell".
+ *
+ * The fourth case is the one this exists for. `has` already distinguishes
+ * absence from failure — a 404 is `false`, everything else throws (`gcs.ts`,
+ * "Absence is a value, not an error") — and the old probe collapsed both into
+ * one boolean, so a laptop with no credentials was told to check the bucket
+ * name. Nothing new is being detected here; a distinction that was always there
+ * is being kept.
+ */
+export type WorkspaceProbe =
+  | { readonly kind: 'workspace' }
+  | { readonly kind: 'legacy' }
+  | { readonly kind: 'absent' }
+  | {
+      readonly kind: 'unreadable';
+      /** What the adapter said, which already names the fix for most causes. */
+      readonly reason: string;
+      /** Whether the cause was credentials, so the caller may offer signing in. */
+      readonly credentials: boolean;
+    };
+
+export interface ProbeOptions {
+  /** The workspace's files. Built from the URL when absent; injected in tests. */
+  readonly files?: BlobStore | undefined;
+}
+
+/**
+ * Ask one named bucket what it holds.
+ *
+ * Never rejects: every failure is a `kind`, which is what lets `holdsWorkspace`
+ * below drop its own `try` and stay a plain boolean for the scan.
+ *
+ * `has` rather than a read, because the answer is a yes-or-no and `has` is
+ * metadata-only — which pays for the second call the legacy branch makes.
+ */
+export async function probeWorkspace(
+  url: string,
+  options: ProbeOptions = {},
+): Promise<WorkspaceProbe> {
   try {
-    return (await readWorkspaceFile(workspaceFiles(url), WORKSPACE_FILE)) !== null;
-  } catch {
-    return false;
+    // Built in here rather than defaulted in the signature: `workspaceFiles`
+    // throws synchronously for a URL naming no bucket, and that should be
+    // reported like any other reason rather than rejecting out of the probe.
+    const files = options.files ?? workspaceFiles(url);
+
+    if (await files.has(WORKSPACE_FILE)) return { kind: 'workspace' };
+    // `readWorkspace` accepts either name, so a bucket restored from something
+    // older *is* a workspace — but saying so here would send the caller on to
+    // parse a file keyed `targets:` and be told it declares nothing.
+    if (await files.has(LEGACY_WORKSPACE_FILE)) return { kind: 'legacy' };
+
+    return { kind: 'absent' };
+  } catch (failure) {
+    return {
+      kind: 'unreadable',
+      reason: (failure as Error).message,
+      credentials: failure instanceof GoogleCredentialsError,
+    };
   }
+}
+
+/**
+ * A bucket is a workspace when it has the file that says so. Never throws.
+ *
+ * Deliberately still a boolean, and deliberately still blind to why: its callers
+ * sweep every bucket in every project, where one that cannot be read is simply
+ * not a candidate and a reason per bucket would be noise. The caller that names
+ * a single bucket uses `probeWorkspace`.
+ */
+export async function holdsWorkspace(url: string, options: ProbeOptions = {}): Promise<boolean> {
+  return (await probeWorkspace(url, options)).kind === 'workspace';
 }

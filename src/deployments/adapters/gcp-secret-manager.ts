@@ -346,6 +346,22 @@ interface CachedToken {
  * would each be a further exchange, and neither is reachable from the two
  * places this runs: an operator's laptop and Cloud Run.
  */
+/**
+ * No usable Google credentials, from any step of the ADC chain.
+ *
+ * A type rather than a message, because the chain says two different things for
+ * one condition — an unreadable key file names the path, the exhausted chain
+ * names the login command — and a caller deciding whether to suggest signing in
+ * cannot tell those apart by reading them. Still an `Error`, so nothing that
+ * catches or rethrows one needs to change.
+ */
+export class GoogleCredentialsError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'GoogleCredentialsError';
+  }
+}
+
 export class ApplicationDefaultCredentials implements AccessTokenSource {
   readonly #fetch: typeof globalThis.fetch;
   readonly #env: Record<string, string | undefined>;
@@ -389,7 +405,7 @@ export class ApplicationDefaultCredentials implements AccessTokenSource {
     try {
       key = (await Bun.file(path).json()) as Record<string, string>;
     } catch (error) {
-      throw new Error(`Could not read Google credentials from ${path}: ${(error as Error).message}`);
+      throw new GoogleCredentialsError(`Could not read Google credentials from ${path}: ${(error as Error).message}`);
     }
 
     if (key['type'] === 'authorized_user') {
@@ -408,7 +424,7 @@ export class ApplicationDefaultCredentials implements AccessTokenSource {
       }), path);
     }
 
-    throw new Error(
+    throw new GoogleCredentialsError(
       `${path}: unsupported Google credential type ${JSON.stringify(key['type'] ?? 'unknown')}. ` +
         'Expected "authorized_user" or "service_account".',
     );
@@ -423,7 +439,7 @@ export class ApplicationDefaultCredentials implements AccessTokenSource {
 
     const text = await response.text();
     if (!response.ok) {
-      throw new Error(`Could not exchange the credentials in ${source} for a token: ${text.slice(0, 300)}`);
+      throw new GoogleCredentialsError(`Could not exchange the credentials in ${source} for a token: ${text.slice(0, 300)}`);
     }
     return toCachedToken(JSON.parse(text) as { access_token?: string; expires_in?: number }, source);
   }
@@ -439,7 +455,7 @@ export class ApplicationDefaultCredentials implements AccessTokenSource {
       // The last stop in the chain, so this is where "no credentials at all"
       // surfaces — say what to do rather than reporting a DNS failure for a
       // hostname the operator has never heard of.
-      throw new Error(
+      throw new GoogleCredentialsError(
         'No Google credentials found. On Cloud Run the metadata server supplies them; ' +
           'locally run `gcloud auth application-default login`, or set ' +
           'GOOGLE_APPLICATION_CREDENTIALS to a service account key, or GOOGLE_ACCESS_TOKEN directly.',
@@ -447,7 +463,7 @@ export class ApplicationDefaultCredentials implements AccessTokenSource {
     }
 
     if (!response.ok) {
-      throw new Error(
+      throw new GoogleCredentialsError(
         `The metadata server refused a token (HTTP ${response.status}). ` +
           'Check the service account attached to this revision.',
       );
