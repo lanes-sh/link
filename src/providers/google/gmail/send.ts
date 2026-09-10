@@ -256,6 +256,28 @@ export const gmailSendMessage = gmailSend();
  * `uploadType=media`, no multipart assembly, no resumable session — which is what
  * lifts the ceiling from "what fits in a JSON string" to Gmail's own 35 MiB.
  */
+/**
+ * Hand a refusal back for the credential check a transport's reply would get.
+ *
+ * This capability is authored because no OpenAPI document describes composing
+ * an RFC 2822 message, and calling the vendor directly meant skipping the one
+ * thing every other call gets for free: a token the vendor refuses is
+ * distrusted, so the next call renews it instead of resending it for the rest
+ * of the hour.
+ *
+ * Distrust without retry, deliberately. `verify` may answer `{ retry: true }`
+ * and that is right for a read; a send that came back 401 may still have been
+ * delivered, and deciding to repeat it is not this function's to make. The
+ * outcome is dropped on purpose — what is wanted is the connection repaired
+ * for the call after this one.
+ *
+ * Cloned before the body is read, because a response cannot be cloned once it
+ * has been.
+ */
+async function noteRefusal(context: ProviderContext, refused: Response | undefined): Promise<void> {
+  if (refused) await context.verify?.(refused);
+}
+
 async function submit(input: {
   readonly raw: Uint8Array;
   readonly draftOnly: boolean;
@@ -298,9 +320,13 @@ async function submit(input: {
   );
 
   const response = await input.fetch(request);
+  // Cast as the http transport does: the fetch types and the global Response
+  // disagree about `headers`, and the verifier reads neither.
+  const refused = response.ok ? undefined : (response.clone() as unknown as Response);
   const text = await response.text();
 
   if (!response.ok) {
+    await noteRefusal(context, refused);
     throw new Error(`Gmail refused the message with ${response.status}: ${text}`);
   }
 
@@ -334,9 +360,13 @@ async function sendDraft(input: {
   );
 
   const response = await input.fetch(request);
+  // Cast as the http transport does: the fetch types and the global Response
+  // disagree about `headers`, and the verifier reads neither.
+  const refused = response.ok ? undefined : (response.clone() as unknown as Response);
   const text = await response.text();
 
   if (!response.ok) {
+    await noteRefusal(input.context, refused);
     throw new Error(`Gmail refused to send the draft with ${response.status}: ${text}`);
   }
 

@@ -50,28 +50,6 @@ export interface ProfileCreated {
 }
 
 /**
- * Write a new profile, and the workspace file if this is the first one.
- *
- * The target is the argument that used to be missing. `--target` was accepted
- * and dropped here, and the template could only ever emit `local` — so the
- * command reported success and produced a profile that could not reach the
- * deployment the operator had just told it about.
- *
- * It now decides *where the file goes* rather than what is written in it: a
- * profile lives in one target's workspace and declares nothing about it
- * (ADR-052), so `--workspace cloud` writes into the bucket the endpoint there
- * reads from.
- *
- * **Writing it is not enough, and this comment is where that was missed.** It
- * used to say the endpoint "serves it on its next reconcile". There is no next
- * reconcile: a running endpoint lists the profiles once, at boot or at a
- * reload (`openReconciled`), so a profile added underneath one stayed durable
- * and invisible — to `/state`, and so to the dashboard, and to every client —
- * until the revision restarted. `profileAdd` notifies for the same reason every
- * other config edit does; see below.
- */
-
-/**
  * Which connection each owner-layer surface sits under, in this workspace.
  *
  * Read from `connections.yaml` rather than assumed, because the ids in that
@@ -106,6 +84,28 @@ async function ownedSurfaces(workspaceRoot: string): Promise<Map<string, string>
   return owned;
 }
 
+/**
+ * Write a new profile, and the workspace file if this is the first one.
+ *
+ * The target is the argument that used to be missing. `--target` was accepted
+ * and dropped here, and the template could only ever emit `local` — so the
+ * command reported success and produced a profile that could not reach the
+ * deployment the operator had just told it about.
+ *
+ * It now decides *where the file goes* rather than what is written in it: a
+ * profile lives in one target's workspace and declares nothing about it
+ * (ADR-052), so `--workspace cloud` writes into the bucket the endpoint there
+ * reads from.
+ *
+ * **Writing it is not enough, and this comment is where that was missed.** It
+ * used to say the endpoint "serves it on its next reconcile". There is no next
+ * reconcile: a running endpoint lists the profiles once, at boot or at a
+ * reload (`openReconciled`), so a profile added underneath one stayed durable
+ * and invisible — to `/state`, and so to the dashboard, and to every client —
+ * until the revision restarted. `profileAdd` notifies for the same reason every
+ * other config edit does; see below.
+ */
+
 export async function createProfile(
   name: string,
   options: { targets: readonly string[]; nonInteractive?: boolean },
@@ -134,7 +134,12 @@ export async function createProfile(
     }
 
     if (!existsSync(join(local, WORKSPACE_FILE))) {
-      await mkdir(local, { recursive: true });
+      // `0700`, not the ambient umask. This creates `~/.lanes/link` and, on a
+      // machine without the desktop app, `~/.lanes` above it — and what lands
+      // inside is `credentials.enc` and its key. The blob store already writes
+      // its directories this way (`deployments/adapters/filesystem.ts`); this
+      // was the one path that did not, and it is the path that goes first.
+      await mkdir(local, { recursive: true, mode: 0o700 });
       await writeFile(join(local, WORKSPACE_FILE), newWorkspaceTemplate(), { mode: 0o600 });
     }
   }

@@ -42,23 +42,28 @@ The one pull request that is not squashed is the release; see below.
 URL, or a "Generated with Claude Code" footer, to a pull request body. This repository is public
 and the link is noise to everyone reading it. The `Co-Authored-By` trailer on commits is fine.
 
-## Never run `lanes link` from a worktree without `LANES_LINK_HOME`
+## A worktree gets its own workspace, and you should still read the path it prints
 
-`resolveWorkspaceRoot` (`src/profile/workspace.ts`) checks `LANES_LINK_HOME`, then
-walks ancestors for `lanes-link.yaml`, then falls back to `~/.lanes-link`. A worktree has neither
-of the first two — so a verification command run from one writes into the operator's real
-workspace, which holds their live profiles, credentials, state, and audit log. Worse than reading
-it: `lanes link deploy` and `lanes link sync targets` both *write* there — one uploads config to a
-bucket and records the deployment, the other merges a remote copy into their profiles.
+This used to be a rule you had to remember: export `LANES_LINK_HOME` before running anything from a
+worktree, because the fallback reached the operator's real workspace. It is now handled — ADR-077,
+`src/home/index.ts`. A checkout resolves to `~/.lanes-dev/link` and cannot reach `~/.lanes/link` by
+accident, because `homeWorkspaceRoot` refuses to hand a checkout the real root at all.
 
-```console
-$ export LANES_LINK_HOME=/tmp/lanes-link-scratch
-$ lanes link start --port 7401     # the usual port is already serving the real endpoint
-```
+The chain is `LANES_LINK_HOME`, then an ancestor holding `workspaces.yaml`, then `~/.lanes-dev/link`
+from a checkout or `~/.lanes/link` from an install. Dev mode is decided by whether `tsconfig.json`
+sits at the install root, which is true in a checkout and in nothing that ships.
 
-Nothing in the output distinguishes the scratch workspace from the real one except the path it
-prints, so check it. A `/health` response naming a profile you did not create means you are
-talking to their server.
+Two things still bite:
+
+- **`LANES_LINK_DEV=0` turns it off**, and is the only way to reach a real workspace from here. That
+  is deliberate — see the deploy section below, which is the one place it is the right thing to do.
+- **A dev run has its own Lanes session**, at `~/.lanes-dev/credentials.json`. `lanes link start`
+  requires a session (ADR-060), so expect to `lanes auth login` once inside dev mode. It is a
+  separate sign-in on purpose: signing out in a test must not sign the operator out.
+
+Nothing in the output distinguishes the dev workspace from the real one except the path it prints,
+so check it. A `/health` response naming a profile you did not create means you are talking to their
+server.
 
 ## Anything touching a real account is the operator's call
 
@@ -82,9 +87,15 @@ $ bun run ./src/cli/lanes.ts link deploy --workspace <target>
 
 That builds an image from the branch and rolls a revision on a real target. Three things about it:
 
-- **`LANES_LINK_HOME` stays unset for this, deliberately** — the opposite of the rule above,
-  because the point is to reach a real deployment. So the target is the operator's, the deploy is
-  theirs to authorise, and a broken revision is theirs to live with until the next one. Ask.
+- **`LANES_LINK_DEV=0` is required for this, deliberately** — the opposite of the rule above,
+  because the point is to reach a real deployment. A worktree is a checkout, so without it the
+  command reads `~/.lanes-dev/link` and finds no target to deploy to. So the target is the
+  operator's, the deploy is theirs to authorise, and a broken revision is theirs to live with until
+  the next one. Ask.
+
+  ```console
+  $ LANES_LINK_DEV=0 bun run ./src/cli/lanes.ts link deploy --workspace <target>
+  ```
 - **A previous revision is still there.** Cloud Run keeps them and traffic can be moved back, which
   is what makes this recoverable and a bad npm publish not.
 - **Verify against the endpoint, not the command's exit code.** `POST /reload` returns the
@@ -177,7 +188,7 @@ cannot work, because writing the name into it is the thing being prevented.
 
 ## Where things are
 
-One package, one `src/`, thirteen components. Cross-component imports go through the
+One package, one `src/`, fourteen components. Cross-component imports go through the
 package.json `imports` map: `#policy`, `#stores/state`, `#providers/google/gmail`. There
 are no workspace packages and no `apps/` or `packages/` — see the layout table in
 [Architecture](https://lanes.sh/docs/link/architecture).
@@ -259,6 +270,17 @@ It is a data change, not code: an entry in `SELECTION` in
   (`https://www.googleapis.com/drive/v3`); Sheets and Docs put it in the path
   (`https://sheets.googleapis.com` + `/v4/spreadsheets/...`). Copying the wrong one 404s every
   call.
+
+A read capability the gateway may *fill in* needs a `compact` block, and it is the third record
+keyed the same way as `redact` and `hints` — so it carries the same trap, one step quieter. When a
+list comes back as bare identifiers, `lanes_tools_call` fetches the rows before returning them, and
+without a `compact` entry it does so at whatever the vendor's default representation is. For Gmail
+that was `format=full` — five messages, 193,271 characters, and an overflowed reply. `compact` names
+the vendor's *own* projection arguments (`format`, `metadataHeaders`, `fields`, `$select`), because
+the saving has to happen at the source. A key that misses does not error; it asks for the default and
+reads exactly like working expansion. Two tests in `specs.test.ts` hold it: every key names a real
+capability, and every argument it names is a real parameter of that capability. Only a `<x>.list`
+with an `<x>.get` beside it can ever reach this, which across the vendored surface is seven pairs.
 
 New write capabilities need a `redact` block on the manifest. The default withholds every
 value, which makes a write log useless — it records that something changed without recording

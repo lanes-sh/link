@@ -3,7 +3,7 @@ import type { Flags } from './argv.ts';
 import { ASSETS, readAsset } from './commands/mcp/assets.ts';
 import { assertKnownFlags, requirementFor, selectionKey } from './selection.ts';
 import { PROGRAM, usage } from './usage.ts';
-import { RESERVED_PROVIDER_IDS } from '#connectivity/manifest/provider.ts';
+import { RESERVED_PROVIDER_IDS } from '#connectivity/manifest/owner-ids.ts';
 
 /**
  * The documents we install into someone's agent must describe this CLI.

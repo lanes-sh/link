@@ -16,7 +16,7 @@ import type { BlobStore } from '#connectivity';
  * an index-plus-body split for exactly this reason, and it applies harder here,
  * because a sidecar holding an asset's name would be a second name for a file
  * that already has one. What the owner sees under
- * `~/.lanes-link/data/<profile>/assets/main/` is a directory of their files,
+ * `~/.lanes/link/profiles/<profile>/assets/main/` is a directory of their files,
  * with their names, openable by anything.
  *
  * The cost is that an asset carries no description, and that is deliberate:

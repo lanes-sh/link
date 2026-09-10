@@ -8,7 +8,7 @@ import {
   searchCapabilities,
   searchResults,
 } from './search-index.ts';
-import { expandIfReferences, sibling } from './expand-result.ts';
+import { EXPAND, type ExpandArgument, expandIfReferences } from './expand-result.ts';
 import { validate } from './validate.ts';
 import { SURFACE_TOOL_NAMES, toolNameFor } from './naming.ts';
 import {
@@ -210,13 +210,7 @@ export function registerSearchSurface(
           .record(z.string(), z.unknown())
           .default({})
           .describe("The capability's own arguments, as its schema describes them"),
-        expand: z
-          .boolean()
-          .optional()
-          .describe(
-            'Fill in a list that comes back as bare identifiers, by fetching the first few. ' +
-              'On by default. Pass false to get the identifiers as the provider returned them.',
-          ),
+        expand: EXPAND,
       },
     },
     async (input: {
@@ -224,7 +218,7 @@ export function registerSearchSurface(
       profile: string;
       connection: string;
       arguments?: Record<string, unknown>;
-      expand?: boolean | undefined;
+      expand?: ExpandArgument | undefined;
     }) => {
       const { capability, profile, connection } = input;
       const entry = merged.get(capability);
@@ -347,20 +341,21 @@ export function registerSearchSurface(
       // is strict — see `expand.ts` — and a list already holding whole records
       // fails them and is left alone, which is what happens to almost every
       // provider here.
-      const filled = await expandIfReferences(
+      const filled = await expandIfReferences({
         capability,
-        outcome.result,
-        input.expand !== false,
+        result: outcome.result,
+        asked: input.expand,
         merged,
-        async (id) =>
+        listArguments: input.arguments ?? {},
+        dispatch: async (capabilityId, args) =>
           runtime.dispatcher.invoke({
             principal: forProfile(options.principal, profile),
-            capabilityId: sibling(capability, merged) as string,
+            capabilityId,
             connectionKey: connection,
-            arguments: { ...(input.arguments ?? {}), id },
+            arguments: args,
             ...(options.clientLabel ? { clientLabel: options.clientLabel } : {}),
           }),
-      );
+      });
       if (filled) return filled;
 
       // Text only, unlike `makeHandler`. A `resource_link` has to be rewritten

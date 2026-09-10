@@ -37,12 +37,8 @@ export { setupPromptSchema, setupSchema, type SetupDeclaration, type SetupPrompt
 export { READ_BUNDLE, WRITE_BUNDLE, bundleSchema, type ScopeBundle } from './bundles.ts';
 export { identitySchema, type IdentityDeclaration } from './identity.ts';
 export { credentialRefForConnection, rotatableCredentialRefs } from './credential-ref.ts';
-export {
-  RESERVED_PROVIDER_IDS,
-  defineProvider,
-  providerManifestSchema,
-  type ProviderManifest,
-} from './provider.ts';
+export { defineProvider, providerManifestSchema, type ProviderManifest } from './provider.ts';
+export { RESERVED_PROVIDER_IDS, RENAMED_OWNER_PROVIDERS } from './owner-ids.ts';
 
 export type { SetupRequirement, SetupNeeds } from './requirements.ts';
 export { hasOwnClientPath, setupRequirements, UNNAMED_ID } from './requirements.ts';

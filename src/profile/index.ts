@@ -87,9 +87,16 @@ export {
   type SecretFinding,
 } from './secret-detection.ts';
 
+/**
+ * `installRoot` lives in `#home` now — it is a fact about the install, and
+ * `#home` needs it to tell a checkout from a published copy. Re-exported from
+ * here because eight files import it from `#profile` and the move renamed
+ * nothing.
+ */
+export { installRoot } from '#home';
+
 export {
   WORKSPACE_FILE,
-  installRoot,
   listProfiles,
   loadProfileConfig,
   loadWorkspaceProfiles,
