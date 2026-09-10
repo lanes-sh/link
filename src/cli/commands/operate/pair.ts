@@ -54,7 +54,12 @@ import { openSecretStoreFor, type GlobalFlags } from '../../runtime.ts';
  * and the credential it mints reads all of them — so asking which profile was
  * asking a question with no answer, and implying a per-profile pairing that does
  * not exist. `--profile` is still accepted, and picks the port when profiles
- * disagree about one.
+ * disagree about one *and a port is what the address is built from*. Deployed,
+ * it is not: the platform assigns one address for the whole workspace, so the
+ * flag decides nothing there and is not asked for. It was asked for, for one
+ * release — the ports were compared before the deployment was, so a cloud
+ * workspace whose profiles had been created on different days refused to pair
+ * at all, and the flag that unblocked it produced the same link either way.
  */
 
 /**
@@ -86,6 +91,18 @@ export interface PairDeps {
   readonly run?: (command: readonly string[]) => Promise<string | null>;
   readonly confirm?: (question: string) => Promise<boolean>;
   readonly interactive?: boolean;
+  /**
+   * Where the platform put this workspace's service.
+   *
+   * Injected for the same reason `which` and `run` are: the deployed path
+   * otherwise reaches a driver, a subprocess and a live project, and the
+   * decisions worth asserting on here — that no port is consulted, that the
+   * link carries the platform's address — are all upstream of that. Defaults
+   * to asking the platform, which is what every real run does.
+   */
+  readonly address?: (
+    deploy: NonNullable<ResolvedTarget['declared']['deploy']>,
+  ) => Promise<string | null>;
 }
 
 export async function pair(flags: PairFlags, deps: PairDeps = {}): Promise<void> {
@@ -101,11 +118,6 @@ export async function pair(flags: PairFlags, deps: PairDeps = {}): Promise<void>
     );
   }
 
-  // One endpoint serves every profile in a workspace, so they normally agree on
-  // a port and the choice is not a choice. Where they do not, the ambiguity is
-  // real and `--profile` is how it is settled — refused rather than guessed,
-  // because pairing the wrong port produces a dashboard that says "not
-  // connected" with everything working.
   const named = flags.profile
     ? profiles.find((one: LoadedProfile) => one.profile === flags.profile)
     : undefined;
@@ -117,6 +129,39 @@ export async function pair(flags: PairFlags, deps: PairDeps = {}): Promise<void>
     );
   }
 
+  // A workspace that declares a deployment is paired over the address the
+  // platform gave it, not over loopback — which is what `declared.deploy`
+  // answers and what `instance.host` does not: a deployed revision takes its
+  // host from the container's environment, so a profile bound to `127.0.0.1`
+  // in config is still serving `0.0.0.0` on Cloud Run.
+  //
+  // **Decided before any port is looked at**, because on this path there is no
+  // port to look at. The address comes from the platform, one service answers
+  // for the whole workspace, and `instance.port` reaches neither. Asked after
+  // the ports were compared, this refused a perfectly unambiguous pairing for
+  // two profiles that had merely been created on different days — and the
+  // `--profile` it demanded settled nothing, since both answers produce the
+  // same link. A question whose answer cannot change the outcome is not a
+  // question.
+  if (resolved.declared.deploy) {
+    await pairDeployed({
+      flags,
+      target,
+      chosen: named ?? profiles[0]!,
+      root,
+      credentials: await openSecretStoreFor(root, target),
+      deploy: resolved.declared.deploy,
+      address: deps.address ?? deployedUrl,
+    });
+    return;
+  }
+
+  // Loopback, where the port *is* the address. One endpoint serves every
+  // profile in a workspace, so they normally agree on a port and the choice is
+  // not a choice. Where they do not, the ambiguity is real and `--profile` is
+  // how it is settled — refused rather than guessed, because pairing the wrong
+  // port produces a dashboard that says "not connected" with everything
+  // working.
   const ports = new Set(profiles.map((one: LoadedProfile) => one.config.instance.port));
   if (!named && ports.size > 1) {
     throw new ConfigError(
@@ -131,16 +176,6 @@ export async function pair(flags: PairFlags, deps: PairDeps = {}): Promise<void>
   const chosen = named ?? profiles[0]!;
   const host = chosen.config.instance.host;
   const credentials = await openSecretStoreFor(root, target);
-
-  // A workspace that declares a deployment is paired over the address the
-  // platform gave it, not over loopback — which is what `declared.deploy`
-  // answers and what `instance.host` does not: a deployed revision takes its
-  // host from the container's environment, so a profile bound to `127.0.0.1`
-  // in config is still serving `0.0.0.0` on Cloud Run.
-  if (resolved.declared.deploy) {
-    await pairDeployed({ flags, target, chosen, root, credentials, deploy: resolved.declared.deploy });
-    return;
-  }
 
   if (!isLoopback(host)) {
     // Not deployed, and not on this machine either. There is no certificate
@@ -232,14 +267,16 @@ async function pairDeployed(input: {
   root: string;
   credentials: SecretStore;
   deploy: NonNullable<ResolvedTarget['declared']['deploy']>;
+  address: (deploy: NonNullable<ResolvedTarget['declared']['deploy']>) => Promise<string | null>;
 }): Promise<void> {
   const { flags, target, chosen, root, credentials } = input;
 
-  // `deployedUrl` asks the platform where the service ended up and degrades to
-  // null for every reason that is not this command's business — no driver, not
-  // deployed yet, no credentials for the project. A link with no address in it
-  // reads nothing, so this refuses rather than printing half of one.
-  const mcpUrl = await deployedUrl(input.deploy);
+  // `deployedUrl`, unless a test named something else, asks the platform where
+  // the service ended up and degrades to null for every reason that is not this
+  // command's business — no driver, not deployed yet, no credentials for the
+  // project. A link with no address in it reads nothing, so this refuses rather
+  // than printing half of one.
+  const mcpUrl = await input.address(input.deploy);
   if (mcpUrl === null) {
     throw new ConfigError(
       `Could not find the address of "${target}".\n` +
