@@ -12,6 +12,7 @@ import type {
   ProviderDefinition,
   ProviderManifest,
   ScopedStore,
+  VerifyOutcome,
 } from '#connectivity';
 import { credentialRefForConnection } from '#connectivity';
 import type { ConnectionConfig } from '#profile';
@@ -130,6 +131,8 @@ export interface BuildContextOptions {
   readonly signal: AbortSignal;
   /** The same closure the connector context gets. Absent for `local` providers. */
   readonly authorize?: ((request: Request) => Promise<Request>) | undefined;
+  /** The same reply check the connector context gets. See `ProviderContext.verify`. */
+  readonly verify?: ((response: Response) => Promise<VerifyOutcome | void>) | undefined;
   /** `oauth_apps` entries this profile declares. See `resolveSecretRefs`. */
   readonly ownClients?: readonly string[] | undefined;
   /** Every profile the caller may reach. See `ProviderContext.profiles`. */
@@ -162,6 +165,7 @@ export function buildProviderContext(options: BuildContextOptions): ProviderCont
     log: options.log,
     signal: options.signal,
     ...(options.authorize ? { authorize: options.authorize } : {}),
+    ...(options.verify ? { verify: options.verify } : {}),
     ...(options.attachments ? { attachments: options.attachments } : {}),
   };
 }

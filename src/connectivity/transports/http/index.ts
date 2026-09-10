@@ -282,8 +282,16 @@ export function createHttpConnector(options: HttpConnectorOptions): Connector {
       // something on the strength of this response — a token the vendor
       // refused — so authorising again hands out a replacement rather than the
       // value that just failed. A second refusal is the answer.
+      //
+      // The replacement's reply is verified too, and that is not symmetry for
+      // its own sake: refusing a *reissued* credential is the only evidence
+      // anywhere that the grant itself has ended rather than the token having
+      // gone stale, and it is available exactly once, here. Left unverified,
+      // the distinction could not be drawn by anything downstream — by then
+      // there is one 401 and no record that a retry was already spent.
       if (outcome?.retry) {
         response = await doFetch(await context.authorize(outbound()));
+        await context.verify?.(response.clone() as unknown as Response);
       }
 
       const text = await response.text();

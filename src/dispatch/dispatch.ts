@@ -1,5 +1,5 @@
 import type { AuditDraft, AuditLogger, AuditSink, AuthorizationResult } from '#audit';
-import { keepKeys, redactAllValues } from '#audit';
+import { redactAllValues } from '#audit';
 import { mayReach, type Principal } from '#auth';
 import type { SecretStore } from '#secrets';
 import type { RuntimeState } from '#stores/state';
@@ -16,8 +16,9 @@ import type {
 import { isToolResult, strategyContextFrom, strategyFor } from '#connectivity';
 import type { Config, ConnectionConfig } from '#profile';
 import { buildProviderContext, createProviderLogger } from './context.ts';
-import { responseVerifier } from './reauthorize.ts';
-import { distrustUpstreamToken } from '#connectivity/auth/index.ts';
+import { auditArgumentsFor } from './redaction.ts';
+import { reauthResult, verifierFor } from './reauthorize.ts';
+import { ReauthRequired, distrustConnectionToken } from '#connectivity/auth/index.ts';
 import { createAttachmentBridge } from './attachments.ts';
 import { fetchStaged, stageAttachment } from './staging.ts';
 import type { FetchStagedRequest, StagedAttachment, StageRequest } from './staging.ts';
@@ -116,6 +117,8 @@ export class Dispatcher {
     let status: AuditDraft['status'] = 'not_invoked';
     let auditArguments: Record<string, unknown> = redactAllValues(request.arguments);
     let error: { kind: string; message: string } | undefined;
+    // Set when a reissued token was refused too, which means a person is needed.
+    let needsReauth = false;
     let outcome: DispatchOutcome = {
       ok: false,
       authorization: 'denied_default',
@@ -134,17 +137,14 @@ export class Dispatcher {
 
       const entry = registry.get(providerId)!;
 
-      // Apply redaction now that we know which capability this is, so a denial
-      // is logged with the same redaction an allowed call would get.
-      //
-      // Local capabilities carry their own rule. Discovered ones cannot: we did
-      // not author them and cannot know what is sensitive, so the default
-      // withholds every value and a manifest opts specific keys back in.
-      const declaredKeys = entry.manifest.redact?.[registered.capability?.name ?? registered.discovered?.name ?? ''];
-      const redact =
-        registered.capability?.redact ?? (declaredKeys ? keepKeys(...declaredKeys) : undefined);
-
-      auditArguments = (redact ?? redactAllValues)(request.arguments);
+      // Now that we know which capability this is — and before the allow/deny
+      // branch, so a denial is recorded the same way an allowed call would be.
+      auditArguments = auditArgumentsFor({
+        manifest: entry.manifest,
+        name: registered.capability?.name ?? registered.discovered?.name,
+        own: registered.capability?.redact,
+        arguments: request.arguments,
+      });
 
       // **Who, before what.** A caller reaches a profile only if that profile's
       // `members:` names them (ADR-060), and this is checked before the
@@ -276,6 +276,19 @@ export class Dispatcher {
           ).allowed,
       });
 
+      // Resolved, not asked for: this has to be the key the token caches use.
+      // Built before the provider context because an authored capability calls
+      // its vendor directly and needs the same check a transport's reply gets.
+      const connectionKey = `${providerId}.${declared.id}`;
+      const verify = verifierFor({
+        connectionKey,
+        manifest: entry.manifest,
+        strategy,
+        context: forStrategy,
+        distrust: distrustConnectionToken,
+        exhausted: () => void (needsReauth = true),
+      });
+
       const providerContext = buildProviderContext({
         manifest: entry.manifest,
         definition: entry.definition,
@@ -297,6 +310,7 @@ export class Dispatcher {
         profiles: request.principal.profiles ?? [request.principal.profile],
         attachments,
         ...(entry.manifest.connector.kind === 'local' ? {} : { authorize }),
+        ...(verify ? { verify } : {}),
       });
 
       const connector = this.#deps.connectorFor(providerId, declared.id);
@@ -309,21 +323,6 @@ export class Dispatcher {
           message: `Provider ${providerId} has no usable connector.`,
         });
       }
-
-      // Two reasons to read a response before the caller does: a vendor that
-      // signs its replies expects them verified, and a token the vendor refuses
-      // has to be distrusted or the next call sends it again. They compose.
-      const verifyStrategy = strategy?.verify?.bind(strategy);
-      const verify = responseVerifier({
-        // Built from what was resolved, not from what was asked for: this has
-        // to be the key the token cache uses, `<manifest>.<connection>`.
-        connectionKey: `${providerId}.${declared.id}`,
-        oauth: entry.manifest.auth.kind === 'oauth',
-        distrust: distrustUpstreamToken,
-        ...(verifyStrategy
-          ? { strategy: (response: Response) => verifyStrategy(response, forStrategy()) }
-          : {}),
-      });
 
       const connectorContext: ConnectorContext = {
         manifest: entry.manifest,
@@ -345,10 +344,20 @@ export class Dispatcher {
       // Only a tool can report a soft failure. A resource or a prompt that
       // cannot produce its answer throws, and lands in the catch below.
       status = isToolResult(result) && result.isError ? 'error' : 'ok';
-      return (outcome = { ok: true, result });
+
+      // A 401 that outlived its refresh arrives as an ordinary failed result
+      // carrying whatever the vendor writes. Said plainly instead, here, in the
+      // one place that knows a retry was already spent.
+      const dead = needsReauth && status === 'error';
+      if (dead) error = { kind: 'needs_reauth', message: `${connectionKey} must be reconnected` };
+
+      return (outcome = { ok: true, result: dead ? reauthResult(connectionKey, result) : result });
     } catch (caught) {
       status = 'error';
-      error = { kind: 'provider_error', message: (caught as Error).message };
+      // `ReauthRequired` already says a person is needed; flattening every throw
+      // to `provider_error` discarded that.
+      const kind = caught instanceof ReauthRequired ? 'needs_reauth' : 'provider_error';
+      error = { kind, message: (caught as Error).message };
       return (outcome = {
         ok: false,
         authorization,

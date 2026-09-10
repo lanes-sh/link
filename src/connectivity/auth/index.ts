@@ -19,6 +19,7 @@
 
 export { credentialResolver, type ResolvedCredential } from './resolve.ts';
 export { requestAuthorizer } from './authorize.ts';
+export { distrustConnectionToken } from './distrust.ts';
 export { ReauthRequired, statusMeansGrantIsDead } from './reauth.ts';
 export { basicCredential } from './basic/index.ts';
 export { bearerToken, bearerTokenAsStored } from './token.ts';
@@ -33,6 +34,7 @@ export { resolveUpstreamToken } from './oauth-authcode/index.ts';
 export {
   ASSERTION_GRANT,
   clearMintedTokens,
+  distrustMintedToken,
   isStoredAssertion,
   resolveAssertionToken,
   storedAssertionFor,

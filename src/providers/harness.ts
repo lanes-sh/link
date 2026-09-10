@@ -9,6 +9,7 @@ import type {
   ConnectorContext,
   ProviderContext,
   ProviderDefinition,
+  VerifyOutcome,
 } from '#connectivity';
 
 /**
@@ -37,7 +38,11 @@ export function harnessFor(
    * import `#dispatch`, and a provider only ever sees the two closures anyway.
    * `src/dispatch/attachments.test.ts` is what tests the real one.
    */
-  options: { attachments?: AttachmentBridge } = {},
+  options: {
+    attachments?: AttachmentBridge;
+    /** The reply check the runtime binds, for a provider that calls its vendor itself. */
+    verify?: (response: Response) => Promise<VerifyOutcome | void>;
+  } = {},
 ): ProviderHarness {
   const annotations: Record<string, unknown> = {};
 
@@ -64,6 +69,7 @@ export function harnessFor(
     // The runtime hands this to any provider that is not `local`, so a provider
     // authoring a capability against its own vendor's API has it here too.
     authorize: async (request) => request,
+    ...(options.verify ? { verify: options.verify } : {}),
     ...(options.attachments ? { attachments: options.attachments } : {}),
   });
 

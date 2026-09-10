@@ -79,8 +79,8 @@ const BASIC = defineProvider({
   auth: { kind: 'basic', credential_ref: 'acme/password' },
 });
 
-/** A vendor that refuses the first call and accepts the second. */
-function harness(manifest: typeof OAUTH) {
+/** A vendor that refuses the first call and accepts the second — or refuses both. */
+function harness(manifest: typeof OAUTH, alwaysRefuse = false) {
   const tokens: string[] = [];
   let attempt = 0;
 
@@ -93,7 +93,7 @@ function harness(manifest: typeof OAUTH) {
     fetch: (async (request: Request) => {
       tokens.push(request.headers.get('authorization') ?? '');
       attempt += 1;
-      return attempt === 1
+      return attempt === 1 || alwaysRefuse
         ? new Response('{"error":"Invalid Credentials"}', { status: 401, statusText: 'Unauthorized' })
         : new Response('{"accounts":[]}', {
             status: 200,
@@ -103,6 +103,7 @@ function harness(manifest: typeof OAUTH) {
   });
 
   let issued = 0;
+  const audit = createBlobAuditStore({ storage: createMemoryBlobStore() });
   const dispatcher = new Dispatcher({
     config: CONFIG,
     connections: [{ id: 'main', provider: 'acme', account: 'A' }],
@@ -119,14 +120,14 @@ function harness(manifest: typeof OAUTH) {
     },
     policy: toPolicyDocument(CONFIG),
     state: createMemoryState(),
-    audit: createBlobAuditStore({ storage: createMemoryBlobStore() }),
+    audit,
     credentials: createMemoryCredentials(),
     storage: createMemoryBlobStore(),
     limiter: new RateLimiter(),
     log: { debug() {}, info() {}, warn() {}, error() {} },
   });
 
-  return { dispatcher, tokens, registry, http };
+  return { dispatcher, tokens, registry, http, audit };
 }
 
 const call = {
@@ -158,5 +159,65 @@ describe('a refused credential a person has to change', () => {
     await dispatcher.invoke(call);
 
     expect(tokens).toEqual(['Bearer token-1']);
+  });
+});
+
+describe('a credential a person has to replace', () => {
+  /** Discovery first, as the tests above do: an undiscovered capability is not callable. */
+  const ready = async (alwaysRefuse: boolean) => {
+    const built = harness(OAUTH, alwaysRefuse);
+    built.registry.setDiscovered('acme', await built.http.discover({ manifest: OAUTH } as never));
+    return built;
+  };
+
+  /**
+   * Two tokens, both refused. This is the shape the retry cannot fix, and until
+   * now it was indistinguishable from the shape it can — the caller received
+   * the vendor's own sentence about credentials either way.
+   */
+  test('is refused twice, and then said to be a grant rather than a token', async () => {
+    const { dispatcher, tokens } = await ready(true);
+    const outcome = await dispatcher.invoke(call);
+
+    expect(tokens).toEqual(['Bearer token-1', 'Bearer token-2']);
+    expect(outcome.ok).toBe(true);
+
+    const result = (outcome as unknown as { result: { content: { text: string }[]; isError?: boolean } }).result;
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain('acme.main needs to be connected again');
+    expect(result.content[0]?.text).toContain('Retrying will not help');
+  });
+
+  /** And the vendor's own words survive underneath it. */
+  test('keeps what the vendor said', async () => {
+    const { dispatcher } = await ready(true);
+    const outcome = await dispatcher.invoke(call);
+
+    const result = (outcome as unknown as { result: { content: { text: string }[] } }).result;
+    expect(result.content.map((block) => block.text).join('\n')).toContain('Invalid Credentials');
+  });
+
+  /**
+   * The audit row is where "how often is this happening" gets answered, and a
+   * dead grant recorded as `provider_error` is indistinguishable from a vendor
+   * having a bad afternoon.
+   */
+  test('is recorded as needing re-auth, not as a provider error', async () => {
+    const { dispatcher, audit } = await ready(true);
+    await dispatcher.invoke(call);
+
+    const events = await audit.tail({});
+    expect(events[0]?.error?.kind).toBe('needs_reauth');
+  });
+
+  /** A refusal the retry *did* fix is an ordinary success, and says nothing. */
+  test('a token that was merely stale is not reported as either', async () => {
+    const { dispatcher, audit } = await ready(false);
+    const outcome = await dispatcher.invoke(call);
+
+    expect(outcome.ok).toBe(true);
+    const events = await audit.tail({});
+    expect(events[0]?.error).toBeUndefined();
+    expect(events[0]?.status).toBe('ok');
   });
 });
