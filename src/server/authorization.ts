@@ -68,7 +68,7 @@ export async function openAuthorization(
       // The issuer is somebody else's origin, so it is a constant here rather
       // than derived from the request.
       surface: { issuer: () => declared.issuer, mcpPath: MCP_PATH, target: primary.target },
-      authenticator: new OidcAuthenticator(verifier, profile),
+      authenticator: new OidcAuthenticator(verifier, profile, members),
     };
   }
 

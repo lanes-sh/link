@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { forProfile, mayReach, memberPrincipal, ownerPrincipal } from './index.ts';
+import { EVERY_PROFILE, forProfile, mayReach, memberPrincipal, ownerPrincipal } from './index.ts';
 
 /**
  * Who may act within a profile — ADR-060.
@@ -57,15 +57,31 @@ describe('the callers that are not people', () => {
     expect(mayReach(owner, 'work')).toBe(true);
   });
 
-  test('an undefined list means the whole workspace, not an empty one', () => {
-    // The distinction that would be a security hole if it inverted: `undefined`
-    // is the machine token and the stdio pipe, both of which reach everything;
-    // `[]` is a person delegated nothing. Reading one as the other in either
-    // direction is the bug this pins.
-    expect(mayReach({ id: 'ci', profile: 'personal', kind: 'machine' }, 'anything')).toBe(true);
+  test('reaching the whole workspace has to be said, not left unsaid', () => {
+    // The hole this pins, from both sides. `EVERY_PROFILE` is the stdio pipe
+    // and the CLI, which reach everything and say so. `[]` is a person
+    // delegated nothing. There is no third state that means "unset", because an
+    // unset one used to read as the first and that is what let a credential
+    // naming nobody open every profile in the workspace (ADR-078).
+    expect(
+      mayReach(
+        { id: 'ci', profile: 'personal', kind: 'machine', profiles: EVERY_PROFILE },
+        'anything',
+      ),
+    ).toBe(true);
     expect(
       mayReach({ id: 'x', profile: 'personal', kind: 'member', profiles: [] }, 'anything'),
     ).toBe(false);
+  });
+
+  test('the sentinel is not a profile name a member list could contain', () => {
+    // If `EVERY_PROFILE` were an ordinary string, a profile of that name — or a
+    // member list that happened to carry it — would be indistinguishable from
+    // the sentinel. The `lanes:` prefix is not a legal profile identifier
+    // (`src/profile/primitives.ts` requires /^[a-z][a-z0-9_]*$/), so no config
+    // can produce one.
+    expect(EVERY_PROFILE.startsWith('lanes:')).toBe(true);
+    expect(/^[a-z][a-z0-9_]*$/.test(EVERY_PROFILE)).toBe(false);
   });
 });
 
