@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { serveRead, type AuditTail, type RunningReadListener } from './listener.ts';
-import { directPairingCredential } from './credential.ts';
+import { memberPrincipal } from '#auth';
 import type { ProfileRuntime } from '../mcp/visibility.ts';
 
 /**
@@ -17,12 +17,20 @@ import type { ProfileRuntime } from '../mcp/visibility.ts';
  */
 
 const ORIGIN = 'https://lanes.sh';
-const TOKEN = 'llp_a-pairing-token';
+/** The bearer a signed-in page presents — the same one `/mcp` takes (ADR-079). */
+const BEARER = 'llo_a-signed-in-bearer';
+/** On both profiles the audit fixtures name, so this file stays about the wire. */
+const CALLER = memberPrincipal('lanes:HER', 'personal', ['personal', 'work']);
 
 let listener: RunningReadListener;
 
-/** The token the listener will accept, so a rotation can be driven mid-test. */
-let current: string = TOKEN;
+/**
+ * The bearer the listener will accept, so a revocation can be driven mid-test.
+ *
+ * `null` is a workspace whose credential store cannot be opened at all, which
+ * must refuse rather than admit anything.
+ */
+let current: string | null = BEARER;
 let base: string;
 
 /**
@@ -92,11 +100,20 @@ beforeAll(() => {
     profiles: () => PROFILES,
     audit: AUDIT,
     connections: async () => [],
-    // The real loopback composition, not a stub: `open.ts` builds exactly this,
-    // so a change to how a rotation lands is caught here rather than only in
-    // production. `current` is the mutable half a rotation test moves.
-    credential: directPairingCredential({ read: async () => current }),
+    // Read on every presentation, so a revoked bearer stops working on a live
+    // listener without a restart — the property `BearerAuthenticator` provides
+    // by re-reading on a cached miss, asserted here over the wire.
+    authenticate: async (header) =>
+      current !== null && header === `Bearer ${current}`
+        ? { ok: true, principal: CALLER }
+        : { ok: false, reason: header ? 'invalid' : 'missing' },
     endpoint: { kind: 'local', version: '0.0.0-test', certificateExpiresAt: null },
+    // **What makes signing in reachable from a browser at all** (ADR-079). The
+    // surface takes the bearer `/mcp` takes, and a page on `https://lanes.sh`
+    // cannot fetch `http://127.0.0.1:7337` to get one — mixed content, the same
+    // reason this bind exists. `server` is absent because these cases are about
+    // the routing and the grant; `oauth.test.ts` drives a whole flow.
+    authorization: { issuer: (o) => o, mcpPath: '/mcp', target: 'local' },
     tls: selfSigned(),
   });
   base = listener.url;
@@ -111,32 +128,33 @@ function at(path: string): string {
 function read(path: string, init: RequestInit = {}): Promise<Response> {
   return fetch(at(path), {
     ...init,
-    headers: { origin: ORIGIN, authorization: `Bearer ${TOKEN}`, ...(init.headers ?? {}) },
+    headers: { origin: ORIGIN, authorization: `Bearer ${BEARER}`, ...(init.headers ?? {}) },
     tls: { rejectUnauthorized: false },
   } as RequestInit);
 }
 
 describe('the credential', () => {
-  test('a paired page reads the workspace', async () => {
+  test('a signed-in page reads the workspace', async () => {
     const response = await read('/state');
 
     expect(response.status).toBe(200);
     expect(await response.json()).toMatchObject({ workspace: 'local' });
   });
 
-  test('no token reads nothing, and is told the one command that fixes it', async () => {
+  test('no bearer reads nothing, and is told to sign in', async () => {
     // Every local failure looks identical from a browser: an expired
-    // certificate, a rotated token, a listener that is not running. So the
-    // answer is always the command that fixes all of them.
+    // certificate, a revoked bearer, a listener that is not running. So the
+    // answer is always the one thing that fixes all of them — sign in again,
+    // which the page can start on its own against `/authorize`.
     const response = await read('/state', { headers: { authorization: '' } });
 
     expect(response.status).toBe(401);
-    expect(await response.json()).toEqual({ error: 'unpaired', run: 'lanes link pair' });
+    expect(await response.json()).toEqual({ error: 'unauthorized', signIn: true });
   });
 
-  test('a rotated-away token reads nothing', async () => {
+  test('a bearer the authenticator does not recognise reads nothing', async () => {
     const response = await read('/state', {
-      headers: { authorization: 'Bearer llp_the-previous-one' },
+      headers: { authorization: 'Bearer llo_the-previous-one' },
     });
 
     expect(response.status).toBe(401);
@@ -260,36 +278,95 @@ describe('what can be reached', () => {
   });
 });
 
-describe('rotating the pairing token', () => {
+describe('revoking a bearer', () => {
   test('the new one is accepted and the old one stops, without a restart', async () => {
-    // `lanes link pair --rotate` writes a new token and tells the operator the
-    // previous link no longer works. Captured at boot it did neither: the live
-    // listener kept accepting the old token and refused the new one until the
-    // endpoint was restarted, so a stolen credential went on reading the whole
-    // workspace while the command that was meant to take it back reported
-    // success.
+    // `lanes link token rotate` writes a new value and tells the operator the
+    // previous one no longer works. Captured at boot it did neither: the live
+    // listener kept accepting the old credential and refused the new one until
+    // the endpoint was restarted, so a stolen one went on reading the whole
+    // workspace while the command meant to take it back reported success.
     expect((await read('/state')).status).toBe(200);
 
-    current = 'llp_rotated';
+    current = 'llo_rotated';
 
-    const old = await read('/state');
+    const old = await read('/state', { headers: { authorization: `Bearer ${BEARER}` } });
     expect(old.status).toBe(401);
 
     const rotated = await read('/state', {
-      headers: { authorization: 'Bearer llp_rotated' },
+      headers: { authorization: 'Bearer llo_rotated' },
     });
     expect(rotated.status).toBe(200);
 
-    current = TOKEN;
+    current = BEARER;
   });
 
-  test('an unpaired workspace refuses rather than admitting anything', async () => {
-    // `--rotate` between the read and the write, or a credential store that
-    // cannot be opened. Null is not a token to compare against.
-    current = null as unknown as string;
+  test('a store that cannot be opened refuses rather than admitting anything', async () => {
+    // A rotation between the read and the write, or a credential store that
+    // cannot be opened. Null is not a credential to compare against.
+    current = null;
 
-    expect((await read('/state')).status).toBe(401);
+    expect(
+      (await read('/state', { headers: { authorization: `Bearer ${BEARER}` } })).status,
+    ).toBe(401);
 
-    current = TOKEN;
+    current = BEARER;
+  });
+});
+
+describe('signing in is reachable from the browser', () => {
+  const HOSTILE = 'https://evil.example';
+
+  test('the authorization paths are served on this port too', async () => {
+    // The delegation added in `serveRead`. Without it the read surface would
+    // answer its own `404` here, and the page would have a surface it could
+    // reach and no way to get a credential for it.
+    const response = await fetch(`${base}/.well-known/oauth-protected-resource`, {
+      tls: { rejectUnauthorized: false },
+    } as RequestInit);
+
+    expect(response.status).toBe(200);
+    // The resource names `/mcp` on this origin, and the audience an assertion
+    // is minted for follows from it — which is why nothing had to validate the
+    // `resource` a client passes.
+    expect(await response.json()).toMatchObject({ resource: `${base}/mcp` });
+  });
+
+  test('a preflight on /register from the dashboard is granted', async () => {
+    const response = await fetch(`${base}/register`, {
+      method: 'OPTIONS',
+      headers: { origin: ORIGIN, 'access-control-request-method': 'POST' },
+      tls: { rejectUnauthorized: false },
+    } as RequestInit);
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get('access-control-allow-origin')).toBe(ORIGIN);
+    // Never a wildcard, never ambient — the same two the reads hold.
+    expect(response.headers.get('access-control-allow-credentials')).toBeNull();
+  });
+
+  test('a preflight from anywhere else is refused, and told nothing', async () => {
+    const response = await fetch(`${base}/token`, {
+      method: 'OPTIONS',
+      headers: { origin: HOSTILE, 'access-control-request-method': 'POST' },
+      tls: { rejectUnauthorized: false },
+    } as RequestInit);
+
+    expect(response.status).toBe(403);
+    expect(response.headers.get('access-control-allow-origin')).toBeNull();
+    // Set even on a refusal, or a cache in between serves one origin's answer
+    // to another.
+    expect(response.headers.get('vary')).toBe('Origin');
+  });
+
+  test('the reads are still gated, so delegating these opened nothing', async () => {
+    // The authorization paths answer before the credential check, deliberately:
+    // the first request a client makes is the one that discovers how to
+    // authenticate. This asserts that widening did not reach past them.
+    const response = await fetch(`${base}/state`, {
+      headers: { origin: ORIGIN },
+      tls: { rejectUnauthorized: false },
+    } as RequestInit);
+
+    expect(response.status).toBe(401);
   });
 });

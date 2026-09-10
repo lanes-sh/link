@@ -4,7 +4,7 @@ import { capabilityIdForToolName } from '#server/mcp';
 import { ATTACHMENTS_PATH, handleAttachments } from './attachments.ts';
 import { allowedHostnamesFor, rebindingRefusal } from './rebinding.ts';
 import { ANY_ORIGIN, corsAware, type CorsPolicy } from './cors.ts';
-import { isPairedPath, readRoutes, type ReadDeps } from './read/routes.ts';
+import { isDashboardPath, readRoutes, type ReadDeps } from './read/routes.ts';
 import type { Generation } from './generation.ts';
 import type { Generations } from './generations.ts';
 import {
@@ -168,7 +168,7 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
           healthPath: HEALTH_PATH,
           isAuthorizationPath,
           authorizationEnabled: options.authorization !== undefined,
-          isPairedPath,
+          isDashboardPath,
           readEnabled: options.read !== undefined,
         });
         if (refusal) {
@@ -204,13 +204,13 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
       }
 
       // Above the 404 gate because these are deliberately not in the three-path
-      // set, and never through `options.authenticator`: the pairing token is a
-      // different credential for a different surface, and one shared check
-      // would make each able to do the other's job (ADR-063). Below the meter,
-      // because verifying one costs a credential-store read. Only what
-      // `isPairedPath` matched is handed over — `readRoutes` answers everything
-      // it is given, so a wider hand-off would swallow `/mcp`.
-      if (options.read && isPairedPath(url.pathname)) {
+      // set. They *do* go through `options.authenticator` — the deps carry it,
+      // and that is the whole of ADR-079: one credential, one resolution, one
+      // `mayReach`. Below the meter, because resolving a bearer can cost a
+      // credential-store read. Only what `isDashboardPath` matched is handed
+      // over — `readRoutes` answers everything it is given, so a wider
+      // hand-off would swallow `/mcp`.
+      if (options.read && isDashboardPath(url.pathname)) {
         return await readRoutes(request, options.read);
       }
 

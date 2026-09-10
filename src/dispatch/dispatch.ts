@@ -1,6 +1,6 @@
 import type { AuditDraft, AuditLogger, AuditSink, AuthorizationResult } from '#audit';
 import { redactAllValues } from '#audit';
-import { mayReach, type Principal } from '#auth';
+import { mayReach, reachWithin, type Principal } from '#auth';
 import type { SecretStore } from '#secrets';
 import type { RuntimeState } from '#stores/state';
 import type { PolicyDocument, ProfilePolicy } from '#policy';
@@ -303,11 +303,10 @@ export class Dispatcher {
         // provider that could be brokered but is not reads its client from the
         // store, so it has to be able to.
         ownClients: this.#deps.oauthApps,
-        // The *caller's* set, not the workspace's. `undefined` means
-        // unrestricted — the stdio pipe — and the profile in play is the only
-        // honest answer a dispatcher can give for it without knowing what the
-        // endpoint is serving.
-        profiles: request.principal.profiles ?? [request.principal.profile],
+        // The *caller's* set, not the workspace's. For `EVERY_PROFILE` — the
+        // stdio pipe and the CLI — the profile in play is the only honest answer
+        // a dispatcher has without knowing what the endpoint is serving.
+        profiles: reachWithin(request.principal),
         attachments,
         ...(entry.manifest.connector.kind === 'local' ? {} : { authorize }),
         ...(verify ? { verify } : {}),

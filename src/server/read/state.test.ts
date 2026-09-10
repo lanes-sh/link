@@ -6,6 +6,26 @@ import {
   type ReadEndpoint,
 } from './state.ts';
 import type { ProfileRuntime } from '../mcp/visibility.ts';
+import { memberPrincipal, type Principal } from '#auth';
+
+/**
+ * `readState` for somebody every profile in the map names.
+ *
+ * The cases below are about which rows exist rather than about who is asking,
+ * and they predate the caller argument. Routing them through one wrapper keeps
+ * them reading as they did; the filtering itself is tested at the bottom of
+ * this file, where the caller is the subject.
+ */
+function stateFor(
+  workspace: string,
+  profiles: ReadonlyMap<string, ProfileRuntime>,
+  rows: readonly ConnectionRow[],
+  endpoint: ReadEndpoint,
+  names?: ProviderNames,
+) {
+  const caller: Principal = memberPrincipal('lanes:HER', 'personal', [...profiles.keys()]);
+  return readState(workspace, profiles, rows, endpoint, caller, names);
+}
 
 /**
  * What the dashboard is told the workspace holds.
@@ -70,7 +90,7 @@ describe('which connections exist', () => {
     // The bug this file exists for. `gmail.rin` is authorised and no profile
     // grants it; it is still a connection, and a dashboard that hid it would be
     // telling somebody their `connect` did nothing.
-    const state = readState('local', new Map([['personal', profile(['lanes_memory.main', 'gmail.ada'])]]), ROWS, ENDPOINT);
+    const state = stateFor('local', new Map([['personal', profile(['lanes_memory.main', 'gmail.ada'])]]), ROWS, ENDPOINT);
 
     expect(state.connections.map((one) => one.ref).sort()).toEqual([
       'gmail.ada',
@@ -80,14 +100,14 @@ describe('which connections exist', () => {
   });
 
   test('an ungranted one says so, rather than being absent', () => {
-    const state = readState('local', new Map([['personal', profile(['lanes_memory.main'])]]), ROWS, ENDPOINT);
+    const state = stateFor('local', new Map([['personal', profile(['lanes_memory.main'])]]), ROWS, ENDPOINT);
     const rin = state.connections.find((one) => one.ref === 'gmail.rin');
 
     expect(rin?.profiles).toEqual([]);
   });
 
   test('carries the label and the account, which are what a reader is shown', () => {
-    const state = readState('local', new Map(), ROWS, ENDPOINT, NAMES);
+    const state = stateFor('local', new Map(), ROWS, ENDPOINT, NAMES);
     const ada = state.connections.find((one) => one.ref === 'gmail.ada');
 
     expect(ada?.label).toBe('Work mail');
@@ -98,7 +118,7 @@ describe('which connections exist', () => {
     // `con8` is what this showed before, which is the one field on a row that
     // says nothing: the id is opaque on purpose. Every reader fell back to it,
     // so a dashboard's whole Label column read as keys.
-    const state = readState('local', new Map(), ROWS, ENDPOINT, NAMES);
+    const state = stateFor('local', new Map(), ROWS, ENDPOINT, NAMES);
 
     expect(state.connections.find((one) => one.ref === 'gmail.rin')?.label).toBe('Gmail (rin)');
   });
@@ -106,7 +126,7 @@ describe('which connections exist', () => {
   test('a built-in is its proper noun, not its noun twice', () => {
     // The owner layer carries the name in `account` already, so composing the
     // two would read `Memory (Memory)`.
-    const state = readState('local', new Map(), ROWS, ENDPOINT, NAMES);
+    const state = stateFor('local', new Map(), ROWS, ENDPOINT, NAMES);
 
     expect(state.connections.find((one) => one.ref === 'lanes_memory.main')?.label).toBe('Memory');
   });
@@ -114,14 +134,14 @@ describe('which connections exist', () => {
   test('a provider nothing can name says null rather than guessing', () => {
     // A grant pointing at a connection the workspace no longer holds, and the
     // one row left with nothing to derive a name from.
-    const state = readState('local', new Map([['personal', profile(['ghost.one'])]]), ROWS, ENDPOINT, NAMES);
+    const state = stateFor('local', new Map([['personal', profile(['ghost.one'])]]), ROWS, ENDPOINT, NAMES);
 
     expect(state.connections.find((one) => one.ref === 'ghost.one')?.label).toBeNull();
   });
 
   test('with no profiles at all, the workspace still lists what it holds', () => {
     // The state a workspace is in between `connect` and the first `profile add`.
-    const state = readState('local', new Map(), ROWS, ENDPOINT);
+    const state = stateFor('local', new Map(), ROWS, ENDPOINT);
 
     expect(state.connections).toHaveLength(3);
     expect(state.profiles).toEqual([]);
@@ -130,7 +150,7 @@ describe('which connections exist', () => {
 
 describe('who can reach one', () => {
   test('names every profile that grants it', () => {
-    const state = readState(
+    const state = stateFor(
       'local',
       new Map([
         ['personal', profile(['gmail.ada'])],
@@ -151,7 +171,7 @@ describe('who can reach one', () => {
     // the CLI. The read surface describes what is there rather than assuming,
     // because a row that appeared only in a grant would otherwise vanish from
     // the listing while still governing a profile.
-    const state = readState('local', new Map([['personal', profile(['ghost.one'])]]), ROWS, ENDPOINT);
+    const state = stateFor('local', new Map([['personal', profile(['ghost.one'])]]), ROWS, ENDPOINT);
 
     expect(state.connections.find((one) => one.ref === 'ghost.one')?.profiles).toEqual([
       'personal',
@@ -169,7 +189,7 @@ describe('who can reach one', () => {
  */
 describe('when a connection arrived', () => {
   test('the dates the store had are passed through', () => {
-    const state = readState('acme', new Map(), ROWS, ENDPOINT, NAMES);
+    const state = stateFor('acme', new Map(), ROWS, ENDPOINT, NAMES);
     const ada = state.connections.find((one) => one.ref === 'gmail.ada');
 
     expect(ada?.createdAt).toBe('2026-01-02T03:04:05.000Z');
@@ -179,7 +199,7 @@ describe('when a connection arrived', () => {
   test('a row the store has no record of is still listed, and says so', () => {
     // The state store is rebuilt from the file and can be deleted at any time.
     // Missing dates must cost a reader the dates, never the row.
-    const state = readState('acme', new Map(), ROWS, ENDPOINT, NAMES);
+    const state = stateFor('acme', new Map(), ROWS, ENDPOINT, NAMES);
     const rin = state.connections.find((one) => one.ref === 'gmail.rin');
 
     expect(rin).toBeDefined();
@@ -189,11 +209,79 @@ describe('when a connection arrived', () => {
 
   test('a grant naming a connection the workspace no longer holds has no dates', () => {
     const profiles = new Map([['personal', profile(['slack.vanished'])]]);
-    const state = readState('acme', profiles, ROWS, ENDPOINT, NAMES);
+    const state = stateFor('acme', profiles, ROWS, ENDPOINT, NAMES);
     const orphan = state.connections.find((one) => one.ref === 'slack.vanished');
 
     expect(orphan).toBeDefined();
     expect(orphan?.createdAt).toBeNull();
     expect(orphan?.updatedAt).toBeNull();
+  });
+});
+
+/**
+ * Who is asking, which is what this surface never used to ask.
+ *
+ * `/state` was gated on holding the workspace's pairing token and then
+ * described every profile the endpoint served, each with its `members:` roster
+ * and every capability its grants reached. A workspace member on no profile
+ * read all of it. These are the cases that would have caught that (ADR-079).
+ */
+describe('what one caller is told the workspace holds', () => {
+  const TWO = new Map([
+    ['personal', profile(['lanes_memory.main'])],
+    ['work', profile(['gmail.ada'])],
+  ]);
+
+  const asking = (...profiles: string[]): Principal =>
+    memberPrincipal('lanes:HER', profiles[0] ?? 'personal', profiles);
+
+  test('only the profiles that name them', () => {
+    const state = readState('local', TWO, ROWS, ENDPOINT, asking('personal'));
+
+    expect(state.profiles.map((one) => one.name)).toEqual(['personal']);
+  });
+
+  test('a profile they are on carries its roster; one they are not carries nothing', () => {
+    // The roster is not withheld from a profile they reach: reaching it *is*
+    // being on it, so the list is their own team. What must not happen is
+    // learning the roster of a profile that does not name them, and the way
+    // that is prevented is that the profile is not described at all.
+    const state = readState('local', TWO, ROWS, ENDPOINT, asking('personal'));
+
+    expect(state.profiles[0]?.members).toEqual([{ subject: 'lanes:HER', role: 'owner' }]);
+    expect(state.profiles.some((one) => one.name === 'work')).toBe(false);
+  });
+
+  test('a member of nothing is told nothing, connections included', () => {
+    // Signing in successfully and reaching nothing is a normal outcome. What
+    // it must not do is describe the workspace: a connection row carries an
+    // account name, and this caller has proved only that they signed in.
+    const state = readState('local', TWO, ROWS, ENDPOINT, asking());
+
+    expect(state.profiles).toEqual([]);
+    expect(state.connections).toEqual([]);
+  });
+
+  test('a connection names only the profiles this caller can see it through', () => {
+    // `profiles` on a row is what the dashboard shows as "granted to". Left
+    // unfiltered it would name a profile the caller cannot reach, which is the
+    // existence of that profile leaking through a list they are entitled to.
+    const state = readState('local', TWO, ROWS, ENDPOINT, asking('personal'));
+    const gmail = state.connections.find((one) => one.ref === 'gmail.ada');
+
+    expect(gmail?.profiles).toEqual([]);
+  });
+
+  test('a workspace with no profiles at all still lists what it holds', () => {
+    // Not a boundary being enforced: there is nothing to be a member of yet.
+    // An empty answer here would be `lanes link connect` run without
+    // `--profile` looking like it did nothing.
+    const state = readState('local', new Map(), ROWS, ENDPOINT, asking());
+
+    expect(state.connections.map((one) => one.ref).sort()).toEqual([
+      'gmail.ada',
+      'gmail.rin',
+      'lanes_memory.main',
+    ]);
   });
 });

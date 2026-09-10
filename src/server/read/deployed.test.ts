@@ -6,7 +6,6 @@ import { ATTACHMENTS_PATH } from '../attachments.ts';
 import { ANY_ORIGIN, corsAware } from '../cors.ts';
 import { Generations } from '../generations.ts';
 import { silentLogger } from '../logging.ts';
-import { cachedPairingCredential, directPairingCredential } from './credential.ts';
 import type { AuditTail, ReadDeps } from './routes.ts';
 
 /**
@@ -27,7 +26,15 @@ import type { AuditTail, ReadDeps } from './routes.ts';
 
 const ORIGIN = 'https://lanes.sh';
 const HOSTILE = 'https://evil.example';
-const PAIR_TOKEN = 'llp_a-deployed-pairing-token';
+/**
+ * **The MCP bearer, because that is now the only credential here** (ADR-079).
+ *
+ * There is no dashboard token in this file any more. `deployed()` hands the
+ * read deps the same `BearerAuthenticator` it hands `createRequestHandler`, so
+ * every case below presents the credential a client presents to `/mcp` and the
+ * profiles it reaches are the ones `profilesFor` resolved.
+ */
+const READS = TEST_TOKEN;
 
 const AUDIT: AuditTail = {
   tail: async () => [
@@ -46,13 +53,24 @@ const AUDIT: AuditTail = {
   ],
 };
 
+/**
+ * The placeholder `deployed()` swaps for the endpoint's real authenticator.
+ *
+ * Compared by identity, so a test that supplies its own `authenticate` — to
+ * make it throw, or to count the calls — keeps it. Without the sentinel the
+ * substitution would silently overwrite the thing under test.
+ */
+const STUB: ReadDeps['authenticate'] = async () => ({ ok: false, reason: 'invalid' });
+
 function readDeps(overrides: Partial<ReadDeps> = {}): ReadDeps {
   return {
     workspace: 'cloud',
     profiles: () => new Map(),
     audit: AUDIT,
     connections: async () => [],
-    credential: directPairingCredential({ read: async () => PAIR_TOKEN }),
+    // Replaced by `deployed()` with the real authenticator. A test that wants
+    // to state the outcome itself passes its own and keeps it — see `STUB`.
+    authenticate: STUB,
     endpoint: { kind: 'deployed', version: '0.0.0-test', certificateExpiresAt: null },
     ...overrides,
   };
@@ -75,6 +93,17 @@ function deployed(read: ReadDeps | undefined): (request: Request) => Promise<Res
   const nothing = () => Promise.resolve();
   const log = silentLogger();
 
+  // **One authenticator, both surfaces**, which is what `endpoint.ts` does and
+  // what this file exists to hold. Building two would let the read surface and
+  // `/mcp` drift into two answers about who a bearer belongs to — the drift
+  // ADR-079 closes.
+  const authenticator = new BearerAuthenticator({
+    profile: 'personal',
+    tokens: async () => [{ id: 'tok1', subject: HARNESS_SUBJECT, ref: 'tokens/tok1' }],
+    credentials,
+    profilesFor: async () => ['personal'],
+  });
+
   const handler = createRequestHandler({
     generations: new Generations(
       { profiles, close: nothing },
@@ -82,15 +111,17 @@ function deployed(read: ReadDeps | undefined): (request: Request) => Promise<Res
       { primary: 'personal', log },
     ),
     primary: 'personal',
-    authenticator: new BearerAuthenticator({
-      profile: 'personal',
-      tokens: async () => [{ id: 'tok1', subject: HARNESS_SUBJECT, ref: 'tokens/tok1' }],
-      credentials,
-      profilesFor: async () => ['personal'],
-    }),
+    authenticator,
     log,
     meterUnauthenticated: true,
-    ...(read ? { read } : {}),
+    ...(read
+      ? {
+          read:
+            read.authenticate === STUB
+              ? { ...read, authenticate: (h: string | null | undefined) => authenticator.authenticate(h) }
+              : read,
+        }
+      : {}),
   });
 
   return corsAware((request) => handler.fetch(request), [MCP_PATH, ATTACHMENTS_PATH], {
@@ -102,12 +133,12 @@ function get(path: string, headers: Record<string, string> = {}): Request {
   return new Request(`https://endpoint.example${path}`, { headers });
 }
 
-const paired = (path: string, origin = ORIGIN): Request =>
-  get(path, { origin, authorization: `Bearer ${PAIR_TOKEN}` });
+const signedIn = (path: string, origin = ORIGIN): Request =>
+  get(path, { origin, authorization: `Bearer ${READS}` });
 
 describe('one origin, named, never a wildcard', () => {
   test('the dashboard origin is echoed exactly', async () => {
-    const response = await deployed(readDeps())(paired('/state'));
+    const response = await deployed(readDeps())(signedIn('/state'));
 
     expect(response.status).toBe(200);
     expect(response.headers.get('access-control-allow-origin')).toBe(ORIGIN);
@@ -118,13 +149,13 @@ describe('one origin, named, never a wildcard', () => {
     // The test that fails the day somebody adds `/state` to the `credentialed`
     // array in `serve()`. `corsAware` would then overwrite the echo with `*`,
     // and every test driving `readRoutes` directly would still pass.
-    const response = await deployed(readDeps())(paired('/state'));
+    const response = await deployed(readDeps())(signedIn('/state'));
 
     expect(response.headers.get('access-control-allow-origin')).not.toBe(ANY_ORIGIN);
   });
 
   test('another origin is refused, and told nothing', async () => {
-    const response = await deployed(readDeps())(paired('/state', HOSTILE));
+    const response = await deployed(readDeps())(signedIn('/state', HOSTILE));
 
     expect(response.status).toBe(403);
     expect(response.headers.get('access-control-allow-origin')).toBeNull();
@@ -134,45 +165,42 @@ describe('one origin, named, never a wildcard', () => {
   });
 });
 
-describe('a credential that cannot call a tool', () => {
-  test('the MCP bearer does not open the read surface', async () => {
-    const response = await deployed(readDeps())(
-      get('/state', { origin: ORIGIN, authorization: `Bearer ${TEST_TOKEN}` }),
-    );
+describe('the same credential /mcp takes', () => {
+  test('the MCP bearer opens the read surface', async () => {
+    // **The inversion this release is.** This assertion used to be its own
+    // opposite: the read surface had a credential of its own, and presenting
+    // the MCP bearer to it was a `401`. Two credentials meant two sets of
+    // rules, and only one of them ever asked who was holding it (ADR-079).
+    const response = await deployed(readDeps())(signedIn('/state'));
 
-    expect(response.status).toBe(401);
-    expect(await response.json()).toEqual({ error: 'unpaired', run: 'lanes link pair' });
+    expect(response.status).toBe(200);
   });
 
-  test('the pairing token does not open the endpoint', async () => {
+  test('a bearer no token row matches is refused', async () => {
     const response = await deployed(readDeps())(
-      new Request(`https://endpoint.example${MCP_PATH}`, {
-        method: 'POST',
-        headers: { origin: ORIGIN, authorization: `Bearer ${PAIR_TOKEN}` },
-      }),
+      get('/state', { origin: ORIGIN, authorization: 'Bearer llk_not_a_real_token' }),
     );
 
-    // The pair a single shared `authenticate()` would silently collapse.
     expect(response.status).toBe(401);
-    expect(response.headers.get('www-authenticate')).not.toBeNull();
+    expect(await response.json()).toEqual({ error: 'unauthorized', signIn: true });
   });
 
   test('no credential at all is refused before the store is asked anything', async () => {
     let reads = 0;
     const response = await deployed(
       readDeps({
-        credential: directPairingCredential({
-          read: async () => {
-            reads += 1;
-            return PAIR_TOKEN;
-          },
-        }),
+        authenticate: async () => {
+          reads += 1;
+          return { ok: false, reason: 'invalid' };
+        },
       }),
     )(get('/state', { origin: ORIGIN }));
 
     expect(response.status).toBe(401);
-    // On a deployed workspace a store read is a Secret Manager round trip, so
-    // a stranger sending no header must not be able to provoke one.
+    // On a deployed workspace resolving a bearer is a Secret Manager round
+    // trip, so a stranger sending no header must not be able to provoke one.
+    // `deployed()` replaces `authenticate`, so the counter proves the *header*
+    // check short-circuits rather than proving anything about this stub.
     expect(reads).toBe(0);
   });
 });
@@ -180,9 +208,9 @@ describe('a credential that cannot call a tool', () => {
 describe('never ambient', () => {
   test('credentials are never allowed, on any answer', async () => {
     const answers = await Promise.all([
-      deployed(readDeps())(paired('/state')),
+      deployed(readDeps())(signedIn('/state')),
       deployed(readDeps())(get('/state', { origin: ORIGIN })),
-      deployed(readDeps())(paired('/state', HOSTILE)),
+      deployed(readDeps())(signedIn('/state', HOSTILE)),
       deployed(readDeps())(
         new Request('https://endpoint.example/state', {
           method: 'OPTIONS',
@@ -207,7 +235,7 @@ describe('the control plane is still unreachable', () => {
     const response = await deployed(readDeps())(
       new Request('https://endpoint.example/state', {
         method: 'POST',
-        headers: { origin: ORIGIN, authorization: `Bearer ${PAIR_TOKEN}` },
+        headers: { origin: ORIGIN, authorization: `Bearer ${READS}` },
       }),
     );
 
@@ -220,7 +248,7 @@ describe('the control plane is still unreachable', () => {
     // Each of these is a thing ADR-007 keeps in the CLI. None of them gained a
     // route when `/data` did, and a pairing token reaches none of them.
     for (const path of ['/connections', '/profiles', '/policy', '/tokens', '/config']) {
-      const response = await deployed(readDeps())(paired(path));
+      const response = await deployed(readDeps())(signedIn(path));
       expect(response.status).toBe(404);
     }
   });
@@ -261,7 +289,7 @@ describe('a deployment-only grant stays one', () => {
 
     try {
       const response = await fetch(`${server.url.replace(MCP_PATH, '')}/state`, {
-        headers: { authorization: `Bearer ${PAIR_TOKEN}` },
+        headers: { authorization: `Bearer ${READS}` },
       });
 
       expect(response.status).toBe(404);
@@ -271,30 +299,19 @@ describe('a deployment-only grant stays one', () => {
   });
 });
 
-describe('the never-paired workspace', () => {
-  test('a secret with no version is unpaired, not an error', async () => {
-    // What `readableRefs` buys. A bound secret with no version answers 404 and
-    // reads back as null; unbound it would be a 403 the adapter throws on.
-    const response = await deployed(
-      readDeps({ credential: cachedPairingCredential({ read: async () => null }) }),
-    )(paired('/state'));
-
-    expect(response.status).toBe(401);
-    expect(await response.json()).toEqual({ error: 'unpaired', run: 'lanes link pair' });
-  });
-
-  test('a store that throws is a refusal, not a 500', async () => {
-    // The other half. Even with the binding, a wrong project or an expired
-    // metadata token still throws — and uncaught that is a 500 on a public URL.
+describe('nothing here reads a credential of its own', () => {
+  test('an authenticator that throws is a refusal, not a 500', async () => {
+    // What `readableRefs` used to buy for the pairing token, now the property
+    // that matters for the only credential left: resolving a bearer reaches
+    // Secret Manager, and a wrong project or an expired metadata token throws.
+    // Uncaught that is a 500 on a public URL.
     const response = await deployed(
       readDeps({
-        credential: cachedPairingCredential({
-          read: async () => {
-            throw new Error('permission denied on projects/my-project/secrets/pair_token');
-          },
-        }),
+        authenticate: async () => {
+          throw new Error('permission denied on projects/my-project/secrets/tokens_tok1');
+        },
       }),
-    )(paired('/state'));
+    )(signedIn('/state'));
 
     expect(response.status).toBe(401);
   });
@@ -302,7 +319,7 @@ describe('the never-paired workspace', () => {
 
 describe('what the endpoint says about itself', () => {
   test('a deployed bind names itself, and claims no certificate of its own', async () => {
-    const response = await deployed(readDeps())(paired('/state'));
+    const response = await deployed(readDeps())(signedIn('/state'));
 
     expect(await response.json()).toMatchObject({
       workspace: 'cloud',

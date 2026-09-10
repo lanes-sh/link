@@ -3,8 +3,7 @@ import { serveOverStdio } from './stdio.ts';
 import { Generations, type OpenedWorkspace } from './generations.ts';
 import type { AuthorizationSurface } from './oauth.ts';
 import type { ProfileRuntime } from './mcp/index.ts';
-import { AuthenticatorChain } from '#auth';
-import { openAuthorization } from './authorization.ts';
+import { endpointAuthenticator, openAuthorization } from './authorization.ts';
 import { openReadListener } from './read/open.ts';
 import { deployedReadDeps } from './read/deployed.ts';
 import { version } from '#cli/version.ts';
@@ -279,12 +278,12 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
       },
     );
 
+    const authenticator = endpointAuthenticator(primary, gate);
+
     const server = serve({
       generations,
       primary: primary.resolution.profile,
-      authenticator: gate
-        ? new AuthenticatorChain([primary.authenticator, gate.authenticator])
-        : primary.authenticator,
+      authenticator,
       log,
       ...(gate ? { authorization: gate.surface } : {}),
       ...(options.port !== undefined ? { port: options.port } : {}),
@@ -297,6 +296,7 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
         primary,
         profiles: () => generations.current.profiles,
         log,
+        authenticate: (header) => authenticator.authenticate(header),
         version: runningVersion,
         data,
       }),
@@ -316,7 +316,9 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
       () => generations.current.profiles,
       log,
       runningVersion,
+      (header) => authenticator.authenticate(header),
       data,
+      gate?.surface,
     );
 
     return {

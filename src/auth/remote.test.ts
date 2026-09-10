@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { IssuedTokenAuthenticator } from './remote.ts';
+import { IssuedTokenAuthenticator, OidcAuthenticator } from './remote.ts';
+import { EVERY_PROFILE, mayReach } from './principal.ts';
+import type { OidcVerifier } from './oidc.ts';
 import { OAuthStore } from './oauth/store.ts';
 import type { KeyValueStore } from '#stores/state';
 
@@ -47,10 +49,13 @@ function authenticator(): { store: OAuthStore; auth: IssuedTokenAuthenticator } 
 const HOUR = Date.now() + 3_600_000;
 
 describe('a token that names nobody', () => {
-  test('is the owner, so one minted before this release keeps working', async () => {
-    // Not a fallback to be tidied away. Every token issued by 0.7 has no
-    // subject, and reading that as "no profiles" would log every connector out
-    // on upgrade.
+  test('is refused, because a credential that cannot say who it is opens nothing', async () => {
+    // This used to resolve to the owner, so that a token issued by 0.7 kept
+    // working until it expired rather than logging its connector out on
+    // upgrade. The owner principal reaches every profile in the workspace, so
+    // the kindness was a standing bypass of `members:` on the one credential
+    // that could not name a person. Refused instead: the holder re-authorises,
+    // which is one browser round trip. ADR-079.
     const { store, auth } = authenticator();
     await store.putToken('lla_old', {
       clientId: 'llc_x',
@@ -62,9 +67,19 @@ describe('a token that names nobody', () => {
 
     const outcome = await auth.authenticate('Bearer lla_old');
 
-    expect(outcome.ok).toBe(true);
-    expect(outcome.ok && outcome.principal.kind).toBe('owner');
-    expect(outcome.ok && outcome.principal.profiles).toBeUndefined();
+    expect(outcome.ok).toBe(false);
+    expect(!outcome.ok && outcome.reason).toBe('invalid');
+  });
+
+  test('is refused the same way an unknown token is, so neither is distinguishable', async () => {
+    // A distinct reason would tell a caller "this token exists but is too old",
+    // which is a fact about the workspace they have not authenticated to learn.
+    const { auth } = authenticator();
+
+    const unknown = await auth.authenticate('Bearer lla_never_issued');
+
+    expect(unknown.ok).toBe(false);
+    expect(!unknown.ok && unknown.reason).toBe('invalid');
   });
 });
 
@@ -89,9 +104,9 @@ describe('a token that names a person', () => {
   });
 
   test('a subject with no profiles reaches nothing, rather than everything', async () => {
-    // The direction this has to fail in. `profiles: undefined` means "the whole
-    // workspace" — so a row that lost its list must not read as one that never
-    // had one.
+    // The direction this has to fail in. A stored row's list is optional, and a
+    // row that lost its list must not read as one that may open everything —
+    // `?? []` at the call site is what decides that, and this pins it.
     const { store, auth } = authenticator();
     await store.putToken('lla_nobody', {
       clientId: 'llc_x',
@@ -212,5 +227,94 @@ describe('resolving the same token twice', () => {
     await new Promise((resolve) => setTimeout(resolve, 40));
 
     expect(await store.token('tok')).toBeNull();
+  });
+});
+
+/**
+ * What a token somebody else's issuer minted turns into.
+ *
+ * There were no tests here at all, which is the other half of why this went
+ * unnoticed: the path returned `ownerPrincipal` and nothing asserted what that
+ * reached. A verifier that says "yes, this is Ada" was being read as "yes, Ada
+ * may open everything", and those are different sentences.
+ */
+
+/** A verifier that answers from a table, so the test is about the resolution. */
+function stubVerifier(answers: Record<string, string>): OidcVerifier {
+  return {
+    verify: async (token: string) => {
+      const subject = answers[token];
+      return subject ? { subject, expiresAt: HOUR } : null;
+    },
+  } as unknown as OidcVerifier;
+}
+
+describe('a token from an external issuer', () => {
+  const SUBJECT = 'lanes:3QBmAxJLLrYSMTVUIeCN1SKFbdD3';
+
+  test('reaches only the profiles whose members: name its subject', async () => {
+    const auth = new OidcAuthenticator(
+      stubVerifier({ theirs: SUBJECT }),
+      'personal',
+      async (subject) => (subject === SUBJECT ? ['personal'] : []),
+    );
+
+    const outcome = await auth.authenticate('Bearer theirs');
+
+    expect(outcome.ok).toBe(true);
+    expect(outcome.ok && outcome.principal.kind).toBe('member');
+    expect(outcome.ok && outcome.principal.id).toBe(SUBJECT);
+    expect(outcome.ok && outcome.principal.profiles).toEqual(['personal']);
+  });
+
+  test('a verified subject on no profile reaches nothing, rather than everything', async () => {
+    // The bug, pinned. `allowed_subjects` decided this token was let in; it
+    // never decided what the token may open, and reading the first as the
+    // second is what made every subject an owner.
+    const auth = new OidcAuthenticator(
+      stubVerifier({ theirs: SUBJECT }),
+      'personal',
+      async () => [],
+    );
+
+    const outcome = await auth.authenticate('Bearer theirs');
+
+    expect(outcome.ok).toBe(true);
+    expect(outcome.ok && outcome.principal.profiles).toEqual([]);
+    expect(outcome.ok && mayReach(outcome.principal, 'personal')).toBe(false);
+  });
+
+  test('never carries EVERY_PROFILE, whatever the issuer said', async () => {
+    const auth = new OidcAuthenticator(stubVerifier({ theirs: SUBJECT }), 'personal', async () => [
+      'personal',
+      'work',
+    ]);
+
+    const outcome = await auth.authenticate('Bearer theirs');
+
+    expect(outcome.ok && outcome.principal.profiles).not.toBe(EVERY_PROFILE);
+  });
+
+  test('a resolver that throws fails closed', async () => {
+    // An outage in the thing that answers "which profiles name this person"
+    // must close the endpoint rather than open it. Falling back to "all of
+    // them" at the moment something is already wrong is the worst available
+    // direction.
+    const auth = new OidcAuthenticator(stubVerifier({ theirs: SUBJECT }), 'personal', async () => {
+      throw new Error('members unavailable');
+    });
+
+    const outcome = await auth.authenticate('Bearer theirs');
+
+    expect(outcome.ok).toBe(false);
+  });
+
+  test('a token the issuer does not vouch for is invalid', async () => {
+    const auth = new OidcAuthenticator(stubVerifier({}), 'personal', async () => ['personal']);
+
+    const outcome = await auth.authenticate('Bearer nope');
+
+    expect(outcome.ok).toBe(false);
+    expect(!outcome.ok && outcome.reason).toBe('invalid');
   });
 });

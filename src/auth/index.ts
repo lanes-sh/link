@@ -20,89 +20,23 @@
 import { timingSafeEqual } from 'node:crypto';
 import type { SecretRef, SecretStore } from '#secrets';
 
-/**
- * Who is acting. M1 resolves exactly one per profile, but the dispatch path
- * takes a principal rather than assuming the owner, so delegated access is
- * additive later instead of a rewrite.
- */
-export interface Principal {
-  readonly id: string;
-  readonly profile: string;
-  readonly kind: 'owner' | 'member' | 'machine';
-  /**
-   * Every profile this caller may reach, or `undefined` for "all of them".
-   *
-   * `undefined` is the stdio pipe and nothing else now (ADR-068). The pipe is
-   * its own proof — a process that can write to it already has the operator's
-   * shell — so there is no credential to carry a subject and no member list to
-   * match. Every token, static or issued, carries a list: a `member`'s because
-   * the list *is* the delegation (ADR-060), and a `machine`'s because a bearer
-   * token names the person it was issued to rather than opening everything.
-   */
-  readonly profiles?: readonly string[] | undefined;
-}
-
-export function ownerPrincipal(profile: string): Principal {
-  return { id: `${profile}:owner`, profile, kind: 'owner' };
-}
+import { machinePrincipal, type Principal } from './principal.ts';
 
 /**
- * A person, and the profiles whose `members:` name them.
- *
- * `profile` carries the one this call is acting within, which is what the audit
- * log records and what policy is evaluated against. `profiles` is the whole set
- * they may choose from, and `mayReach` is the check — kept here rather than in
- * the dispatcher so discovery and enforcement cannot answer it differently,
- * which is the same rule `allowedConnections` follows on the capability axis.
+ * The principal model lives in `./principal.ts`, and is re-exported here so
+ * that `#auth` stays the one import every other component uses.
  */
-export function memberPrincipal(
-  subject: string,
-  profile: string,
-  profiles: readonly string[],
-): Principal {
-  return { id: subject, profile, kind: 'member', profiles };
-}
-
-/**
- * A static token's holder, and the profiles whose `members:` name them.
- *
- * The same shape as `memberPrincipal` and deliberately so — `kind` is the only
- * difference, and it exists for the audit log rather than for policy. ADR-060
- * described this principal and nothing minted one: the static token resolved to
- * `ownerPrincipal`, reaching every profile in the workspace, which made it the
- * one credential here that never had to say who was holding it. A row in
- * `tokens:` names a subject (ADR-068), so this resolves the same way an OAuth
- * token does and `mayReach` gets no special case.
- */
-export function machinePrincipal(
-  subject: string,
-  profile: string,
-  profiles: readonly string[],
-): Principal {
-  return { id: subject, profile, kind: 'machine', profiles };
-}
-
-/**
- * The same caller, acting within a different profile.
- *
- * An endpoint serves several profiles and a principal is built once, from the
- * primary — so the profile on it is where the *connection* was opened, not
- * where this call is going. Every dispatch has to say which, because
- * `principal.profile` is what the audit event records and what `mayReach` is
- * checked against; without this the log attributes a member's call to a profile
- * they may never have been able to reach.
- *
- * It does not widen anything. `profiles` carries over untouched, so a name this
- * caller may not reach is still refused — one step later, by the check below.
- */
-export function forProfile(principal: Principal, profile: string): Principal {
-  return principal.profile === profile ? principal : { ...principal, profile };
-}
-
-/** Whether this caller may act within the named profile. */
-export function mayReach(principal: Principal, profile: string): boolean {
-  return principal.profiles === undefined || principal.profiles.includes(profile);
-}
+export {
+  EVERY_PROFILE,
+  forProfile,
+  machinePrincipal,
+  mayReach,
+  memberPrincipal,
+  ownerPrincipal,
+  reachWithin,
+  type Principal,
+  type Reach,
+} from './principal.ts';
 
 export type AuthOutcome =
   | { readonly ok: true; readonly principal: Principal }
