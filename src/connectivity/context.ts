@@ -1,6 +1,7 @@
 import type { AuditLogger } from '#audit';
 import type { ScopedSecrets } from '#secrets';
 import type { BlobStore } from '#stores/blobs';
+import type { VerifyOutcome } from './connector.ts';
 import type { AttachmentBridge } from './mail/attachments.ts';
 
 /**
@@ -92,6 +93,22 @@ export interface ProviderContext {
    * harness builds a context without one.
    */
   authorize?(request: Request): Promise<Request>;
+  /**
+   * Hand a vendor's reply back for the checks a connector's own reply gets.
+   *
+   * The companion to `authorize`, and offered for the same reason: a capability
+   * authored because the generic transport cannot express the call still has
+   * to be a normal call in every other respect. Chief among those is that a
+   * token the vendor refuses must be distrusted, or the next call sends it
+   * again — for as long as the stored clock still says it is valid.
+   *
+   * A caller may ignore the returned outcome, and one authoring a *write*
+   * should: `{ retry: true }` is safe for a read and not for a send, where the
+   * first attempt may well have been delivered. Distrusting without retrying
+   * still repairs the connection for the call after it, which is the part worth
+   * having.
+   */
+  verify?(response: Response): Promise<VerifyOutcome | void>;
   /**
    * The two file lookups this connection's own store cannot answer.
    *

@@ -6,6 +6,7 @@ import type {
   ToolResult,
 } from '#connectivity';
 import { READ_BUNDLE, WRITE_BUNDLE } from '#connectivity';
+import { distrustIfRefused } from './refused.ts';
 
 /**
  * The `mcp` connector — proxy an upstream MCP server.
@@ -354,6 +355,8 @@ export function createMcpConnector(options: McpConnectorOptions): Connector {
           target: { tool: tool.name },
         }));
       } catch (error) {
+        // No `verify`: a `DiscoveryContext` has none, because discovery is not
+        // a call anyone made. See `refused.ts`.
         throw readableUpstreamError(error, options.endpoint);
       } finally {
         await client.close().catch(() => {});
@@ -361,10 +364,10 @@ export function createMcpConnector(options: McpConnectorOptions): Connector {
     },
 
     async invoke(capability, args, context): Promise<ToolResult> {
-      const client = await connect(context);
       const upstreamName = (capability.target?.['tool'] as string | undefined) ?? capability.name;
-
+      let client: Client | undefined;
       try {
+        client = await connect(context);
         const result = (await client.callTool({
           name: upstreamName,
           arguments: args as Record<string, unknown>,
@@ -386,9 +389,10 @@ export function createMcpConnector(options: McpConnectorOptions): Connector {
           ...(result.isError ? { isError: true } : {}),
         };
       } catch (error) {
+        await distrustIfRefused(context.verify, error);
         throw readableUpstreamError(error, options.endpoint);
       } finally {
-        await client.close().catch(() => {});
+        await client?.close().catch(() => {});
       }
     },
   };
