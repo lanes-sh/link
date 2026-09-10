@@ -69,7 +69,7 @@ export async function servingProfiles(input: {
         '  it belongs to:\n' +
         `    lanes link deploy --workspace ${target} --profile <name>\n\n` +
         `  If "${target}" was deployed before and the pointer to it was lost:\n` +
-        `    lanes link sync targets --workspace ${target} --discover`,
+        `    lanes link sync workspaces --workspace ${target} --discover`,
     );
   }
 

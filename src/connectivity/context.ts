@@ -1,6 +1,7 @@
 import type { AuditLogger } from '#audit';
 import type { ScopedSecrets } from '#secrets';
 import type { BlobStore } from '#stores/blobs';
+import type { AttachmentBridge } from './mail/attachments.ts';
 
 /**
  * Key/value state for one provider on one connection.
@@ -91,4 +92,18 @@ export interface ProviderContext {
    * harness builds a context without one.
    */
   authorize?(request: Request): Promise<Request>;
+  /**
+   * The two file lookups this connection's own store cannot answer.
+   *
+   * A file staged for the whole profile, and a file the profile keeps by name.
+   * Both are closures dispatch binds, not stores — so this widens what a
+   * provider can *name* without widening what it can reach: there is still no
+   * way from here to another connection's data, and the bytes that pass through
+   * are either the caller's own or the profile's own.
+   *
+   * Optional because the test harness and `local` paths build a context without
+   * one, and a provider that is handed none simply cannot resolve those two
+   * sources.
+   */
+  readonly attachments?: AttachmentBridge | undefined;
 }

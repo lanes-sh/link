@@ -67,6 +67,12 @@ export interface DiscoveryContext {
   readonly manifest: ProviderManifest;
 }
 
+/** What a verifier can ask the transport to do about the response it just read. */
+export interface VerifyOutcome {
+  /** Make the call once more, re-authorised. Honoured at most once. */
+  readonly retry: boolean;
+}
+
 export interface ConnectorContext extends DiscoveryContext {
   /** Everything a provider is allowed to reach, unchanged from M1. */
   readonly provider: ProviderContext;
@@ -75,8 +81,16 @@ export interface ConnectorContext extends DiscoveryContext {
    * requires. Supplied by core so a connector never handles raw credentials.
    */
   authorize(request: Request): Promise<Request>;
-  /** Verify a response, where the auth strategy demands it (bunq signs replies). */
-  verify?(response: Response): Promise<void>;
+  /**
+   * Verify a response, where the auth strategy demands it (bunq signs replies),
+   * or where the credential it went out with may have been refused.
+   *
+   * Returning `{ retry: true }` says the verifier changed something that makes
+   * the same call worth making again — in practice, that it stopped trusting a
+   * token. The transport re-authorises from scratch, so the retry carries
+   * whatever core hands out the second time rather than the value that failed.
+   */
+  verify?(response: Response): Promise<VerifyOutcome | void>;
 }
 
 /**

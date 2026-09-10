@@ -146,7 +146,7 @@ function pointerMissesTarget(
   return new ConfigError(
     `${root} says target "${target}" lives at ${workspaceRoot}, but that workspace does not ` +
       `declare it (it declares: ${there}).\n` +
-      `  Adopt what is really there:  lanes link sync targets --workspace ${target} --from ${workspaceRoot}`,
+      `  Adopt what is really there:  lanes link sync workspaces --workspace ${target} --from ${workspaceRoot}`,
   );
 }
 

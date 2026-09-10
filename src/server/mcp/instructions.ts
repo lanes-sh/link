@@ -86,8 +86,9 @@ tasks, not memory — "remember to…" is a task, and it has a status. Both are
 served back to every later session, so write when asked, not by habit.`;
 
 const ASSETS = `**Assets are the owner's own files**, kept by name in this profile. Storing one
-names a source, exactly as an attachment does; a text asset reads back as text
-and anything else is described rather than encoded.`;
+names a source, exactly as an attachment does. \`lanes_assets_stage\` takes a file
+you hold and returns a handle any send accepts; a stored file attaches as
+\`{ "asset": "<name>" }\`.`;
 
 const SKILLS = `**Skills are the owner's procedures**, surfaced as prompts rather than tools.
 That is deliberate: a procedure is selected by the person, not chosen by the
@@ -174,7 +175,7 @@ more than one means ask which is meant, not take the first.`;
 
 const FILES = `**Files are named, not carried.** Where a tool takes attachments, give a path, an
 HTTPS URL, or an attachment already on another message; the endpoint reads the
-bytes. Never encode a file into a call — that is the thing this replaces.`;
+bytes. A file that exists only where you are is staged once, then named by handle.`;
 
 /**
  * The paragraph for the client that never re-reads its tool list.

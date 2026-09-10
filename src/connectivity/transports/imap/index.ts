@@ -141,15 +141,7 @@ export function createImapConnector(options: ImapConnectorOptions): Connector {
             // The only operation handed the context: what it attached is worth
             // recording in a way `redact` cannot express, since the raw argument
             // may itself be a base64 file.
-            return await sendMessage(
-              client,
-              options,
-              send,
-              args,
-              context.provider.audit,
-              context.provider.storage,
-              context.provider.connection,
-            );
+            return await sendMessage(client, options, send, args, context.provider);
           default:
             return error(`Unknown operation "${operation}".`);
         }

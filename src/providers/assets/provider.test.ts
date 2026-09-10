@@ -131,7 +131,10 @@ describe('reading returns text, or a description — never base64', () => {
     expect(read).toContain('image/png');
     expect(read).toContain('sha256');
     expect(read).toContain('not text');
-    expect(read).toContain('lanes link attach');
+    // What a description of a binary asset is *for*: the next call. Naming it
+    // as an asset is something the model can do, where the CLI it used to point
+    // at is the owner's to run.
+    expect(read).toContain('{ "asset": "<name>" }');
     expect(read).not.toContain('iVBOR');
   });
 
@@ -233,7 +236,7 @@ describe('reading and writing are different capabilities', () => {
     const write = bundles.find((bundle) => bundle.name === 'write');
 
     expect(write?.default).toBeFalsy();
-    expect(write?.capabilities.sort()).toEqual(['remove', 'store']);
+    expect(write?.capabilities.sort()).toEqual(['remove', 'stage', 'store']);
   });
 });
 
@@ -275,5 +278,143 @@ describe('a store that does not know the type', () => {
     expect((await assetStorage.find(storage, 'thing.qqq'))?.contentType).toBe(
       'application/octet-stream',
     );
+  });
+});
+
+// SHA-256 of "hello", asserted against an independent value rather than against
+// whatever the code happens to produce: `printf 'hello' | shasum -a 256`.
+const HELLO_SHA256 = '2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824';
+
+describe('holding a file for a later call', () => {
+  /**
+   * The gap this closes. A client holding a file only it can see — a chat
+   * runtime's own sandbox — had no way to hand it over: `path` names the
+   * endpoint's disk, `url` must be fetchable, and a handle needed a stage that
+   * only the HTTP route and the CLI could do. `data` was the one channel MCP
+   * offers, and every description around it said not to use it.
+   */
+  const staging = () => {
+    const staged = new Map<string, { bytes: Uint8Array; filename: string; contentType: string }>();
+    return {
+      staged,
+      harness: harnessFor(assetsProvider, 'owner', {
+        attachments: {
+          stage: async (input: { bytes: Uint8Array; filename: string; contentType: string }) => {
+            const handle = `stg_${staged.size}`;
+            staged.set(handle, input);
+            return { handle, sha256: 'abc', expiresAt: 1_700_000_000_000 };
+          },
+          staged: async (handle: string) => {
+            const found = staged.get(handle);
+            return found
+              ? { bytes: found.bytes, filename: found.filename, contentType: found.contentType }
+              : null;
+          },
+          asset: async () => null,
+        },
+      }),
+    };
+  };
+
+  test('a file only the caller has crosses once, and comes back as a handle', async () => {
+    const { staged, harness } = staging();
+
+    const result = await harness.invoke('stage', {
+      source: { data: Buffer.from('hello').toString('base64') },
+      filename: 'draft.txt',
+    });
+
+    const body = JSON.parse(textOf(result));
+    expect(body['handle']).toBe('stg_0');
+    expect(body['bytes']).toBe(5);
+    expect(body['filename']).toBe('draft.txt');
+    expect(staged.get('stg_0')?.bytes).toEqual(new Uint8Array(Buffer.from('hello')));
+  });
+
+  test('the receipt carries a digest and an expiry, and never the bytes', async () => {
+    const { harness } = staging();
+    const base64 = Buffer.from('hello').toString('base64');
+
+    const result = await harness.invoke('stage', {
+      source: { data: base64 },
+      filename: 'draft.txt',
+    });
+
+    const text = textOf(result);
+    expect(JSON.parse(text)['sha256']).toBe(HELLO_SHA256);
+    expect(JSON.parse(text)['expires_at']).toBe('2023-11-14T22:13:20.000Z');
+    // The whole point of the provider: what comes back names the file, it is
+    // not the file.
+    expect(text).not.toContain(base64);
+    expect(text).not.toContain('hello');
+  });
+
+  test('what it stages, a send can name', async () => {
+    const { harness } = staging();
+
+    const staging_result = await harness.invoke('stage', {
+      source: { data: Buffer.from('hello').toString('base64') },
+      filename: 'draft.txt',
+    });
+    const handle = JSON.parse(textOf(staging_result))['handle'] as string;
+
+    // Stored through the same handle, which is what a mail send does too.
+    const stored = await harness.invoke('store', { source: { handle }, name: 'draft.txt' });
+
+    expect(textOf(stored)).toContain('draft.txt');
+  });
+
+  test('the audit record says what entered the endpoint, and where from', async () => {
+    const { harness } = staging();
+
+    await harness.invoke('stage', {
+      source: { data: Buffer.from('hello').toString('base64') },
+      filename: 'draft.txt',
+    });
+
+    expect(harness.annotations()).toMatchObject({
+      handle: 'stg_0',
+      filename: 'draft.txt',
+      bytes: 5,
+      sha256: HELLO_SHA256,
+      origin: 'inline',
+    });
+  });
+
+  test('the name given here decides the type, as it does when storing', async () => {
+    // Found against a live endpoint, not by a test: `filename` is a sibling of
+    // `source`, so the resolver never saw it and guessed the type from nothing.
+    // A .txt arriving as application/octet-stream is a file that downloads
+    // instead of opening.
+    const { staged, harness } = staging();
+
+    const result = await harness.invoke('stage', {
+      source: { data: Buffer.from('hello').toString('base64') },
+      filename: 'draft.txt',
+    });
+
+    expect(JSON.parse(textOf(result))['content_type']).toBe('text/plain');
+    expect(staged.get('stg_0')?.contentType).toBe('text/plain');
+  });
+
+  test('an explicit content_type still wins over the name', async () => {
+    const { harness } = staging();
+
+    const result = await harness.invoke('stage', {
+      source: { data: Buffer.from('hello').toString('base64') },
+      filename: 'draft.txt',
+      content_type: 'text/markdown',
+    });
+
+    expect(JSON.parse(textOf(result))['content_type']).toBe('text/markdown');
+  });
+
+  test('an endpoint with no staging area refuses legibly rather than throwing', async () => {
+    const result = await harnessFor(assetsProvider).invoke('stage', {
+      source: { data: Buffer.from('hello').toString('base64') },
+      filename: 'draft.txt',
+    });
+
+    expect(textOf(result)).toMatch(/cannot hold a file/);
   });
 });

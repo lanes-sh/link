@@ -147,7 +147,7 @@ describe('deciding which profiles a deploy sends', () => {
 
     await expect(
       servingProfiles({ workspaceRoot: root, target: 'cloud', named: [] }),
-    ).rejects.toThrow('sync targets');
+    ).rejects.toThrow('sync workspaces');
   });
 });
 
