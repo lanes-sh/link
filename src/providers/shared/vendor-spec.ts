@@ -244,6 +244,15 @@ export async function vendorSpec(id: string, options: VendorSpecOptions): Promis
   // whose payload is a part, which contains parts — sends the OpenAPI tool
   // generator into infinite recursion and silently drops operations from the
   // tool list.
+  //
+  // The first reason has stopped being true; the second has not. An
+  // `outputSchema` is now advertised wherever a provider declares one, so
+  // upstream MCP providers carry theirs and these vendored ones cannot — the
+  // recursion is why, and it fails by dropping operations silently. What it
+  // costs: nothing downstream can know what a vendored operation returns, so
+  // the follow-up that decides whether a list held records or bare references
+  // reads the first response instead of the schema. Fixing it means bounding
+  // `$ref` cycles, or recording the shape beside the spec rather than in it.
   for (const item of Object.values(paths)) {
     for (const [method, operation] of Object.entries(item)) {
       if (!METHODS.includes(method)) continue;

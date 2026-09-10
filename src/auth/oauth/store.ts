@@ -249,10 +249,34 @@ export class OAuthStore {
 
   async putToken(token: string, record: IssuedToken): Promise<void> {
     await this.#state.set(TOKENS, hashToken(token), JSON.stringify(record));
+    this.#seen.set(hashToken(token), record);
   }
+
+  /**
+   * Access tokens seen recently, by the hash they are stored under.
+   *
+   * Every authenticated request resolves one of these, and the resolution was a
+   * store read every time — on a deployed target, a bucket round trip before
+   * any of the caller's work begins. The record it fetches is immutable until
+   * it expires: `putToken` writes it once at mint, and nothing rewrites it.
+   *
+   * Bounded by the record's own expiry, so a cached copy can never outlive the
+   * grant it represents, and a revocation is a `delete` that this map is asked
+   * about only until then.
+   */
+  readonly #seen = new Map<string, IssuedToken>();
 
   async token(token: string): Promise<IssuedToken | null> {
     const key = hashToken(token);
+
+    const remembered = this.#seen.get(key);
+    if (remembered) {
+      if (remembered.expiresAt > this.#now()) return remembered;
+      // Expired in memory: forget it and fall through, so the store's own
+      // expiry path still runs and still drops the row.
+      this.#seen.delete(key);
+    }
+
     const record = await this.#read<IssuedToken>(TOKENS, key);
     if (!record) return null;
 
@@ -263,11 +287,17 @@ export class OAuthStore {
       await this.#state.delete(TOKENS, key);
       return null;
     }
+
+    this.#seen.set(key, record);
     return record;
   }
 
   async revokeToken(token: string): Promise<void> {
-    await this.#state.delete(TOKENS, hashToken(token));
+    const key = hashToken(token);
+    // Forgotten before it is deleted, not after: a read landing between the two
+    // must not be served the record this call is removing.
+    this.#seen.delete(key);
+    await this.#state.delete(TOKENS, key);
   }
 
   /** Spend a refresh token, keeping the tombstone that makes a replay visible. */
@@ -276,6 +306,7 @@ export class OAuthStore {
     const record = await this.#read<IssuedToken>(TOKENS, key);
     if (!record) return;
     const spent: IssuedToken = { ...record, kind: 'consumed', consumedAt: this.#now() };
+    this.#seen.set(key, spent);
     await this.#state.set(TOKENS, key, JSON.stringify(spent));
   }
 
@@ -291,7 +322,10 @@ export class OAuthStore {
   async revokeFamily(family: string): Promise<void> {
     for (const key of await this.#state.keys(TOKENS)) {
       const record = await this.#read<IssuedToken>(TOKENS, key);
-      if (record?.family === family) await this.#state.delete(TOKENS, key);
+      if (record?.family === family) {
+        this.#seen.delete(key);
+        await this.#state.delete(TOKENS, key);
+      }
     }
   }
 

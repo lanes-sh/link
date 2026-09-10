@@ -67,6 +67,13 @@ export async function resolveUpstreamToken(
       // required", which says nothing about the real problem. Exchanging a
       // stored refresh token needs the token endpoint and the client, and
       // nothing else.
+      //
+      // That error has a second cause, and reading it as this one cost a while.
+      // Since the 2.0.0 client it is also what a *correctly discovered* MCP
+      // provider gets when its access token expires, because `fetchToken` now
+      // routes every grant through `prepareTokenRequest()` — which the provider
+      // did not implement. Same sentence, unrelated problem, and it made the
+      // MCP path below look like the working one. `provider.ts` implements it.
       if (manifest.connector.kind !== 'mcp') {
         return (await refreshDirectly(manifest, target, endpoint, credentials)) as never;
       }

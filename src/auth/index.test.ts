@@ -290,3 +290,69 @@ describe('rotation by another process', () => {
     await rm(root, { recursive: true, force: true });
   });
 });
+
+/**
+ * How often the store is asked, which is the whole cost of this class.
+ *
+ * The re-read on a cached miss is deliberate and stays: it is what makes a
+ * token rotated in a moment ago work on its first call rather than after the
+ * window. What was not deliberate is that on a healthy deployed endpoint the
+ * condition guarding it was *always* true.
+ *
+ * A hosted connector presents an OAuth token, which the next link in the chain
+ * handles. It can never match a row here. But it reached the same comparison,
+ * missed as any non-row would, and triggered the re-read — a bucket read, a
+ * YAML parse and a schema validation of the whole connections file, per
+ * request, to re-confirm a list that was already known to be empty.
+ */
+describe('how often the credential store is read', () => {
+  const SUBJECT = 'lanes:abc123';
+
+  function counting(rows: readonly { id: string; subject: string; ref: string }[]) {
+    let reads = 0;
+    return {
+      reads: () => reads,
+      options: {
+        profile: 'personal',
+        tokens: async () => {
+          reads++;
+          return rows;
+        },
+        credentials: storeWith({ 'tokens/tok1': 'llk_correct' }),
+        profilesFor: async () => ['personal'],
+      },
+    };
+  }
+
+  test('a token that cannot be one of ours is not looked up twice', async () => {
+    const { reads, options } = counting([{ id: 'tok1', subject: SUBJECT, ref: 'tokens/tok1' }]);
+    const auth = new BearerAuthenticator(options);
+
+    // Warms the cache, and legitimately reads once.
+    await auth.authenticate('Bearer llk_correct');
+    const warm = reads();
+
+    // An OAuth-shaped credential, of the kind every hosted connector presents.
+    await auth.authenticate('Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.x.y');
+    await auth.authenticate('Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.x.y');
+
+    expect(reads()).toBe(warm);
+  });
+
+  /**
+   * And the behaviour that condition exists for is untouched: a token that
+   * *could* be one of ours and is not in the cached set still costs the one
+   * re-read, because it might have been issued since.
+   */
+  test('a token that could be ours is still re-read for once', async () => {
+    const { reads, options } = counting([{ id: 'tok1', subject: SUBJECT, ref: 'tokens/tok1' }]);
+    const auth = new BearerAuthenticator(options);
+
+    await auth.authenticate('Bearer llk_correct');
+    const warm = reads();
+
+    await auth.authenticate('Bearer llk_rotated_in_a_moment_ago');
+
+    expect(reads()).toBe(warm + 1);
+  });
+});
