@@ -66,17 +66,25 @@ function componentOf(path: string): string {
  */
 const MAY_IMPORT: Record<string, readonly string[]> = {
   audit: [],
+  // Where Lanes keeps things on this machine, and nothing else. It imports
+  // nothing on purpose: `auth` and `profile` both need the answer, `auth` may
+  // not reach `profile` (see below), and the alternative to a shared leaf is
+  // the same directory spelled in two files. That is the failure `layout.ts`
+  // records for a filename; for a home directory it would be the two halves of
+  // this CLI disagreeing about where the credentials are.
+  home: [],
   // `stores` because issuing a token means remembering it, and a registered
   // client, an authorization code and a live token all outlive the instance
   // that created them — Cloud Run replaces instances between requests, so
   // in-memory would mean every connector logging out at random. It stays
   // downward: `stores` is at the bottom and `secrets` already depends on it.
-  auth: ['secrets', 'stores'],
+  // `home` for the session path, which is `~/.lanes/credentials.json`.
+  auth: ['home', 'secrets', 'stores'],
   policy: ['audit'],
   stores: ['audit'],
   secrets: ['stores'],
   connectivity: ['audit', 'secrets', 'stores', 'registry'],
-  profile: ['deployments', 'providers', 'secrets', 'stores'],
+  profile: ['deployments', 'home', 'providers', 'secrets', 'stores'],
   // Reconcile writes connection rows and reports which credentials are missing,
   // so it reaches both stores; it never opens one.
   registry: ['audit', 'connectivity', 'policy', 'profile', 'secrets', 'stores'],
@@ -92,7 +100,7 @@ const MAY_IMPORT: Record<string, readonly string[]> = {
   // is its own store, the dependency is stated instead of laundered. It stays
   // downward — `audit` sits at the bottom and imports nothing.
   cli: [
-    'audit', 'auth', 'connectivity', 'deployments', 'dispatch', 'policy',
+    'audit', 'auth', 'connectivity', 'deployments', 'dispatch', 'home', 'policy',
     'profile', 'providers', 'registry', 'secrets', 'server', 'stores',
   ],
 };

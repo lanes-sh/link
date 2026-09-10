@@ -672,7 +672,7 @@ export type { IdentityEntry } from './identity.ts';
  * Two shapes, and which one a workspace writes says who owns the target:
  *
  * - **A declaration** — `credentials` and `storage`, and whatever else the
- *   adapter set needs. This workspace *is* that target. `~/.lanes-link` writes
+ *   adapter set needs. This workspace *is* that target. `~/.lanes/link` writes
  *   one of these for `local`.
  * - **A pointer** — `workspace: gs://bucket[/prefix]`, and nothing else. The
  *   target lives elsewhere and the workspace at that URI declares it. This is

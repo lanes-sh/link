@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { describeMember, workspaceMembers } from './members.ts';
 import { sessionPath } from './session.ts';
 
@@ -21,7 +21,7 @@ const homes: string[] = [];
 async function signedIn(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'lanes-members-'));
   homes.push(root);
-  await mkdir(join(root, '.lanes'), { recursive: true });
+  await mkdir(dirname(sessionPath(root)), { recursive: true });
   await writeFile(
     sessionPath(root),
     JSON.stringify({

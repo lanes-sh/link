@@ -150,7 +150,12 @@ export async function createProfile(
     }
 
     if (!existsSync(join(local, WORKSPACE_FILE))) {
-      await mkdir(local, { recursive: true });
+      // `0700`, not the ambient umask. This creates `~/.lanes/link` and, on a
+      // machine without the desktop app, `~/.lanes` above it — and what lands
+      // inside is `credentials.enc` and its key. The blob store already writes
+      // its directories this way (`deployments/adapters/filesystem.ts`); this
+      // was the one path that did not, and it is the path that goes first.
+      await mkdir(local, { recursive: true, mode: 0o700 });
       await writeFile(join(local, WORKSPACE_FILE), newWorkspaceTemplate(), { mode: 0o600 });
     }
   }

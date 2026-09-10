@@ -582,6 +582,11 @@ profiles/
 
 Workspace root resolves from `LANES_LINK_HOME`, else the nearest ancestor directory containing `workspaces.yaml`, else `~/.lanes-link`.
 
+> **Amended by [ADR-077](adr/077-the-workspace-lives-under-the-lanes-home.md).** The last step is
+> `~/.lanes/link`, under the Lanes home the desktop app already uses — or `~/.lanes-dev/link` when the
+> CLI is running out of a checkout. `~/.lanes-link` is still recognised where a workspace is there, so
+> nothing goes missing before `lanes link update` moves it.
+
 > **Amended by [ADR-066](adr/066-a-profile-owns-its-data-again.md) and
 > [ADR-067](adr/067-one-directory-per-profile.md).** A profile is one directory holding its
 > declaration and every byte it owns; `data/` is gone, and `lanes-link.yaml` is now

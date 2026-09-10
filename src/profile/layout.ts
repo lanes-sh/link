@@ -2,7 +2,7 @@
  * Where a workspace's files live, in one place.
  *
  * ```
- * ~/.lanes-link/
+ * ~/.lanes/link/
  * ├── workspaces.yaml           the workspaces this machine knows, and the default
  * ├── connections.yaml          every account authorised in this workspace
  * ├── credentials.enc           system credentials, and its .key

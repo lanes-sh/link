@@ -89,6 +89,7 @@ Run.
 | [074](074-the-endpoint-records-where-it-bound.md) | The endpoint records where it bound, so an edit reaches the one that is running rather than a port derived from the profile it edited |
 | [075](075-the-list-a-client-caches-must-stop-changing.md) | The typed tool list stays and gains a search beside it, so a client that never re-reads can still reach a new connection |
 | [076](076-an-endpoint-may-advertise-less-than-it-reaches.md) | An endpoint may advertise less than it reaches, so a catalogue too large for its clients can shrink without any capability leaving it |
+| [077](077-the-workspace-lives-under-the-lanes-home.md) | The workspace moves to `~/.lanes/link`, a checkout gets `~/.lanes-dev`, and the old root is recognised until `update` moves it |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 

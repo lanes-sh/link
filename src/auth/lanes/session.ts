@@ -1,6 +1,7 @@
 import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { lanesHome } from '#home';
 
 /**
  * The Lanes identity this machine is signed in as.
@@ -11,14 +12,27 @@ import { dirname, join } from 'node:path';
  * Two files, one of which is `0600`, is the honest arrangement.
  *
  * **Not in the workspace.** A workspace is a set of accounts and profiles and
- * may be a bucket; who is at the keyboard is neither. Putting this in
- * `~/.lanes-link` would also mean a second workspace signs you out of the
- * first, and would upload the session to a bucket on the next deploy.
+ * may be a bucket; who is at the keyboard is neither. Putting this inside one
+ * would mean a second workspace signs you out of the first, and would upload
+ * the session to a bucket on the next deploy.
+ *
+ * That argument is unchanged by the workspace moving to `~/.lanes/link`: this
+ * is now a *sibling* of the workspace rather than a stranger to it, which is
+ * the arrangement the sentence above always described. What it does mean is
+ * that both paths compose from `lanesHome()` — so a checkout gets a session in
+ * `~/.lanes-dev` along with its workspace, and testing a branch cannot sign the
+ * operator out of the install they actually use.
  */
 
-/** Where the session lives. Overridable for tests, and for nothing else. */
+/**
+ * Where the session lives.
+ *
+ * `home` is overridable for tests, and for nothing else — but note that the
+ * directory under it is `lanesHome`'s to decide, so a test cannot assume
+ * `.lanes` and must ask. `bun test` runs from a checkout, which is dev mode.
+ */
 export function sessionPath(home = homedir()): string {
-  return join(home, '.lanes', 'credentials.json');
+  return join(lanesHome({ home }), 'credentials.json');
 }
 
 export interface LanesSession {

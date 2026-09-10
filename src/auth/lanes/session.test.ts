@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdtemp, rm, stat, writeFile, mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import {
   clearSession,
   isFresh,
@@ -67,7 +67,7 @@ describe('the session file', () => {
     // nothing to do with auth, and a JSON parse error surfacing out of
     // `lanes link memory list` would send somebody to entirely the wrong place.
     const root = await home();
-    await mkdir(join(root, '.lanes'), { recursive: true });
+    await mkdir(dirname(sessionPath(root)), { recursive: true });
     await writeFile(sessionPath(root), '{ not json');
 
     expect(await readSession(root)).toBeNull();
@@ -78,7 +78,7 @@ describe('the session file', () => {
     // token would otherwise present as signed in and fail on the first refresh,
     // which is the same failure one step later and harder to read.
     const root = await home();
-    await mkdir(join(root, '.lanes'), { recursive: true });
+    await mkdir(dirname(sessionPath(root)), { recursive: true });
     await writeFile(sessionPath(root), JSON.stringify({ subject: 'lanes:x' }));
 
     expect(await readSession(root)).toBeNull();
