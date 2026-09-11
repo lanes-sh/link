@@ -6,10 +6,11 @@ import { print, ok, prose, style, warn } from '../output.ts';
 /**
  * `lanes auth` — who this machine is signed in as.
  *
- * A separate area from `lanes link auth`, which is a per-connection credential
- * diagnostic and answers a different question entirely. Neither is renamed and
- * neither gains an alias: one spelling per command, and the help text on each
- * says which is which.
+ * The only `auth` in this CLI, which it was not. `lanes link auth` sat beside it
+ * as a per-connection credential diagnostic answering an entirely different
+ * question, and the two were told apart by help text. That command is gone —
+ * `doctor` asks what it asked — so there is one spelling and nothing to
+ * disambiguate.
  *
  * Sign-in is required to consume a profile, local endpoints included (ADR-060).
  * That is a real dependency on lanes.sh for a self-hostable tool, and the shape

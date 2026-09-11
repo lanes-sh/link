@@ -2,13 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import { ReauthRequired } from '#connectivity/auth/index.ts';
 import { defineProvider } from '#connectivity';
 import type { SecretRef, SecretStore } from '#secrets';
-import { classifyOAuth, probeConnections } from './auth.ts';
+import { classifyOAuth, probeConnections } from './connection-probe.ts';
 import type { Runtime } from '../../runtime.ts';
 
 /**
  * The mapping, on its own.
  *
- * Everything expensive about `lanes link auth` is I/O, and everything that
+ * Everything expensive about the probe is I/O, and everything that
  * could be *wrong* about it is this function. Both ways it can lie have a test
  * here, because both are the kind of bug that ships quietly: one tells someone
  * to sign in again when their network is simply down, and the other tells them

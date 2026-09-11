@@ -19,7 +19,7 @@ import type { DoctorFinding } from './inspect.ts';
  *
  * `credentialAge` used to sit beside it and date a credential from the OAuth
  * provider's stamp. It is gone: dating a credential answers "when did this last
- * refresh", which is not the question anyone was asking. `operate/auth.ts`
+ * refresh", which is not the question anyone was asking. `operate/connection-probe.ts`
  * asks the real one by attempting the renewal.
  */
 

@@ -2,17 +2,16 @@ import type { ConnectionConfig } from '#profile';
 import { credentialResolver, ReauthRequired } from '#connectivity/auth/index.ts';
 import type { ResolvedCredential } from '#connectivity/auth/credential.ts';
 import { credentialRefFor } from '#registry';
-import { announceWorkspace, emit, fail, ok, print, warn } from '../../output.ts';
-import { readConnections } from '#profile';
-import {
-  grantedConnections,
-  openWorkspaceRuntime,
-  type GlobalFlags,
-  type Runtime,
-} from '../../runtime.ts';
+import type { Runtime } from '../../runtime.ts';
 
 /**
  * Whether each connection could still authenticate, asked rather than guessed.
+ *
+ * **This was `lanes link auth` and is no longer a command.** The name collided
+ * with `lanes auth`, which is sign-in and a different subject entirely, and the
+ * only consumer outside this repository was the desktop app's pre-0.8.0 settings
+ * arm — the one it stopped rendering when connections moved to the dashboard.
+ * `doctor` asks the question now, which it already did.
  *
  * `doctor` used to answer a version of this from the *age* of a stored
  * credential, which is wrong in both directions: it dates a credential from
@@ -27,15 +26,15 @@ import {
  * cost is one token-endpoint round trip per connection that has genuinely
  * lapsed — which is exactly the set worth asking about.
  *
- * **This command writes.** A successful refresh persists the new token, which on
- * a deployed target is a secret-store version per refreshed connection. That is
+ * **This writes.** A successful refresh persists the new token, which on a
+ * deployed target is a secret-store version per refreshed connection. That is
  * deliberate — it is the same write the serve path makes, and it warms the token
- * for the next real call — but it is why the read-only wording `check`, `plan`
- * and `doctor` carry does not appear here.
+ * for the next real call — but it is worth knowing that `doctor`, whose wording
+ * is otherwise read-only, reaches something that does not.
  */
 
 /** What can be said about one connection's ability to authenticate. */
-export type AuthVerdict =
+export type ConnectionVerdict =
   /** Resolved. The vendor accepted it just now, or its access token is still live. */
   | 'ok'
   /** Stored, and cannot be renewed without a person. The signal this exists for. */
@@ -55,7 +54,7 @@ export interface ConnectionAuth {
   readonly id: string;
   /** The manifest's `auth.kind`, so a reader can tell why a verdict is what it is. */
   readonly method: string;
-  readonly verdict: AuthVerdict;
+  readonly verdict: ConnectionVerdict;
   /** Whether answering cost a token-endpoint round trip. */
   readonly refreshed: boolean;
   readonly detail?: string;
@@ -96,7 +95,7 @@ export type ProbeResult =
  * saying the opposite of what the next real call will find. So the stored
  * expiry is checked here rather than that behaviour being changed.
  */
-export function classifyOAuth(result: ProbeResult): AuthVerdict {
+export function classifyOAuth(result: ProbeResult): ConnectionVerdict {
   switch (result.outcome) {
     case 'resolved':
       return result.staleAccessToken ? 'reauth' : 'ok';
@@ -139,17 +138,13 @@ function storedExpiry(raw: string | null): number | null {
   }
 }
 
-export interface AuthFlags extends GlobalFlags {
-  readonly json?: boolean | undefined;
-  /** Narrow to one connection, by `provider.id`. A filter, not a second subject. */
-  readonly connection?: string | undefined;
-}
-
 /**
  * Every connection's verdict, probed concurrently.
  *
- * Exported because `doctor` asks the same question and must not answer it a
- * second, differently-wrong way — that divergence is the bug this replaced.
+ * `doctor` is the one caller, and this stays its own module rather than moving
+ * into `inspect.ts` for the reason it was extracted in the first place: `doctor`
+ * used to answer this a second, differently-wrong way, and a seam is what stops
+ * that coming back.
  */
 export async function probeConnections(
   runtime: Runtime,
@@ -251,83 +246,11 @@ export async function probeConnections(
   return mapWithLimit(connections, CONCURRENCY, probe);
 }
 
-export async function auth(flags: AuthFlags): Promise<void> {
-  const runtime = await openWorkspaceRuntime(flags);
-
-  try {
-    const { profile, target } = runtime.resolution;
-    const forSelection = (command: string) => `${command} --workspace ${target}`;
-
-    // Every connection the workspace holds, not the ones one profile grants.
-    // Whether an account can still authenticate is a fact about the account
-    // (ADR-057), and scoping it to a profile's grants meant an account that had
-    // just been connected could not be checked until somebody granted it —
-    // which is exactly the moment you want to check.
-    //
-    // `--profile` narrows to what that profile can reach, because "can the
-    // things this profile uses still sign in" is also a real question.
-    const all = flags.profile === undefined
-      ? (await readConnections(runtime.resolution.workspaceRoot)).connections
-      : grantedConnections(runtime);
-
-    const wanted = flags.connection;
-    const connections = wanted ? all.filter((c) => `${c.provider}.${c.id}` === wanted) : all;
-
-    if (wanted && connections.length === 0) {
-      throw new Error(
-        `No connection "${wanted}" in workspace ${target}. Run: ${forSelection('lanes link connection list')}`,
-      );
-    }
-
-    const results = await probeConnections(runtime, connections, forSelection);
-    const needsSomeone = results.filter((r) => r.verdict === 'reauth' || r.verdict === 'missing');
-
-    // Always zero, and this is load-bearing rather than an oversight: the
-    // desktop app discards stdout when the CLI exits non-zero, which is exactly
-    // why it cannot read `doctor`. A connection needing a person is the answer
-    // this command was asked for, not a failure to produce one.
-    return emit(flags.json, { profile, target, ok: needsSomeone.length === 0, connections: results }, () => {
-      announceWorkspace(runtime.resolution);
-
-      for (const result of results) {
-        const line = `${result.key} — ${describe(result.verdict)}`;
-        if (result.verdict === 'reauth') print(fail(`${line}\n      ${result.fix}`));
-        else if (result.verdict === 'missing') print(warn(`${line}\n      ${result.fix}`));
-        else print(ok(line));
-      }
-
-      if (needsSomeone.length > 0) {
-        print();
-        print(fail(`${needsSomeone.length} connection(s) need you to sign in again`));
-      }
-    });
-  } finally {
-    await runtime.close();
-  }
-}
-
-function describe(verdict: AuthVerdict): string {
-  switch (verdict) {
-    case 'ok':
-      return 'authenticated';
-    case 'reauth':
-      return 'signed out, and cannot renew itself';
-    case 'missing':
-      return 'no credential stored';
-    case 'stored':
-      return 'credential stored, not exercised';
-    case 'none':
-      return 'needs no credential';
-    case 'unknown':
-      return 'could not be checked';
-  }
-}
-
 /**
  * `Promise.all` with a ceiling, in the ten lines it takes.
  *
  * A pool rather than chunks: chunking would make every batch wait for its
- * slowest member, which is the shape this command is trying to avoid.
+ * slowest member, which is the shape this is trying to avoid.
  */
 async function mapWithLimit<T, R>(
   items: readonly T[],
