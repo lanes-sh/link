@@ -157,9 +157,13 @@ export async function readableRefs(
   // went healthy.
   //
   // Bound, the deployed-but-never-paired case becomes the 404 instead — a
-  // secret that exists with no version — which reads back as null and renders
-  // as `401 {error:'unpaired'}`. The grant is what turns a crash into a
-  // refusal.
+  // secret that exists with no version, which reads back as null. The grant is
+  // what turns a crash into an ordinary absence.
+  //
+  // It used to render as `401 {error:'unpaired'}` and no longer does: ADR-079
+  // withdrew the pairing token as a credential, so the surface answers
+  // `{error:'unauthorized', signIn:true}` to anyone without a bearer and this
+  // ref is only consulted to decide whether the loopback port binds.
   //
   // Deciding it by asking *whether the workspace is paired* is the thing that
   // cannot happen: that means opening a credential store inside `readableRefs`,
