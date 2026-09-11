@@ -545,6 +545,56 @@ describe('a credential that cannot be read', () => {
     expect(said).toHaveLength(1);
   });
 
+  test('said once even though the store words the same denial differently each read', async () => {
+    // What the test above could not see, and a deployed endpoint did.
+    //
+    // Secret Manager mints a fresh IAM troubleshooter `errorId` into every
+    // `PERMISSION_DENIED` body, so one standing denial arrives as a different
+    // string on every read. The first version of the dedupe compared the
+    // rendered lines, reason included, so it never matched twice: eight reloads
+    // against a real target wrote eight lines for one unfixed grant. A stub
+    // that throws a constant could not reproduce it, which is why this one does
+    // not.
+    let clock = 0;
+    let denials = 0;
+    const said: string[] = [];
+    const auth = new BearerAuthenticator({
+      profile: 'personal',
+      tokens: async () => TWO_ROWS,
+      credentials: {
+        ...storeWith({ 'tokens/tok2': 'llk_good' }),
+        async get(ref) {
+          if (ref === 'tokens/tok1') {
+            denials += 1;
+            throw new Error(
+              `Secret Manager could not read ${ref} (HTTP 403). PERMISSION_DENIED: ` +
+                `Permission denied. Remediate access with this Troubleshooter URL - ` +
+                `https://console.example/troubleshooter;errorId=unique-${denials}`,
+            );
+          }
+          return 'llk_good';
+        },
+      },
+      profilesFor: async () => ['personal'],
+      report: (m) => said.push(m),
+      now: () => clock,
+    });
+
+    await auth.authenticate('Bearer llk_good');
+    clock += 10_000;
+    await auth.authenticate('Bearer llk_good');
+    clock += 10_000;
+    await auth.authenticate('Bearer llk_good');
+
+    // Three distinct messages from the store, one line out.
+    expect(denials).toBe(3);
+    expect(said).toHaveLength(1);
+    // And the reason is still carried — dropping it to make the key stable
+    // would have taken the only text that says what to fix.
+    expect(said[0]).toContain('tok1');
+    expect(said[0]).toContain('PERMISSION_DENIED');
+  });
+
   test('a row that becomes readable is not reported again', async () => {
     let clock = 0;
     let denied = ['tokens/tok1'];

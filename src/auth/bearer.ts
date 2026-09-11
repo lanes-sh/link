@@ -92,12 +92,24 @@ interface LoadedToken {
   readonly value: string;
 }
 
+/**
+ * An issued row the store would not answer for.
+ *
+ * The id is kept apart from the reason because the two are read for different
+ * things: the id is what decides whether this is news (see `#report`), and the
+ * reason is only ever printed.
+ */
+interface UnreadableRow {
+  readonly id: string;
+  readonly reason: string;
+}
+
 export class BearerAuthenticator implements Authenticator {
   readonly #options: AuthenticatorOptions;
   readonly #now: () => number;
   #cached: readonly LoadedToken[] | null = null;
   #readAt = 0;
-  /** The last set of unreadable rows reported, so a standing fault says it once. */
+  /** Which rows were named last, so a standing fault says it once. */
   #reported: string | null = null;
 
   constructor(options: AuthenticatorOptions) {
@@ -173,7 +185,7 @@ export class BearerAuthenticator implements Authenticator {
 
     const rows = await this.#options.tokens();
     const loaded: LoadedToken[] = [];
-    const unreadable: string[] = [];
+    const unreadable: UnreadableRow[] = [];
     for (const row of rows) {
       let value: string | null;
       try {
@@ -194,7 +206,7 @@ export class BearerAuthenticator implements Authenticator {
         // text in the message, so narrowing to a 403 would mean matching on
         // prose. And the broader rule is the one worth holding: whatever stops
         // a row being read, the answer is that the row matches nothing.
-        unreadable.push(`${row.id}: ${firstLine(error)}`);
+        unreadable.push({ id: row.id, reason: firstLine(error) });
         continue;
       }
       // A row whose credential is gone is not an error to report here. It is
@@ -217,14 +229,31 @@ export class BearerAuthenticator implements Authenticator {
    * and a line each time would bury the one that mattered. Reporting recovery
    * too — the empty set is a change like any other — is what makes the last
    * line about a row the current answer rather than a thing to correlate.
+   *
+   * **Keyed on which rows, not on what they said, and that is the whole of the
+   * fix.** The first version compared the rendered lines, reason included, and
+   * on a deployed target it never matched twice: Secret Manager mints a fresh
+   * IAM troubleshooter `errorId` into every `PERMISSION_DENIED` message, so the
+   * same standing denial arrived as a different string each read and the
+   * comparison above was always a change. Eight reloads wrote eight lines. A
+   * unit test could not see it — a stub throws the message it was given — so
+   * what caught it was reading the log of a real endpoint with an unreadable
+   * row, which is what the rehearsal in `CLAUDE.md` is for.
+   *
+   * The cost is that a row whose *reason* changes while it stays unreadable is
+   * not said again. That is the right trade: the set of rows this endpoint
+   * cannot honour is the state an operator acts on, and a second reason for a
+   * row already named changes nothing they would do.
    */
-  #report(unreadable: readonly string[]): void {
-    const signature = unreadable.join('\n');
+  #report(unreadable: readonly UnreadableRow[]): void {
+    const signature = unreadable.map((row) => row.id).join('\n');
     if (signature === this.#reported) return;
     this.#reported = signature;
     // One line per row, in the shape `not serving <profile>: <reason>` already
     // uses, because the two are read in the same place for the same purpose.
-    for (const row of unreadable) this.#options.report?.(`not honouring ${row}`);
+    for (const row of unreadable) {
+      this.#options.report?.(`not honouring ${row.id}: ${row.reason}`);
+    }
   }
 
   /**
