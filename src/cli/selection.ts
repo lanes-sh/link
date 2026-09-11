@@ -106,6 +106,11 @@ export const SELECTION: Record<string, Requires> = {
   'profile remove': 'workspace',
   // Editing who may consume one profile, so it names the profile.
   'profile members': 'profile+workspace',
+  // Both spellings, because `selectionKey` falls back to the bare word when the
+  // pair is absent — so a missing row here does not error, it silently makes the
+  // command `workspace`, whose requirement is `none`, and `--workspace` is then
+  // refused on the very command named after it.
+  'workspace show': 'workspace',
   'target show': 'workspace',
 
   // These read one profile's file and open nothing. The target is what says
