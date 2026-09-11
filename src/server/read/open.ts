@@ -81,6 +81,10 @@ export async function openReadListener(
       // Who is calling, resolved exactly as `/mcp` resolves it. The endpoint's
       // own authenticator, so a bearer works on both binds or on neither.
       authenticate,
+      // **The MCP server's URL, not this listener's.** This bind is a port above
+      // the endpoint, so its own `Host` names an address no credential was ever
+      // minted for. A key's audience is the endpoint clients call.
+      resource: () => server.url,
       endpoint: { kind: 'local', version, certificateExpiresAt: expiryOf(cert) },
       ...(data ? { data } : {}),
       // **The authorization paths, on this port too.** A page on

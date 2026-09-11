@@ -1,7 +1,6 @@
-import { ConfigError } from '#profile';
 import type { Flags } from './argv.ts';
 import { ACCEPTS } from './accepts.ts';
-import { nearest } from './nearest.ts';
+import { refuseUnknownFlags } from './unknown-flags.ts';
 
 export { ACCEPTS } from './accepts.ts';
 
@@ -106,6 +105,11 @@ export const SELECTION: Record<string, Requires> = {
   'profile remove': 'workspace',
   // Editing who may consume one profile, so it names the profile.
   'profile members': 'profile+workspace',
+  // Both spellings, because `selectionKey` falls back to the bare word when the
+  // pair is absent — so a missing row here does not error, it silently makes the
+  // command `workspace`, whose requirement is `none`, and `--workspace` is then
+  // refused on the very command named after it.
+  'workspace show': 'workspace',
   'target show': 'workspace',
 
   // These read one profile's file and open nothing. The target is what says
@@ -164,10 +168,6 @@ export const SELECTION: Record<string, Requires> = {
   secrets: 'workspace',
   plan: 'profile+workspace',
   doctor: 'profile+workspace',
-  // Whether an account can still sign in is a fact about the account. Scoped to
-  // a profile's grants it could not check one that had just been connected,
-  // which is when you most want to.
-  auth: 'workspace',
   // Target-scoped: see the note above. `--profile` narrows each to one profile.
   status: 'workspace',
   // Its subject has always been the endpoint rather than a profile — its own
@@ -343,12 +343,11 @@ export const EXPLICIT_WORKSPACE = new Set([
 const UNIVERSAL = ['help', 'json', 'quiet'];
 
 /**
- * Refuse a flag this command does not read, and guess what was meant.
+ * What this command accepts, and the refusal of anything else.
  *
- * This is the fix for the reported bug rather than a nicety. `profile add
- * --workspace cloud` was accepted and dropped, and nothing could refuse it because
- * `parseArgv` returns every `--anything` it sees and no command ever inspected
- * the leftovers. A typo was swallowed the same way on every command in the CLI.
+ * The allowlist is derived here because the tables that answer it are here. The
+ * refusal itself is in `./unknown-flags.ts`, shared with `lanes auth` — which is
+ * routed before `main.ts` and so never reached this function at all.
  */
 /**
  * Commands that name their profile as an argument, and so refuse the flag.
@@ -377,13 +376,5 @@ export function assertKnownFlags(first: string, second: string | undefined, flag
 
   const named = [first, second].filter(Boolean).join(' ');
 
-  for (const given of Object.keys(flags)) {
-    if (allowed.has(given)) continue;
-
-    throw new ConfigError(
-      `Unknown flag "--${given}" for "lanes link ${named}".` +
-        (nearest(given, allowed) ? `\n  Did you mean --${nearest(given, allowed)}?` : '') +
-        `\n  Accepts: ${[...allowed].sort().map((name) => `--${name}`).join(' ')}`,
-    );
-  }
+  refuseUnknownFlags(`lanes link ${named}`, allowed, flags);
 }

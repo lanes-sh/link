@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { IssuedTokenAuthenticator, OidcAuthenticator } from './remote.ts';
+import { IssuedTokenAuthenticator, LanesKeyAuthenticator, OidcAuthenticator } from './remote.ts';
 import { EVERY_PROFILE, mayReach } from './principal.ts';
+import type { ApiKeyVerifier } from './lanes/api-key.ts';
 import type { OidcVerifier } from './oidc.ts';
 import { OAuthStore } from './oauth/store.ts';
 import type { KeyValueStore } from '#stores/state';
@@ -316,5 +317,133 @@ describe('a token from an external issuer', () => {
 
     expect(outcome.ok).toBe(false);
     expect(!outcome.ok && outcome.reason).toBe('invalid');
+  });
+});
+
+/**
+ * What an API key the dashboard minted turns into.
+ *
+ * The resolution is the same shape as the two above and is not what these tests
+ * are for. What is different, and what the first two cases hold, is that this is
+ * the only link whose credential was signed by an issuer serving every Lanes
+ * endpoint — so the audience is the only thing making a key mean *this* endpoint,
+ * and a caller that does not say which endpoint was addressed must be refused
+ * rather than trusted.
+ */
+
+/** A verifier that answers from a table, and records the audience it was given. */
+function stubKeyVerifier(
+  answers: Record<string, string>,
+  seen?: { audience?: string },
+): ApiKeyVerifier {
+  return {
+    verify: async (token: string, expected: { audience: string }) => {
+      if (seen) seen.audience = expected.audience;
+      const subject = answers[token];
+      return subject ? { subject, email: null } : null;
+    },
+  } as unknown as ApiKeyVerifier;
+}
+
+describe('an API key the API signed', () => {
+  const SUBJECT = 'lanes:EXAMPLEUID00000000000000000';
+  const ADDRESSED = { resource: 'https://link.example.com/mcp' };
+
+  test('reaches only the profiles whose members: name its subject', async () => {
+    const auth = new LanesKeyAuthenticator(
+      stubKeyVerifier({ theirs: SUBJECT }),
+      'personal',
+      async (subject) => (subject === SUBJECT ? ['personal'] : []),
+    );
+
+    const outcome = await auth.authenticate('Bearer theirs', ADDRESSED);
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.principal.id).toBe(SUBJECT);
+    expect(outcome.principal.kind).toBe('member');
+    expect(outcome.principal.profiles).toEqual(['personal']);
+    expect(mayReach(outcome.principal, 'personal')).toBe(true);
+    expect(mayReach(outcome.principal, 'work')).toBe(false);
+  });
+
+  test('is refused when the caller did not say which endpoint was addressed', async () => {
+    // Fail closed. Verifying without an audience would accept a key minted for
+    // any endpoint the same issuer signs for, which is the whole reason the
+    // audience is checked at all.
+    const auth = new LanesKeyAuthenticator(
+      stubKeyVerifier({ theirs: SUBJECT }),
+      'personal',
+      async () => ['personal'],
+    );
+
+    const outcome = await auth.authenticate('Bearer theirs');
+
+    expect(outcome).toEqual({ ok: false, reason: 'invalid' });
+  });
+
+  test('checks the key against the endpoint the request named', async () => {
+    const seen: { audience?: string } = {};
+    const auth = new LanesKeyAuthenticator(
+      stubKeyVerifier({ theirs: SUBJECT }, seen),
+      'personal',
+      async () => ['personal'],
+    );
+
+    await auth.authenticate('Bearer theirs', ADDRESSED);
+
+    expect(seen.audience).toBe('https://link.example.com/mcp');
+  });
+
+  test('a subject no profile names reaches nothing, and that is not an error', async () => {
+    const auth = new LanesKeyAuthenticator(
+      stubKeyVerifier({ theirs: SUBJECT }),
+      'personal',
+      async () => [],
+    );
+
+    const outcome = await auth.authenticate('Bearer theirs', ADDRESSED);
+
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.principal.profiles).toEqual([]);
+    expect(outcome.principal.profiles).not.toBe(EVERY_PROFILE);
+    expect(mayReach(outcome.principal, 'personal')).toBe(false);
+  });
+
+  test('a key the verifier does not believe is invalid, not missing', async () => {
+    const auth = new LanesKeyAuthenticator(stubKeyVerifier({}), 'personal', async () => ['personal']);
+
+    expect(await auth.authenticate('Bearer nope', ADDRESSED)).toEqual({
+      ok: false,
+      reason: 'invalid',
+    });
+  });
+
+  test('a member lookup that throws fails closed', async () => {
+    // The alternative is a bucket outage widening what a key reaches, which is
+    // the direction nothing here is allowed to fail in.
+    const auth = new LanesKeyAuthenticator(
+      stubKeyVerifier({ theirs: SUBJECT }),
+      'personal',
+      async () => {
+        throw new Error('the store is unreachable');
+      },
+    );
+
+    expect(await auth.authenticate('Bearer theirs', ADDRESSED)).toEqual({
+      ok: false,
+      reason: 'invalid',
+    });
+  });
+
+  test('no credential is missing, and a malformed one says so', async () => {
+    const auth = new LanesKeyAuthenticator(stubKeyVerifier({}), 'personal', async () => []);
+
+    expect(await auth.authenticate(null, ADDRESSED)).toEqual({ ok: false, reason: 'missing' });
+    expect(await auth.authenticate('Basic abc', ADDRESSED)).toEqual({
+      ok: false,
+      reason: 'malformed',
+    });
   });
 });

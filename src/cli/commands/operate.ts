@@ -21,7 +21,12 @@
  */
 
 export { check, doctor, plan } from './operate/inspect.ts';
-export { auth, classifyOAuth, type AuthFlags, type AuthVerdict, type ConnectionAuth } from './operate/auth.ts';
+export {
+  classifyOAuth,
+  probeConnections,
+  type ConnectionAuth,
+  type ConnectionVerdict,
+} from './operate/connection-probe.ts';
 export { status } from './operate/status.ts';
 export { outputs, type OutputsFlags } from './operate/outputs.ts';
 export { tools, type ToolsFlags } from './operate/tools.ts';

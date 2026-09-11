@@ -22,18 +22,23 @@ import { pairingGuidance, pairingLink } from './pairing-link.ts';
  * `lanes link pair` — let the Lanes dashboard read this machine (ADR-063).
  *
  * Three things, and each is the operator's to decline. It installs a locally
- * trusted certificate, mints a credential that reads the whole workspace and
- * writes the owner's own data in it, and hands the browser a link carrying it.
- * None of that happens without being asked for, and none of it is implied by
- * `start`.
+ * trusted certificate, records that somebody opted this endpoint in, and hands
+ * the browser a link carrying the address. None of that happens without being
+ * asked for, and none of it is implied by `start`.
  *
- * **The credential is not read-only, since ADR-069.** It edits and deletes
- * memory, tasks, assets, skills and entities, in every profile the workspace
- * holds, and it still reaches no connection, token, policy rule, configuration
- * or vault value. That is a widening of something a year of notes calls a read,
- * so the paragraph this command prints says it before the operator answers —
- * and a token minted before that release gains it silently, which is the reason
- * saying it here is not decoration.
+ * **What it mints is a marker, not a credential, since ADR-079.** This docstring
+ * said the opposite for a release: that the token "reads the whole workspace and
+ * writes the owner's own data in it", which was true under ADR-069 and stopped
+ * being true when the read surface started resolving a real bearer through the
+ * endpoint's own authenticator. Nothing verifies `workspace/pair_token` now —
+ * `server/read/open.ts` says so at the one place that still reads it — and its
+ * only remaining job is that its existence is what decides whether the loopback
+ * read port binds at all.
+ *
+ * So the credential question moved to whoever opens the link: they sign in with
+ * Lanes and reach the profiles whose `members:` name them. `pairingGuidance()`
+ * is the paragraph that says that to the operator, and it is the copy to keep
+ * right — this one is for whoever edits the command.
  *
  * **The certificate is the largest side effect any command in this CLI has.**
  * It is a persistent change to the machine's trust store, made by a CLI, and
@@ -317,8 +322,10 @@ async function pairDeployed(input: {
 
   // An empty string, not just a missing ref: `lanes link deploy` creates this
   // secret with no version so the revision's IAM binding has something to
-  // attach to, and a secret that exists with no version reads back as null
-  // here and as `unpaired` there. Either shape means nobody has paired yet.
+  // attach to, and a secret that exists with no version reads back as null both
+  // here and in the endpoint. Either shape means nobody has paired yet, and
+  // there it means the read port does not bind rather than that a request is
+  // refused — nothing answers `unpaired`, which this said until ADR-079.
   const existing = held === '' ? null : held;
   const token = existing ?? `llp_${randomBytes(32).toString('base64url')}`;
   if (existing === null) await credentials.set(PAIR_TOKEN_REF, token);

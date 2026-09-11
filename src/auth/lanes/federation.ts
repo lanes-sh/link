@@ -1,3 +1,4 @@
+import { ApiKeyVerifier } from './api-key.ts';
 import { AssertionVerifier } from './assertion.ts';
 import { DEFAULT_API_URL } from './login.ts';
 import type { Federation } from '../oauth/server.ts';
@@ -29,8 +30,38 @@ export interface FederationOptions {
   readonly fetch?: ConstructorParameters<typeof AssertionVerifier>[0]['fetch'];
 }
 
+/**
+ * Which API this endpoint believes about identity.
+ *
+ * One function, because there are now two things that have to agree about it —
+ * the consent flow's assertion verifier and the API-key verifier — and an
+ * endpoint that trusted one issuer for sign-in and another for keys would be a
+ * hole nobody would find by reading either file alone.
+ */
+export function lanesApiUrl(override?: string | undefined): string {
+  return override ?? process.env['LANES_API_URL'] ?? DEFAULT_API_URL;
+}
+
+/**
+ * The verifier for API keys the dashboard minted.
+ *
+ * Here rather than in `#server`, beside the federation it shares an issuer and a
+ * key set with. The audience is not settled here: it is whatever the request
+ * said this endpoint is, which only the request knows — see `AuthContext`.
+ */
+export function lanesApiKeyVerifier(
+  options: { readonly apiUrl?: string | undefined; readonly fetch?: FederationOptions['fetch'] } = {},
+): ApiKeyVerifier {
+  const apiUrl = lanesApiUrl(options.apiUrl);
+  return new ApiKeyVerifier({
+    jwksUrl: `${apiUrl}/.well-known/jwks.json`,
+    issuer: apiUrl,
+    ...(options.fetch ? { fetch: options.fetch } : {}),
+  });
+}
+
 export function lanesFederation(options: FederationOptions): Federation {
-  const apiUrl = options.apiUrl ?? process.env['LANES_API_URL'] ?? DEFAULT_API_URL;
+  const apiUrl = lanesApiUrl(options.apiUrl);
   const webUrl = options.webUrl ?? process.env['LANES_WEB_URL'] ?? DEFAULT_WEB_URL;
 
   const verifier = new AssertionVerifier({

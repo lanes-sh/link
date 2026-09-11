@@ -225,13 +225,13 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
     // disagree about what a pairing token may do (ADR-069).
     const data = dataSurface(() => serving);
 
-    const gate = await openAuthorization(primary, log, async (subject) =>
+    // One closure for the gate and the key link, so neither can disagree on reach.
+    const membersOf = async (subject: string): Promise<readonly string[]> =>
       [...serving]
-        .filter(([, runtime]) =>
-          runtime.config.members.some((member) => member.subject === subject),
-        )
-        .map(([name]) => name),
-    );
+        .filter(([, runtime]) => runtime.config.members.some((m) => m.subject === subject))
+        .map(([name]) => name);
+
+    const gate = await openAuthorization(primary, log, membersOf);
 
     // The authenticator and the authorization gate are built once, from the
     // runtime this endpoint booted with, and are deliberately not part of what
@@ -278,7 +278,7 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
       },
     );
 
-    const authenticator = endpointAuthenticator(primary, gate);
+    const authenticator = endpointAuthenticator(primary, gate, membersOf);
 
     const server = serve({
       generations,
@@ -296,7 +296,7 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
         primary,
         profiles: () => generations.current.profiles,
         log,
-        authenticate: (header) => authenticator.authenticate(header),
+        authenticate: (header, context) => authenticator.authenticate(header, context),
         version: runningVersion,
         data,
       }),
@@ -316,7 +316,7 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
       () => generations.current.profiles,
       log,
       runningVersion,
-      (header) => authenticator.authenticate(header),
+      (header, context) => authenticator.authenticate(header, context),
       data,
       gate?.surface,
     );

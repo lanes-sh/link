@@ -133,7 +133,10 @@ export async function start(
  * `lanes auth status` says how long that has left to run.
  *
  * The CI token is the exception and stays one (ADR-009): a headless runner has
- * no browser, presents `llk_…`, and reaches the whole workspace.
+ * no browser and presents `llk_…`. What it reaches is every profile whose
+ * `members:` names the subject its row was issued to, and nothing else — this
+ * said "the whole workspace", which was true until ADR-068 made a row name a
+ * person, and is the reach that release exists to have removed.
  */
 async function requireSignIn(): Promise<void> {
   if ((await readSession()) !== null) return;

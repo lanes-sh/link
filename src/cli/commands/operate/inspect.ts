@@ -7,7 +7,7 @@ import { openRuntime, resolveProfileOnly, type GlobalFlags, type Runtime } from 
 import type { FetchLike } from '#deployments/knowledge.ts';
 import { unboundRotatableRefs } from '#deployments/bind.ts';
 import { duplicateAccountFindings, reportCapabilityDrift } from './findings.ts';
-import { probeConnections } from './auth.ts';
+import { probeConnections } from './connection-probe.ts';
 import { migratedContract, migratedRenamedProviders } from './migrate.ts';
 import { reportWorkspaceHomeMove } from '../../workspace-home-migrate.ts';
 import { reachabilityFindings } from './reachability.ts';
@@ -173,8 +173,9 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
     // the problem.
     //
     // `probeConnections` answers it by attempting the renewal, which is the only
-    // thing that actually knows. Same classifier as `lanes link auth`, so the two
-    // cannot drift apart again.
+    // thing that actually knows. It kept its own module when `lanes link auth`
+    // was removed, because the divergence it was extracted to stop was this
+    // command answering the question a second, differently-wrong way.
     const probed = await probeConnections(runtime, grantedConnections(runtime), forSelection);
 
     for (const result of probed) {

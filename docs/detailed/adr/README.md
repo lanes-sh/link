@@ -92,6 +92,7 @@ Run.
 | [077](077-the-workspace-lives-under-the-lanes-home.md) | The workspace moves to `~/.lanes/link`, a checkout gets `~/.lanes-dev`, and the old root is recognised until `update` moves it |
 | [078](078-a-removal-works-on-a-config-that-will-not-load.md) | A removal works on a config that will not load, deleting by name what it cannot enumerate and reporting the rest |
 | [079](079-the-dashboard-credential-names-a-person.md) | The dashboard's pairing token buys a session naming the person at the browser, and reaching every profile becomes a value a credential must carry rather than a field nobody set |
+| [080](080-an-api-key-is-signed-not-stored.md) | The API key and the `lanes link token` were one object under two names; the dashboard mints it, `api.lanes.sh` signs it, and the endpoint verifies it against published keys instead of holding a copy |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 

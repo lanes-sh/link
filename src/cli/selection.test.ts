@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { SELECTION, assertKnownFlags, requirementFor } from './selection.ts';
+import { ACCEPTS, SELECTION, assertKnownFlags, requirementFor } from './selection.ts';
 import { requireSelection } from './selection-require.ts';
 import { CONNECT_CUSTOM_FLAGS, RESERVED_BY_GRAMMAR } from './commands/connect/custom/spec.ts';
 
@@ -292,6 +292,26 @@ describe('every command is runnable in the spelling it demands', () => {
         requireSelection(first, second, flags, nowhere),
         `${key} is satisfied by ${JSON.stringify(flags)}`,
       ).resolves.toBeUndefined();
+    }
+  });
+
+  /**
+   * The same pair, read from the other side.
+   *
+   * The two tests above walk `SELECTION`, so neither can see an `ACCEPTS` key
+   * that has no row there — and such a key is dead in a way that does not error.
+   * `selectionKey` returns the bare first word when the pair is absent, so the
+   * row is never the row looked up and its flags are silently never allowed.
+   *
+   * Two had accumulated. `auth` outlived the command it belonged to and cost
+   * only a reader's time. `workspace show` was the expensive one: `--workspace`
+   * was refused on the command named after it while the older `target show`
+   * spelling accepted it, so the rename was half-done and nothing walking
+   * `SELECTION` could reach it.
+   */
+  test('every allowlist key has a row in the requirement table', () => {
+    for (const key of Object.keys(ACCEPTS)) {
+      expect(key in SELECTION, `ACCEPTS["${key}"] has a SELECTION row`).toBe(true);
     }
   });
 

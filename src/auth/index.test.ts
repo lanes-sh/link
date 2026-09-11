@@ -4,13 +4,41 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createFileSecretStore, generateCredentialKey, type SecretStore } from '#secrets';
 import {
+  AuthenticatorChain,
   BearerAuthenticator,
   generateProfileToken,
   machinePrincipal,
   mayReach,
   parseBearer,
   tokensMatch,
+  type AuthContext,
+  type Authenticator,
+  type AuthOutcome,
 } from './index.ts';
+
+/**
+ * A store where the named refs throw instead of answering.
+ *
+ * What a missing Secret Manager binding actually looks like: the adapter
+ * answers null for a 404 and *throws* for a 403, because a missing binding is
+ * denied rather than absent. A bare `Error` with the status only in its
+ * message, because that is what the adapter constructs.
+ */
+function storeRefusing(entries: Record<string, string>, denied: readonly string[]): SecretStore {
+  const base = storeWith(entries);
+  return {
+    ...base,
+    async get(ref) {
+      if (denied.includes(ref)) {
+        throw new Error(
+          `Secret Manager could not read ${ref} (HTTP 403). PERMISSION_DENIED: ` +
+            'Permission "secretmanager.versions.access" denied',
+        );
+      }
+      return base.get(ref);
+    },
+  };
+}
 
 function storeWith(entries: Record<string, string>): SecretStore {
   const map = new Map(Object.entries(entries));
@@ -80,10 +108,11 @@ describe('authentication', () => {
   /** One issued row, and the profiles its subject is a member of. */
   const issued = (
     overrides: {
-      credentials?: ReturnType<typeof storeWith>;
+      credentials?: SecretStore;
       profilesFor?: (subject: string) => Promise<readonly string[]>;
       now?: () => number;
       rows?: readonly { id: string; subject: string; ref: string }[];
+      report?: (message: string) => void;
     } = {},
   ) => ({
     profile: 'personal',
@@ -92,6 +121,7 @@ describe('authentication', () => {
     credentials: overrides.credentials ?? storeWith({ 'tokens/tok1': 'llk_correct' }),
     profilesFor: overrides.profilesFor ?? (async () => ['personal']),
     ...(overrides.now ? { now: overrides.now } : {}),
+    ...(overrides.report ? { report: overrides.report } : {}),
   });
 
   const options = issued();
@@ -354,5 +384,278 @@ describe('how often the credential store is read', () => {
     await auth.authenticate('Bearer llk_rotated_in_a_moment_ago');
 
     expect(reads()).toBe(warm + 1);
+  });
+});
+
+/**
+ * What the chain does with the context, which is the contract the key link needs.
+ *
+ * `LanesKeyAuthenticator` refuses when it is not told which endpoint was
+ * addressed, so a chain that accepted a context and forwarded nothing would turn
+ * every API key into a refusal — and it would do it silently, because a refused
+ * key is indistinguishable from a wrong one from outside. Hence a test of the
+ * forwarding itself rather than only of the links.
+ */
+describe('the chain and the context', () => {
+  /** A link that records what it was asked and answers from a fixed verdict. */
+  function recording(outcome: AuthOutcome): {
+    link: Authenticator;
+    seen: { context?: AuthContext | undefined; calls: number };
+  } {
+    const seen: { context?: AuthContext | undefined; calls: number } = { calls: 0 };
+    return {
+      seen,
+      link: {
+        authenticate: async (_header, context) => {
+          seen.calls += 1;
+          seen.context = context;
+          return outcome;
+        },
+      },
+    };
+  }
+
+  const ADDRESSED: AuthContext = { resource: 'https://link.example.com/mcp' };
+
+  test('every link is told which endpoint was addressed', async () => {
+    const first = recording({ ok: false, reason: 'invalid' });
+    const second = recording({ ok: false, reason: 'invalid' });
+
+    await new AuthenticatorChain([first.link, second.link]).authenticate('Bearer x', ADDRESSED);
+
+    expect(first.seen.context).toEqual(ADDRESSED);
+    expect(second.seen.context).toEqual(ADDRESSED);
+  });
+
+  test('a caller that names no endpoint forwards that, rather than inventing one', async () => {
+    const only = recording({ ok: false, reason: 'invalid' });
+
+    await new AuthenticatorChain([only.link]).authenticate('Bearer x');
+
+    expect(only.seen.context).toBeUndefined();
+  });
+
+  test('the first link to recognise the credential still wins, and later ones are not asked', async () => {
+    const yes = recording({
+      ok: true,
+      principal: { id: 'lanes:EXAMPLE', profile: 'personal', kind: 'machine', profiles: ['personal'] },
+    });
+    const never = recording({ ok: false, reason: 'invalid' });
+
+    const outcome = await new AuthenticatorChain([yes.link, never.link]).authenticate(
+      'Bearer x',
+      ADDRESSED,
+    );
+
+    expect(outcome.ok).toBe(true);
+    expect(never.seen.calls).toBe(0);
+  });
+});
+
+describe('a credential that cannot be read', () => {
+  /**
+   * The endpoint went down for everyone because one row was unreadable.
+   *
+   * Issuing a token against a deployed target created the secret container but
+   * not the resource-level grant that lets the runtime identity read it. Secret
+   * Manager answers a missing binding with 403 rather than 404 — so that an
+   * identity cannot enumerate secrets by their error codes — and the adapter
+   * returns null for the 404 and throws for the 403. The throw left `#reload`,
+   * left `authenticate`, left the chain, and every caller was refused,
+   * including the token that had been working.
+   *
+   * The rule these hold is `openReconciled`'s, one layer down: what cannot be
+   * read is skipped and said out loud, not allowed to answer for everyone else.
+   */
+  const SUBJECT = 'lanes:abc123';
+  const TWO_ROWS = [
+    { id: 'tok1', subject: SUBJECT, ref: 'tokens/tok1' },
+    { id: 'tok2', subject: SUBJECT, ref: 'tokens/tok2' },
+  ];
+
+  const withRefusal = (overrides: { report?: (message: string) => void } = {}) => ({
+    profile: 'personal',
+    tokens: async () => TWO_ROWS,
+    credentials: storeRefusing({ 'tokens/tok2': 'llk_good' }, ['tokens/tok1']),
+    profilesFor: async () => ['personal'],
+    ...(overrides.report ? { report: overrides.report } : {}),
+  });
+
+  test('the row beside it still authenticates', async () => {
+    const auth = new BearerAuthenticator(withRefusal());
+
+    const outcome = await auth.authenticate('Bearer llk_good');
+
+    expect(outcome.ok).toBe(true);
+  });
+
+  test('a wrong token is still refused, rather than excused by the unreadable row', async () => {
+    const auth = new BearerAuthenticator(withRefusal());
+
+    expect(await auth.authenticate('Bearer llk_wrong')).toEqual({ ok: false, reason: 'invalid' });
+  });
+
+  test('every row unreadable refuses, rather than throwing', async () => {
+    const auth = new BearerAuthenticator({
+      profile: 'personal',
+      tokens: async () => TWO_ROWS,
+      credentials: storeRefusing({}, ['tokens/tok1', 'tokens/tok2']),
+      profilesFor: async () => ['personal'],
+    });
+
+    // `not_configured` rather than a fourth reason: from here it is
+    // indistinguishable from a workspace that has issued nothing, and the
+    // report below is what carries the difference to whoever can act on it.
+    expect(await auth.authenticate('Bearer llk_good')).toEqual({
+      ok: false,
+      reason: 'not_configured',
+    });
+  });
+
+  test('the unreadable row is named, with what the store said', async () => {
+    const said: string[] = [];
+    const auth = new BearerAuthenticator(withRefusal({ report: (m) => said.push(m) }));
+
+    await auth.authenticate('Bearer llk_good');
+
+    expect(said).toHaveLength(1);
+    expect(said[0]).toContain('tok1');
+    expect(said[0]).toContain('PERMISSION_DENIED');
+    // The row that reads fine is not named, or the line stops being a list of
+    // what is wrong.
+    expect(said[0]).not.toContain('tok2');
+  });
+
+  test('a standing fault is said once, not on every reload', async () => {
+    let clock = 0;
+    const said: string[] = [];
+    const auth = new BearerAuthenticator({
+      ...withRefusal({ report: (m) => said.push(m) }),
+      now: () => clock,
+    });
+
+    await auth.authenticate('Bearer llk_good');
+    clock += 10_000; // past the cache window, so the next call re-reads
+    await auth.authenticate('Bearer llk_good');
+    clock += 10_000;
+    await auth.authenticate('Bearer llk_good');
+
+    // Three reads, one line. A grant nobody has fixed yet is a read every five
+    // seconds, and a line each time would bury the one that mattered.
+    expect(said).toHaveLength(1);
+  });
+
+  test('said once even though the store words the same denial differently each read', async () => {
+    // What the test above could not see, and a deployed endpoint did.
+    //
+    // Secret Manager mints a fresh IAM troubleshooter `errorId` into every
+    // `PERMISSION_DENIED` body, so one standing denial arrives as a different
+    // string on every read. The first version of the dedupe compared the
+    // rendered lines, reason included, so it never matched twice: eight reloads
+    // against a real target wrote eight lines for one unfixed grant. A stub
+    // that throws a constant could not reproduce it, which is why this one does
+    // not.
+    let clock = 0;
+    let denials = 0;
+    const said: string[] = [];
+    const auth = new BearerAuthenticator({
+      profile: 'personal',
+      tokens: async () => TWO_ROWS,
+      credentials: {
+        ...storeWith({ 'tokens/tok2': 'llk_good' }),
+        async get(ref) {
+          if (ref === 'tokens/tok1') {
+            denials += 1;
+            throw new Error(
+              `Secret Manager could not read ${ref} (HTTP 403). PERMISSION_DENIED: ` +
+                `Permission denied. Remediate access with this Troubleshooter URL - ` +
+                `https://console.example/troubleshooter;errorId=unique-${denials}`,
+            );
+          }
+          return 'llk_good';
+        },
+      },
+      profilesFor: async () => ['personal'],
+      report: (m) => said.push(m),
+      now: () => clock,
+    });
+
+    await auth.authenticate('Bearer llk_good');
+    clock += 10_000;
+    await auth.authenticate('Bearer llk_good');
+    clock += 10_000;
+    await auth.authenticate('Bearer llk_good');
+
+    // Three distinct messages from the store, one line out.
+    expect(denials).toBe(3);
+    expect(said).toHaveLength(1);
+    // And the reason is still carried — dropping it to make the key stable
+    // would have taken the only text that says what to fix.
+    expect(said[0]).toContain('tok1');
+    expect(said[0]).toContain('PERMISSION_DENIED');
+  });
+
+  test('a row that becomes readable is not reported again', async () => {
+    let clock = 0;
+    let denied = ['tokens/tok1'];
+    const said: string[] = [];
+    const auth = new BearerAuthenticator({
+      profile: 'personal',
+      tokens: async () => TWO_ROWS,
+      credentials: {
+        ...storeWith({ 'tokens/tok1': 'llk_first', 'tokens/tok2': 'llk_good' }),
+        async get(ref) {
+          if (denied.includes(ref)) throw new Error(`denied ${ref}`);
+          return ref === 'tokens/tok1' ? 'llk_first' : 'llk_good';
+        },
+      },
+      profilesFor: async () => ['personal'],
+      report: (m) => said.push(m),
+      now: () => clock,
+    });
+
+    await auth.authenticate('Bearer llk_good');
+    expect(said).toHaveLength(1);
+
+    denied = [];
+    clock += 10_000;
+
+    // The grant landed: the row it was refusing now opens the endpoint, and
+    // nothing new is said about it.
+    expect((await auth.authenticate('Bearer llk_first')).ok).toBe(true);
+    expect(said).toHaveLength(1);
+  });
+
+  test('a later link in the chain is still reached', async () => {
+    // The amplification, and the reason this was worth fixing on its own
+    // merits. This link runs first and is unconditional, so before the skip a
+    // single unreadable static row refused the OAuth tokens and the
+    // Lanes-signed keys behind it — credentials that have nothing to do with
+    // the store that failed, and that never got asked.
+    const signed: Authenticator = {
+      authenticate: async () => ({
+        ok: true,
+        principal: {
+          id: 'lanes:signed',
+          profile: 'personal',
+          kind: 'machine',
+          profiles: ['personal'],
+        },
+      }),
+    };
+
+    const chain = new AuthenticatorChain([
+      new BearerAuthenticator({
+        profile: 'personal',
+        tokens: async () => TWO_ROWS,
+        credentials: storeRefusing({}, ['tokens/tok1', 'tokens/tok2']),
+        profilesFor: async () => ['personal'],
+      }),
+      signed,
+    ]);
+
+    const outcome = await chain.authenticate('Bearer a.signed.jwt');
+
+    expect(outcome.ok).toBe(true);
   });
 });

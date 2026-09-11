@@ -18,6 +18,7 @@ import {
 import {
   handleAuthorization,
   isAuthorizationPath,
+  publicOrigin,
   resourceMetadataUrl,
   type AuthorizationSurface,
 } from './oauth.ts';
@@ -153,6 +154,9 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
       }
 
       const url = new URL(request.url);
+      // Who the caller addressed, so a Lanes-signed key binds to this endpoint
+      // rather than to every endpoint its issuer signs for.
+      const addressed = { resource: `${publicOrigin(request)}${MCP_PATH}` };
 
       // Ahead of every path that answers without a credential, because the
       // ceiling further down is inside the `401` branch and so has never covered
@@ -192,9 +196,9 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
         // And they are the *caller's* since ADR-068: this listed every profile
         // served to anybody holding a credential, so a delegated member read the
         // ones `mayReach` keeps out of their own enum.
-        const named = await options.authenticator.authenticate(
-          request.headers.get('authorization'),
-        );
+        // Via `authenticateRequest` like the rest: asked directly, a throw was a 500.
+        const named = await authenticateRequest(options.authenticator, request, options.log, addressed);
+        if (named instanceof Response) return named;
         const who = named.ok ? named.principal : null;
         const mine = options.generations.current.names().filter((n) => who && mayReach(who, n));
         return Response.json({
@@ -222,7 +226,7 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
         return new Response('Not found', { status: 404 });
       }
 
-      const attempt = await authenticateRequest(options.authenticator, request, options.log);
+      const attempt = await authenticateRequest(options.authenticator, request, options.log, addressed);
       if (attempt instanceof Response) return attempt;
       const outcome = attempt;
 

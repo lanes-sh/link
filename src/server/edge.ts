@@ -1,4 +1,10 @@
-import { challenge, type AuthOutcome, type Authenticator, type ChallengeError } from '#auth';
+import {
+  challenge,
+  type AuthContext,
+  type AuthOutcome,
+  type Authenticator,
+  type ChallengeError,
+} from '#auth';
 import type { Logger } from '#connectivity';
 import { RateLimiter } from '#policy';
 
@@ -371,9 +377,10 @@ export async function authenticateRequest(
   authenticator: Authenticator,
   request: Request,
   log: Logger,
+  context?: AuthContext,
 ): Promise<AuthOutcome | Response> {
   try {
-    return await authenticator.authenticate(request.headers.get('authorization'));
+    return await authenticator.authenticate(request.headers.get('authorization'), context);
   } catch (error) {
     log.error('could not authenticate', {
       message: error instanceof Error ? error.message : String(error),

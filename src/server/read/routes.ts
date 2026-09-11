@@ -166,6 +166,23 @@ export interface ReadDeps {
    * every other path behaves exactly as it did before this surface existed.
    */
   readonly data?: DataSurface | undefined;
+  /**
+   * This endpoint's resource identifier, for the one authenticator that checks it.
+   *
+   * A function of the request rather than a string, because the two binds answer
+   * differently and neither can guess the other's. A deployed endpoint serves
+   * these paths on its own origin, so the resource is derived from the request
+   * exactly as `/mcp` derives it. The loopback listener is a *second* port — one
+   * above the MCP port — so a resource built from its own `Host` would name an
+   * address no key was ever minted for, and it passes the MCP server's URL
+   * instead.
+   *
+   * Optional, and absent means a Lanes-signed key cannot be judged here and is
+   * refused. That is the safe direction and the reason it is not defaulted: a
+   * fallback guess would be a guess about which endpoint a credential was minted
+   * for, which is the one thing the audience check exists to not do.
+   */
+  readonly resource?: ((request: Request) => string) | undefined;
   readonly allowedOrigins?: readonly string[] | undefined;
   readonly log?: Logger | undefined;
 }
@@ -242,7 +259,10 @@ export async function readRoutes(request: Request, deps: ReadDeps): Promise<Resp
   // indistinguishable from a 500 on a bug. `authenticateRequest` wraps the
   // `/mcp` path the same way, for the same reason.
   const outcome = await deps
-    .authenticate(request.headers.get('authorization'))
+    .authenticate(
+      request.headers.get('authorization'),
+      deps.resource ? { resource: deps.resource(request) } : undefined,
+    )
     .catch((reason: unknown) => {
       deps.log?.warn('could not resolve the caller', {
         reason: reason instanceof Error ? reason.message : String(reason),
