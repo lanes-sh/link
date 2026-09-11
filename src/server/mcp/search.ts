@@ -5,8 +5,7 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import {
   type Filters,
   SEARCH_RESULT,
-  searchCapabilities,
-  searchResults,
+  searchAnswer,
 } from './search-index.ts';
 import { EXPAND, type ExpandArgument, expandIfReferences } from './expand-result.ts';
 import { validate } from './validate.ts';
@@ -163,19 +162,15 @@ export function registerSearchSurface(
       const { query, ...rest } = input;
       const filters: Filters = rest;
       const accounts = accountsByProfile(options);
-      const structured = searchResults(query, merged, filters, accounts);
 
-      // Both, deliberately. The text is what a model reads; the structured copy
-      // is what a client acts on without a regular expression. The spec asks for
-      // a serialized form in the text block too, and here the prose is the more
-      // useful thing to put there.
+      // Both, deliberately, and off one ranking. The text is what a model reads;
+      // the structured copy is what a client acts on without a regular
+      // expression. The spec asks for a serialized form in the text block too,
+      // and here the prose is the more useful thing to put there.
+      const { text, structured } = searchAnswer(query, merged, options.surface, filters, accounts);
+
       return {
-        content: [
-          {
-            type: 'text' as const,
-            text: searchCapabilities(query, merged, options.surface, filters, accounts),
-          },
-        ],
+        content: [{ type: 'text' as const, text }],
         structuredContent: structured as unknown as Record<string, unknown>,
       };
     },

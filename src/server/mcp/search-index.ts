@@ -1,11 +1,8 @@
-import { isTool } from '#connectivity';
 import { z } from 'zod';
-import { toolNameFor } from './naming.ts';
-import { queryTerms, reads } from './query.ts';
+import { queryTerms } from './query.ts';
 import { type Match, rank } from './ranking.ts';
 import { afford, type Accounts, DEFAULT, renderMatches } from './render.ts';
-import { sanitizeSchema } from './schema.ts';
-import { scoreEntry, searchable, summaryOf } from './searchable.ts';
+import { scoreEntry, searchable, shapeOf } from './searchable.ts';
 import type { MergedCapability } from './visibility.ts';
 
 /**
@@ -19,60 +16,6 @@ import type { MergedCapability } from './visibility.ts';
  *
  * See `search.ts` for what the surface is for and why it exists (ADR-075).
  */
-
-/**
- * What an answer may cost, in bytes of the caller's context.
- *
- * A count was the wrong unit. Five matches is 900 bytes of one provider's
- * schemas and 40 KB of another's, so a fixed number either truncates the useful
- * answer or floods the context — and which it does depends on whose API the
- * caller happened to ask about.
- */
-const BUDGET = 16 * 1024;
-
-/** The most any one query will explain, however small the schemas are. */
-const MOST = 10;
-
-/**
- * The fewest, however large.
- *
- * The best match is rendered in full even when it alone exceeds the budget. An
- * answer that names the right capability and withholds its arguments is the
- * expensive kind of wrong: it costs a round trip *and* looks like an answer.
- */
-const FEWEST = 1;
-
-/** What one capability's title, description and schema are, whichever kind it is. */
-export function shapeOf(entry: MergedCapability): {
-  title: string | undefined;
-  description: string;
-  inputSchema: Record<string, unknown>;
-} {
-  const summary = summaryOf(entry);
-
-  if (entry.discovered) {
-    return { ...summary, inputSchema: sanitizeSchema(entry.discovered.inputSchema) };
-  }
-
-  const capability = entry.capability;
-  if (!capability || !isTool(capability)) return { ...summary, inputSchema: { type: 'object' } };
-
-  // Authored capabilities carry Zod, so the JSON Schema a caller needs is
-  // derived here rather than stored. `registerLocalTool` hands the SDK the Zod
-  // shape and lets it do the same conversion, so this is the same schema by a
-  // different route — not a second definition of it.
-  let inputSchema: Record<string, unknown> = { type: 'object' };
-  try {
-    inputSchema = z.toJSONSchema(capability.inputSchema as z.ZodType) as Record<string, unknown>;
-  } catch {
-    // A schema Zod will not convert is still a callable tool, and a search that
-    // threw would take out every other result with it.
-  }
-
-  return { ...summary, inputSchema };
-}
-
-
 
 /**
  * Search, rendered.
@@ -97,6 +40,35 @@ export function searchCapabilities(
 }
 
 /**
+ * Both halves of one answer, off one ranking.
+ *
+ * The tool returns prose and a structured copy of the same search, and asking
+ * for them separately ranked the whole reachable set twice for a single
+ * question: two passes to find the candidates, two more to weigh every term
+ * against each of them, and `shapeOf` converting the same Zod schemas again on
+ * the way out. Neither pass could see the other's work, and both were answering
+ * the same query with the same filters.
+ *
+ * `searchCapabilities` and `searchResults` stay as they are, because the corpus
+ * is the useful thing to hand a test. This is what the handler calls.
+ */
+export function searchAnswer(
+  query: string,
+  merged: Map<string, MergedCapability>,
+  surface: 'full' | 'crunched' | undefined,
+  filters: Filters = {},
+  accounts?: Accounts,
+): { text: string; structured: SearchResults } {
+  const matches = select(query, merged, filters);
+  const limit = filters.limit ?? DEFAULT;
+
+  return {
+    text: renderMatches(query, matches, surface, limit, accounts),
+    structured: resultsFrom(query, matches, limit, accounts),
+  };
+}
+
+/**
  * The same answer as data, for a client that would rather not parse prose.
  *
  * `tools/call` may carry `structuredContent` beside its text since the
@@ -111,7 +83,12 @@ export function searchResults(
   merged: Map<string, MergedCapability>,
   filters: Filters = {},
   accounts?: Accounts,
-): {
+): SearchResults {
+  return resultsFrom(query, select(query, merged, filters), filters.limit ?? DEFAULT, accounts);
+}
+
+/** The shape `searchResults` and `searchAnswer` both answer with. */
+export type SearchResults = {
   query: string;
   matched: number;
   reachable: { profile: string; connections: { connection: string; account: string }[] }[];
@@ -120,12 +97,20 @@ export function searchResults(
     tool: string;
     title: string | undefined;
     description: string;
+    reads: boolean;
     reachable: { profile: string; connections: string[] }[];
     inputSchema: Record<string, unknown>;
   }[];
-} {
-  const matches = select(query, merged, filters);
-  const { detailed } = afford(matches, filters.limit ?? DEFAULT);
+};
+
+/** The structured answer, off a ranking that has already been done. */
+function resultsFrom(
+  query: string,
+  matches: Match[],
+  limit: number,
+  accounts?: Accounts,
+): SearchResults {
+  const { detailed } = afford(matches, limit);
 
   return {
     query,
@@ -143,6 +128,7 @@ export function searchResults(
         tool: match.tool,
         title: shape.title,
         description: shape.description.split('\n\nAvailable connections')[0] ?? '',
+        reads: match.entry.reads,
         reachable: [...match.entry.reachable].map(([profile, connections]) => ({
           profile,
           connections: [...connections],
@@ -181,6 +167,11 @@ export const SEARCH_RESULT = {
             tool: z.string().describe('The tool name, if this endpoint advertises one for it.'),
             title: z.string().optional(),
             description: z.string(),
+            reads: z
+              .boolean()
+              .describe(
+                'Whether this only reads, as its provider classified it. False where the provider did not say.',
+              ),
             reachable: z
               .array(z.object({ profile: z.string(), connections: z.array(z.string()) }))
               .describe('Where it can be called, and as which account.'),
@@ -198,6 +189,12 @@ export const SEARCH_RESULT = {
  * ranking, which was already built only from what this caller may reach. A
  * filter naming something they cannot reach returns nothing, which is the same
  * answer they would get for a capability that does not exist (ADR-007).
+ *
+ * `readOnly` narrows on `entry.reads`, which is the provider's own
+ * classification, and not on the reading of the capability's name that `fit`
+ * uses to order results. Ordering may guess; a caller asking to be shown only
+ * the safe operations is relying on the answer, so where the provider said
+ * nothing this says nothing either and the capability is left out.
  */
 export type Filters = {
   readonly provider?: string | undefined;
@@ -215,7 +212,7 @@ function select(
 ): Match[] {
   return rank(query, merged).filter((match) => {
     if (filters.provider !== undefined && match.id.split('.')[0] !== filters.provider) return false;
-    if (filters.readOnly === true && !reads(match.id)) return false;
+    if (filters.readOnly === true && !match.entry.reads) return false;
     if (filters.profile !== undefined && !match.entry.reachable.has(filters.profile)) return false;
     if (filters.connection !== undefined) {
       const named = [...match.entry.reachable.values()].some((all) =>

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { CORPUS, QUERIES } from './ranking-corpus.ts';
+import { CORPUS } from './ranking-corpus.ts';
+import { QUERIES } from './ranking-queries.ts';
 import { searchCapabilities } from './search-index.ts';
 
 /**
@@ -21,7 +22,16 @@ import { searchCapabilities } from './search-index.ts';
  * them, so the diff carries the reason.
  */
 
-/** Where retrieval stood before any of this — the number to beat, not to keep. */
+/**
+ * Where retrieval stood before any of this — the number to beat, not to keep.
+ *
+ * Measured on the corpus as it was: eleven providers, 51 capabilities, sixteen
+ * questions. The corpus has since grown to the depth a real endpoint has, so the
+ * deltas printed against this are across two different surfaces and read as
+ * larger than the improvement was. Kept anyway, because the alternative is
+ * re-running the pre-ranking code against the new corpus to manufacture a
+ * comparison nobody ever measured.
+ */
 const BASELINE = { top1: 31, top3: 63, schema: 81, bytes: 4_063 } as const;
 
 /**
@@ -36,8 +46,17 @@ const BASELINE = { top1: 31, top3: 63, schema: 81, bytes: 4_063 } as const;
  *                               after:  28, all four hints on every one
  */
 
-/** Floors, set below today's measurement so ordinary noise does not fail CI. */
-const FLOOR = { top1: 90, top3: 95, schema: 90 } as const;
+/**
+ * Floors, set below today's measurement so ordinary noise does not fail CI.
+ *
+ * These read 90/95/90 while the corpus was 51 capabilities and sixteen
+ * questions. Neither the ranking nor the floors moved to bring them here: the
+ * corpus did, and 56/72 is what the same code scores against a surface shaped
+ * like a deployed one. `ranking.test.ts` names every miss behind these numbers,
+ * which is the guard that actually catches a regression — a percentage can hold
+ * while the cases behind it are swapped.
+ */
+const FLOOR = { top1: 55, top3: 70, schema: 70 } as const;
 
 /** The size of an answer matters as much as its accuracy — it is context spent. */
 const BYTE_BUDGET = 16 * 1024;

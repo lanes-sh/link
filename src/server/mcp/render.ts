@@ -1,5 +1,6 @@
 import type { Match } from './ranking.ts';
-import { schemaFor, shapeOf } from './search-index.ts';
+import { schemaFor } from './search-index.ts';
+import { shapeOf } from './searchable.ts';
 import type { MergedCapability } from './visibility.ts';
 
 /**
@@ -123,6 +124,12 @@ export function renderMatches(
     lines.push('');
     lines.push(`capability: ${match.id}`);
     lines.push(`reachable:  ${whereReachable(match.entry)}`);
+    // Only when the provider said so, and never the negative. Under `crunched`
+    // there is no typed tool to carry `readOnlyHint`, so this line is the only
+    // place a client learns a call is safe to make without asking — and the
+    // absence of it has to keep meaning "assume not", which is what a printed
+    // `read-only: no` would quietly turn into "declared unsafe".
+    if (match.entry.reads) lines.push('read-only:  yes');
     lines.push('');
     lines.push('arguments (JSON Schema — `profile` and `connection` are added by this endpoint):');
     lines.push('```json');

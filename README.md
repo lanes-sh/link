@@ -125,6 +125,27 @@ bunq](https://lanes.sh/docs/link/bunq) first. **Most providers are untested** ag
 account, and the tables mark which with a †. See [`src/providers/README.md`](src/providers/README.md)
 for what that means.
 
+## Spend your context on the question, not the menu
+
+Connecting everything has a cost nobody mentions. A dozen accounts is hundreds of tools, and
+every one of them is described to your agent before it reads a word of what you asked. On one
+two-profile endpoint that came to 278 tools and roughly 180,000 tokens: most of a context window,
+spent on a menu.
+
+Lanes Link can serve a short list instead. Your agent gets a search tool and a call tool, asks for
+what it needs, and gets back the few capabilities that answer, with their full arguments. The same
+endpoint drops to 28 tools and about 8,000 tokens. Nothing becomes unreachable, and no permission
+changes: it is the same dispatcher, the same policy, the same audit row.
+
+Turn it on per profile, in `profile.yaml`:
+
+```yaml
+surface: crunched
+```
+
+**[How it finds the right tool](docs/detailed/search.md)** covers the ranking, what it scores
+today, and what was weighed against it.
+
 ## Run it anywhere
 
 The same code and the same config in all three. Only the storage adapters change.
@@ -152,6 +173,7 @@ the revision on its first run.
 | **[Every command](https://lanes.sh/docs/link/commands)** | Arguments and flags, one entry each |
 | **[In the Lanes desktop app](https://lanes.sh/docs/desktop/lanes-link)** | The page that drives it |
 | **[Full reference](https://lanes.sh/docs/link)** | Architecture, configuration, security, writing a provider |
+| **[How it finds the right tool](docs/detailed/search.md)** | Why the tool list is short, and how the search ranks |
 
 ## Security
 

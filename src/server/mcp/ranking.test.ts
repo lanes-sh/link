@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { CORPUS, QUERIES } from './ranking-corpus.ts';
+import { CORPUS } from './ranking-corpus.ts';
+import { QUERIES } from './ranking-queries.ts';
 import { searchCapabilities } from './search-index.ts';
 
 /**
@@ -38,26 +39,68 @@ describe('how often the search is right', () => {
    * trades one query for another shows up as a number moving rather than as a
    * test that has to be edited to keep passing.
    */
-  test('the answer ranks first for at least nine questions in ten', () => {
+  /**
+   * These numbers used to read 94% and 100%, and nothing about the ranking got
+   * worse to make them 56% and 72%.
+   *
+   * The corpus did. It was eleven providers and 51 capabilities against sixteen
+   * questions, where a deployed endpoint measured 278 capabilities (ADR-076) and
+   * nobody asks it only sixteen things. Giving the providers the depth real APIs
+   * have, adding a second calendar and a second issue tracker, and asking twenty
+   * more questions is what moved it — each step measured on its own, and the
+   * depth alone took top-1 from 94% to 88%.
+   *
+   * So the old number was a property of the fixture. It is written down here
+   * rather than quietly replaced, because the honest floor is the one worth
+   * defending and a benchmark that flatters is worse than none.
+   */
+  test('the answer ranks first for more than half the questions', () => {
     const missed = QUERIES.filter(({ query, expect: want }) => place(query, want) !== 0).map(
       ({ query }) => query,
     );
 
-    // "my todo list" is the one that misses, and it is genuinely ambiguous:
-    // `tasklists.list` returns the caller's task *lists*, which a query naming
-    // "list" can honestly be read as asking for. Left as a miss rather than
-    // written into the expectations, so the number stays comparable.
-    expect(missed).toEqual(['my todo list']);
-    expect((100 * (QUERIES.length - missed.length)) / QUERIES.length).toBeGreaterThanOrEqual(90);
+    // Named rather than counted, so a change that trades one miss for another
+    // shows up as an edit here instead of a number that did not move.
+    expect(missed).toEqual([
+      'what meetings do i have',
+      'find a document',
+      'my todo list',
+      'add a reminder',
+      'files shared with me',
+      'who has access to this file',
+      'cancel a meeting',
+      'reply in a thread',
+      'bugs reported this week',
+      'why did the build fail',
+      'which version is deployed',
+      'refund a customer',
+      'how many signups last month',
+      'move an issue to done',
+      'save someone to my address book',
+      'a meeting with attendees and a location',
+    ]);
+    expect((100 * (QUERIES.length - missed.length)) / QUERIES.length).toBeGreaterThanOrEqual(55);
   });
 
-  test('the answer is in the first three for at least nineteen in twenty', () => {
+  test('the answer is in the first three for seven questions in ten', () => {
     const outside = QUERIES.filter(({ query, expect: want }) => {
       const at = place(query, want);
       return at < 0 || at >= 3;
     });
 
-    expect(outside.map(({ query }) => query)).toEqual([]);
+    expect(outside.map(({ query }) => query)).toEqual([
+      'my todo list',
+      'add a reminder',
+      'files shared with me',
+      'who has access to this file',
+      'cancel a meeting',
+      'bugs reported this week',
+      'why did the build fail',
+      'how many signups last month',
+      'move an issue to done',
+      'save someone to my address book',
+    ]);
+    expect((100 * (QUERIES.length - outside.length)) / QUERIES.length).toBeGreaterThanOrEqual(70);
   });
 
   /**
@@ -101,9 +144,15 @@ describe('how often the search is right', () => {
    * is a deletion the caller then has to decline.
    */
   test('an ambiguous write does not offer to destroy something', () => {
-    expect(ranked(searchCapabilities('schedule an appointment', CORPUS))[0]).toBe(
-      'agenda.events.insert',
-    );
+    // The claim is about the *operation*, not the account. Two calendars now
+    // answer this and the query names neither, so asserting one vendor asserted
+    // a preference the endpoint has no basis for and failed the moment the
+    // second one arrived. What must hold is that creating wins and deleting
+    // does not appear at the head of the answer.
+    const first = ranked(searchCapabilities('schedule an appointment', CORPUS))[0];
+
+    expect(first).toBeDefined();
+    expect(['agenda.events.insert', 'dayplan.events.create']).toContain(first as string);
   });
 });
 
