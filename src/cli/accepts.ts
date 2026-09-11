@@ -51,13 +51,9 @@ export const ACCEPTS: Record<string, readonly string[]> = {
   // it undoes a provider rename this project shipped, and every other finding
   // there is something only the operator can decide.
   doctor: ['fix'],
-  // A filter, not a second subject: it narrows the answer to one connection so
-  // a caller can re-ask about the row it just repaired. Same shape as `attach`.
   // Declaring a connection names the account itself, because nothing can be
   // asked of a provider that is not authorised yet — see `connection-declare.ts`.
   'connection declare': ['id', 'account', 'label'],
-
-  auth: ['connection'],
   relabel: [],
   // A rule lands in a grant row, and a row names one connection (ADR-058), so
   // the flag is required rather than optional. It is listed here as well as
