@@ -196,8 +196,9 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
         // And they are the *caller's* since ADR-068: this listed every profile
         // served to anybody holding a credential, so a delegated member read the
         // ones `mayReach` keeps out of their own enum.
-        const auth = request.headers.get('authorization');
-        const named = await options.authenticator.authenticate(auth, addressed);
+        // Via `authenticateRequest` like the rest: asked directly, a throw was a 500.
+        const named = await authenticateRequest(options.authenticator, request, options.log, addressed);
+        if (named instanceof Response) return named;
         const who = named.ok ? named.principal : null;
         const mine = options.generations.current.names().filter((n) => who && mayReach(who, n));
         return Response.json({

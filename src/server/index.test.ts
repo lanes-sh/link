@@ -1,9 +1,12 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import type { Icon } from '@modelcontextprotocol/server';
 import { allocatePort, rpc, startHarness, wireProfiles, TEST_TOKEN } from './harness.ts';
-import { isLoopback } from './index.ts';
+import { createRequestHandler, isLoopback } from './index.ts';
+import { Generations } from './generations.ts';
 import { SURFACE_TOOL_NAMES } from './mcp/index.ts';
 import { parseConfig, type Config } from '#profile';
+import type { Authenticator } from '#auth';
+import { silentLogger } from './logging.ts';
 import manifest from '../../package.json' with { type: 'json' };
 
 /** The stripe fill, so the two rects that are *not* stripes can be picked out. */
@@ -1335,5 +1338,83 @@ describe('operational logging', () => {
     } finally {
       await listening.stop();
     }
+  });
+});
+
+describe('health, when the credential store will not answer', () => {
+  /**
+   * `/health` was the one surface that asked the authenticator directly.
+   *
+   * Every other path goes through `authenticateRequest`, which turns a store
+   * that throws into a 503 naming the fault. This one did not, and there is no
+   * `catch` above it and no `error` handler on `Bun.serve` — so an unreadable
+   * credential reached the caller as a bare 500 with nothing logged at all. It
+   * is the surface `deploy` and `status` poll, which is the worst place for a
+   * failure with no explanation attached.
+   */
+  /**
+   * An authenticator that fails while *judging* a credential.
+   *
+   * It gives up on a missing bearer first, because every real link does — see
+   * `parseBearer` in `auth/index.ts` and the three in `auth/remote.ts`, all of
+   * which return `missing` before reading anything. A stub that threw
+   * unconditionally would pass the test below for a reason no deployment has.
+   *
+   * What still reaches here after a row-level read is skipped: the workspace's
+   * own `connections.yaml` is read to get the rows at all, so a bucket that has
+   * stopped answering throws before any row is looked at.
+   */
+  const throwing: Authenticator = {
+    authenticate: async (header) => {
+      if (!header) return { ok: false, reason: 'missing' };
+      throw new Error('the workspace bucket did not answer');
+    },
+  };
+
+  function handlerWith(authenticator: Authenticator, log = silentLogger()) {
+    const { profiles } = wireProfiles({
+      profile: 'personal',
+      port: allocatePort(),
+      policy: `  allow:\n    - "example.*"`,
+    });
+    const nothing = () => Promise.resolve();
+
+    return createRequestHandler({
+      generations: new Generations({ profiles, close: nothing }, async () => ({ profiles, close: nothing }), {
+        primary: 'personal',
+        log,
+      }),
+      primary: 'personal',
+      authenticator,
+      log,
+    });
+  }
+
+  const health = (credentialed: boolean): Request =>
+    new Request('https://endpoint.example/health', {
+      headers: credentialed ? { authorization: `Bearer ${TEST_TOKEN}` } : {},
+    });
+
+  test('a credentialed caller is told the endpoint could not check, not that it is broken', async () => {
+    const errors: string[] = [];
+    const log = { ...silentLogger(), error: (message: string) => errors.push(message) };
+
+    const response = await handlerWith(throwing, log).fetch(health(true));
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get('retry-after')).toBe('2');
+    expect(await response.json()).toMatchObject({ error: 'unavailable' });
+    // And it is in the log, which is the half that was missing entirely.
+    expect(errors).toContain('could not authenticate');
+  });
+
+  test('the platform probe still passes, because it presents no credential', async () => {
+    // The reason this change cannot flap a revision. Cloud Run's own probe is
+    // uncredentialed, and authentication gives up on a missing bearer before it
+    // reads any store — so the store being unreachable never reaches the probe.
+    const response = await handlerWith(throwing).fetch(health(false));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ status: 'ok' });
   });
 });
