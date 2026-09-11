@@ -16,6 +16,7 @@ import { recordConfigChange } from '../../audit-change.ts';
 import { ok, print, style } from '../../output.ts';
 import type { SecretStore } from '#secrets';
 import { openSecretStoreFor, type GlobalFlags } from '../../runtime.ts';
+import { pairingGuidance, pairingLink } from './pairing-link.ts';
 
 /**
  * `lanes link pair` — let the Lanes dashboard read this machine (ADR-063).
@@ -49,11 +50,12 @@ import { openSecretStoreFor, type GlobalFlags } from '../../runtime.ts';
  * deployed endpoint does not need, because the platform terminates TLS with a
  * certificate a browser already trusts. What remains is a token and an address.
  *
- * **It names a workspace, not a profile**, because that is what it pairs. The
- * surface it opens lists every connection and every profile the workspace holds,
- * and the credential it mints reads all of them — so asking which profile was
- * asking a question with no answer, and implying a per-profile pairing that does
- * not exist. `--profile` is still accepted, and picks the port when profiles
+ * **It names a workspace, not a profile**, because that is what it pairs. It
+ * does not follow that it *reaches* every profile, and it no longer does: the
+ * token opens an exchange, and what that hands back is a session naming the
+ * person at the browser and the profiles whose `members:` name them back
+ * (ADR-079). Asking which profile at mint time would still be a question with
+ * no answer — the answer belongs to whoever opens the link, and is read then. `--profile` is still accepted, and picks the port when profiles
  * disagree about one *and a port is what the address is built from*. Deployed,
  * it is not: the platform assigns one address for the whole workspace, so the
  * flag decides nothing there and is not asked for. It was asked for, for one
@@ -75,7 +77,6 @@ import { openSecretStoreFor, type GlobalFlags } from '../../runtime.ts';
 export { PAIR_CERT_REF, PAIR_KEY_REF, PAIR_TOKEN_REF };
 
 /** Where the dashboard lives, overridable so `lanes dev` can pair against it. */
-const DASHBOARD_URL = process.env['LANES_WEB_URL'] ?? 'https://lanes.sh';
 
 export interface PairFlags extends GlobalFlags {
   /** Print the link for an existing pairing and change nothing. */
@@ -126,6 +127,25 @@ export async function pair(flags: PairFlags, deps: PairDeps = {}): Promise<void>
     throw new ConfigError(
       `Workspace "${target}" has no profile "${flags.profile}".\n` +
         `  It holds: ${profiles.map((one: LoadedProfile) => one.profile).join(', ')}`,
+    );
+  }
+
+  // **A profile naming nobody is now a profile nobody can open.** It always was
+  // over MCP — empty `members:` is deny, not allow — but the dashboard used to
+  // read every profile regardless, so this is the first release where an
+  // untouched one disappears from a page its owner was reading. Said at mint
+  // time, where it can still be fixed before anybody opens the link, rather
+  // than discovered as an empty list.
+  const unreachable = profiles
+    .filter((one: LoadedProfile) => one.config.members.length === 0)
+    .map((one: LoadedProfile) => one.profile);
+
+  if (unreachable.length > 0) {
+    print(
+      style.dim(
+        `warn  ${unreachable.join(', ')} ${unreachable.length === 1 ? 'lists' : 'list'} no members, so nobody reaches ${unreachable.length === 1 ? 'it' : 'them'}.\n` +
+          `      Put yourself on one with: lanes link profile members add --me --profile <name>`,
+      ),
     );
   }
 
@@ -216,7 +236,7 @@ export async function pair(flags: PairFlags, deps: PairDeps = {}): Promise<void>
   // rotation, that whatever a browser was holding stopped working at that
   // moment.
   if (existing === null) {
-    await recordConfigChange(chosen.config, root, target, {
+    await recordConfigChange(chosen.config.instance.profile, root, target, {
       capability: rotating ? 'config.pair.rotate' : 'config.pair.mint',
       scope: target,
       arguments: { readPort, certificate },
@@ -228,19 +248,13 @@ export async function pair(flags: PairFlags, deps: PairDeps = {}): Promise<void>
     print(style.dim('      The previous pairing link no longer works. Re-open the new one.'));
   }
   print('');
-  print(ok(`the dashboard may now read ${style.bold(address)}`));
+  print(ok(`the dashboard may now sign in to ${style.bold(address)}`));
   print('');
   print(pairingLink(token, address));
   print('');
   print(
     style.dim(
-      '      Open that in a browser on this machine. The token is in the URL fragment,\n' +
-        '      so it never reaches a Lanes server.\n' +
-        '      It reads every connection, profile and audit entry in this workspace, and\n' +
-        '      can edit and delete your memory, tasks, files, skills and entities in every\n' +
-        '      profile here. It changes no connection, token, policy rule or configuration,\n' +
-        '      and never reads a vault value.\n' +
-        '      Take it back with: lanes link pair --rotate\n' +
+      `${pairingGuidance()}\n` +
         '\n' +
         `      The endpoint has to be running: lanes link start --workspace ${target}`,
     ),
@@ -310,7 +324,7 @@ async function pairDeployed(input: {
   if (existing === null) await credentials.set(PAIR_TOKEN_REF, token);
 
   if (existing === null) {
-    await recordConfigChange(chosen.config, root, target, {
+    await recordConfigChange(chosen.config.instance.profile, root, target, {
       capability: rotating ? 'config.pair.rotate' : 'config.pair.mint',
       scope: target,
       arguments: { endpoint },
@@ -318,58 +332,14 @@ async function pairDeployed(input: {
   }
 
   print(ok('no certificate needed — this endpoint already has one a browser trusts'));
-  if (rotating) {
-    print(style.dim('      The previous pairing link no longer works. Re-open the new one.'));
-  }
   print('');
-  print(ok(`the dashboard may now read ${style.bold(endpoint)}`));
+  print(ok(`the dashboard may now sign in to ${style.bold(endpoint)}`));
   print('');
   print(pairingLink(token, endpoint));
   print('');
-  print(
-    style.dim(
-      '      Open that in any browser, on any machine. The token is in the URL fragment,\n' +
-        '      so it never reaches a Lanes server.\n' +
-        '      It reads every connection, profile and audit entry in this workspace, and\n' +
-        '      can edit and delete your memory, tasks, files, skills and entities in every\n' +
-        '      profile here. It changes no connection, token, policy rule or configuration,\n' +
-        '      and never reads a vault value.\n' +
-        '      Take it back with:\n' +
-        `        lanes link pair --workspace ${target} --rotate\n` +
-        '\n' +
-        '      A rotation takes up to five seconds to be refused, because the endpoint\n' +
-        '      caches what it read rather than calling Secret Manager per request.',
-    ),
-  );
+  print(style.dim(pairingGuidance()));
 }
 
-/**
- * The link the browser opens.
- *
- * The token rides in the fragment, which is never sent to a server — so a
- * credential for a surface whose entire point is that Lanes cannot see this
- * data does not land in a Lanes access log, a proxy, or a referrer header. The
- * address rides beside it for the same reason and one more: it is the only
- * thing telling the page which of several paired endpoints this link is for,
- * and a query parameter would put a workspace's public address in that log.
- *
- * **A loopback link carries its address too**, and the parameter is required so
- * that it cannot quietly stop. It used to be omitted here on the reasoning that
- * loopback is derivable — and it is not: the read listener sits one port above
- * whatever `instance.port` says, so an endpoint on any port but the default
- * printed a link the dashboard then read at `7338`, reported unreachable, and
- * gave no way to correct. The page still treats a link with no `at=` as
- * loopback on the default port, because every link minted before this is that
- * shape.
- *
- * Exported for `pair.test.ts` and for nothing else. The whole of the defect
- * above was a shape nothing asserted on, in a command whose output no test
- * reads, so the fix is not worth much without something that fails when the
- * address goes missing again.
- */
-export function pairingLink(token: string, endpoint: string): string {
-  return `${DASHBOARD_URL}/dashboard/link#pair=${token}&at=${encodeURIComponent(endpoint)}`;
-}
 
 function isLoopback(host: string): boolean {
   return host === '127.0.0.1' || host === 'localhost' || host === '::1';

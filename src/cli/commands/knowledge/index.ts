@@ -250,16 +250,16 @@ async function useLocal(flags: KnowledgeFlags): Promise<void> {
 async function openLocalStores(
   runtime: Runtime,
 ): Promise<{ storage: BlobStore; skills: BlobStore | null }> {
-  const { openStorage } = await import('#deployments/target.ts');
+  const { openStorage, targetInput } = await import('#deployments/target.ts');
   const declared = runtime.declared;
 
   const factory = await openStorage(
-    {
+    targetInput({
       declared,
       config: runtime.config,
       root: runtime.resolution.workspaceRoot,
       target: runtime.target,
-    },
+    }),
     runtime.credentials,
   );
   // The *granted* connection, beside the profile. `layout.skills` changed

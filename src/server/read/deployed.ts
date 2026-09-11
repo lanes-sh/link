@@ -1,9 +1,8 @@
-import { PAIR_TOKEN_REF } from '#profile';
 import type { Runtime } from '#cli/runtime.ts';
 import type { Logger } from '#connectivity';
+import type { Authenticator } from '#auth';
 import type { ProfileRuntime } from '../mcp/visibility.ts';
 import { connectionRows } from './connections.ts';
-import { cachedPairingCredential } from './credential.ts';
 import type { ReadDeps } from './routes.ts';
 import type { DataSurface } from '#cli/owner-data/surface.ts';
 
@@ -12,17 +11,15 @@ import type { DataSurface } from '#cli/owner-data/surface.ts';
  *
  * Its sibling `./open.ts` binds a second TLS listener and cannot be used here:
  * Cloud Run routes exactly one port. So this returns dependencies rather than a
- * socket, and the router serves the two paths in front of its own bearer gate —
- * the pairing token never passes through the endpoint's authenticator, because
- * one shared check would make each credential able to do the other's job.
+ * socket, and the router serves these paths through the endpoint's *own*
+ * authenticator — the same one `/mcp` uses (ADR-079). There is nothing left
+ * here that a shared check could confuse, because there is only one check.
  *
- * **Nothing here reads a credential.** That is the structural half of the fix
- * `./open.ts` describes: the pairing token is read per request, behind a
- * verifier, so a Secret Manager rejection can fail a request and can no longer
- * fail a boot. Adding `PAIR_TOKEN_REF` to `readableRefs` is the other half, and
- * it stops the rejection happening at all — a bound secret with no version
- * answers 404 and reads back as `null`, which is the never-paired case and
- * renders as an ordinary `401`.
+ * **Nothing here reads a credential**, and now nothing here holds one either.
+ * The pairing token used to be read per request behind a verifier, cached so a
+ * dashboard poll was not a Secret Manager round trip apiece. A bearer is
+ * resolved by the authenticator, which does its own caching for the same
+ * reason, so this is one fewer credential to provision, bind and rotate.
  *
  * Handed to `serve()`, which discards it on a loopback bind — beside `cors`,
  * `allowedHostnames` and `meterUnauthenticated`, because it is the same kind of
@@ -32,6 +29,8 @@ export function deployedReadDeps(input: {
   readonly primary: Runtime;
   readonly profiles: () => ReadonlyMap<string, ProfileRuntime>;
   readonly log: Logger;
+  /** The endpoint's own, so both surfaces resolve a caller identically. */
+  readonly authenticate: Authenticator['authenticate'];
   readonly version: string;
   /** The owner's data, when the endpoint wired it. Absent means `/data` is a 404. */
   readonly data?: DataSurface | undefined;
@@ -47,16 +46,7 @@ export function deployedReadDeps(input: {
     // registry rather than a catalogue, so the owner layer, the vendors and a
     // workspace's own manifests are all named the same way.
     providerName: (id) => primary.registry.manifest(id)?.name,
-    // Cached, unlike loopback's. `GcpSecretManagerStore` holds nothing between
-    // calls, so a dashboard polling `/state` would be one network round trip per
-    // poll and a stranger sending a wrong token one per request — which is the
-    // ADR-054 hazard exactly: a costly read performed for a caller who has
-    // presented nothing valid.
-    credential: cachedPairingCredential({
-      read: () => primary.credentials.get(PAIR_TOKEN_REF),
-      refresh: () => primary.credentials.refresh?.(),
-      onError: (reason) => log.warn('could not read the pairing credential', { reason }),
-    }),
+    authenticate: input.authenticate,
     endpoint: { kind: 'deployed', version: input.version, certificateExpiresAt: null },
     ...(input.data ? { data: input.data } : {}),
     log,

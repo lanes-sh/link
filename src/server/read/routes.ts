@@ -1,6 +1,6 @@
 import type { Logger } from '#connectivity';
+import { mayReach, type Authenticator, type Principal } from '#auth';
 import type { ProfileRuntime } from '../mcp/visibility.ts';
-import type { PairingCredential } from './credential.ts';
 import { bearer, cors, json } from './http.ts';
 import { dataRoutes, isDataPath, DATA_HEADERS, DATA_METHODS } from './data.ts';
 import type { DataSurface } from '#cli/owner-data/surface.ts';
@@ -19,7 +19,7 @@ import {
  * the endpoint's own router, because Cloud Run routes exactly one port. The
  * split is deliberate and the sharing is the point: four of ADR-063's five
  * properties are decided in this file, so the two surfaces cannot drift into
- * two answers about what a pairing token may reach.
+ * two answers about what a caller may reach.
  *
  * Four properties, and dropping any one makes the others decorative:
  *
@@ -28,11 +28,15 @@ import {
  *    has that reach already — but this returns every connection, every profile
  *    and the whole audit log, and `cors.ts`'s wildcard was buying the absence of
  *    a required setup step that does not exist here. So it is named.
- *  - **A credential that cannot call a tool.** The pairing token, minted by
- *    `lanes link pair`, under its own ref, rotatable on its own. It is not the
- *    MCP bearer and not an OAuth token, and it never passes through the
- *    endpoint's authenticator — one shared check would make each able to do the
- *    other's job.
+ *  - **The same credential `/mcp` takes, through the same authenticator.** An
+ *    OAuth bearer the browser got by signing in with Lanes, or a static API
+ *    key: both name a uid, and both carry the profiles that uid's `members:`
+ *    rows resolved to. This surface used to have a credential of its own — the
+ *    pairing token — and that is the whole of ADR-079: it answered *does this
+ *    browser hold the workspace's secret*, never *who is holding it*, so there
+ *    was no principal to filter on and nothing filtered. A second credential
+ *    shape was also a second set of rules to keep in step, which is why the
+ *    fix is to delete one rather than to add a check to it.
  *  - **Never ambient.** An `Authorization` header the page must already hold.
  *    No cookie, no session, so `credentials: 'include'` buys an attacker
  *    nothing.
@@ -50,6 +54,7 @@ export const READ_ORIGINS: readonly string[] = ['https://lanes.sh', 'http://loca
 export const STATE_PATH = '/state';
 export const AUDIT_PATH = '/audit';
 
+
 /**
  * Whether the router should hand this path over.
  *
@@ -62,16 +67,21 @@ export function isReadPath(pathname: string): boolean {
 }
 
 /**
- * Everything a pairing token may reach, which is what the router hands over.
+ * Everything this surface serves, which is what the router hands over.
  *
  * A second predicate rather than widening `isReadPath`, because that one still
  * has a job: it names the two paths that are reads and nothing else, and a
  * predicate called "read" gating a `DELETE` would be the kind of quiet
  * disagreement between a name and a behaviour this file exists to prevent.
+ *
+ * It was `isPairedPath` while a pairing token was what reached these. Nothing
+ * is paired any more — a caller signs in — and a predicate still saying so
+ * would be the same disagreement one level up.
  */
-export function isPairedPath(pathname: string): boolean {
+export function isDashboardPath(pathname: string): boolean {
   return isReadPath(pathname) || isDataPath(pathname);
 }
+
 
 /** The most entries `/audit` will return, however many are asked for. */
 const AUDIT_CEILING = 500;
@@ -119,7 +129,22 @@ export interface ReadDeps {
    * a label and an account live on the connection and a grant carries neither.
    */
   readonly connections: () => Promise<readonly ConnectionRow[]>;
-  readonly credential: PairingCredential;
+  /**
+   * Who is calling, resolved exactly as `/mcp` resolves it.
+   *
+   * The endpoint's own authenticator, passed in rather than rebuilt — the chain
+   * of the workspace's static API keys and, where a profile declares one, its
+   * OAuth or OIDC gate (`server/authorization.ts`). So a bearer works on both
+   * surfaces or on neither, and `mayReach` is asked the same question about the
+   * same principal in both places.
+   *
+   * Every principal it can produce names a uid and carries a resolved profile
+   * list. `ownerPrincipal` — the one that reaches everything — is reachable
+   * only from the stdio pipe and the CLI, and `src/architecture.test.ts` holds
+   * that, so there is no credential arriving here that can widen past a member
+   * list.
+   */
+  readonly authenticate: Authenticator['authenticate'];
   /**
    * What each provider is called, for the row nobody has labelled.
    *
@@ -162,14 +187,13 @@ export async function readRoutes(request: Request, deps: ReadDeps): Promise<Resp
   // Whether this request is for the surface that may write (ADR-069), decided
   // once. `deps.data` absent means no data surface at all — an endpoint whose
   // runtimes were never wired answers these paths exactly as it answers an
-  // unknown one, which is the same shape as an unpaired workspace and needs no
-  // second code path.
+  // unknown one, so a bind without a data surface needs no second code path.
   const writable = deps.data !== undefined && isDataPath(url.pathname);
   const methods = writable ? DATA_METHODS : 'GET, OPTIONS';
   const permitted = (headers = 'authorization'): Record<string, string> =>
     cors(origin, allowed, methods, headers);
 
-  // Answered before the credential is checked, because a preflight carries no
+  // Answered before the caller is resolved, because a preflight carries no
   // credential — that is what it is for. It carries no data either, so
   // answering one reveals only that something is listening, which the TCP
   // connection already revealed.
@@ -200,31 +224,45 @@ export async function readRoutes(request: Request, deps: ReadDeps): Promise<Resp
   // for the same reason.
   const presented = bearer(request);
 
-  if (presented === null || !(await deps.credential.verify(presented))) {
-    return json(
-      {
-        error: 'unpaired',
-        // The page shows this verbatim. Every failure looks the same from a
-        // browser — an expired certificate, a rotated token, a listener that is
-        // not running — so the answer is always the command that fixes all of
-        // them rather than a diagnosis the page cannot make.
-        run: 'lanes link pair',
-      },
-      401,
-      permitted(),
-    );
-  }
+  // The page shows this verbatim, and it is the one answer for every way a
+  // credential can fail to name somebody — expired, revoked, never signed in.
+  // `signIn` rather than a command, because the fix is in the browser now: the
+  // page starts an authorization against this endpoint and the person signs in
+  // with Lanes, which is the same thing an MCP client does.
+  const unauthorized = (): Response =>
+    json({ error: 'unauthorized', signIn: true }, 401, permitted());
 
-  // Below the credential check, so one place verifies a pairing token and the
-  // two surfaces cannot come to disagree about who may reach them.
+  if (presented === null) return unauthorized();
+
+  // **Failing closed is the point of the `catch`.** Resolving a bearer reads
+  // the credential store, which on a deployed workspace is a network call to
+  // Secret Manager — and it answers a missing IAM binding with 403 rather than
+  // 404, so the adapter *throws* rather than returning null. Uncaught on a
+  // public URL that is a 500, and a 500 on a misconfigured binding is
+  // indistinguishable from a 500 on a bug. `authenticateRequest` wraps the
+  // `/mcp` path the same way, for the same reason.
+  const outcome = await deps
+    .authenticate(request.headers.get('authorization'))
+    .catch((reason: unknown) => {
+      deps.log?.warn('could not resolve the caller', {
+        reason: reason instanceof Error ? reason.message : String(reason),
+      });
+      return { ok: false, reason: 'invalid' } as const;
+    });
+
+  if (!outcome.ok) return unauthorized();
+  const caller: Principal = outcome.principal;
+
+  // Below the authentication, so one place decides who is calling and the two
+  // surfaces cannot come to disagree about what they may reach.
   if (writable && deps.data) {
-    return dataRoutes(request, url, deps.data, permitted(DATA_HEADERS));
+    return dataRoutes(request, url, deps.data, permitted(DATA_HEADERS), caller);
   }
 
   if (url.pathname === STATE_PATH) {
     const rows = await deps.connections().catch(() => []);
     return json(
-      readState(deps.workspace, deps.profiles(), rows, deps.endpoint, deps.providerName),
+      readState(deps.workspace, deps.profiles(), rows, deps.endpoint, caller, deps.providerName),
       200,
       permitted(),
     );
@@ -238,7 +276,13 @@ export async function readRoutes(request: Request, deps: ReadDeps): Promise<Resp
     const profile = url.searchParams.get('profile');
 
     const events = await deps.audit.tail({ limit });
-    const shown = profile ? events.filter((event) => event.profile === profile) : events;
+    // Filtered by what the caller reaches before the `profile` argument narrows
+    // it further. The log is the workspace's (ADR-063), but an entry names the
+    // profile it happened in, so an unfiltered tail would report the existence
+    // of every profile and every capability called in it to somebody no member
+    // list names.
+    const mine = events.filter((event) => mayReach(caller, event.profile));
+    const shown = profile ? mine.filter((event) => event.profile === profile) : mine;
 
     return json(
       {

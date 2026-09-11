@@ -1,31 +1,23 @@
-import { newConnectionsTemplate, newProfileTemplate, newWorkspaceTemplate } from '../config-templates.ts';
-import { DEFAULT_SURFACES } from '../config-repair.ts';
-import { mkdir, writeFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import {
-  CONNECTIONS_FILE,
-  readConnections,
   ConfigError,
-  WORKSPACE_FILE,
-  LEGACY_WORKSPACE_FILE,
-  legacyProfileConfig,
   listProfiles,
   profilePath,
   readWorkspace,
-  isRemoteWorkspace,
-  workspaceFiles,
-  writeWorkspaceFile,
   resolveTargetWorkspace,
   resolveWorkspaceRoot,
-  layout,
 } from '#profile';
 
+import { createProfile, type ProfileCreated } from './profile/create.ts';
 import { recordConfigChange } from '../audit-change.ts';
+import { provisionProfiles } from '#deployments/provision-profile.ts';
 import { nextAfterEdit, publishProfileEdit, type PublishOutcome } from '../publish.ts';
 import { resolveProfile } from '../runtime.ts';
-import { emit, ok, print, style, table } from '../output.ts';
-import { readSession } from '#auth/lanes/session.ts';
+import { emit, ok, print, style, table, warn } from '../output.ts';
+
+// Re-exported because this module is the one every caller already names, and the
+// split under it is about file size rather than about the surface. Same shape as
+// `selection.ts` re-exporting `ACCEPTS`.
+export { createProfile, type ProfileCreated };
 
 /**
  * Profile management.
@@ -41,177 +33,10 @@ import { readSession } from '#auth/lanes/session.ts';
  * terminal should not have to parse one.
  */
 
-const FIRST_PORT = 7337;
-
-export interface ProfileCreated {
-  readonly name: string;
-  readonly path: string;
-  readonly port: number;
-  /** Every target the new profile declares, in the order they were named. */
-  readonly targets: readonly string[];
-  /** Which sibling supplied each non-local target's adapters, where one did. */
-  readonly copiedFrom: Readonly<Record<string, string>>;
-  /**
-   * What the endpoint did with it, in a form fit to print.
-   *
-   * Absent from `createProfile`, which writes the file and tells nobody. It is
-   * `profileAdd` that publishes, so it is `profileAdd` that fills this in.
-   */
-  readonly published?: string;
-}
-
 export interface ProfileListing {
   readonly root: string;
   readonly default: string | undefined;
   readonly profiles: ReadonlyArray<{ readonly name: string; readonly path: string }>;
-}
-
-/**
- * Write a new profile, and the workspace file if this is the first one.
- *
- * The target is the argument that used to be missing. `--target` was accepted
- * and dropped here, and the template could only ever emit `local` — so the
- * command reported success and produced a profile that could not reach the
- * deployment the operator had just told it about.
- *
- * It now decides *where the file goes* rather than what is written in it: a
- * profile lives in one target's workspace and declares nothing about it
- * (ADR-052), so `--workspace cloud` writes into the bucket the endpoint there
- * reads from.
- *
- * **Writing it is not enough, and this comment is where that was missed.** It
- * used to say the endpoint "serves it on its next reconcile". There is no next
- * reconcile: a running endpoint lists the profiles once, at boot or at a
- * reload (`openReconciled`), so a profile added underneath one stayed durable
- * and invisible — to `/state`, and so to the dashboard, and to every client —
- * until the revision restarted. `profileAdd` notifies for the same reason every
- * other config edit does; see below.
- */
-/**
- * Which connection each owner-layer surface sits under, in this workspace.
- *
- * Read from `connections.yaml` rather than assumed, because the ids in that
- * file are assigned in creation order and a workspace whose owner layer arrived
- * in a different order holds them under different ones. A profile written
- * against the wrong ids is refused by `assertGrantsResolve` and then *skipped*
- * by `openReconciled`, so it exists, is never served, and says so only in the
- * endpoint's log.
- *
- * **The first row per provider**, which is the rule `ensureReservedConnection`
- * already applies and states: any instance will do, and taking the first means
- * an operator who renamed theirs does not get a second one bolted on beside it.
- *
- * A surface with no row at all is absent from the map and therefore ungranted.
- * That is the honest outcome: `ensureOwnerLayer` writes both halves on the next
- * `start`, where inventing a ref here would produce a profile that never loads.
- */
-async function ownedSurfaces(workspaceRoot: string): Promise<Map<string, string>> {
-  const owned = new Map<string, string>();
-
-  // Absent or unreadable is not a failure. `createProfile` seeds the file just
-  // above this when the workspace has none, and a workspace holding one that
-  // cannot be parsed is a problem for `doctor` rather than a reason to refuse a
-  // profile.
-  const held = await readConnections(workspaceRoot).catch(() => null);
-
-  for (const surface of DEFAULT_SURFACES) {
-    const row = held?.connections.find((one) => one.provider === surface);
-    if (row) owned.set(surface, `${surface}.${row.id}`);
-  }
-
-  return owned;
-}
-
-export async function createProfile(
-  name: string,
-  options: { targets: readonly string[]; nonInteractive?: boolean },
-): Promise<ProfileCreated> {
-  const local = resolveWorkspaceRoot();
-  const target = options.targets[0]!;
-
-  // The workspace file before the target is resolved, not after. `profile add
-  // <name> --workspace local` on an empty directory is how a workspace comes into
-  // existence, and the target it names is declared *by* that file — so writing
-  // it second means resolving a target nothing has declared yet.
-  // **Either name, and an unmigrated workspace is refused rather than
-  // shadowed.** `resolveWorkspaceRoot` accepts both markers, so this ran
-  // against a contract-3 workspace, found no `workspaces.yaml`, and wrote a
-  // fresh template beside `lanes-link.yaml` — `readWorkspace` prefers the new
-  // name, so every declared target and deployment record vanished, and
-  // `renameRegistry` returns early once the new file exists, so no migration
-  // could put them back.
-  if (!isRemoteWorkspace(local)) {
-    if (existsSync(join(local, LEGACY_WORKSPACE_FILE)) && !existsSync(join(local, WORKSPACE_FILE))) {
-      throw new ConfigError(
-        `${local} is still laid out the way contract 3 kept it, and adding a profile here would ` +
-          'write a second registry beside the one it already has.\n' +
-          '  Migrate it first: lanes link doctor --fix --profile <name> --workspace <name>',
-      );
-    }
-
-    if (!existsSync(join(local, WORKSPACE_FILE))) {
-      await mkdir(local, { recursive: true });
-      await writeFile(join(local, WORKSPACE_FILE), newWorkspaceTemplate(), { mode: 0o600 });
-    }
-  }
-
-  const root = await resolveTargetWorkspace(local, target);
-  const path = profilePath(root, name);
-
-  // The connections file comes into existence with the workspace, carrying the
-  // owner layer. It is written before the profile because the profile's grants
-  // name rows in it, and `assertGrantsResolve` refuses a grant with nothing
-  // behind it — so a profile written first would not load until this existed.
-  if (!(await workspaceFiles(root).has(CONNECTIONS_FILE))) {
-    await writeWorkspaceFile(workspaceFiles(root), CONNECTIONS_FILE, newConnectionsTemplate());
-  }
-
-  // Both shapes, for the same reason: `listProfiles` sees a contract-3
-  // `profiles/<name>.yaml` and this did not, so `profile add personal` wrote a
-  // fresh template alongside the operator's own — one name, two files, and the
-  // empty one opened. `doctor --fix` then planned a move onto an occupied
-  // destination and threw on every rerun.
-  for (const key of [layout.profileConfig(name), legacyProfileConfig(name)]) {
-    if (await workspaceFiles(root).has(key)) {
-      throw new Error(`Profile "${name}" already exists at ${root}/${key}`);
-    }
-  }
-
-  // Only a directory needs making. A bucket has no directories, and the write
-  // that follows creates the key outright.
-  if (!isRemoteWorkspace(root)) await mkdir(join(root, 'profiles'), { recursive: true });
-
-  // Each profile gets its own port so two can serve at once without an
-  // operator having to think about it.
-  const existing = await listProfiles(root);
-  const port = FIRST_PORT + existing.length;
-
-  // The prompting that used to happen here is gone. A new profile had to be
-  // given an adapter block per target it declared, and for anything but `local`
-  // there was nothing safe to derive one from — so the command copied a
-  // sibling's, or asked. It declares no target now (ADR-052): it is written into
-  // the workspace of the target it was named with, and that workspace already
-  // says where its bytes go.
-  // The signed-in subject, so the profile reaches somebody the moment it
-  // exists. Without it every new profile shipped `members: []` while the
-  // template writes `authorization: mode: self` — an endpoint that advertises
-  // OAuth and lists nobody, where the owner signs in at lanes.sh and is told no
-  // profile lists them. A local stdio or CI caller still worked, which is why a
-  // smoke test passed: those carry `profiles: undefined` and `mayReach` admits
-  // everything.
-  //
-  // Null when nobody is signed in, which is a real state — `lanes auth login`
-  // has not been run yet — and the template then says how to fix it rather than
-  // inventing a subject.
-  const session = await readSession();
-
-  await writeWorkspaceFile(
-    workspaceFiles(root),
-    layout.profileConfig(name),
-    newProfileTemplate(name, port, await ownedSurfaces(root), session?.subject),
-  );
-
-  return { name, path, port, targets: options.targets, copiedFrom: {} };
 }
 
 /**
@@ -276,22 +101,76 @@ export async function profileAdd(
     );
   }
 
-  const created = await createProfile(name, options);
+  const primary = options.targets[0]!;
+
+  // **A profile that is already there is provisioned rather than refused**, and
+  // that is why there is no second verb for it. What a deployed target needs
+  // doing to serve a profile is the same work whether the profile was written a
+  // moment ago or last month — so a command that only did it while creating
+  // would leave every profile that predates this one reachable by nothing but a
+  // full deploy. `add` is the word for "make this profile usable here".
+  //
+  // It is still not an overwrite: nothing is rewritten, and `createProfile`
+  // keeps refusing to write a second file over an existing one.
+  const already = await declaredAlready(primary, name);
+  const created = already ? null : await createProfile(name, options);
 
   // Re-read rather than assembled from `created`, because the file on disk is
   // what a workspace with a remote credential store needs to open one.
-  const primary = created.targets[0]!;
-  const { resolution, config } = await resolveProfile({ profile: created.name, target: primary });
-  await recordConfigChange(config, resolution.workspaceRoot, primary, {
-    capability: 'config.profile.add',
-    scope: created.name,
-    arguments: { port: created.port, workspace: primary },
+  const { resolution, config } = await resolveProfile({ profile: name, target: primary });
+  const facts = {
+    name,
+    path: resolution.profilePath,
+    port: config.instance.port,
+    targets: options.targets,
+    copiedFrom: created?.copiedFrom ?? {},
+    ...(already ? { existed: true } : {}),
+  };
+
+  // Only what actually changed the config. Provisioning an existing profile
+  // creates cloud resources and edits nothing here, so recording it as an `add`
+  // would put a config change in the log that no file reflects.
+  if (created) {
+    await recordConfigChange(config.instance.profile, resolution.workspaceRoot, primary, {
+      capability: 'config.profile.add',
+      scope: name,
+      arguments: { port: created.port, workspace: primary },
+    });
+  }
+
+  // **Before the notify, and that ordering is the whole of it.** A running
+  // revision reads a credential by reference at request time, so what a profile
+  // created since the last rollout is missing is the secret container and the
+  // grant that lets the runtime identity read it — not a revision. Reload first
+  // and the endpoint asks for a ref no binding covers, takes the 403 that Secret
+  // Manager returns instead of a 404, and skips the profile for the life of that
+  // generation. It would then have been *told* about a profile it had just
+  // decided it could not open.
+  //
+  // Unconditional, because "which targets need this" is a question the target
+  // already answers: `provisionProfiles` returns `applicable: false` for one
+  // that declares no deployment, so a local workspace reaches no cloud and a
+  // deployed one always gets what it needs. A flag here would only let somebody
+  // create the broken state on purpose.
+  //
+  // Never fatal, for the same reason the publish below is not: the profile is on
+  // disk either way. A missing cloud CLI or a refused IAM call comes back as a
+  // reason and is printed as a next step. See `provisionProfiles`.
+  const provisioned = await provisionProfiles({
+    workspaceRoot: resolution.workspaceRoot,
+    target: primary,
+    profiles: [name],
   });
 
   // Told to the endpoint that has to serve it, exactly as every other config
   // edit tells it (ADR-029). This was the one edit that did not, and a profile
   // created against a live workspace was invisible until the endpoint next
   // started — see the header.
+  //
+  // It matters just as much on the path where nothing was created: a generation
+  // that already skipped this profile holds that decision until it re-reads, so
+  // provisioning without the reload would fix the credentials and change
+  // nothing anybody can see.
   //
   // **Wrapped, because this must not be able to fail the creation.** `profile
   // add` is the command that may have *just written* the workspace it is
@@ -311,25 +190,69 @@ export async function profileAdd(
 
   const published = publishedAfterCreate(outcome);
 
-  return emit(options.json, { ...created, ...(published ? { published } : {}) }, () => {
-    print(ok(`created profile ${style.bold(created.name)}`));
-    print(`      config   ${created.path}`);
-    print(`      port     ${created.port}`);
-    print(`      workspace  ${created.targets.join(', ')}`);
+  return emit(
+    options.json,
+    {
+      ...facts,
+      ...(published ? { published } : {}),
+      ...(provisioned.reason ? { provisioning: provisioned.reason } : {}),
+    },
+    () => {
+      print(
+        ok(
+          already
+            ? `${style.bold(name)} already exists — made sure ${primary} can serve it`
+            : `created profile ${style.bold(name)}`,
+        ),
+      );
+      print(`      config   ${facts.path}`);
+      print(`      port     ${facts.port}`);
+      print(`      workspace  ${options.targets.join(', ')}`);
 
-    for (const [target, from] of Object.entries(created.copiedFrom)) {
-      print(`      ${style.dim(`${target} adapters copied from profile "${from}"`)}`);
-    }
+      for (const [target, from] of Object.entries(facts.copiedFrom)) {
+        print(`      ${style.dim(`${target} adapters copied from profile "${from}"`)}`);
+      }
 
-    if (published) print(`      ${style.dim(published)}`);
+      // Named rather than folded into the serving line, because they fail
+      // independently: provisioning can succeed against a target whose endpoint
+      // is not answering, and a reachable endpoint can refuse a profile whose
+      // grants were never provisioned. One line each says which happened.
+      if (provisioned.reason) {
+        print(warn(`could not provision credentials for ${name}: ${provisioned.reason}`));
+        print(
+          style.dim(
+            `      The endpoint cannot open it until this is fixed. Retry with: ` +
+              `lanes link profile add ${name} --workspace ${primary}`,
+          ),
+        );
+      }
 
-    print();
-    print(
-      style.dim(
-        `Next: lanes link connect example --profile ${created.name} --workspace ${created.targets[0]}`,
-      ),
-    );
-  });
+      if (published) print(`      ${style.dim(published)}`);
+
+      print();
+      print(
+        style.dim(`Next: lanes link connect example --profile ${name} --workspace ${primary}`),
+      );
+    },
+  );
+}
+
+/**
+ * Whether this target's workspace already holds a profile by this name.
+ *
+ * False on any failure, deliberately. A workspace that does not exist yet and a
+ * target nothing declares both land here on the first `profile add` of a new
+ * install — and neither is a reason to refuse, because `createProfile` is what
+ * bootstraps the first workspace and what reports a target properly when it
+ * cannot. Guessing "not there" sends both to the path that handles them.
+ */
+async function declaredAlready(target: string, name: string): Promise<boolean> {
+  try {
+    const root = await resolveTargetWorkspace(resolveWorkspaceRoot(), target);
+    return (await listProfiles(root)).includes(name);
+  } catch {
+    return false;
+  }
 }
 
 export async function profileList(

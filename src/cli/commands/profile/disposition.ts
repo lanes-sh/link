@@ -57,11 +57,24 @@ export async function settleDisposition(
   flags: { readonly deleteData?: boolean | undefined; readonly migrateTo?: string | undefined },
   prompter: Prompter,
   someoneToAsk: boolean,
+  /**
+   * Why migrating is not on offer, where it is not.
+   *
+   * Set by a removal working from a config that would not load (#219). The
+   * whole message rather than a boolean, because the caller is the one that
+   * knows *why* — and a refusal that only says "no" for a question the prompt
+   * was about to ask is worse than the question.
+   */
+  migrationRefused?: string | undefined,
 ): Promise<Disposition | null> {
   if (flags.migrateTo !== undefined && flags.deleteData === true) {
     throw new ConfigError(
       '--delete-data and --migrate-to say opposite things about the same bytes. Pass one.',
     );
+  }
+
+  if (flags.migrateTo !== undefined && migrationRefused !== undefined) {
+    throw new ConfigError(migrationRefused);
   }
 
   if (flags.migrateTo !== undefined) return { kind: 'migrate', into: flags.migrateTo };
@@ -71,19 +84,24 @@ export async function settleDisposition(
     throw new ConfigError(
       `"${profile}" owns memory, tasks, assets and skills, and this does not guess at what ` +
         'becomes of them.\n' +
-        '  Say which: --delete-data, or --migrate-to <profile>',
+        (migrationRefused !== undefined
+          ? '  Say so: --delete-data'
+          : '  Say which: --delete-data, or --migrate-to <profile>'),
     );
   }
 
   const answer = (
     await prompter.ask(
-      `What becomes of ${profile}'s memory, tasks, assets and skills?\n` +
-        `  [d] delete them   [m] move them into another profile   [anything else] stop`,
+      (migrationRefused !== undefined ? `${migrationRefused}\n\n` : '') +
+        `What becomes of ${profile}'s memory, tasks, assets and skills?\n` +
+        (migrationRefused !== undefined
+          ? '  [d] delete them   [anything else] stop'
+          : '  [d] delete them   [m] move them into another profile   [anything else] stop'),
     )
   ).trim().toLowerCase();
 
   if (answer === 'd') return { kind: 'delete' };
-  if (answer !== 'm') return null;
+  if (answer !== 'm' || migrationRefused !== undefined) return null;
 
   const into = (await prompter.ask('Move them into which profile?')).trim();
   return into.length === 0 ? null : { kind: 'migrate', into };

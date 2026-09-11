@@ -2,14 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import type { Config, TargetConfig } from '#profile';
 import type { SecretRef, SecretStore } from '#secrets';
 import type { BlobMetadata, BlobStore } from '#stores/blobs';
-import { buildRegistry } from '../../runtime/registry.ts';
-import {
-  declaredRefs,
-  removalPlan,
-  renderPlan,
-  type RemovalItem,
-  type RemovalPlan,
-} from './removal.ts';
+import { removalPlan, type RemovalItem, type RemovalPlan } from './removal.ts';
+import { renderPlan } from './preview.ts';
+import { declaredRefs, subjectOf, type RemovalSubject } from './subject.ts';
 
 /**
  * Which credentials a profile may have its removal delete.
@@ -19,8 +14,6 @@ import {
  * to one project shares a flat namespace, so `list()` answers with other
  * profiles' credentials too — and deleting those is not recoverable.
  */
-
-const registry = buildRegistry();
 
 const target = (over: Partial<TargetConfig> = {}): TargetConfig =>
   ({
@@ -39,9 +32,12 @@ const config = (over: Partial<Config> = {}): Config =>
     ...over,
   }) as unknown as Config;
 
+/** What a removal reads of a profile whose config loaded. */
+const subject = (over: Partial<Config> = {}): RemovalSubject => subjectOf(config(over));
+
 describe('declaredRefs', () => {
   test('covers nothing an account owns, and no endpoint token', () => {
-    const refs = declaredRefs(config(), target());
+    const refs = declaredRefs(subject(), target());
 
     // **Not the endpoint token.** It is the workspace's since ADR-068, so a
     // profile declares none and removing one cannot reach it. This is the fix
@@ -61,7 +57,7 @@ describe('declaredRefs', () => {
 
   test('an oidc audience ref travels with the profile, because it is the profile\'s', () => {
     const refs = declaredRefs(
-      config({
+      subject({
         auth: {
           mode: 'bearer',
           authorization: {
@@ -84,8 +80,8 @@ describe('declaredRefs', () => {
     // would attach one target's vault to another's removal.
     const sealed = target({ vault: { adapter: 'secret', ref: 'vault/document' } } as never);
 
-    expect(declaredRefs(config(), sealed)).toContain('vault/document');
-    expect(declaredRefs(config(), target())).not.toContain('vault/document');
+    expect(declaredRefs(subject(), sealed)).toContain('vault/document');
+    expect(declaredRefs(subject(), target())).not.toContain('vault/document');
   });
 
   test('a secret adapter with no ref names the profile and connection, not a constant', () => {
@@ -97,8 +93,8 @@ describe('declaredRefs', () => {
     // material belonging to a profile the operator asked to be gone.
     const sealed = target({ vault: { adapter: 'secret' } } as never);
 
-    expect(declaredRefs(config(), sealed)).toContain('vault/personal/main');
-    expect(declaredRefs(config(), sealed)).not.toContain('vault/document');
+    expect(declaredRefs(subject(), sealed)).toContain('vault/personal/main');
+    expect(declaredRefs(subject(), sealed)).not.toContain('vault/document');
   });
 
   test('a connection whose provider no longer resolves contributes nothing', () => {
@@ -108,7 +104,7 @@ describe('declaredRefs', () => {
       connections: [{ id: 'x', provider: 'no_such_provider', account: 'x' }],
     } as never);
 
-    const refs = declaredRefs(gone, target());
+    const refs = declaredRefs(subjectOf(gone), target());
 
     expect(refs).not.toContain('no_such_provider/x');
   });
@@ -126,7 +122,7 @@ describe('declaredRefs', () => {
     } as never);
 
     const refs = declaredRefs(
-      withConnections,
+      subjectOf(withConnections),
       target({ vault: { adapter: 'secret', ref: 'vault/document' } } as never),
     );
 
@@ -140,7 +136,7 @@ describe('declaredRefs', () => {
     // no longer a case at all: it is not a profile's to declare (ADR-068).
     const sealed = target({ vault: { adapter: 'secret', ref: 'vault/document' } } as never);
 
-    expect(declaredRefs(config(), sealed, [config()])).toEqual([]);
+    expect(declaredRefs(subject(), sealed, [subject()])).toEqual([]);
   });
 
   test('with nobody staying, the vault is still the profile\'s to lose', () => {
@@ -150,7 +146,7 @@ describe('declaredRefs', () => {
     // issued tokens intact, because they were never that profile's.
     const sealed = target({ vault: { adapter: 'secret', ref: 'vault/document' } } as never);
 
-    expect(declaredRefs(config(), sealed, [])).toEqual(['vault/document']);
+    expect(declaredRefs(subject(), sealed, [])).toEqual(['vault/document']);
   });
 });
 
@@ -187,7 +183,7 @@ describe('removalPlan', () => {
     // It used to loop over every target the profile declared. A profile lives in
     // exactly one (ADR-052), so the caller resolves that one and hands its
     // adapters in — there is no set here to iterate.
-    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
+    const plan = await removalPlan(subject(), '/ws', 'personal', {
       target: 'local',
       declared: target(),
       disposition: { kind: 'delete' as const },
@@ -209,7 +205,7 @@ describe('removalPlan', () => {
     // then would have queued every byte in the workspace for deletion because
     // one profile was going. The profile has a directory again (ADR-066), so
     // the sweep is bounded by it.
-    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
+    const plan = await removalPlan(subject(), '/ws', 'personal', {
       target: 'local',
       declared: target(),
       disposition: { kind: 'delete' as const },
@@ -239,7 +235,7 @@ describe('removalPlan', () => {
   });
 
   test('--migrate-to sends every object into the other profile rather than deleting it', async () => {
-    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
+    const plan = await removalPlan(subject(), '/ws', 'personal', {
       target: 'local',
       declared: target(),
       disposition: { kind: 'migrate' as const, into: 'work' },
@@ -269,7 +265,7 @@ describe('removalPlan', () => {
     // hold `vault.d/lan5.enc` since the owner layer merged, so a copy always
     // collided and had its source deleted, leaving the items unreachable.
     await expect(
-      removalPlan(config(), '/ws', 'personal', registry, {
+      removalPlan(subject(), '/ws', 'personal', {
         target: 'local',
         declared: target(),
         disposition: { kind: 'migrate' as const, into: 'work' },
@@ -279,7 +275,7 @@ describe('removalPlan', () => {
       }),
     ).rejects.toThrow(/vault cannot be merged[\s\S]*--delete-data/);
 
-    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
+    const plan = await removalPlan(subject(), '/ws', 'personal', {
       target: 'local',
       declared: target(),
       disposition: { kind: 'migrate' as const, into: 'work' },
@@ -301,7 +297,7 @@ describe('removalPlan', () => {
     // the preview they confirm from and the execution has no decision to make.
     // The suffix goes before the extension: an asset's key is whatever the file
     // was called, and `note.md-2` is a file nothing will open.
-    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
+    const plan = await removalPlan(subject(), '/ws', 'personal', {
       target: 'local',
       declared: target(),
       disposition: { kind: 'migrate' as const, into: 'work' },
@@ -325,7 +321,7 @@ describe('removalPlan', () => {
     // Renaming only the directory is worse: the frontmatter keeps declaring the
     // old name, and `skills list` then refuses for the whole profile.
     await expect(
-      removalPlan(config(), '/ws', 'personal', registry, {
+      removalPlan(subject(), '/ws', 'personal', {
         target: 'local',
         declared: target(),
         disposition: { kind: 'migrate' as const, into: 'work' },
@@ -339,7 +335,7 @@ describe('removalPlan', () => {
   });
 
   test('a skill only one of them has migrates, whole', async () => {
-    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
+    const plan = await removalPlan(subject(), '/ws', 'personal', {
       target: 'local',
       declared: target(),
       disposition: { kind: 'migrate' as const, into: 'work' },
@@ -359,7 +355,7 @@ describe('removalPlan', () => {
   });
 
   test('the local config is the last item, because it is the record of where things are', async () => {
-    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
+    const plan = await removalPlan(subject(), '/ws', 'personal', {
       target: 'local',
       declared: target(),
       disposition: { kind: 'delete' as const },
@@ -375,11 +371,9 @@ describe('removalPlan', () => {
     // sealed per target and named by it, so it goes with the removal. Contrasted
     // against an account's, which outlives the profile whatever the profile said.
     const plan = await removalPlan(
-      config(),
+      subject(),
       '/ws',
-      'personal',
-      registry,
-      {
+      'personal', {
         target: 'local',
         declared: target({ vault: { adapter: 'secret', ref: 'vault/document' } } as never),
         disposition: { kind: 'delete' as const },
@@ -394,7 +388,7 @@ describe('removalPlan', () => {
   });
 
   test('the profile config goes too, because it lives in that target', async () => {
-    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
+    const plan = await removalPlan(subject(), '/ws', 'personal', {
       target: 'cloud',
       declared: target(),
       disposition: { kind: 'delete' as const },
@@ -409,7 +403,7 @@ describe('removalPlan', () => {
   });
 
   test('a deployed target warns that its endpoint keeps answering with nothing behind it', async () => {
-    const plan = await removalPlan(config(), '/ws', 'personal', registry, {
+    const plan = await removalPlan(subject(), '/ws', 'personal', {
       target: 'cloud',
       declared: target({
         deploy: { platform: 'cloudrun', project: 'my-project', region: 'r', service: 's' },
@@ -446,6 +440,17 @@ function captured(body: () => void): string {
 
 const samplePlan = (over: Partial<RemovalPlan> = {}): RemovalPlan => ({
   profile: 'personal',
+  unreachable: [],
+  subject: {
+    loaded: true,
+    name: 'personal',
+    assumedName: false,
+    vaultConnection: null,
+    clientIdRef: null,
+    knowledgeRepo: null,
+    unread: [],
+    refusal: null,
+  },
   items: [
     { target: 'local', kind: 'secret', id: 'gmail/someone' },
     { target: 'local', kind: 'blob', id: 'state.kv/a' },

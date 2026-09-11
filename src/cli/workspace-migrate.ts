@@ -27,7 +27,7 @@ import { C3 } from './contract3-layout.ts';
  *
  * Under contract 1 every profile carried a `targets:` block naming the adapter
  * sets it could be opened against. That is what made a deploy leave two copies
- * of each profile — one in `~/.lanes-link`, one in the bucket the endpoint reads
+ * of each profile — one under the Lanes home, one in the bucket the endpoint reads
  * — and gave them nothing to keep them honest. It failed the way it was always
  * going to: a local file was rewritten, lost its cloud target and eight
  * connections, and `status --workspace cloud` reported seven where the endpoint was

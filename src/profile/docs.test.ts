@@ -3,7 +3,7 @@ import { readdir, readFile } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { workspaceSchema } from './schema.ts';
-import { installRoot } from './workspace.ts';
+import { installRoot } from '#home';
 import { parseConfig } from './load.ts';
 import { parseManifest } from '#providers/custom/index.ts';
 

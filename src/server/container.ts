@@ -20,7 +20,7 @@ import { streamLogger } from './logging.ts';
  *                      the image, because the bucket is the operator's and the
  *                      image is meant to serve any workspace (ADR-023).
  *                      Unset, `resolveWorkspaceRoot` falls back to
- *                      `~/.lanes-link`, which in a container is a directory
+ *                      `~/.lanes/link`, which in a container is a directory
  *                      nobody wrote — so the endpoint refuses rather than
  *                      serving an empty workspace.
  *   LANES_LINK_TARGET   which target's adapters to open. Baked to `cloud`.

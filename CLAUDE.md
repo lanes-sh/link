@@ -42,23 +42,28 @@ The one pull request that is not squashed is the release; see below.
 URL, or a "Generated with Claude Code" footer, to a pull request body. This repository is public
 and the link is noise to everyone reading it. The `Co-Authored-By` trailer on commits is fine.
 
-## Never run `lanes link` from a worktree without `LANES_LINK_HOME`
+## A worktree gets its own workspace, and you should still read the path it prints
 
-`resolveWorkspaceRoot` (`src/profile/workspace.ts`) checks `LANES_LINK_HOME`, then
-walks ancestors for `lanes-link.yaml`, then falls back to `~/.lanes-link`. A worktree has neither
-of the first two — so a verification command run from one writes into the operator's real
-workspace, which holds their live profiles, credentials, state, and audit log. Worse than reading
-it: `lanes link deploy` and `lanes link sync targets` both *write* there — one uploads config to a
-bucket and records the deployment, the other merges a remote copy into their profiles.
+This used to be a rule you had to remember: export `LANES_LINK_HOME` before running anything from a
+worktree, because the fallback reached the operator's real workspace. It is now handled — ADR-077,
+`src/home/index.ts`. A checkout resolves to `~/.lanes-dev/link` and cannot reach `~/.lanes/link` by
+accident, because `homeWorkspaceRoot` refuses to hand a checkout the real root at all.
 
-```console
-$ export LANES_LINK_HOME=/tmp/lanes-link-scratch
-$ lanes link start --port 7401     # the usual port is already serving the real endpoint
-```
+The chain is `LANES_LINK_HOME`, then an ancestor holding `workspaces.yaml`, then `~/.lanes-dev/link`
+from a checkout or `~/.lanes/link` from an install. Dev mode is decided by whether `tsconfig.json`
+sits at the install root, which is true in a checkout and in nothing that ships.
 
-Nothing in the output distinguishes the scratch workspace from the real one except the path it
-prints, so check it. A `/health` response naming a profile you did not create means you are
-talking to their server.
+Two things still bite:
+
+- **`LANES_LINK_DEV=0` turns it off**, and is the only way to reach a real workspace from here. That
+  is deliberate — see the deploy section below, which is the one place it is the right thing to do.
+- **A dev run has its own Lanes session**, at `~/.lanes-dev/credentials.json`. `lanes link start`
+  requires a session (ADR-060), so expect to `lanes auth login` once inside dev mode. It is a
+  separate sign-in on purpose: signing out in a test must not sign the operator out.
+
+Nothing in the output distinguishes the dev workspace from the real one except the path it prints,
+so check it. A `/health` response naming a profile you did not create means you are talking to their
+server.
 
 ## Anything touching a real account is the operator's call
 
@@ -82,9 +87,15 @@ $ bun run ./src/cli/lanes.ts link deploy --workspace <target>
 
 That builds an image from the branch and rolls a revision on a real target. Three things about it:
 
-- **`LANES_LINK_HOME` stays unset for this, deliberately** — the opposite of the rule above,
-  because the point is to reach a real deployment. So the target is the operator's, the deploy is
-  theirs to authorise, and a broken revision is theirs to live with until the next one. Ask.
+- **`LANES_LINK_DEV=0` is required for this, deliberately** — the opposite of the rule above,
+  because the point is to reach a real deployment. A worktree is a checkout, so without it the
+  command reads `~/.lanes-dev/link` and finds no target to deploy to. So the target is the
+  operator's, the deploy is theirs to authorise, and a broken revision is theirs to live with until
+  the next one. Ask.
+
+  ```console
+  $ LANES_LINK_DEV=0 bun run ./src/cli/lanes.ts link deploy --workspace <target>
+  ```
 - **A previous revision is still there.** Cloud Run keeps them and traffic can be moved back, which
   is what makes this recoverable and a bad npm publish not.
 - **Verify against the endpoint, not the command's exit code.** `POST /reload` returns the
@@ -93,11 +104,59 @@ That builds an image from the branch and rolls a revision on a real target. Thre
   same question filtered to the caller's own member profiles, so a profile missing from it may be a
   membership problem rather than a serving one. Check both before believing either.
 
-A profile is the case that keeps proving this. `deploy` binds one secret per profile into the
-revision, so a profile created *since* the last deploy cannot be opened by the running one however
-many times it re-reads its config — and `openReconciled` skips a profile it cannot open rather
-than failing the endpoint for its siblings. Adding a profile to a deployed target is therefore two
-steps, and the second one is a deploy.
+A profile is the case that keeps proving this, and what it proves is not what this file used to
+say. A revision does **not** carry a per-profile secret: it reads a credential by reference at
+request time, so what a profile created since the last deploy lacks is the secret container and the
+resource-level grant that lets the runtime identity read it. Neither is a property of a revision,
+and creating them rolls none — `profile add` does it, unconditionally, and on a profile that
+already exists as readily as on a new one. There is deliberately no separate `provision` verb and
+no flag to skip it: what a deployed target needs before it can serve a profile does not depend on
+how old the profile is, and a target that declares no deployment reports `applicable: false` and
+reaches no cloud. So `profile add <existing> --workspace <target>` is how a profile that predates
+this — or one whose provisioning failed — is made servable.
+
+What made it look like a redeploy is the shape of the failure. Secret Manager answers a missing
+binding with 403 rather than 404, so that an identity cannot enumerate secrets by their error
+codes; the adapter returns null for a 404 and *throws* for a 403. So an unprovisioned ref throws on
+the open path, `openReconciled` skips the profile rather than failing the endpoint for its
+siblings, and from outside that reads exactly like a profile that does not exist. Bound, the same
+read becomes the 404 — a secret with no version, which reads back as null and opens an empty vault.
+
+The endpoint reports the skip (`not serving <profile>: <reason>` in its log) and `/reload` returns
+the set that actually opened, so those are the two places to look. `notifyReload` compares what it
+published against that set, which is why a command no longer says "Serving it now" for a profile
+the endpoint refused.
+
+**A new feature gets the same rehearsal, and the rule is not only about fixes.** Anything that
+changes what reaches the wire — a new tool, a new field on an advertised schema, a renamed id, a
+change to what `tools/list` or a search result carries — is deployed to a real target from its
+branch and exercised against the endpoint before the pull request is called done. A harness proves
+the code. It cannot prove that a hosted client still parses the result, because the harness is not
+the client and an output schema the spec requires a server to conform to is checked by whoever
+consumes it. Write what was run into the pull request body, and write what was *not* covered
+beside it.
+
+What exercising it means, at minimum:
+
+- **`POST /reload`, `/health`, and the container log, all three.** Each answers a different
+  question, and any one of them alone has already been believed wrongly: `/health` is filtered to
+  the caller's own member profiles, so a profile missing from it may be a membership problem
+  rather than a serving one, and only the log carries `not serving <profile>: <reason>`.
+- **`tools/list` read off the wire, counted, and compared with the `tools` that `/reload`
+  returned.** Those two disagreeing is the failure ADR-032 exists for.
+- **The feature reached both ways it can be** — the typed tool and `lanes_tools_call` — because
+  under `surface: crunched` most callers only have the second, and that is the path a unit test is
+  least likely to be exercising.
+- **A refusal, not just a success.** Name a profile the caller is not on, and name one profile
+  with another profile's connection. A feature is not verified until its refusals are, and those
+  depend on the member list the deployed endpoint actually loaded rather than on the one in the
+  test fixture.
+- **Do it on a sandbox profile.** One holding the owner layer and no external account means a
+  wrong call during a rehearsal writes nothing to a real mailbox, calendar, or bank.
+
+A revision is recoverable and this is why it is safe to ask for: Cloud Run keeps the previous one
+and traffic can be moved back, which a published npm version cannot be. Note the revision that was
+serving before you deployed, so moving back is one command and not an investigation.
 
 ## A release publishes, and npm does not give a version back
 
@@ -158,9 +217,20 @@ per line. Keep your own handles there: git only knows the address you commit und
 that leaked here came from a personal mailbox git had never seen. A denylist inside the repository
 cannot work, because writing the name into it is the thing being prevented.
 
+**The rule is about what becomes public, and the test only reaches the files.** A pull request
+body, a commit message, an issue comment and a review reply are all public on this repository and
+none of them is scanned by anything — `architecture.test.ts` reads the tree, so a commit message
+is outside it and a PR body was never in it. The rehearsal section above makes this sharper rather
+than softer: it asks for what was deployed and exercised to be written into a pull request, which
+is an invitation to paste a project, a bucket, a service name, a revision, an endpoint URL, or the
+address an account was connected under. Name none of them. "A developer project", "a real target",
+"the previous revision" carry everything a reviewer needs, and a reviewer who needs the actual
+identifier is someone who already has it. The one check that exists runs before a commit lands and
+not before a comment is posted, so this one is on you.
+
 ## Where things are
 
-One package, one `src/`, thirteen components. Cross-component imports go through the
+One package, one `src/`, fourteen components. Cross-component imports go through the
 package.json `imports` map: `#policy`, `#stores/state`, `#providers/google/gmail`. There
 are no workspace packages and no `apps/` or `packages/` — see the layout table in
 [Architecture](https://lanes.sh/docs/link/architecture).

@@ -12,7 +12,8 @@ import { ATTACHMENTS_PATH } from '../attachments.ts';
 import { ANY_ORIGIN, corsAware } from '../cors.ts';
 import { Generations } from '../generations.ts';
 import { silentLogger } from '../logging.ts';
-import { directPairingCredential } from './credential.ts';
+import { fixedAuthenticator } from './testing.ts';
+import { memberPrincipal } from '#auth';
 import type { AuditTail, ReadDeps } from './routes.ts';
 
 /**
@@ -32,7 +33,9 @@ import type { AuditTail, ReadDeps } from './routes.ts';
 
 const ORIGIN = 'https://lanes.sh';
 const HOSTILE = 'https://evil.example';
-const PAIR_TOKEN = 'llp_a-data-pairing-token';
+const BEARER = 'llo_a-dashboard-bearer';
+/** The caller every case below is, unless it says otherwise. */
+const CALLER = memberPrincipal('lanes:HER', 'personal', ['personal']);
 
 const AUDIT: AuditTail = { tail: async () => [] };
 
@@ -80,7 +83,7 @@ function readDeps(overrides: Partial<ReadDeps> = {}): ReadDeps {
     profiles: () => new Map(),
     audit: AUDIT,
     connections: async () => [],
-    credential: directPairingCredential({ read: async () => PAIR_TOKEN }),
+    authenticate: fixedAuthenticator(BEARER, CALLER),
     endpoint: { kind: 'deployed', version: '0.0.0-test', certificateExpiresAt: null },
     ...overrides,
   };
@@ -124,7 +127,7 @@ function send(
   init: { method?: string; body?: unknown; origin?: string; token?: string | null } = {},
 ): Request {
   const headers: Record<string, string> = { origin: init.origin ?? ORIGIN };
-  const token = init.token === undefined ? PAIR_TOKEN : init.token;
+  const token = init.token === undefined ? BEARER : init.token;
   if (token !== null) headers['authorization'] = `Bearer ${token}`;
   if (init.body !== undefined) headers['content-type'] = 'application/json';
 
@@ -136,14 +139,14 @@ function send(
 }
 
 describe('the credential', () => {
-  test('an unpaired write is refused, and the surface is never asked', async () => {
+  test('an unauthenticated write is refused, and the surface is never asked', async () => {
     const surface = stub();
     const response = await deployed(readDeps({ data: surface }))(
       send('/data/memory/a?profile=personal', { method: 'PUT', body: { body: 'x' }, token: null }),
     );
 
     expect(response.status).toBe(401);
-    expect(await response.json()).toMatchObject({ error: 'unpaired', run: 'lanes link pair' });
+    expect(await response.json()).toMatchObject({ error: 'unauthorized', signIn: true });
     // The gate is above the store, so a stranger costs nothing.
     expect(surface.calls).toEqual([]);
   });
@@ -347,7 +350,7 @@ describe('a deployment-only grant stays one', () => {
     try {
       const response = await fetch(
         `${server.url.replace(MCP_PATH, '')}/data/memory?profile=personal`,
-        { method: 'PUT', headers: { authorization: `Bearer ${PAIR_TOKEN}` } },
+        { method: 'PUT', headers: { authorization: `Bearer ${BEARER}` } },
       );
 
       // `serve()` discards `read` on loopback, so the write surface is not on
@@ -466,5 +469,53 @@ describe('over the real composition, against a real workspace', () => {
     const response = await handler(send('/data/vault?profile=personal'));
     expect(response.status).toBe(200);
     expect(await response.text()).not.toContain('a-secret-value');
+  });
+});
+
+/**
+ * A profile the caller is not a member of.
+ *
+ * The hole this closes. `profile` arrived on the query string, was checked only
+ * against what the endpoint serves, and was then handed to the store — so
+ * whoever held the workspace's pairing token read, wrote and deleted the owner
+ * layer of every profile in the workspace, whatever `members:` said. Five
+ * stores are writable here (ADR-069), so this was never only disclosure.
+ */
+describe('a profile the caller is not on', () => {
+  test('every method is refused, and none of them reaches the store', async () => {
+    const surface = stub();
+    const deps = readDeps({ data: surface });
+
+    for (const request of [
+      send('/data/memory?profile=work'),
+      send('/data/memory/a?profile=work'),
+      send('/data/memory?profile=work', { method: 'POST', body: { body: 'x' } }),
+      send('/data/memory/a?profile=work', { method: 'PUT', body: { body: 'x' } }),
+      send('/data/memory/a?profile=work', { method: 'DELETE' }),
+      send('/data/assets/a.txt/content?profile=work'),
+    ]) {
+      expect((await deployed(deps)(request)).status).toBe(404);
+    }
+
+    // The point of refusing before the surface is touched: a store consulted
+    // for a profile the caller may not reach has already done the read, and an
+    // audit row for it would name the dashboard as having asked.
+    expect(surface.calls).toEqual([]);
+  });
+
+  test('the refusal is the one an unknown path gets, so it confirms nothing', async () => {
+    const deps = readDeps({ data: stub() });
+
+    const refused = await deployed(deps)(send('/data/memory?profile=work'));
+    const nonsense = await deployed(deps)(send('/data/memory?profile=not-a-profile'));
+
+    expect(refused.status).toBe(nonsense.status);
+    expect(await refused.json()).toEqual(await nonsense.json());
+  });
+
+  test('the profile it does name still works, so this is a filter and not an outage', async () => {
+    const deps = readDeps({ data: stub() });
+
+    expect((await deployed(deps)(send('/data/memory?profile=personal'))).status).toBe(200);
   });
 });

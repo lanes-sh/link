@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { nextAfterEdit } from './publish.ts';
+import { missingFrom, nextAfterEdit } from './publish.ts';
 
 /**
  * The line an edit ends on.
@@ -71,6 +71,74 @@ describe('what an edit says it did', () => {
 
     expect(line).toContain('could not publish');
     expect(line).toContain('bucket not found');
+  });
+});
+
+/**
+ * That "the endpoint reloaded" is not read as "the endpoint took this edit".
+ *
+ * The bug: `profile add` created a profile in a deployed workspace, the reload
+ * answered `{reloaded: true, profiles: ["personal","projects"]}` without the new
+ * name in it, and the command printed "Serving it now". `openReconciled` skips a
+ * profile it cannot open rather than failing the endpoint for its siblings, so a
+ * successful reload is exactly what a skipped profile looks like from here —
+ * and `profiles` was not in the response cast, so the one field that says which
+ * is which went unread.
+ *
+ * The endpoint side of this contract was already tested; the CLI side simply
+ * never consumed it. Every test above builds a `PublishOutcome` by hand, which
+ * is why none of them could have caught it.
+ */
+describe('a reload that left the edit out is not "served"', () => {
+  test('a profile the endpoint did not open is reported missing', () => {
+    expect(missingFrom(['personal', 'projects'], 'sandbox')).toEqual(['sandbox']);
+  });
+
+  test('a profile the endpoint opened is not', () => {
+    expect(missingFrom(['personal', 'sandbox'], 'sandbox')).toEqual([]);
+  });
+
+  test('an edit touching several profiles names only the ones left out', () => {
+    // `publishProfileEdit` passes `touched` for an edit that reached more than
+    // the profile it named — the owner-layer repair is one — so this arrives as
+    // a list as often as a string.
+    expect(missingFrom(['a', 'c'], ['a', 'b', 'c', 'd'])).toEqual(['b', 'd']);
+  });
+
+  test('an endpoint that does not report its profiles is left alone', () => {
+    // The compatibility case, and the reason this can only ever demote a claim
+    // the endpoint actively contradicted. An endpoint from before `/reload`
+    // carried `profiles` is what a workspace mid-upgrade is talking to, and
+    // treating silence as "serving nothing" would report every edit as refused.
+    expect(missingFrom(undefined, 'sandbox')).toEqual([]);
+    expect(missingFrom('personal, projects', 'sandbox')).toEqual([]);
+  });
+
+  test('nothing is checked when the caller named no profile', () => {
+    expect(missingFrom(['personal'], undefined)).toEqual([]);
+  });
+
+  test('a refused edit does not promise a restart will fix it', () => {
+    // The wording that made this worth a field rather than just a reason: the
+    // config *is* published, so the ordinary not-served tail — "the endpoint
+    // will serve this when it next starts" — is true of a notify that could not
+    // land and false of a reload that ran and refused. A restart re-runs the
+    // same open and fails it the same way.
+    const line = nextAfterEdit({
+      served: false,
+      refused: true,
+      reason: 'the endpoint reloaded but is not serving "sandbox"',
+      url: 'https://endpoint.example.com/reload',
+    });
+
+    expect(line).toContain('not serving "sandbox"');
+    expect(line).not.toContain('when it next starts');
+  });
+
+  test('an endpoint that never answered still says the edit is safe', () => {
+    const line = nextAfterEdit({ served: false, reason: 'no endpoint answered' });
+
+    expect(line).toContain('when it next starts');
   });
 });
 

@@ -35,7 +35,12 @@ async function workspace(): Promise<{ root: string; config: Config }> {
 
 async function tail(root: string, config: Config) {
   const resolved = await openTarget(root, 'local');
-  const input = { declared: resolved.declared, config, root: resolved.workspaceRoot, target: 'local' };
+  const input = {
+    declared: resolved.declared,
+    profile: config.instance.profile,
+    root: resolved.workspaceRoot,
+    target: 'local',
+  };
   return openAudit(await openStorage(input, await openSecrets(input))).tail({ limit: 50 });
 }
 
@@ -49,7 +54,7 @@ describe('recordConfigChange', () => {
   test('a change is readable back through the same tail that reads tool calls', async () => {
     const { root, config } = await workspace();
 
-    await recordConfigChange(config, root, 'local', {
+    await recordConfigChange(config.instance.profile, root, 'local', {
       capability: 'config.member.add',
       scope: 'personal',
       arguments: { subject: 'lanes:someone', role: 'member' },
@@ -72,7 +77,7 @@ describe('recordConfigChange', () => {
   test('a workspace-scoped change carries the connection it was about', async () => {
     const { root, config } = await workspace();
 
-    await recordConfigChange(config, root, 'local', {
+    await recordConfigChange(config.instance.profile, root, 'local', {
       capability: 'config.connection.create',
       scope: 'local',
       connection: 'gmail.work',
@@ -88,11 +93,16 @@ describe('recordConfigChange', () => {
     const { root, config } = await workspace();
 
     for (const capability of ['config.profile.add', 'config.policy.allow'] as const) {
-      await recordConfigChange(config, root, 'local', { capability, scope: 'personal' });
+      await recordConfigChange(config.instance.profile, root, 'local', { capability, scope: 'personal' });
     }
 
     const resolved = await openTarget(root, 'local');
-    const input = { declared: resolved.declared, config, root: resolved.workspaceRoot, target: 'local' };
+    const input = {
+    declared: resolved.declared,
+    profile: config.instance.profile,
+    root: resolved.workspaceRoot,
+    target: 'local',
+  };
     const store = openAudit(await openStorage(input, await openSecrets(input)));
 
     expect((await store.tail({ limit: 50 })).map((event) => event.capability)).toEqual(
@@ -113,7 +123,7 @@ describe('recordConfigChange', () => {
     // A workspace that is not in the registry: `openTarget` throws, which is
     // the shape of every real failure here — an unreachable bucket, a missing
     // credential. The change is already on disk by now, so this must warn.
-    await recordConfigChange(config, '/nonexistent', 'nowhere', {
+    await recordConfigChange(config.instance.profile, '/nonexistent', 'nowhere', {
       capability: 'config.member.add',
       scope: 'personal',
     }, (note) => notes.push(note));

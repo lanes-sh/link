@@ -95,8 +95,8 @@ COPY src/ src/
 
 # Set at deploy time, not here: a bucket URL is the operator's, not the image's.
 # `lanes link deploy` passes it as `LANES_LINK_HOME=gs://<bucket>`. Left unset,
-# `resolveWorkspaceRoot` would walk ancestors for `lanes-link.yaml` and fall
-# back to `~/.lanes-link`, which in a container is a directory nobody wrote —
+# `resolveWorkspaceRoot` would walk ancestors for `workspaces.yaml` and fall
+# back to `~/.lanes/link`, which in a container is a directory nobody wrote —
 # so the endpoint refuses rather than serving an empty workspace.
 # Which adapter set to open. The whole point of the milestone is that this is
 # the only thing that differs from a local run.

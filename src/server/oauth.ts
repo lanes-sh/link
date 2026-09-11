@@ -102,6 +102,7 @@ export async function handleAuthorization(
   const origin = publicOrigin(request);
   const path = url.pathname;
 
+
   // Both spellings: the bare document, and the one suffixed with the resource's
   // own path, which is what a client probes first when the `401` pointed it
   // nowhere. Answering both costs a comparison and removes a failure mode.

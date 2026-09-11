@@ -102,7 +102,7 @@ beforeAll(async () => {
 
   try {
     const storage = await openStorage(
-      { declared: target, config, root: '/nowhere', target: 'cloud' },
+      { declared: target, profile: config.instance.profile, root: '/nowhere', target: 'cloud' },
       {} as SecretStore,
     );
 

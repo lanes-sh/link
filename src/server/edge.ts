@@ -169,7 +169,7 @@ export function unauthenticatedRefusal(input: {
   readonly isAuthorizationPath: (pathname: string) => boolean;
   readonly authorizationEnabled: boolean;
   /** Passed rather than imported, for the reason `isAuthorizationPath` is. */
-  readonly isPairedPath: (pathname: string) => boolean;
+  readonly isDashboardPath: (pathname: string) => boolean;
   readonly readEnabled: boolean;
 }): Response | undefined {
   // A `/health` carrying no credential reads nothing and is deliberately free —
@@ -179,7 +179,7 @@ export function unauthenticatedRefusal(input: {
   const costly =
     input.pathname === input.healthPath
       ? input.request.headers.get('authorization') !== null
-      : (input.readEnabled && input.isPairedPath(input.pathname)) ||
+      : (input.readEnabled && input.isDashboardPath(input.pathname)) ||
         (input.authorizationEnabled && input.isAuthorizationPath(input.pathname));
 
   if (!costly) return undefined;

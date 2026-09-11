@@ -7,7 +7,7 @@ import {
   resolveWorkspaceRoot,
 } from '#profile';
 import { ConfigDocument } from '../config-edit.ts';
-import { describeMember, workspaceMembers } from '#auth/lanes/members.ts';
+import { describeMember, workspaceMembers, type WorkspaceMember } from '#auth/lanes/members.ts';
 import { announce, emit, heading, ok, print, style, table, warn } from '../output.ts';
 import { nextAfterEdit, publishProfileEdit } from '../publish.ts';
 import { resolveProfile, type GlobalFlags } from '../runtime.ts';
@@ -19,15 +19,17 @@ import { resolveProfile, type GlobalFlags } from '../runtime.ts';
  * and for the sharpest version of that argument: an agent able to edit this
  * could add itself.
  *
- * **This is a selection from the Lanes workspace, not a list beside it.**
- * Membership is managed on the dashboard — invited, accepted, given a role,
- * removed — and a workspace bound with `lanes_workspace:` is asked who it holds.
- * Somebody added there shows up here the moment they accept, and granting them a
- * profile is a local edit naming a subject the server already vouches for.
+ * **A profile holds uids, and this is the list.** An admin attaches one; the
+ * endpoint checks on every request that the uid calling it is on the profile
+ * (`mayReach`). That is the whole model, and there is nothing else to
+ * establish here — no roster to clear, no email to resolve, no workspace to
+ * bind first.
  *
- * For `local` there is no such list, so the only subject accepted is the
- * signed-in one — a local workspace delegating to a stranger is a typo, not a
- * use case.
+ * A bound Lanes workspace is still *read*, because it is the only thing that
+ * can tell the operator something useful: `membersList` shows who is in the
+ * workspace and not yet granted, so adding somebody does not mean going to the
+ * dashboard to copy a uid out of it. What it no longer does is decide. See
+ * `assertDelegatable` for the four reasons it stopped.
  */
 
 export interface MemberRow {
@@ -106,11 +108,13 @@ async function boundWorkspace(target: string): Promise<string | undefined> {
   // is deployed.** `lanes_workspace` is a declaration field, and
   // `recordDeployment` writes the declaration into the bucket while leaving
   // this machine a pointer carrying only `at`, `primary` and the deploy stamps.
-  // So reading it here found nothing the moment a target was deployed: binding
-  // a workspace stopped taking effect, `members add` refused everyone but the
-  // person at the keyboard, and the remedy it printed — add `lanes_workspace:`
-  // under `workspaces.<target>` — named the pointer entry, which the next
-  // deploy overwrites. A declaration resolves back to this root unchanged.
+  // So reading it from the pointer found nothing the moment a target was
+  // deployed — and back when absence was a refusal, that made binding a
+  // workspace stop taking effect on exactly the workspaces it mattered for. A
+  // declaration resolves back to this root unchanged.
+  //
+  // Nothing depends on the answer any more except what is *shown*, which is why
+  // the field having no CLI that writes it is now a gap rather than a wall.
   const local = resolveWorkspaceRoot();
   const registry = await readRegistry(await resolveTargetWorkspace(local, target).catch(() => local));
   return registry[target]?.lanes_workspace;
@@ -148,6 +152,7 @@ export async function membersAdd(
     return;
   }
 
+  await assertMayManage(target, session?.subject);
   await assertDelegatable(wanted, target, session?.subject);
 
   const document = await ConfigDocument.open(resolution.workspaceRoot, resolution.profile);
@@ -155,7 +160,7 @@ export async function membersAdd(
   await document.save();
 
   await recordConfigChange(
-    config,
+    config.instance.profile,
     resolution.workspaceRoot,
     target,
     {
@@ -189,12 +194,14 @@ export async function membersRemove(
     return;
   }
 
+  await assertMayManage(target, (await readSession())?.subject);
+
   const document = await ConfigDocument.open(resolution.workspaceRoot, resolution.profile);
   document.removeFrom(['members'], at);
   await document.save();
 
   await recordConfigChange(
-    config,
+    config.instance.profile,
     resolution.workspaceRoot,
     target,
     { capability: 'config.member.remove', scope: resolution.profile, arguments: { subject } },
@@ -210,10 +217,18 @@ export async function membersRemove(
     // The half that is not obvious, and is the difference between this and a
     // session manager. A token already issued keeps working until it expires:
     // membership is read when one is minted, not on every call (ADR-060).
+    //
+    // **And there is no command that closes the window.** This used to name
+    // `lanes link token rotate`, which rotates one API token row — it needs an
+    // `--id`, and it says in its own output that clients which signed in
+    // through a browser are unaffected. Nothing in the CLI reaches `OAuthStore`,
+    // so pointing at it was worse than saying nothing: an operator who ran it
+    // would be told something had been rotated and would believe the access was
+    // gone.
     print(
       style.dim(
-        '      A token they already hold keeps working until it expires.\n' +
-          `      To close that window now: lanes link token rotate --workspace ${target}`,
+        '      A token they already hold keeps working until it expires, and no\n' +
+          '      command shortens that. See access_token_ttl_minutes for how long.',
       ),
     );
     if (published) print(style.dim(`      ${published}`));
@@ -221,68 +236,157 @@ export async function membersRemove(
 }
 
 /**
+ * Whether the person at the keyboard may edit who a profile lists.
+ *
+ * **Workspace `admin` may; `editor` may not.** The roles come from the Lanes
+ * workspace this one is bound to, which is where they are already managed,
+ * rather than from a second role system beside `members:` — the argument
+ * `memberSchema` makes for its own `role` field gating nothing.
+ *
+ * **This is intent rather than a boundary, and saying so is the point.**
+ * `members:` is a line in a YAML file, and anybody who can run this command can
+ * also open that file in an editor. What the check buys is that widening your
+ * own reach has to be deliberate rather than a command you happened to be
+ * allowed to run, and that the refusal names somebody who can do it for you.
+ * The boundary that holds is who may write the workspace's files: an IAM grant
+ * on a deployed workspace, the machine on a local one.
+ *
+ * Unbound, there is no list to ask and no roles to read, and `assertDelegatable`
+ * already refuses everybody but the person signed in.
+ */
+async function assertMayManage(target: string, signedIn: string | undefined): Promise<void> {
+  const bound = await boundWorkspace(target);
+  if (bound === undefined) return;
+
+  const held = await workspaceMembers(bound);
+
+  // Warned about and allowed, exactly as `assertDelegatable` treats the same
+  // failure and for the same reason: a local edit must not depend on our uptime.
+  if (held.unavailable !== null) return;
+
+  const refusal = manageRefusal(held.members, signedIn, target);
+  if (refusal !== null) throw new ConfigError(refusal);
+}
+
+/**
+ * The decision, without the network in front of it.
+ *
+ * Split out so it can be tested: everything above it is a session read and an
+ * HTTP call, and everything in it is the rule. `null` means go ahead.
+ *
+ * A subject the workspace does not list at all is **not** refused here. It is
+ * the ordinary state of a workspace whose list could not name you — a local one
+ * bound to an id you belong to under a different account, say — and
+ * `assertDelegatable` is the check that has an answer for it. Refusing twice
+ * for one cause produces the worse of the two messages.
+ */
+export function manageRefusal(
+  members: readonly WorkspaceMember[],
+  signedIn: string | undefined,
+  target: string,
+): string | null {
+  const me = members.find((member) => member.subject === signedIn);
+  if (me === undefined || me.role === 'admin') return null;
+
+  const admins = members.filter((member) => member.role === 'admin');
+
+  return (
+    `Editing who may consume a profile is for admins of the Lanes workspace behind "${target}", ` +
+    `and you are ${me.role} there.\n` +
+    (admins.length > 0
+      ? `  Ask one of: ${admins.map(describeMember).join(', ')}\n`
+      : '  It lists no admin, which is a workspace problem rather than a profile one.\n') +
+    '  Unchanged: everything inside the profiles that already list you.'
+  );
+}
+
+/**
  * Whether this workspace may delegate to that subject.
  *
- * The check exists because the alternative is a profile listing a subject
- * nobody can produce a token for — which reads exactly like a working
- * delegation until the person tries to use it.
+ * **A well-formed subject is delegatable, and that is the whole rule.** An
+ * admin attaches a uid to a profile; the endpoint then checks, on every
+ * request, that the uid calling it is on that profile. There is no third thing
+ * to establish here.
  *
- * Bound to a Lanes workspace, the answer is the workspace's own member list:
- * somebody added on the dashboard is delegatable here, and nobody else is.
- * Unbound, there is no list to ask, so the only verifiable subject is the one at
- * the keyboard.
+ * It used to refuse. Unbound, only the signed-in subject was accepted; bound,
+ * only a subject on the Lanes workspace's own roster. Both are gone, and the
+ * reasons they went are worth recording because each looked like a safety
+ * property:
+ *
+ *  - **It was not a boundary.** ADR-079 says so plainly — `members:` is a line
+ *    in a YAML file and anybody who can run this command can open that file in
+ *    an editor. The boundary is who may write the workspace's files: an IAM
+ *    grant on a deployed workspace, the machine on a local one.
+ *  - **The shape is already checked, twice over.** `subjectRef` is
+ *    `/^lanes:[A-Za-z0-9]{6,64}$/`, which is also what stops a pasted
+ *    credential landing in this field — `secret-detection.ts` refuses a bare
+ *    28-character blob, and the `lanes:` prefix is what takes a real subject
+ *    out of that class (`profile/primitives.ts`).
+ *  - **A wrong uid is inert.** It writes a row nothing can ever match: no
+ *    assertion names that subject, so no token is ever minted for it. A dead
+ *    row, not a hole.
+ *  - **The remedy it printed did not exist.** The refusal told the operator to
+ *    add `lanes_workspace: <id>` under `workspaces.<target>` in
+ *    `workspaces.yaml`. Nothing in the CLI writes that field, and for a
+ *    deployed target that file is an object in the bucket rather than the
+ *    pointer on this machine — so the way out of the refusal was to hand-edit
+ *    GCS.
+ *
+ * What the roster is still good for is telling the operator something. Bound,
+ * `membersList` shows who is in the workspace and not yet granted, and a
+ * subject absent from it gets a warning here — because the likeliest reason for
+ * that is a typo, and a typo is exactly what the inert row above reads like.
  */
 async function assertDelegatable(
   subject: string,
   target: string,
   signedIn: string | undefined,
 ): Promise<void> {
+  if (subject === signedIn) return;
+
   const bound = await boundWorkspace(target);
-
-  if (bound === undefined) {
-    if (subject === signedIn) return;
-
-    throw new ConfigError(
-      `Workspace "${target}" is not bound to a Lanes workspace, so it can only delegate to you.\n` +
-        '  Add yourself with: lanes link profile members add --me\n' +
-        '  To delegate to somebody else, bind the workspace:\n' +
-        `    lanes_workspace: <id>   # in workspaces.yaml, under workspaces.${target}\n` +
-        '  Run "lanes auth workspaces" for the ids you belong to.',
-    );
-  }
+  if (bound === undefined) return;
 
   const held = await workspaceMembers(bound);
 
-  // Unreachable rather than empty. Refusing on a network failure would make a
-  // local edit depend on our uptime, and the endpoint verifies the subject when
-  // it mints a token regardless — so this warns and proceeds.
-  if (held.unavailable !== null) {
-    print(
-      style.dim(
-        `  Could not check the workspace's members (${held.unavailable}), so this was not verified.`,
-      ),
-    );
-    return;
-  }
+  // Unreachable rather than empty, and it says nothing either way. Warning on a
+  // network failure would teach the operator to ignore this line.
+  if (held.unavailable !== null) return;
 
-  const match = held.members.find((member) => member.subject === subject);
-  if (match !== undefined) return;
+  const note = delegationNote(held.members, subject, target);
+  if (note !== null) print(style.dim(note));
+}
 
-  // A pending invitation is the interesting refusal: the person exists, the
-  // operator can see them on the dashboard, and there is still no subject to
-  // write down. Saying "not a member" would send them to add somebody who is
-  // already there.
-  const pending = held.members.filter((member) => member.status === 'pending');
+/**
+ * What to say about a subject the bound workspace does not list. `null` to say
+ * nothing.
+ *
+ * Split out so it can be tested, exactly as `manageRefusal` is and for the same
+ * reason: everything above it is a session read and an HTTP call, and
+ * everything in it is the rule. The difference from `manageRefusal` is that
+ * this one never refuses — it is a note, because the likeliest cause is a typo
+ * and the second likeliest is a uid from somewhere this workspace cannot see.
+ */
+export function delegationNote(
+  members: readonly WorkspaceMember[],
+  subject: string,
+  target: string,
+): string | null {
+  if (members.some((member) => member.subject === subject)) return null;
 
-  throw new ConfigError(
-    `${subject} is not a member of the Lanes workspace behind "${target}".\n` +
-      (held.members.length > 0
-        ? `  It holds: ${held.members.map(describeMember).join(', ')}\n`
-        : '  It holds nobody yet.\n') +
-      (pending.length > 0
-        ? `  ${pending.map(describeMember).join(', ')} ${pending.length === 1 ? 'has' : 'have'} not ` +
-          'accepted the invitation yet, so there is no subject for them to be granted.\n'
-        : '') +
-      '  Invite them on the dashboard first: https://lanes.sh/dashboard/settings/members',
+  // A pending invitation is the interesting case: the person exists, the
+  // operator can see them on the dashboard, and they have no uid yet — so a row
+  // naming a guess looks like a working delegation until they try to use it.
+  const pending = members.filter((member) => member.status === 'pending');
+
+  return (
+    `warn  ${subject} is not in the Lanes workspace behind "${target}", so this was\n` +
+    '      not verified. It is written either way — check it, because nothing can\n' +
+    '      mint a token for a subject that does not exist.' +
+    (pending.length > 0
+      ? `\n      ${pending.map(describeMember).join(', ')} ` +
+        `${pending.length === 1 ? 'has' : 'have'} not accepted an invitation yet, so\n` +
+        '      there is no uid for them to be granted.'
+      : '')
   );
 }

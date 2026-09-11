@@ -87,8 +87,17 @@ export interface ConfigChange {
   readonly arguments?: Readonly<Record<string, unknown>> | undefined;
 }
 
+/**
+ * A name rather than the config it is written in.
+ *
+ * The only thing this ever read off the `Config` was the profile's name, and
+ * only to tell `openStorage` whose blob root to use — `change.scope` already
+ * carried the name for the row itself. Taking the parsed file for that is what
+ * stopped `profile remove` recording the removal of a profile whose config will
+ * not parse (#219), which is exactly the removal most worth having a row for.
+ */
 export async function recordConfigChange(
-  config: Config,
+  profile: string,
   root: string,
   target: string,
   change: ConfigChange,
@@ -96,7 +105,7 @@ export async function recordConfigChange(
 ): Promise<void> {
   try {
     const resolved = await openTarget(root, target);
-    const input = { declared: resolved.declared, config, root: resolved.workspaceRoot, target };
+    const input = { declared: resolved.declared, profile, root: resolved.workspaceRoot, target };
     const audit = openAudit(await openStorage(input, await openSecrets(input)));
 
     try {
@@ -202,7 +211,7 @@ export async function recordDataChange(
     const resolved = await openTarget(root, runtime.target);
     const input = {
       declared: resolved.declared,
-      config: runtime.config,
+      profile: runtime.config.instance.profile,
       root: resolved.workspaceRoot,
       target: runtime.target,
     };

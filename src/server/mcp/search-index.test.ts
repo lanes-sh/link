@@ -13,11 +13,15 @@ import type { MergedCapability } from './visibility.ts';
 /** One discovered capability, of the shape an `http` provider yields. */
 function entry(
   description: string,
-  options: { title?: string; properties?: Record<string, unknown> } = {},
+  options: { title?: string; properties?: Record<string, unknown>; reads?: boolean } = {},
 ): MergedCapability {
   return {
     reachable: new Map([['personal', ['vendor_mail.main']]]),
     capability: undefined,
+    // What the connector assigned, as `mergeCapabilities` resolves it — from the
+    // request method for an `http` provider. Written out per entry because the
+    // read-only filter narrows on this and never on the id.
+    reads: options.reads ?? false,
     discovered: {
       name: 'ignored',
       ...(options.title === undefined ? {} : { title: options.title }),
@@ -38,7 +42,7 @@ const surface = new Map<string, MergedCapability>([
       properties: { to: { type: 'string' }, subject: { type: 'string' } },
     }),
   ],
-  ['vendor_mail.messages.list', entry('List the messages in a mailbox.')],
+  ['vendor_mail.messages.list', entry('List the messages in a mailbox.', { reads: true })],
   ['vendor_sheets.values.update', entry('Set values in a range of a spreadsheet.')],
   ['vendor_chat.post_message', entry('Post a message to a channel.')],
 ]);
@@ -252,6 +256,52 @@ describe('what comes back', () => {
 
     expect(answer).toContain('vendor_mail.messages.list');
     expect(answer).not.toContain('vendor_chat.post_message');
+  });
+
+  /**
+   * The two answers to "does this only read" disagree, and the filter has to
+   * take the provider's.
+   *
+   * A report run over POST is a read the name cannot show, and a get-or-create
+   * is a write whose name opens with `get`. Reading either off the id inverts
+   * both: the caller asking to be shown only safe operations would be handed the
+   * one that writes and denied the one that does not.
+   */
+  test('a read-only filter takes the provider\'s answer over the name', () => {
+    const reports = new Map<string, MergedCapability>([
+      [
+        'vendor_reports.run_report',
+        entry('Run a saved report and return its rows.', { reads: true }),
+      ],
+      [
+        'vendor_reports.get_or_create_report',
+        entry('Fetch a report by name, creating it if it does not exist.', { reads: false }),
+      ],
+    ]);
+
+    const answer = searchCapabilities('report', reports, undefined, { readOnly: true });
+
+    expect(answer).toContain('vendor_reports.run_report');
+    expect(answer).not.toContain('vendor_reports.get_or_create_report');
+  });
+
+  /**
+   * Under `surface: crunched` there is no typed tool to carry `readOnlyHint`, so
+   * a search result is the only place a client can learn a call is safe.
+   */
+  test('a match says whether it only reads', () => {
+    const { capabilities } = searchResults('mailbox', surface);
+
+    expect(capabilities[0]?.capability).toBe('vendor_mail.messages.list');
+    expect(capabilities[0]?.reads).toBe(true);
+    expect(searchCapabilities('mailbox', surface)).toContain('read-only:  yes');
+  });
+
+  test('a write is not described as read-only', () => {
+    const { capabilities } = searchResults('spreadsheet', surface);
+
+    expect(capabilities[0]?.reads).toBe(false);
+    expect(searchCapabilities('spreadsheet', surface)).not.toContain('read-only');
   });
 
   test('the structured copy carries what the prose says', () => {

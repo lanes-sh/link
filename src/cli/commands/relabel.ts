@@ -62,7 +62,7 @@ export async function renameConnection(
     document.setIn(['connections', located.index, 'label'], label);
     await document.save();
 
-    await recordConfigChange(config, root, target, {
+    await recordConfigChange(config.instance.profile, root, target, {
       capability: 'config.connection.relabel',
       scope: target,
       connection: key,

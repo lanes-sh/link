@@ -24,7 +24,7 @@ const legacy = (profile: string, targets: string): string =>
 
 const LOCAL = `  local:\n    credentials: { adapter: file, path: ./data/PROFILE/credentials.enc }\n    storage: { adapter: filesystem, path: ./data/PROFILE }\n`;
 
-const CLOUD = `  cloud:\n    credentials: { adapter: gcp-secret-manager, project: my-project }\n    storage: { adapter: gcs, bucket: personal-lanes }\n    vault: { adapter: secret }\n`;
+const CLOUD = `  cloud:\n    credentials: { adapter: gcp-secret-manager, project: my-project }\n    storage: { adapter: gcs, bucket: your-bucket }\n    vault: { adapter: secret }\n`;
 
 async function workspace(
   profiles: Record<string, string>,
@@ -54,7 +54,7 @@ describe('hoisting a profile’s targets into the workspace', () => {
     const registry = await readRegistry(root);
 
     expect(registry['local']?.storage?.adapter).toBe('filesystem');
-    expect(registry['cloud']?.at).toBe('gs://personal-lanes');
+    expect(registry['cloud']?.at).toBe('gs://your-bucket');
     expect(registry['cloud']?.storage).toBeUndefined();
   });
 
@@ -104,7 +104,7 @@ describe('migrating the workspace a target already lives in', () => {
   const parse = (yaml: string) =>
     legacyTargetSchema.parse({
       credentials: { adapter: 'gcp-secret-manager', project: 'my-project' },
-      storage: { adapter: 'gcs', bucket: 'personal-lanes' },
+      storage: { adapter: 'gcs', bucket: 'your-bucket' },
       vault: { adapter: 'secret' },
       ...(yaml === 'filesystem'
         ? { credentials: { adapter: 'file' }, storage: { adapter: 'filesystem' } }
@@ -117,17 +117,17 @@ describe('migrating the workspace a target already lives in', () => {
     // `openTarget` refuses as a loop — leaving `deploy` unable to run against the
     // bucket it had just migrated, on the one command the refusal names as the fix.
     const fromLaptop = toEntry('cloud', parse('gcs'), 'personal', '/Users/x/.lanes-link');
-    expect(fromLaptop?.at).toBe('gs://personal-lanes');
+    expect(fromLaptop?.at).toBe('gs://your-bucket');
 
-    const fromBucket = toEntry('cloud', parse('gcs'), 'personal', 'gs://personal-lanes');
+    const fromBucket = toEntry('cloud', parse('gcs'), 'personal', 'gs://your-bucket');
     expect(fromBucket?.at).toBeUndefined();
-    expect(fromBucket?.storage?.bucket).toBe('personal-lanes');
+    expect(fromBucket?.storage?.bucket).toBe('your-bucket');
   });
 
   test('and a filesystem target is dropped, because a bucket can never open one', () => {
     // The bucket's copy of a profile was uploaded from a laptop, so it carries
     // that laptop's `local:` block — paths on a disk the endpoint has never seen.
-    expect(toEntry('local', parse('filesystem'), 'personal', 'gs://personal-lanes')).toBeNull();
+    expect(toEntry('local', parse('filesystem'), 'personal', 'gs://your-bucket')).toBeNull();
 
     // On the machine that owns it, it is kept.
     expect(toEntry('local', parse('filesystem'), 'personal', '/Users/x/.lanes-link')).not.toBeNull();

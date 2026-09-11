@@ -1,3 +1,4 @@
+import { legacyRootNotice, onLegacyRoot } from './workspace-home-migrate.ts';
 import { wasDefaulted } from './selection-require.ts';
 import { columns, style, width } from './terminal.ts';
 import { numbered, rule, truncate, visibleWidth, wrap } from './typeset.ts';
@@ -139,6 +140,24 @@ export function announceProfile(selection: {
   readonly workspaceRoot: string;
 }): void {
   print(style.dim(`profile ${style.bold(selection.profile)}  ${selection.workspaceRoot}`));
+  sayIfLegacyRoot(selection.workspaceRoot);
+}
+
+/**
+ * The second dim line, on a workspace that has not been moved yet.
+ *
+ * Here rather than in a `doctor` finding because the audience is different:
+ * `doctor` is what somebody runs when they already suspect something, and this
+ * has to reach the person who suspects nothing. It sits under the line that
+ * already prints the root on every command, which is the one place a reader is
+ * looking at that path anyway.
+ *
+ * It says nothing on a workspace that is already at `~/.lanes/link`, which is
+ * almost all of them almost all of the time — so this is a string compare per
+ * command and silence thereafter, not a permanent second line for everyone.
+ */
+function sayIfLegacyRoot(workspaceRoot: string): void {
+  if (onLegacyRoot(workspaceRoot)) print(style.dim(`  ${legacyRootNotice()}`));
 }
 
 /**
@@ -161,6 +180,7 @@ export function announce(resolution: Resolution): void {
         `${resolution.workspaceRoot}`,
     ),
   );
+  sayIfLegacyRoot(resolution.workspaceRoot);
 }
 
 /**
@@ -181,6 +201,7 @@ export function announceWorkspace(resolution: Resolution): void {
       `workspace ${style.bold(resolution.target)}${provenance}  ${resolution.workspaceRoot}`,
     ),
   );
+  sayIfLegacyRoot(resolution.workspaceRoot);
 }
 
 /**
@@ -320,3 +341,24 @@ export function table(rows: ReadonlyArray<readonly string[]>): void {
 export const ok = (text: string) => `${style.green('ok')}    ${text}`;
 export const warn = (text: string) => `${style.yellow('warn')}  ${text}`;
 export const fail = (text: string) => `${style.red('fail')}  ${text}`;
+
+/**
+ * The first line of an error that actually says something.
+ *
+ * `message.split('\n')[0]` was the whole of this, and a `ConfigError` from a
+ * schema failure is `<path>:\n  <field>: <reason>` — so a warning rendered as
+ * "could not give personal its owner layer: /…/personal.yaml:" and named no
+ * reason at all. Seen for real on an upgrade, twice, with nothing after the
+ * colon.
+ *
+ * Promoted out of `config-repair-sweep.ts` when `removalSubject` became the
+ * second caller that has to squash a `ConfigError` into one line an operator
+ * can read. Two copies of this is the failure above, waiting.
+ */
+export function reasonOf(error: unknown): string {
+  if (!(error instanceof Error)) return String(error);
+
+  const lines = error.message.split('\n').map((line) => line.trim());
+  const said = lines.find((line) => line !== '' && !line.endsWith(':'));
+  return said ?? lines.find((line) => line !== '') ?? error.message;
+}

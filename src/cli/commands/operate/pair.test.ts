@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from 'bun:test';
 import { isValidSecretRef } from '#secrets';
-import { pair, pairingLink, PAIR_CERT_REF, PAIR_KEY_REF, PAIR_TOKEN_REF } from './pair.ts';
+import { pair, PAIR_CERT_REF, PAIR_KEY_REF, PAIR_TOKEN_REF } from './pair.ts';
+import { pairingGuidance, pairingLink } from './pairing-link.ts';
 
 /**
  * The three references `lanes link pair` writes.
@@ -242,3 +243,51 @@ function link(printed: string): string {
   expect(found).not.toBeNull();
   return found![0];
 }
+
+/**
+ * What the command tells somebody a pairing link is for.
+ *
+ * Worth a test because the two modes printed this separately and drifted. The
+ * loopback branch was corrected when the dashboard credential started naming a
+ * person (ADR-079); the deployed branch was not, and went on saying the token
+ * "reads every connection, profile and audit entry in this workspace, and can
+ * edit and delete your memory, tasks, files, skills and entities in every
+ * profile here". By then no path accepted that token at all — so the sentence
+ * an operator read while the dashboard refused them described a credential
+ * that had been withdrawn.
+ *
+ * It also offered `pair --rotate` as the way to take that access back, which
+ * now revokes nothing, and the loopback branch offered `token rotate`, which
+ * rotates one API token row and says in its own output that browser clients
+ * are unaffected. A remedy that reports success and changes nothing is worse
+ * than no remedy.
+ */
+describe('what the pairing link is said to do', () => {
+  const guidance = pairingGuidance();
+
+  test('says the link is an address rather than a key', () => {
+    expect(guidance).toContain('it is not a key to it');
+    expect(guidance).toContain('signs in with Lanes');
+  });
+
+  test('does not promise the whole workspace', () => {
+    expect(guidance).not.toContain('every connection');
+    expect(guidance).not.toContain('in this workspace');
+    expect(guidance).not.toContain('every\n      profile');
+  });
+
+  test('names no command that would report success and revoke nothing', () => {
+    expect(guidance).not.toContain('--rotate');
+    expect(guidance).not.toContain('token rotate');
+  });
+
+  /**
+   * The half an operator gets wrong, and the reason it is spelled out: removing
+   * a member is read when a token is minted, not per call (ADR-060), and
+   * nothing in the CLI reaches `OAuthStore` to end a session early.
+   */
+  test('says removal stops the next sign-in and not the current one', () => {
+    expect(guidance).toContain('profile members remove');
+    expect(guidance).toContain('one already made runs its course');
+  });
+});

@@ -1,11 +1,8 @@
-import { isTool } from '#connectivity';
 import type { MergedCapability } from './visibility.ts';
 import { toolNameFor } from './naming.ts';
 import { exactly, fieldsOf, holds, scoreEntry, searchable, words } from './searchable.ts';
 import {
   actionOf,
-  READ_VERBS,
-  WRITE_VERBS,
   DESTRUCTIVE_VERBS,
   type Intent,
   intentOf,
@@ -119,7 +116,16 @@ function inverseFrequency(
  * name the *vendor*, which is where the wrong answers came from — expanding
  * "email" reached `sendMail` and `outlook_mail` by their spelling, so a query
  * to *read* the newest mail ranked the tool that *sends* it, twice over.
+ *
+ * An argument name is at the foot of both ladders: the weakest evidence here,
+ * and often the only place a word the caller used was written down at all.
  */
+/** The weight of the strongest field this term reaches, and nothing below it. */
+function first(term: string, ...ladder: readonly (readonly [readonly string[], number])[]): number {
+  for (const [field, weight] of ladder) if (holds(field, term)) return weight;
+  return 0;
+}
+
 function weighted(
   id: string,
   entry: MergedCapability,
@@ -135,37 +141,29 @@ function weighted(
   for (const term of terms) {
     const confidence = typed.get(term) ?? 1;
     const inferred = confidence < 1;
+    // An inferred term may name the *operation*, but never the vendor.
+    //
+    // Description-only was too strict, and a real endpoint showed where. Gmail's
+    // three list operations describe themselves almost identically — "Lists all
+    // labels / the drafts / the messages in the user's mailbox" — and the
+    // provider keywords appended to each carry the word *message*, so expanding
+    // "email" matched all three in the description and settled nothing. The one
+    // field that distinguishes them is the operation's own name, and that was
+    // the field an inferred term could not reach.
+    //
+    // The vendor's name stays out of reach, because that is what the restriction
+    // was for: a provider called `outlook_mail` otherwise wins every mail query
+    // on spelling. Scored below a typed name hit, since it is still an inference.
     const hit = inferred
-      ? // An inferred term may name the *operation*, but never the vendor.
-        //
-        // Description-only was too strict, and a real endpoint showed where.
-        // Gmail's three list operations describe themselves almost identically —
-        // "Lists all labels / the drafts / the messages in the user's mailbox" —
-        // and the provider keywords appended to each carry the word *message*,
-        // so expanding "email" matched all three in the description and settled
-        // nothing. The one field that distinguishes them is the operation's own
-        // name, and that was the field an inferred term could not reach.
-        //
-        // The vendor's name stays out of reach, because that is what the
-        // restriction was for: a provider called `outlook_mail` otherwise wins
-        // every mail query on spelling. Scored below a typed name hit, since it
-        // is still an inference.
-        holds(fields.name, term)
-        ? 1.5
-        : holds(fields.title, term)
-          ? 1.2
-          : holds(fields.description, term)
-            ? 1
-            : 0
-      : holds(fields.name, term)
-        ? 3
-        : holds(fields.title, term)
-          ? 2
-          : holds(fields.provider, term)
-            ? 1.5
-            : holds(fields.description, term)
-              ? 1
-              : 0;
+      ? first(term, [fields.name, 1.5], [fields.title, 1.2], [fields.description, 1], [fields.parameters, 0.5])
+      : first(
+          term,
+          [fields.name, 3],
+          [fields.title, 2],
+          [fields.provider, 1.5],
+          [fields.description, 1],
+          [fields.parameters, 0.5],
+        );
 
     // For an inferred term only, a word that *is* it outweighs one that merely
     // starts with it. `holds` cannot draw this line and should not — as the
@@ -385,7 +383,13 @@ export function rank(query: string, merged: Map<string, MergedCapability>): Matc
   // provider still cuts at half. A query that names none may well be about
   // several: two mail accounts both answer "read most recent email", and which
   // one was meant is not something this endpoint knows.
-  const named = terms.some((term) => providers.has(term));
+  //
+  // Read off what the caller *typed*, never off the expansion: a synonym is not
+  // the caller naming a vendor. "add a reminder" expands *reminder* to
+  // *checklist*, a provider id here, so the half-cut fell on a question that had
+  // named nobody and took every task capability with it. Same rule as the vendor
+  // field in `weighted`, applied where the expansion was still being read.
+  const named = queryWords(query).some((word) => providers.has(word));
   const ratio = named ? 2 : 8;
   const best = matches[0]?.score ?? 0;
   return matches.filter((match) => match.score * ratio > best);

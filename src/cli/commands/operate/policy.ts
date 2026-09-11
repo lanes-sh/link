@@ -99,7 +99,7 @@ export async function policyRule(
   await document.save();
 
   await recordConfigChange(
-    config,
+    config.instance.profile,
     resolution.workspaceRoot,
     target,
     {

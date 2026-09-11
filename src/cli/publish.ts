@@ -41,6 +41,17 @@ export interface PublishOutcome {
   readonly url?: string;
   /** Why it is not being served yet, in a form fit to print. */
   readonly reason?: string;
+  /**
+   * Whether the endpoint answered and left the edit out, as opposed to not
+   * answering at all.
+   *
+   * The two need different last sentences and that is the whole of why this
+   * exists. "The endpoint will serve this when it next starts" is true of a
+   * notify that could not land — the config is published and the next boot
+   * reads it — and false of a reload that ran and refused the profile, because
+   * a restart re-runs the same open and fails it the same way.
+   */
+  readonly refused?: boolean;
 }
 
 /**
@@ -50,7 +61,18 @@ export interface PublishOutcome {
  * should read has landed would reload the previous config and report success.
  */
 export async function publishAndNotify(input: {
-  readonly config: Config;
+  /**
+   * Absent where the profile's config would not load (#219).
+   *
+   * `publishWorkspace` never reads it — it copies what the local store holds —
+   * and `notifyReload` wants it only for `localUrl`, the last of three answers
+   * to "where is the endpoint" and the one that only applies when nothing is
+   * recorded as running. So a removal whose config would not parse still
+   * publishes and still notifies a deployed target or a recorded local one,
+   * which is exactly when the notify matters most: the endpoint may be serving
+   * that profile right now from a config that parsed at its last boot.
+   */
+  readonly config?: Config | undefined;
   readonly workspaceRoot: string;
   readonly target: string;
   /** Every profile the edit touched. See `publishWorkspace`. */
@@ -97,7 +119,8 @@ export function publishRuntimeEdit(runtime: Runtime): Promise<PublishOutcome> {
  */
 export async function publishProfileEdit(input: {
   readonly resolution: { readonly workspaceRoot: string; readonly profile: string };
-  readonly config: Config;
+  /** Absent where the profile's config would not load — see `publishAndNotify`. */
+  readonly config?: Config | undefined;
   readonly target: string;
   /** Every profile the edit touched, where it reached more than the one named. */
   readonly touched?: readonly string[] | undefined;
@@ -115,9 +138,15 @@ export async function publishProfileEdit(input: {
 
 /** Ask a running endpoint to re-read its config. Never throws. */
 async function notifyReload(input: {
-  readonly config: Config;
+  readonly config?: Config | undefined;
   readonly workspaceRoot: string;
   readonly target: string;
+  /**
+   * Every profile the edit touched, checked against what the reload actually
+   * opened. Optional because `publishRuntimeEdit` and the local paths have
+   * nothing to check — see `missingFrom`.
+   */
+  readonly profile?: string | readonly string[] | undefined;
   readonly credentials: SecretStore;
 }): Promise<PublishOutcome> {
   let url: string;
@@ -143,7 +172,19 @@ async function notifyReload(input: {
     const { declared } = await openTarget(input.workspaceRoot, input.target);
     const deployed = await deployedUrl(declared.deploy);
     const recorded = deployed ? null : await readEndpointRecord(input.workspaceRoot);
-    const base = deployed ?? recorded?.url ?? localUrl(input.config);
+    const local = input.config ? localUrl(input.config) : null;
+    const base = deployed ?? recorded?.url ?? local;
+
+    // Nothing deployed, nothing recorded, and no config to derive a port from.
+    // There is no endpoint to tell, and saying so is better than guessing at a
+    // port — this is only reachable from a removal whose config would not load.
+    if (base === null) {
+      return {
+        served: false,
+        reason:
+          'nothing is recorded as listening for this workspace, so there is no endpoint to tell',
+      };
+    }
     url = base.replace(/\/mcp$/, '/reload');
   } catch (error) {
     return { served: false, reason: `could not work out where the endpoint is: ${message(error)}` };
@@ -182,6 +223,7 @@ async function notifyReload(input: {
       reloaded?: unknown;
       reason?: unknown;
       tools?: unknown;
+      profiles?: unknown;
     };
     if (body.reloaded !== true) {
       return {
@@ -192,6 +234,16 @@ async function notifyReload(input: {
             ? `the endpoint could not reload: ${body.reason}`
             : 'the endpoint did not reload',
       };
+    }
+
+    // `reloaded: true` says a generation swapped, not that this edit is in it.
+    // `openReconciled` skips a profile it cannot open rather than failing the
+    // endpoint for its siblings, so a reload that answers success is exactly
+    // what a skipped profile looks like from here — which is why this was
+    // reported as served for as long as the field went unread.
+    const missing = missingFrom(body.profiles, input.profile);
+    if (missing.length > 0) {
+      return { served: false, refused: true, url, reason: notServing(missing) };
     }
 
     return {
@@ -209,6 +261,54 @@ async function notifyReload(input: {
 
 function message(error: unknown): string {
   return error instanceof Error ? (error.message.split('\n')[0] ?? error.message) : String(error);
+}
+
+/**
+ * Which of the touched profiles the reload did not open.
+ *
+ * **Silent unless the endpoint answered the question.** An endpoint from before
+ * `/reload` carried `profiles` returns no such field, and an older one is
+ * exactly what a workspace mid-upgrade is talking to — so an absent or
+ * non-array field means "not answered" and yields nothing, rather than
+ * reporting every profile as missing. The check can only ever *demote* a claim
+ * the endpoint actively contradicted.
+ *
+ * `profiles` here is `Generation.names()` unfiltered, unlike the per-principal
+ * list `/health` returns, so a name absent from it really was not opened rather
+ * than merely not visible to this caller.
+ *
+ * Exported for its tests: the decision is the whole of the fix, and reaching it
+ * through `notifyReload` would mean standing up a credential store and a target
+ * to resolve a URL that the case under test never depends on.
+ */
+export function missingFrom(
+  reported: unknown,
+  touched: string | readonly string[] | undefined,
+): readonly string[] {
+  if (!Array.isArray(reported) || touched === undefined) return [];
+
+  const served = new Set(reported.filter((name): name is string => typeof name === 'string'));
+  const names = typeof touched === 'string' ? [touched] : touched;
+  return names.filter((name) => !served.has(name));
+}
+
+/**
+ * What to say when the endpoint reloaded and left the edit out.
+ *
+ * Deliberately not the "will serve this when it next starts" tail
+ * `nextAfterEdit` ends on: a restart re-runs the same open and fails it the same
+ * way. The two causes are a profile whose grants name a connection this
+ * workspace does not hold, and a profile whose per-profile credentials no
+ * binding covers — the second of which `profile add` now provisions, and which
+ * is worth naming because it is otherwise indistinguishable from the first.
+ */
+function notServing(missing: readonly string[]): string {
+  const which = missing.length === 1 ? `"${missing[0]}"` : missing.map((n) => `"${n}"`).join(', ');
+  return (
+    `the endpoint reloaded and did not open ${which} — the config is published, and the ` +
+    'endpoint refused it. Its log says why, on a line starting "not serving"; the usual cause ' +
+    'is credentials nothing has provisioned yet'
+  );
 }
 
 /**
@@ -252,5 +352,10 @@ export function nextAfterEdit(outcome: PublishOutcome): string {
   // endpoint is somewhere else: `lanes link start --port` moves the socket
   // without moving `instance.port`, which is where this address comes from.
   const where = outcome.url ? ` at ${outcome.url}` : '';
+
+  // An endpoint that answered and refused is not waiting for a restart to fix
+  // it, so it does not get the sentence that says so. See `refused`.
+  if (outcome.refused === true) return `${outcome.reason ?? 'the edit is not being served'}${where}.`;
+
   return `${outcome.reason ?? 'no endpoint answered'}${where} — saved, and the endpoint will serve this when it next starts.`;
 }

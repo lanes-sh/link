@@ -1,12 +1,11 @@
-import { forProfile } from '#auth';
+import { forProfile, mayReach } from '#auth';
 import { isTool, isToolResult } from '#connectivity';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/server';
 import {
   type Filters,
   SEARCH_RESULT,
-  searchCapabilities,
-  searchResults,
+  searchAnswer,
 } from './search-index.ts';
 import { EXPAND, type ExpandArgument, expandIfReferences } from './expand-result.ts';
 import { validate } from './validate.ts';
@@ -87,7 +86,15 @@ export function registerSearchSurface(
   catalogue?: Map<string, MergedCapability>,
 ): void {
   const merged = catalogue ?? mergeCapabilities(options);
-  const profiles = [...options.profiles.keys()];
+  // **Filtered, like every other enum this server advertises.** Built from the
+  // whole map, these two schemas named every profile the endpoint served to a
+  // caller no member list names — the only place a profile name still leaked
+  // after ADR-060, because `mergeCapabilities` filters what it returns and this
+  // read the map beside it. Dispatch refused the call either way; what was
+  // disclosed was that the profile is there to ask about (ADR-079).
+  const profiles = [...options.profiles.keys()].filter((name) =>
+    mayReach(options.principal, name),
+  );
 
   server.registerTool(
     SURFACE_TOOL_NAMES[0]!,
@@ -155,19 +162,15 @@ export function registerSearchSurface(
       const { query, ...rest } = input;
       const filters: Filters = rest;
       const accounts = accountsByProfile(options);
-      const structured = searchResults(query, merged, filters, accounts);
 
-      // Both, deliberately. The text is what a model reads; the structured copy
-      // is what a client acts on without a regular expression. The spec asks for
-      // a serialized form in the text block too, and here the prose is the more
-      // useful thing to put there.
+      // Both, deliberately, and off one ranking. The text is what a model reads;
+      // the structured copy is what a client acts on without a regular
+      // expression. The spec asks for a serialized form in the text block too,
+      // and here the prose is the more useful thing to put there.
+      const { text, structured } = searchAnswer(query, merged, options.surface, filters, accounts);
+
       return {
-        content: [
-          {
-            type: 'text' as const,
-            text: searchCapabilities(query, merged, options.surface, filters, accounts),
-          },
-        ],
+        content: [{ type: 'text' as const, text }],
         structuredContent: structured as unknown as Record<string, unknown>,
       };
     },
