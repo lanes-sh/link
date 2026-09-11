@@ -16,6 +16,7 @@ import { recordConfigChange } from '../../audit-change.ts';
 import { ok, print, style } from '../../output.ts';
 import type { SecretStore } from '#secrets';
 import { openSecretStoreFor, type GlobalFlags } from '../../runtime.ts';
+import { pairingGuidance, pairingLink } from './pairing-link.ts';
 
 /**
  * `lanes link pair` — let the Lanes dashboard read this machine (ADR-063).
@@ -76,7 +77,6 @@ import { openSecretStoreFor, type GlobalFlags } from '../../runtime.ts';
 export { PAIR_CERT_REF, PAIR_KEY_REF, PAIR_TOKEN_REF };
 
 /** Where the dashboard lives, overridable so `lanes dev` can pair against it. */
-const DASHBOARD_URL = process.env['LANES_WEB_URL'] ?? 'https://lanes.sh';
 
 export interface PairFlags extends GlobalFlags {
   /** Print the link for an existing pairing and change nothing. */
@@ -254,15 +254,7 @@ export async function pair(flags: PairFlags, deps: PairDeps = {}): Promise<void>
   print('');
   print(
     style.dim(
-      '      Open that in a browser on this machine. The link carries the address,\n' +
-        '      so the page knows which endpoint to ask; it is not a key to it.\n' +
-        '      Whoever opens it signs in with Lanes, and reaches the profiles that list\n' +
-        '      them as a member — their connections, their audit entries, and the memory,\n' +
-        '      tasks, files, skills and entities inside them, to read, edit and delete.\n' +
-        '      A profile listing nobody is reachable by nobody. It changes no connection,\n' +
-        '      token, policy rule or configuration, and never reads a vault value.\n' +
-        '      To end their access: lanes link profile members remove <subject>\n' +
-        `      then lanes link token rotate --workspace ${target}\n` +
+      `${pairingGuidance()}\n` +
         '\n' +
         `      The endpoint has to be running: lanes link start --workspace ${target}`,
     ),
@@ -340,58 +332,14 @@ async function pairDeployed(input: {
   }
 
   print(ok('no certificate needed — this endpoint already has one a browser trusts'));
-  if (rotating) {
-    print(style.dim('      The previous pairing link no longer works. Re-open the new one.'));
-  }
   print('');
-  print(ok(`the dashboard may now read ${style.bold(endpoint)}`));
+  print(ok(`the dashboard may now sign in to ${style.bold(endpoint)}`));
   print('');
   print(pairingLink(token, endpoint));
   print('');
-  print(
-    style.dim(
-      '      Open that in any browser, on any machine. The token is in the URL fragment,\n' +
-        '      so it never reaches a Lanes server.\n' +
-        '      It reads every connection, profile and audit entry in this workspace, and\n' +
-        '      can edit and delete your memory, tasks, files, skills and entities in every\n' +
-        '      profile here. It changes no connection, token, policy rule or configuration,\n' +
-        '      and never reads a vault value.\n' +
-        '      Take it back with:\n' +
-        `        lanes link pair --workspace ${target} --rotate\n` +
-        '\n' +
-        '      A rotation takes up to five seconds to be refused, because the endpoint\n' +
-        '      caches what it read rather than calling Secret Manager per request.',
-    ),
-  );
+  print(style.dim(pairingGuidance()));
 }
 
-/**
- * The link the browser opens.
- *
- * The token rides in the fragment, which is never sent to a server — so a
- * credential for a surface whose entire point is that Lanes cannot see this
- * data does not land in a Lanes access log, a proxy, or a referrer header. The
- * address rides beside it for the same reason and one more: it is the only
- * thing telling the page which of several paired endpoints this link is for,
- * and a query parameter would put a workspace's public address in that log.
- *
- * **A loopback link carries its address too**, and the parameter is required so
- * that it cannot quietly stop. It used to be omitted here on the reasoning that
- * loopback is derivable — and it is not: the read listener sits one port above
- * whatever `instance.port` says, so an endpoint on any port but the default
- * printed a link the dashboard then read at `7338`, reported unreachable, and
- * gave no way to correct. The page still treats a link with no `at=` as
- * loopback on the default port, because every link minted before this is that
- * shape.
- *
- * Exported for `pair.test.ts` and for nothing else. The whole of the defect
- * above was a shape nothing asserted on, in a command whose output no test
- * reads, so the fix is not worth much without something that fails when the
- * address goes missing again.
- */
-export function pairingLink(token: string, endpoint: string): string {
-  return `${DASHBOARD_URL}/dashboard/link#pair=${token}&at=${encodeURIComponent(endpoint)}`;
-}
 
 function isLoopback(host: string): boolean {
   return host === '127.0.0.1' || host === 'localhost' || host === '::1';

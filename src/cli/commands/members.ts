@@ -217,10 +217,18 @@ export async function membersRemove(
     // The half that is not obvious, and is the difference between this and a
     // session manager. A token already issued keeps working until it expires:
     // membership is read when one is minted, not on every call (ADR-060).
+    //
+    // **And there is no command that closes the window.** This used to name
+    // `lanes link token rotate`, which rotates one API token row — it needs an
+    // `--id`, and it says in its own output that clients which signed in
+    // through a browser are unaffected. Nothing in the CLI reaches `OAuthStore`,
+    // so pointing at it was worse than saying nothing: an operator who ran it
+    // would be told something had been rotated and would believe the access was
+    // gone.
     print(
       style.dim(
-        '      A token they already hold keeps working until it expires.\n' +
-          `      To close that window now: lanes link token rotate --workspace ${target}`,
+        '      A token they already hold keeps working until it expires, and no\n' +
+          '      command shortens that. See access_token_ttl_minutes for how long.',
       ),
     );
     if (published) print(style.dim(`      ${published}`));
