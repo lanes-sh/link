@@ -1,7 +1,8 @@
 # Testing the search by hand
 
-Two commands. Neither needs a workspace, a credential, or a network — both run the real ranking
-and rendering over a fixture corpus of eleven providers and 51 capabilities.
+Two commands. Neither needs a workspace, a credential, or a network. Both run the real ranking
+and rendering over a fixture corpus of twenty providers and 139 capabilities, built to the depth a
+deployed endpoint has.
 
 ## Is the ranking still good?
 
@@ -10,18 +11,22 @@ $ bun run bench:retrieval
 ```
 
 ```
-  retrieval over 51 capabilities, 16 questions
+  retrieval over 139 capabilities, 36 questions
   ──────────────────────────────────────────────────────────
-  answer ranks first           94%  (was 31%, +63)
-  answer in the first three   100%  (was 63%, +37)
-  answer carries a schema     100%  (was 81%, +19)
-  mean answer size           1393 B  (was 4063 B, -2670)
+  answer ranks first           56%  (was 31%, +25)
+  answer in the first three    72%  (was 63%, +9)
+  answer carries a schema      72%  (was 81%, -9)
+  mean answer size           1841 B  (was 4063 B, -2222)
   ──────────────────────────────────────────────────────────
 ```
 
 The floors are asserted, so a change that makes ranking worse fails. The percentages are printed
-rather than only checked, because a slide from 100% to 91% passes a 90% floor and is still a
-regression.
+rather than only checked, because a slide that still clears a floor is still a regression.
+
+These read 94% and 100% against the smaller corpus this fixture replaced, and the ranking did not
+change to make them 56% and 72%. [How Lanes Link finds the right tool](detailed/search.md) has the
+measurement, the three failure modes behind it, and what was weighed against the current
+approach.
 
 ## What does it answer to *this* question?
 
@@ -43,6 +48,7 @@ named tool to prefer.
 ## mailhub_search_messages          ← the wire name, or the capability id under --crunched
 capability: mailhub.search_messages
 reachable:  personal: mailhub.acct1  ← which profile and connection to pass
+read-only:  yes                      ← only where the provider classified it
 
 arguments (JSON Schema — `profile` and `connection` are added by this endpoint):
 ...
