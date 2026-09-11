@@ -1,10 +1,12 @@
 import {
   AuthenticatorChain,
   IssuedTokenAuthenticator,
+  LanesKeyAuthenticator,
   OAuthServer,
   OAuthStore,
   OidcAuthenticator,
   OidcVerifier,
+  lanesApiKeyVerifier,
   lanesFederation,
   type Authenticator,
 } from '#auth';
@@ -107,14 +109,29 @@ export async function openAuthorization(
  * The dashboard used to have a credential of its own that named no person, and
  * the surfaces it reached were the ones nothing filtered.
  *
- * Null gate means bearer-token-only: the workspace's static API keys, each
- * naming the uid it was issued to (ADR-068), and no chain to build.
+ * **Order is cost, and it has not changed.** The workspace's own static rows
+ * first, because that is a constant-time comparison against a cached value; the
+ * declared gate next, because an issued token is a lookup in this endpoint's own
+ * state; the Lanes-signed key last, because it is the only link that may have to
+ * fetch a key set. A credential that is not a JWT fails that link on its first
+ * `split`, so putting it last costs the other two nothing.
+ *
+ * **The key link is unconditional**, unlike the gate. It is the headless path —
+ * what a CI job presents when it has no browser to complete a flow in — and
+ * making it depend on `auth.authorization` would mean a profile that declared no
+ * remote-client model could not be reached by a machine at all, which is the
+ * case the static token existed for.
  */
 export function endpointAuthenticator(
   primary: Runtime,
   gate: { readonly authenticator: Authenticator } | null,
+  members: (subject: string) => Promise<readonly string[]>,
 ): Authenticator {
-  return gate
-    ? new AuthenticatorChain([primary.authenticator, gate.authenticator])
-    : primary.authenticator;
+  const profile = primary.resolution.profile;
+
+  return new AuthenticatorChain([
+    primary.authenticator,
+    ...(gate ? [gate.authenticator] : []),
+    new LanesKeyAuthenticator(lanesApiKeyVerifier(), profile, members),
+  ]);
 }

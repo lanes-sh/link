@@ -4,12 +4,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createFileSecretStore, generateCredentialKey, type SecretStore } from '#secrets';
 import {
+  AuthenticatorChain,
   BearerAuthenticator,
   generateProfileToken,
   machinePrincipal,
   mayReach,
   parseBearer,
   tokensMatch,
+  type AuthContext,
+  type Authenticator,
+  type AuthOutcome,
 } from './index.ts';
 
 function storeWith(entries: Record<string, string>): SecretStore {
@@ -354,5 +358,70 @@ describe('how often the credential store is read', () => {
     await auth.authenticate('Bearer llk_rotated_in_a_moment_ago');
 
     expect(reads()).toBe(warm + 1);
+  });
+});
+
+/**
+ * What the chain does with the context, which is the contract the key link needs.
+ *
+ * `LanesKeyAuthenticator` refuses when it is not told which endpoint was
+ * addressed, so a chain that accepted a context and forwarded nothing would turn
+ * every API key into a refusal — and it would do it silently, because a refused
+ * key is indistinguishable from a wrong one from outside. Hence a test of the
+ * forwarding itself rather than only of the links.
+ */
+describe('the chain and the context', () => {
+  /** A link that records what it was asked and answers from a fixed verdict. */
+  function recording(outcome: AuthOutcome): {
+    link: Authenticator;
+    seen: { context?: AuthContext | undefined; calls: number };
+  } {
+    const seen: { context?: AuthContext | undefined; calls: number } = { calls: 0 };
+    return {
+      seen,
+      link: {
+        authenticate: async (_header, context) => {
+          seen.calls += 1;
+          seen.context = context;
+          return outcome;
+        },
+      },
+    };
+  }
+
+  const ADDRESSED: AuthContext = { resource: 'https://link.example.com/mcp' };
+
+  test('every link is told which endpoint was addressed', async () => {
+    const first = recording({ ok: false, reason: 'invalid' });
+    const second = recording({ ok: false, reason: 'invalid' });
+
+    await new AuthenticatorChain([first.link, second.link]).authenticate('Bearer x', ADDRESSED);
+
+    expect(first.seen.context).toEqual(ADDRESSED);
+    expect(second.seen.context).toEqual(ADDRESSED);
+  });
+
+  test('a caller that names no endpoint forwards that, rather than inventing one', async () => {
+    const only = recording({ ok: false, reason: 'invalid' });
+
+    await new AuthenticatorChain([only.link]).authenticate('Bearer x');
+
+    expect(only.seen.context).toBeUndefined();
+  });
+
+  test('the first link to recognise the credential still wins, and later ones are not asked', async () => {
+    const yes = recording({
+      ok: true,
+      principal: { id: 'lanes:EXAMPLE', profile: 'personal', kind: 'machine', profiles: ['personal'] },
+    });
+    const never = recording({ ok: false, reason: 'invalid' });
+
+    const outcome = await new AuthenticatorChain([yes.link, never.link]).authenticate(
+      'Bearer x',
+      ADDRESSED,
+    );
+
+    expect(outcome.ok).toBe(true);
+    expect(never.seen.calls).toBe(0);
   });
 });

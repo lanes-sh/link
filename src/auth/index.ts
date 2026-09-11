@@ -43,16 +43,46 @@ export type AuthOutcome =
   | { readonly ok: false; readonly reason: 'missing' | 'malformed' | 'invalid' | 'not_configured' };
 
 /**
+ * What the request says about who is being addressed.
+ *
+ * Only one field, and only one authenticator reads it: a credential somebody
+ * *else* signed has to name this endpoint, or a key minted for one deployment
+ * opens every deployment the same issuer serves — the confused-deputy case the
+ * MCP authorization spec calls out. A token this endpoint minted needs none of
+ * this, because being in this endpoint's store is already the binding.
+ *
+ * **Optional in the type and mandatory in effect.** A link that needs it refuses
+ * when it is absent rather than skipping the check, which is ADR-079's lesson
+ * stated one layer down: an absent field must not resolve to the widest answer.
+ * It is optional here only so the implementations that ignore it, and the test
+ * doubles that predate it, do not have to mention it.
+ */
+export interface AuthContext {
+  /**
+   * This endpoint's resource identifier, exactly as the client addressed it.
+   *
+   * The same string `protectedResourceMetadata` publishes and an assertion's
+   * `aud` must match — built from `Host` and `X-Forwarded-Proto`, because this
+   * endpoint does not know its own public URL from config. See
+   * `server/oauth.ts`.
+   */
+  readonly resource: string;
+}
+
+/**
  * Anything that can turn an `Authorization` header into a principal.
  *
  * Extracted so the endpoint can accept more than one kind of proof without the
- * request path learning what kinds exist. There are two: a static token the
- * operator holds, and a token this endpoint or an issuer handed to a client
- * that completed an authorization flow. Both arrive in the same header, and the
- * server does not care which answered.
+ * request path learning what kinds exist. There are three: a static token the
+ * operator holds, a token this endpoint or an issuer handed to a client that
+ * completed an authorization flow, and an API key `api.lanes.sh` signed. All
+ * arrive in the same header, and the server does not care which answered.
  */
 export interface Authenticator {
-  authenticate(authorizationHeader: string | null | undefined): Promise<AuthOutcome>;
+  authenticate(
+    authorizationHeader: string | null | undefined,
+    context?: AuthContext,
+  ): Promise<AuthOutcome>;
   invalidateCache?(): void;
 }
 
@@ -76,12 +106,15 @@ export class AuthenticatorChain implements Authenticator {
     this.#links = links;
   }
 
-  async authenticate(authorizationHeader: string | null | undefined): Promise<AuthOutcome> {
+  async authenticate(
+    authorizationHeader: string | null | undefined,
+    context?: AuthContext,
+  ): Promise<AuthOutcome> {
     const rank = { invalid: 3, not_configured: 2, malformed: 1, missing: 0 } as const;
     let worst: Extract<AuthOutcome, { ok: false }> = { ok: false, reason: 'missing' };
 
     for (const link of this.#links) {
-      const outcome = await link.authenticate(authorizationHeader);
+      const outcome = await link.authenticate(authorizationHeader, context);
       if (outcome.ok) return outcome;
       if (rank[outcome.reason] > rank[worst.reason]) worst = outcome;
     }
@@ -326,8 +359,15 @@ export {
   type OAuthResult,
 } from './oauth/server.ts';
 export { AssertionVerifier, type Assertion } from './lanes/assertion.ts';
-export { lanesFederation, DEFAULT_WEB_URL, type FederationOptions } from './lanes/federation.ts';
+export { ApiKeyVerifier, type ApiKeySubject } from './lanes/api-key.ts';
+export {
+  lanesApiKeyVerifier,
+  lanesApiUrl,
+  lanesFederation,
+  DEFAULT_WEB_URL,
+  type FederationOptions,
+} from './lanes/federation.ts';
 export { matchesRegistered } from './oauth/redirects.ts';
 export { OAuthStore, hashToken, randomToken } from './oauth/store.ts';
 export { OidcVerifier, type OidcVerifierOptions, type VerifiedSubject } from './oidc.ts';
-export { IssuedTokenAuthenticator, OidcAuthenticator } from './remote.ts';
+export { IssuedTokenAuthenticator, LanesKeyAuthenticator, OidcAuthenticator } from './remote.ts';

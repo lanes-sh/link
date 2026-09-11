@@ -2,6 +2,8 @@ import type { Runtime } from '#cli/runtime.ts';
 import type { Logger } from '#connectivity';
 import type { Authenticator } from '#auth';
 import type { ProfileRuntime } from '../mcp/visibility.ts';
+import { MCP_PATH } from '../index.ts';
+import { publicOrigin } from '../oauth.ts';
 import { connectionRows } from './connections.ts';
 import type { ReadDeps } from './routes.ts';
 import type { DataSurface } from '#cli/owner-data/surface.ts';
@@ -47,6 +49,9 @@ export function deployedReadDeps(input: {
     // workspace's own manifests are all named the same way.
     providerName: (id) => primary.registry.manifest(id)?.name,
     authenticate: input.authenticate,
+    // Same origin as `/mcp` here, so the same derivation. Cloud Run routes one
+    // port and these paths hang off it.
+    resource: (request) => `${publicOrigin(request)}${MCP_PATH}`,
     endpoint: { kind: 'deployed', version: input.version, certificateExpiresAt: null },
     ...(input.data ? { data: input.data } : {}),
     log,
