@@ -1,7 +1,6 @@
-import { ConfigError } from '#profile';
 import type { Flags } from './argv.ts';
 import { ACCEPTS } from './accepts.ts';
-import { nearest } from './nearest.ts';
+import { refuseUnknownFlags } from './unknown-flags.ts';
 
 export { ACCEPTS } from './accepts.ts';
 
@@ -344,12 +343,11 @@ export const EXPLICIT_WORKSPACE = new Set([
 const UNIVERSAL = ['help', 'json', 'quiet'];
 
 /**
- * Refuse a flag this command does not read, and guess what was meant.
+ * What this command accepts, and the refusal of anything else.
  *
- * This is the fix for the reported bug rather than a nicety. `profile add
- * --workspace cloud` was accepted and dropped, and nothing could refuse it because
- * `parseArgv` returns every `--anything` it sees and no command ever inspected
- * the leftovers. A typo was swallowed the same way on every command in the CLI.
+ * The allowlist is derived here because the tables that answer it are here. The
+ * refusal itself is in `./unknown-flags.ts`, shared with `lanes auth` — which is
+ * routed before `main.ts` and so never reached this function at all.
  */
 /**
  * Commands that name their profile as an argument, and so refuse the flag.
@@ -378,13 +376,5 @@ export function assertKnownFlags(first: string, second: string | undefined, flag
 
   const named = [first, second].filter(Boolean).join(' ');
 
-  for (const given of Object.keys(flags)) {
-    if (allowed.has(given)) continue;
-
-    throw new ConfigError(
-      `Unknown flag "--${given}" for "lanes link ${named}".` +
-        (nearest(given, allowed) ? `\n  Did you mean --${nearest(given, allowed)}?` : '') +
-        `\n  Accepts: ${[...allowed].sort().map((name) => `--${name}`).join(' ')}`,
-    );
-  }
+  refuseUnknownFlags(`lanes link ${named}`, allowed, flags);
 }
