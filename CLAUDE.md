@@ -217,6 +217,17 @@ per line. Keep your own handles there: git only knows the address you commit und
 that leaked here came from a personal mailbox git had never seen. A denylist inside the repository
 cannot work, because writing the name into it is the thing being prevented.
 
+**The rule is about what becomes public, and the test only reaches the files.** A pull request
+body, a commit message, an issue comment and a review reply are all public on this repository and
+none of them is scanned by anything — `architecture.test.ts` reads the tree, so a commit message
+is outside it and a PR body was never in it. The rehearsal section above makes this sharper rather
+than softer: it asks for what was deployed and exercised to be written into a pull request, which
+is an invitation to paste a project, a bucket, a service name, a revision, an endpoint URL, or the
+address an account was connected under. Name none of them. "A developer project", "a real target",
+"the previous revision" carry everything a reviewer needs, and a reviewer who needs the actual
+identifier is someone who already has it. The one check that exists runs before a commit lands and
+not before a comment is posted, so this one is on you.
+
 ## Where things are
 
 One package, one `src/`, fourteen components. Cross-component imports go through the
