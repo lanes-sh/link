@@ -70,8 +70,16 @@ export class IssuedTokenAuthenticator implements Authenticator {
 
     // The list resolved when the code was minted, not now. Re-reading it here
     // would mean a profile edit silently ending a live session, which ADR-060
-    // deliberately does not do — `lanes link token rotate` is the way to close
-    // that window, and `profile members remove` says so out loud.
+    // deliberately does not do — so `profile members remove` stops the next
+    // sign-in and lets one already made run its course.
+    //
+    // **Nothing closes that window**, and this comment used to say
+    // `lanes link token rotate` did. It does not: it rotates one API token row,
+    // needs an `--id`, and prints that browser clients are unaffected. No
+    // command in the CLI reaches `OAuthStore` at all. Until one does, the window
+    // is `access_token_ttl_minutes` — twelve hours by default — and the honest
+    // thing is to say so rather than to name a command that would report
+    // success.
     return {
       ok: true,
       principal: memberPrincipal(record.subject, this.#profile, record.profiles ?? []),
