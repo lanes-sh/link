@@ -127,6 +127,37 @@ the set that actually opened, so those are the two places to look. `notifyReload
 published against that set, which is why a command no longer says "Serving it now" for a profile
 the endpoint refused.
 
+**A new feature gets the same rehearsal, and the rule is not only about fixes.** Anything that
+changes what reaches the wire — a new tool, a new field on an advertised schema, a renamed id, a
+change to what `tools/list` or a search result carries — is deployed to a real target from its
+branch and exercised against the endpoint before the pull request is called done. A harness proves
+the code. It cannot prove that a hosted client still parses the result, because the harness is not
+the client and an output schema the spec requires a server to conform to is checked by whoever
+consumes it. Write what was run into the pull request body, and write what was *not* covered
+beside it.
+
+What exercising it means, at minimum:
+
+- **`POST /reload`, `/health`, and the container log, all three.** Each answers a different
+  question, and any one of them alone has already been believed wrongly: `/health` is filtered to
+  the caller's own member profiles, so a profile missing from it may be a membership problem
+  rather than a serving one, and only the log carries `not serving <profile>: <reason>`.
+- **`tools/list` read off the wire, counted, and compared with the `tools` that `/reload`
+  returned.** Those two disagreeing is the failure ADR-032 exists for.
+- **The feature reached both ways it can be** — the typed tool and `lanes_tools_call` — because
+  under `surface: crunched` most callers only have the second, and that is the path a unit test is
+  least likely to be exercising.
+- **A refusal, not just a success.** Name a profile the caller is not on, and name one profile
+  with another profile's connection. A feature is not verified until its refusals are, and those
+  depend on the member list the deployed endpoint actually loaded rather than on the one in the
+  test fixture.
+- **Do it on a sandbox profile.** One holding the owner layer and no external account means a
+  wrong call during a rehearsal writes nothing to a real mailbox, calendar, or bank.
+
+A revision is recoverable and this is why it is safe to ask for: Cloud Run keeps the previous one
+and traffic can be moved back, which a published npm version cannot be. Note the revision that was
+serving before you deployed, so moving back is one command and not an investigation.
+
 ## A release publishes, and npm does not give a version back
 
 [The development lifecycle](https://lanes.sh/docs/link/releasing) is the lifecycle end to end — the two
