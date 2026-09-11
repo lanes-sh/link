@@ -317,6 +317,14 @@ export async function openRuntime(
       tokens: async () => (await readConnections(root)).tokens,
       credentials,
       profilesFor: membersResolver(root),
+      // **`error`, where the two closures above use `warn`, and that is the
+      // point of it.** This logger is filtered by level and the container opens
+      // its runtime with `quiet: true`, which sets the threshold to `error` —
+      // so a warning here is discarded in precisely the place this matters. The
+      // others are addressed to somebody at a terminal; this one is addressed
+      // to whoever is reading a deployed endpoint's log wondering why a
+      // credential it holds stopped working.
+      report: (message) => logger.error(message),
     }),
     connectorFor,
     authorizeRequest,

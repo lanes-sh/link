@@ -1,8 +1,10 @@
 /**
  * Client identity.
  *
- * M1: one bearer token per profile, resolved from the credential store. The
- * token is the identity — holding it makes you the profile's owner principal.
+ * What every way of proving a credential has in common: the outcome, the
+ * interface, the chain that tries them in order, and how a bearer is parsed and
+ * compared. Each proof itself is its own file — `bearer.ts` for the rows this
+ * workspace stores, `remote.ts` for the three it verifies rather than holds.
  *
  * Target: the OAuth 2.1 resource-server model the MCP spec expects, where this
  * module validates tokens issued by an external authorization server. Client
@@ -18,9 +20,8 @@
  */
 
 import { timingSafeEqual } from 'node:crypto';
-import type { SecretRef, SecretStore } from '#secrets';
 
-import { machinePrincipal, type Principal } from './principal.ts';
+import type { Principal } from './principal.ts';
 
 /**
  * The principal model lives in `./principal.ts`, and is re-exported here so
@@ -149,200 +150,6 @@ export function tokensMatch(a: string, b: string): boolean {
   return timingSafeEqual(hash(a), hash(b));
 }
 
-/**
- * One issued token, as the authenticator needs it.
- *
- * Structurally what `connections.yaml` holds, declared here rather than
- * imported: `auth` may not reach `#profile` (the architecture test enforces the
- * direction), and the rows arrive as a closure for the same reason
- * `profilesFor` does.
- */
-export interface IssuedToken {
-  readonly id: string;
-  readonly subject: string;
-  readonly ref: SecretRef;
-}
-
-export interface AuthenticatorOptions {
-  /**
-   * The primary, which is what `principal.profile` starts as.
-   *
-   * Not what the token reaches — that is `profilesFor(subject)`. It is where
-   * the connection was opened, and every dispatch rewrites it with `forProfile`.
-   */
-  readonly profile: string;
-  /** The workspace's issued tokens. Re-read on every reload, so a revoke lands. */
-  readonly tokens: () => Promise<readonly IssuedToken[]>;
-  readonly credentials: SecretStore;
-  /**
-   * Which profiles list this subject as a member.
-   *
-   * The same resolver the OAuth path is handed (`server/endpoint.ts`), passed in
-   * rather than reached for, so discovery and enforcement cannot disagree about
-   * a subject's reach.
-   */
-  readonly profilesFor: (subject: string) => Promise<readonly string[]>;
-  /** Injectable for tests. Only the cache window reads it. */
-  readonly now?: () => number;
-}
-
-/**
- * How long a cached token may answer before the store is consulted again.
- *
- * The cache is here so the common case — a valid token, on every request — is a
- * comparison rather than a file read or a Secret Manager call. What it must not
- * do is outlive a rotation. `lanes link token rotate` is the only revocation
- * this system has, and an unbounded cache meant a revoked token kept opening the
- * endpoint until the process restarted, while the replacement was refused.
- *
- * Five seconds makes rotation effectively immediate and still collapses a burst
- * of calls onto one read.
- */
-const CACHE_TTL_MS = 5_000;
-
-/** An issued row, with its value read out of the store. */
-interface LoadedToken {
-  readonly subject: string;
-  readonly value: string;
-}
-
-export class BearerAuthenticator implements Authenticator {
-  readonly #options: AuthenticatorOptions;
-  readonly #now: () => number;
-  #cached: readonly LoadedToken[] | null = null;
-  #readAt = 0;
-
-  constructor(options: AuthenticatorOptions) {
-    this.#options = options;
-    this.#now = options.now ?? Date.now;
-  }
-
-  async authenticate(authorizationHeader: string | null | undefined): Promise<AuthOutcome> {
-    const presented = parseBearer(authorizationHeader);
-    if (presented === null) {
-      return { ok: false, reason: authorizationHeader ? 'malformed' : 'missing' };
-    }
-
-    const fresh = this.#cached !== null && this.#now() - this.#readAt < CACHE_TTL_MS;
-    let rows = fresh ? this.#cached! : await this.#reload();
-    let matched = find(presented, rows);
-
-    // A miss against a *cached* set is ambiguous: either the credential is
-    // wrong, or it is the right one and this process has not seen the rotation
-    // or the issue that produced it. One re-read separates the two, and it is
-    // what makes a rotated-in token work on its first call rather than after
-    // the window. Only a cached comparison can be wrong this way, so a fresh
-    // read never pays for a second one — which is what keeps a wrong token from
-    // costing a store read per attempt.
-    //
-    // **And only for something that could be one of these tokens.** A hosted
-    // connector presents an OAuth token: the next link in the chain handles it
-    // and it can never match a row here. Without that condition the ambiguity
-    // above was permanent for such a caller — a healthy endpoint has no static
-    // rows, so the match always failed and the "one re-read" fired on every
-    // request, re-confirming an empty list at the cost of a bucket read, a YAML
-    // parse and a schema validation. The cache never protected anything,
-    // because the path that consulted it was the path that always missed.
-    if (fresh && matched === null && couldBeProfileToken(presented)) {
-      rows = await this.#reload();
-      matched = find(presented, rows);
-    }
-
-    if (rows.length === 0) {
-      // No token has been issued. Fail closed, and distinctly from a wrong one:
-      // `lanes link doctor` reads this to say "issue one" rather than "check it".
-      return { ok: false, reason: 'not_configured' };
-    }
-
-    if (matched === null) return { ok: false, reason: 'invalid' };
-
-    // **Resolved per request, not cached with the value.** Membership is read
-    // when a token is minted for an OAuth client (ADR-060) because there is a
-    // mint to read it at; a static token has none, so this is the only place
-    // the question can be asked. It is what makes `profile members remove`
-    // take effect on the next call rather than on the next rotation.
-    //
-    // A resolver that throws fails closed. The alternative — falling back to
-    // "every profile" — would restore exactly the behaviour ADR-068 removes,
-    // and would do it precisely when something is already wrong.
-    let profiles: readonly string[];
-    try {
-      profiles = await this.#options.profilesFor(matched.subject);
-    } catch {
-      return { ok: false, reason: 'invalid' };
-    }
-
-    return {
-      ok: true,
-      principal: machinePrincipal(matched.subject, this.#options.profile, profiles),
-    };
-  }
-
-  async #reload(): Promise<readonly LoadedToken[]> {
-    // Both caches, or neither: the store holds its own decrypted copy, so
-    // re-reading without dropping that first re-reads the same stale value.
-    this.#options.credentials.refresh?.();
-
-    const rows = await this.#options.tokens();
-    const loaded: LoadedToken[] = [];
-    for (const row of rows) {
-      const value = await this.#options.credentials.get(row.ref);
-      // A row whose credential is gone is not an error to report here. It is
-      // what a half-finished `secrets push` looks like, and the row simply
-      // matches nothing — `doctor` is where that is worth a sentence.
-      if (value) loaded.push({ subject: row.subject, value });
-    }
-
-    this.#cached = loaded;
-    this.#readAt = this.#now();
-    return loaded;
-  }
-
-  /**
-   * Drop the cached set immediately.
-   *
-   * The window above already bounds how long a rotation goes unnoticed, so this
-   * is an optimisation rather than the mechanism — nothing's correctness may
-   * depend on it being called, because for a long time nothing called it.
-   */
-  invalidateCache(): void {
-    this.#cached = null;
-  }
-}
-
-/**
- * The row a presented token matches, or null.
- *
- * Every row is compared even after one matches. Returning early would make the
- * time taken describe *which* row answered, and the whole point of
- * `tokensMatch` is that a comparison here leaks nothing about the value it is
- * comparing against.
- */
-function find(presented: string, rows: readonly LoadedToken[]): LoadedToken | null {
-  let found: LoadedToken | null = null;
-  for (const row of rows) if (tokensMatch(presented, row.value)) found = row;
-  return found;
-}
-
-/**
- * Whether a presented credential could be one of *these* tokens at all.
- *
- * `generateProfileToken` mints every one with this prefix, which
- * `secret-detection.ts` and the edge limiter already recognise — so it is exact.
- */
-const couldBeProfileToken = (presented: string): boolean =>
-  presented.startsWith(PROFILE_TOKEN_PREFIX);
-
-/** What a minted profile token starts with. */
-const PROFILE_TOKEN_PREFIX = 'llk_';
-/**
- * Mint a profile token: 32 random bytes, base64url, prefixed so it is
- * recognisable in a config file and greppable in a leak.
- */
-export function generateProfileToken(): string {
-  return `${PROFILE_TOKEN_PREFIX}${Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('base64url')}`;
-}
-
 export {
   authorizationServerMetadata,
   challenge,
@@ -371,3 +178,9 @@ export { matchesRegistered } from './oauth/redirects.ts';
 export { OAuthStore, hashToken, randomToken } from './oauth/store.ts';
 export { OidcVerifier, type OidcVerifierOptions, type VerifiedSubject } from './oidc.ts';
 export { IssuedTokenAuthenticator, LanesKeyAuthenticator, OidcAuthenticator } from './remote.ts';
+export {
+  BearerAuthenticator,
+  generateProfileToken,
+  type AuthenticatorOptions,
+  type IssuedToken,
+} from './bearer.ts';
