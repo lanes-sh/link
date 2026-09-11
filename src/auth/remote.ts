@@ -1,14 +1,16 @@
 import {
   memberPrincipal,
   parseBearer,
+  type AuthContext,
   type AuthOutcome,
   type Authenticator,
 } from './index.ts';
+import type { ApiKeyVerifier } from './lanes/api-key.ts';
 import type { OAuthStore } from './oauth/store.ts';
 import type { OidcVerifier } from './oidc.ts';
 
 /**
- * The two ways a remote client's token becomes a principal.
+ * The three ways a remote client's token becomes a principal.
  *
  * A token this endpoint issued now carries *who completed the flow* and which
  * profiles named them, so it resolves to a member principal (ADR-060). Both were
@@ -121,6 +123,70 @@ export class OidcAuthenticator implements Authenticator {
       // The issuer being unreachable, or misconfigured, is not an authorisation.
       // Failing closed here means an outage at the identity provider closes the
       // endpoint rather than opening it.
+      return { ok: false, reason: 'invalid' };
+    }
+  }
+}
+
+/**
+ * An API key `api.lanes.sh` signed, verified against its published keys.
+ *
+ * The third shape, and the one that replaces a credential this CLI used to mint
+ * itself. It resolves the same way the other two do — a subject, then the
+ * profiles whose `members:` name them — so `mayReach` gets no special case and
+ * nothing here decides reach.
+ *
+ * **It is the only link that needs to know which endpoint was addressed.** An
+ * issued token is bound to this endpoint by living in its store; an OIDC token
+ * by an audience the operator configured. A key is signed by an issuer that
+ * serves every Lanes endpoint, so the audience is the *only* thing standing
+ * between a key minted for one deployment and every other deployment. Absent, it
+ * refuses: an unchecked audience here would make a key a skeleton key across
+ * every endpoint the issuer signs for, which is precisely the failure ADR-079
+ * spent its argument on one level up.
+ */
+export class LanesKeyAuthenticator implements Authenticator {
+  readonly #verifier: ApiKeyVerifier;
+  readonly #profile: string;
+  readonly #profilesFor: (subject: string) => Promise<readonly string[]>;
+
+  constructor(
+    verifier: ApiKeyVerifier,
+    profile: string,
+    profilesFor: (subject: string) => Promise<readonly string[]>,
+  ) {
+    this.#verifier = verifier;
+    this.#profile = profile;
+    this.#profilesFor = profilesFor;
+  }
+
+  async authenticate(
+    header: string | null | undefined,
+    context?: AuthContext,
+  ): Promise<AuthOutcome> {
+    const presented = parseBearer(header);
+    if (presented === null) return { ok: false, reason: header ? 'malformed' : 'missing' };
+
+    // Fail closed on a caller that did not say who was addressed. `invalid`
+    // rather than `not_configured`: the credential was not examined, and the
+    // chain's ranking treats `invalid` as the more specific answer — which is
+    // right, because something reached this link with a bearer it could not
+    // judge, and that is worth surfacing over "nobody has set this up".
+    if (context === undefined) return { ok: false, reason: 'invalid' };
+
+    try {
+      const verified = await this.#verifier.verify(presented, { audience: context.resource });
+      if (!verified) return { ok: false, reason: 'invalid' };
+
+      // Resolved per request, never cached with the credential. This is what
+      // makes `profile members remove` the revocation for a key, and it is the
+      // only one a signed credential has — see `./lanes/api-key.ts`.
+      const profiles = await this.#profilesFor(verified.subject);
+      return { ok: true, principal: memberPrincipal(verified.subject, this.#profile, profiles) };
+    } catch {
+      // A JWKS fetch that throws, or a resolver that does. Closed, for the
+      // reason `OidcAuthenticator` gives: an outage at the identity provider
+      // must close the endpoint rather than open it.
       return { ok: false, reason: 'invalid' };
     }
   }
