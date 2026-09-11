@@ -291,8 +291,6 @@ export const SECTIONS: readonly Section[] = [
         command: 'doctor --fix',
         description: 'apply a repair it can make itself, such as a provider this project renamed under you',
       },
-      { command: 'auth [--json]', description: 'whether each connection can still sign in' },
-      { command: 'auth --connection <key>', description: 'just this one' },
       { command: 'tools [--json]', description: 'what the endpoint advertises to a client' },
       { command: 'plan', description: 'what reconcile would change' },
       { command: 'audit tail [--limit N] [--denied-only] [--format md]' },

@@ -164,10 +164,6 @@ export const SELECTION: Record<string, Requires> = {
   secrets: 'workspace',
   plan: 'profile+workspace',
   doctor: 'profile+workspace',
-  // Whether an account can still sign in is a fact about the account. Scoped to
-  // a profile's grants it could not check one that had just been connected,
-  // which is when you most want to.
-  auth: 'workspace',
   // Target-scoped: see the note above. `--profile` narrows each to one profile.
   status: 'workspace',
   // Its subject has always been the endpoint rather than a profile — its own
