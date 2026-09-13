@@ -17,7 +17,7 @@ import { prepareSecrets } from './prepare.ts';
 import { provisionStepsFor } from './provision-profile.ts';
 import { repairOwnerLayer } from '#cli/config-repair-sweep.ts';
 import { migrateToCurrentContract } from '#cli/workspace-migrate.ts';
-import { deployedWorkspace, uploadWorkspace } from './upload.ts';
+import { deployedWorkspace, uploadWorkspace, uploadsWorkspace } from './upload.ts';
 import { servingProfiles } from './serving.ts';
 import { healthLine, reachability, registerLine, reportUnauthorised } from './report.ts';
 
@@ -191,7 +191,9 @@ export async function deploy(flags: DeployFlags): Promise<void> {
   if (flags.dryRun) {
     printSteps(driver, [...provision, ...rollout]);
     print('');
-    if (workspace) print(style.dim(`  the workspace would be uploaded to ${workspace}`));
+    if (uploadsWorkspace(resolution.workspaceRoot, workspace)) {
+      print(style.dim(`  the workspace would be uploaded to ${workspace}`));
+    }
     // Not "nothing was run": planning the list above reads the IAM policies this
     // deploy would change, because what it supersedes is a fact about what is
     // there. Reads only, and no credential among them.
@@ -294,16 +296,11 @@ export async function deploy(flags: DeployFlags): Promise<void> {
     // Before the rollout, so the revision that comes up finds a config to read.
     // Uploading after would leave a window where the service is serving and the
     // workspace it was told to read is not there yet.
-    // **Only when there is somewhere to copy from.** After ADR-052 the profiles
-    // a deployed target serves *live in* that target's workspace, so
-    // `resolution.workspaceRoot` and `workspace` are the same bucket and this is
-    // a copy onto itself. It ran, and the self-copy is how the bucket's registry
-    // came to be overwritten.
     //
-    // What it is still for is the one-way trip: a first deploy, where the
-    // profile is on this machine and the bucket does not hold it yet. That is a
-    // move, not a sync — the next deploy finds it already there.
-    if (resolution.workspaceRoot !== workspace) {
+    // Whether it copies at all is `uploadsWorkspace`, which is also what the
+    // `--dry-run` line above reports — the two disagreeing is the bug that made
+    // it a function.
+    if (uploadsWorkspace(resolution.workspaceRoot, workspace)) {
       await uploadWorkspace(resolution.workspaceRoot, workspace, serving);
     }
 
