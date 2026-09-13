@@ -43,6 +43,30 @@ export function deployedWorkspace(declared: TargetConfig): string | undefined {
 }
 
 /**
+ * Whether this deploy copies anything up.
+ *
+ * Usually not, and that is the point. After ADR-052 the profiles a deployed
+ * target serves *live in* that target's workspace, so both sides are the same
+ * bucket and the copy would be onto itself — the self-copy is how the bucket's
+ * registry came to be overwritten. What survives is the one-way trip: a first
+ * deploy, where the profile is on this machine and the bucket does not hold it
+ * yet. That is a move, and the next deploy finds it already there.
+ *
+ * A function rather than the expression written at each site, because it *was*
+ * written at each site and only one of them had it. `--dry-run` announced an
+ * upload that the real run would skip, which is the worst direction for a dry
+ * run to be wrong in: it is read to decide whether the real one is safe, and
+ * this one said it would overwrite a remote workspace with whatever the local
+ * machine happened to hold.
+ */
+export function uploadsWorkspace(
+  workspaceRoot: string,
+  workspace: string | undefined,
+): workspace is string {
+  return workspace !== undefined && workspaceRoot !== workspace;
+}
+
+/**
  * What a deploy sends up: an allowlist, never a sync with exclusions.
  *
  * `data/` holds the encrypted credential store **and its key file**, and the
