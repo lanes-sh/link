@@ -151,4 +151,4 @@ export {
   type VaultStore,
 } from './vault.ts';
 
-export { generateKey, type DocumentIO } from './document.ts';
+export { generateKey, type DocumentIO, type StoredKey } from './document.ts';

@@ -38,7 +38,12 @@ import { routeBlobStore } from '#stores/blobs/route.ts';
 import { connectorFactory } from '#connectivity/transports';
 import { requestAuthorizer } from '#connectivity/auth/index.ts';
 import { resolveProfile, type GlobalFlags } from './select.ts';
-import { buildRegistryWithWorkspace, readSkillsForStart, reloadSkills } from './registry.ts';
+import {
+  buildRegistryWithWorkspace,
+  readSkillsForStart,
+  readVaultItemsForStart,
+  reloadSkills,
+} from './registry.ts';
 import { primeDiscovery } from './discovery.ts';
 import { openVault } from './vault.ts';
 import { EMPTY_SKILL_STORE, skillStore } from './stores.ts';
@@ -166,6 +171,13 @@ export async function openRuntime(
   // expressible; an item written since the last start is therefore not readable
   // until the next one, deliberately (ADR-012 §3).
   const vaultStore = openVault(adapters, storageFor, credentials);
+  // Tolerated for a document kept somewhere else, for the reason
+  // `readVaultItemsForStart` gives: this read is taken by every command, so a
+  // vault that will not open otherwise takes down the ones that would diagnose
+  // it. `vaultStore` itself is handed to the registry either way, so the vault's
+  // own capabilities still refuse rather than report it empty.
+  const remoteVault = adapters.declared.vault?.adapter === 'secret' ||
+    adapters.declared.vault?.adapter === 'blob';
 
   // `refreshSkills` is declared before the registry it mutates because the
   // provider has to be handed it at construction: a `skills.manage.write` says
@@ -235,7 +247,15 @@ export async function openRuntime(
     ...(skills ? { skillStore: skills } : {}),
     skills: loaded.skills,
     onSkillsChanged: refreshSkills,
-    vault: { store: vaultStore, items: await vaultStore.ids() },
+    vault: {
+      store: vaultStore,
+      items: await readVaultItemsForStart(
+        vaultStore,
+        remoteVault,
+        (message) => logger.warn(message),
+        ` --profile ${config.instance.profile} --workspace ${target}`,
+      ),
+    },
     setup: {
       profile: config.instance.profile,
       target,

@@ -1,7 +1,7 @@
 import {
   assertKeyLength,
   blobDocumentIO,
-  envOnlyKeySource,
+  suppliedKeySource,
   fileDocumentIO,
   fileKeySource,
   generateKey,
@@ -74,11 +74,15 @@ export function createBlobSecretStore(options: BlobSecretsOptions): SecretStore 
 
   return new DocumentSecretStore(
     blobDocumentIO(options.store, key),
-    envOnlyKeySource({
+    suppliedKeySource({
       envVar: KEY_ENV,
       env,
       explicit: options.encryptionKey,
       label: key,
+      describes: 'a blob-backed credential store',
+      // No `stored`, and there is nowhere to point one: this *is* the store a
+      // key would be read from, so a fallback would be asking the lock for its
+      // own key.
       remedy: 'openssl rand -base64 32',
     }),
   );

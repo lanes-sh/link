@@ -187,6 +187,81 @@ describe('the owner layer follows the target — ADR-014', () => {
   });
 });
 
+/**
+ * Where the key comes from for a caller that is not the deployed revision.
+ *
+ * A revision has `LANES_LINK_VAULT_KEY` mounted from `vault/key`. The CLI has
+ * no such mount, and used to have no other way to resolve one — while holding
+ * the very store `vault/key` is in, opened one line earlier in `open.ts`. That
+ * is why `connect` against a deployed target failed on a vault it never writes
+ * to: `openRuntime` enumerates items for their `vault.get.<id>` capabilities,
+ * and every command pays for that read.
+ */
+describe('the key a deployed target already holds', () => {
+  const KEY = Buffer.from(new Uint8Array(32).fill(5)).toString('base64');
+
+  function credentialsAt(root: string) {
+    return createFileSecretStore({ path: join(root, 'data', 'personal.credentials.enc') });
+  }
+
+  test('is read from the target’s own credential store, with none in the environment', async () => {
+    const root = await workspace();
+    // What `lanes link deploy` mints, unconditionally, for a target whose
+    // credential store can hold it (`#deployments/prepare.ts`).
+    await credentialsAt(root).set('vault/key', KEY);
+    delete process.env['LANES_LINK_VAULT_KEY'];
+
+    const runtime = await openRuntime({ profile: 'personal', target: 'blob_vault' });
+    try {
+      await runtime.vault.put('owner', { id: 'token', value: 'secret' });
+      expect((await runtime.vault.get('owner', 'token'))?.value).toBe('secret');
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  test('a vault that will not open refuses its own items, not the whole command', async () => {
+    // The failure that made this a `connect` bug rather than a vault bug. A
+    // read taken by every command must not be able to end one — least of all
+    // `doctor`, which is what you would run to find out why.
+    await workspace();
+    process.env['LANES_LINK_VAULT_KEY'] = KEY;
+    const seeded = await openRuntime({ profile: 'personal', target: 'blob_vault' });
+    await seeded.vault.put('owner', { id: 'token', value: 'secret' });
+    await seeded.close();
+
+    // The document is there and there is now no key anywhere for it.
+    delete process.env['LANES_LINK_VAULT_KEY'];
+
+    const runtime = await openRuntime({ profile: 'personal', target: 'blob_vault' });
+    try {
+      expect(runtime.target).toBe('blob_vault');
+      // No capability is registered for an item this process cannot name.
+      expect(runtime.registry.capabilities().map((entry) => entry.id)).not.toContain(
+        'lanes_vault.get.token',
+      );
+      // And the vault itself still refuses, rather than reading as empty — the
+      // distinction `src/providers/vault/provider.test.ts` exists to keep.
+      await expect(runtime.vault.ids()).rejects.toThrow(/LANES_LINK_VAULT_KEY is required/);
+    } finally {
+      await runtime.close();
+    }
+  });
+
+  test('a file vault still fails outright, because a local fault is a real one', async () => {
+    // The distinction `readSkillsForStart` draws: tolerance is for a document
+    // kept somewhere else, whose failures are ordinary.
+    const root = await workspace();
+    const path = join(root, layout.vault('personal', 'lan5'));
+    await mkdir(join(path, '..'), { recursive: true });
+    await writeFile(path, 'not an encrypted document');
+
+    await expect(openRuntime({ profile: 'personal', target: 'local' })).rejects.toThrow(
+      /JSON Parse error/,
+    );
+  });
+});
+
 describe('refusals', () => {
   test('an s3 target with no bucket says so before reaching for a credential', async () => {
     await workspace();

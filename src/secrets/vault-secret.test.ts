@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { createMemoryCredentials } from '#stores/state/testing.ts';
-import { createSecretVaultStore } from './vault.ts';
+import { VAULT_KEY_REF, createSecretVaultStore } from './vault.ts';
 
 /**
  * The vault as one entry in the secret store.
@@ -105,5 +105,124 @@ describe('the vault in a secret store', () => {
   test('a missing document reads as an empty vault', async () => {
     expect(await open(credentials).get('main', 'nothing')).toBeNull();
     expect(await open(credentials).ids()).toEqual([]);
+  });
+});
+
+/**
+ * Where the key comes from when the caller is not the revision.
+ *
+ * A deployment has `LANES_LINK_VAULT_KEY` mounted from `vault/key` and never
+ * reaches past the environment. The CLI has no such mount and, until this, no
+ * way to resolve one — while holding the very store `vault/key` is in. These
+ * pin the order, the laziness, and the two failures that must not be confused.
+ */
+describe('a key the target keeps', () => {
+  const STORED = Buffer.from(new Uint8Array(32).fill(11)).toString('base64');
+  let credentials: ReturnType<typeof createMemoryCredentials>;
+
+  function stored(get?: (ref: string) => Promise<string | null>) {
+    return {
+      ref: VAULT_KEY_REF,
+      get: get ?? ((ref: string) => credentials.get(ref)),
+      describeStore: "this target's credential store",
+    };
+  }
+
+  beforeEach(async () => {
+    credentials = createMemoryCredentials();
+    await credentials.set(VAULT_KEY_REF, STORED);
+  });
+
+  test('opens a vault the deployment minted, with nothing in the environment', async () => {
+    const vault = createSecretVaultStore({ store: credentials, env: {}, stored: stored() });
+    await vault.put('main', { id: 'stripe', value: 'sk_live_x' });
+
+    const read = await createSecretVaultStore({
+      store: credentials,
+      env: {},
+      stored: stored(),
+    }).get('main', 'stripe');
+    expect(read?.value).toBe('sk_live_x');
+  });
+
+  test('the environment still wins, so a revision resolves as it always did', async () => {
+    // Sealed under the mounted key while the store holds a different one. The
+    // reader below has only the stored key, so a successful read would mean the
+    // environment had been skipped.
+    await createSecretVaultStore({ store: credentials, env, stored: stored() }).put('main', {
+      id: 'stripe',
+      value: 'sk_live_x',
+    });
+
+    await expect(
+      createSecretVaultStore({ store: credentials, env: {}, stored: stored() }).get(
+        'main',
+        'stripe',
+      ),
+    ).rejects.toThrow();
+  });
+
+  test('the store is not asked until a document actually needs opening', async () => {
+    // The cost that would otherwise land on every request a deployment serves,
+    // including the ones with no interest in a vault.
+    let reads = 0;
+    const counted = stored(async (ref) => {
+      reads += 1;
+      return credentials.get(ref);
+    });
+
+    const empty = createSecretVaultStore({ store: credentials, env: {}, stored: counted });
+    expect(await empty.ids()).toEqual([]);
+    expect(reads).toBe(0);
+
+    const vault = createSecretVaultStore({ store: credentials, env: {}, stored: counted });
+    await vault.put('main', { id: 'stripe', value: 'a' });
+    await vault.get('main', 'stripe');
+    await vault.ids();
+    // Resolved once and cached, not once per operation.
+    expect(reads).toBe(1);
+  });
+
+  test('a key that cannot be read is not reported as a key that is not there', async () => {
+    // Secret Manager answers a missing binding with 403 rather than 404, so an
+    // identity cannot enumerate secrets by their error codes. The two have
+    // different fixes and must not arrive as one sentence.
+    const denied = stored(async () => {
+      throw new Error('403 permission denied');
+    });
+
+    await expect(
+      createSecretVaultStore({ store: credentials, env: {}, stored: denied }).put('main', {
+        id: 'x',
+        value: 'y',
+      }),
+    ).rejects.toThrow(/could not be read.*granted/s);
+  });
+
+  test('with no key anywhere the refusal names where it looked', async () => {
+    const bare = createMemoryCredentials();
+    const vault = createSecretVaultStore({
+      store: bare,
+      env: {},
+      stored: { ref: VAULT_KEY_REF, get: (ref) => bare.get(ref), describeStore: 'the store' },
+      remedy: 'lanes link deploy --workspace cloud',
+    });
+
+    await expect(vault.put('main', { id: 'x', value: 'y' })).rejects.toThrow(
+      /"vault\/key" in the store holds no key either.*lanes link deploy --workspace cloud/s,
+    );
+  });
+
+  test('a stored key of the wrong length says so, naming the ref', async () => {
+    const short = createMemoryCredentials();
+    await short.set(VAULT_KEY_REF, Buffer.from(new Uint8Array(16)).toString('base64'));
+
+    await expect(
+      createSecretVaultStore({
+        store: short,
+        env: {},
+        stored: { ref: VAULT_KEY_REF, get: (ref) => short.get(ref), describeStore: 'the store' },
+      }).put('main', { id: 'x', value: 'y' }),
+    ).rejects.toThrow(/vault\/key must decode to 32 bytes, got 16/);
   });
 });

@@ -171,25 +171,106 @@ export function fileKeySource(input: {
   };
 }
 
-export function envOnlyKeySource(input: {
+/** Where a target keeps a key it did not mint, for the source below to ask. */
+export interface StoredKey {
+  /** The entry holding the key, e.g. `vault/key`. */
+  readonly ref: string;
+  readonly get: (ref: string) => Promise<string | null>;
+  /** Named in the refusal, so "it is not there" and "I cannot read it" differ. */
+  readonly describeStore: string;
+}
+
+/**
+ * A key this store cannot mint: from the environment, or from wherever the
+ * target keeps it.
+ *
+ * The refusal to mint is ADR-014's and stands. A `file` store may generate one
+ * because it has a sibling `.key` at 0600 that outlives the process. A
+ * deployment has nowhere equivalent: a key written beside the ciphertext it
+ * protects encrypts nothing, and a fresh key per revision would make every
+ * previously stored item permanently unreadable while appearing to work.
+ *
+ * What ADR-014 also says is that the key comes from the environment "and
+ * nothing else", and that part was too strong. It is right for the revision,
+ * which has `vault/key` mounted by `--set-secrets` — and it left the CLI unable
+ * to open a vault it is otherwise entirely authorised for, because `openVault`
+ * is handed the very store the key sits in and never asked it. Hence `stored`,
+ * consulted after the environment and before giving up.
+ *
+ * **The order is deliberate.** The environment stays first, so a deployed
+ * revision resolves exactly as it did and spends no round trip re-fetching an
+ * answer it was started with. `stored` is reached only where the environment is
+ * empty, which outside a deployment is everywhere.
+ *
+ * **And it costs nothing until a document is actually opened.** A `KeySource` is
+ * resolved on first use and cached by the store, and an empty document
+ * short-circuits before reaching one — so a command that never opens a non-empty
+ * vault makes no call here at all.
+ */
+export function suppliedKeySource(input: {
   readonly envVar: string;
   readonly env: Record<string, string | undefined>;
   readonly explicit?: Uint8Array | undefined;
   readonly label: string;
-  /** The command that mints one, named because the caller knows which store this is. */
+  /** The subject of "… will not mint a key": "a blob-backed vault". */
+  readonly describes: string;
+  /** The command that supplies one, named because the caller knows which store this is. */
   readonly remedy: string;
+  readonly stored?: StoredKey | undefined;
 }): KeySource {
   return async () => {
     const explicit = explicitKey(input.explicit, input.env, input.envVar);
     if (explicit) return explicit;
 
+    const stored = input.stored ? await readStoredKey(input.stored) : null;
+    if (stored) return stored;
+
+    const looked = input.stored
+      ? `"${input.stored.ref}" in ${input.stored.describeStore} holds no key either`
+      : 'nothing else was configured to supply one';
+
     throw new Error(
-      `${input.label}: ${input.envVar} is required for a blob-backed store. ` +
-        `Generate one with "${input.remedy}" and store it in the deployment's secret manager — ` +
-        'this adapter will not mint a key, because a key it generated would be lost with the ' +
-        'process and take every stored item with it.',
+      `${input.label}: ${input.envVar} is required here, and ${looked}. ` +
+        `Run "${input.remedy}" — ${input.describes} will not mint a key, because a key it ` +
+        'generated would be lost with the process and take every stored item with it.',
     );
   };
+}
+
+/**
+ * The key from the target's own store, or null when it holds none.
+ *
+ * The `catch` is not defensive padding. Secret Manager answers a missing binding
+ * with 403 rather than 404, so that an identity cannot enumerate secrets by
+ * their error codes, and the adapter returns null for the 404 and throws for the
+ * 403. So the throw is load-bearing: "there is no key here" came back as null
+ * two lines down, and this is the other thing — a key that exists and was not
+ * handed over. Letting it escape bare would report a REST failure from inside a
+ * lookup that was only ever a fallback, with nothing saying which store or which
+ * ref it was reaching for.
+ *
+ * What it must not do is claim which failure it was. A denial and a timeout
+ * arrive here identically, and a sentence asserting the first would be wrong
+ * half the time, so the message names the likely cause and leaves the original
+ * attached.
+ */
+async function readStoredKey(stored: StoredKey): Promise<Uint8Array | null> {
+  let value: string | null;
+  try {
+    value = await stored.get(stored.ref);
+  } catch (error) {
+    throw new Error(
+      `"${stored.ref}" in ${stored.describeStore} could not be read: ${(error as Error).message}\n` +
+        '  Usually this identity is not granted the read. Granting it is the fix — issuing a ' +
+        'second key is not, because a second key decrypts nothing.',
+    );
+  }
+
+  if (value === null) return null;
+
+  const decoded = decodeKey(value);
+  assertKeyLength(decoded, stored.ref);
+  return decoded;
 }
 
 function explicitKey(

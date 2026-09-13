@@ -259,6 +259,55 @@ export async function readSkillsForStart(
   }
 }
 
+/**
+ * The vault items a starting runtime should register, and what to do when the
+ * document will not open.
+ *
+ * Same trade as `readSkillsForStart` above, for the read that had no guard. Each
+ * stored item becomes its own `vault.get.<id>` capability (ADR-012 §3), so
+ * `openRuntime` enumerates the vault before building the registry — and that one
+ * read is taken by *every* command, including the ones that have no business
+ * with a vault. `connect` was the case that surfaced it: a key it does not need,
+ * for a store it does not write to, refusing an OAuth flow that would have
+ * worked. `doctor` was refused by the same read, which is the part that matters:
+ * the failure hid its own diagnosis.
+ *
+ * `tolerant` is for a document that is somewhere else — a bucket or a secret
+ * store, and therefore a network dependency whose failures are ordinary. A
+ * `file` vault that will not read is a real local fault worth failing on,
+ * exactly the distinction the skills version draws.
+ *
+ * **An empty list is not the same claim as an empty vault, and must not read
+ * like one.** `src/providers/vault/provider.test.ts` pins that: a deployment
+ * that has lost its key must not look like a deployment whose vault is simply
+ * empty. Two things keep it honest here. The warning says what happened, and the
+ * store itself stays in the runtime — so `vault get`, `put` and `list` still
+ * fail with the original error rather than reporting nothing there. What is
+ * withheld is only the per-item capabilities, which is correct: they are named
+ * after items this process cannot name.
+ */
+export async function readVaultItemsForStart(
+  store: VaultStore,
+  tolerant: boolean,
+  warn: (message: string) => void,
+  /** `--profile x --workspace y`, so the command in the warning is pasteable. */
+  selection = '',
+): Promise<Awaited<ReturnType<VaultStore['ids']>>> {
+  try {
+    return await store.ids();
+  } catch (error) {
+    if (!tolerant || error instanceof ConfigError) throw error;
+
+    warn(
+      `could not open this profile's vault: ${(error as Error).message}\n` +
+        '  Its items are not listed and no `vault.get.*` capability is registered for them. ' +
+        'Nothing else is affected, and the vault itself still refuses rather than reading ' +
+        `as empty. Run \`lanes link doctor${selection}\` for what is wrong.`,
+    );
+    return [];
+  }
+}
+
 export async function skillFingerprint(store: BlobStore): Promise<string> {
   return (await store.list())
     .map((blob) => `${blob.key}:${blob.size}:${blob.modifiedAt.getTime()}`)

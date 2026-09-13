@@ -1,6 +1,6 @@
 import {
   soleGrantFor, layout, vaultRef, workspacePath } from '#profile';
-import type { SecretStore } from '#secrets';
+import { VAULT_KEY_REF, type SecretStore, type StoredKey } from '#secrets';
 import {
   createBlobVaultStore,
   createFileVaultStore,
@@ -42,6 +42,33 @@ export function openVault(
   // document every other profile uses rather than inventing a second one.
   const connection = soleGrantFor(config, 'lanes_vault') ?? 'main';
 
+  // Where the key is, for anything that is not the revision.
+  //
+  // `deploy` mints it into the target's own credential store at `vault/key`
+  // (`#deployments/prepare.ts`) and mounts it on the revision as
+  // `LANES_LINK_VAULT_KEY` via `--set-secrets` (`#deployments/bootstrap.ts`).
+  // The revision therefore never reaches this: the environment is checked first
+  // and it always answers there.
+  //
+  // The CLI is the caller that had nothing. It holds `credentials` — the very
+  // store `vault/key` is in, and the one it read every OAuth refresh token out
+  // of on the way here — and then refused to open the vault for want of a key
+  // sitting in the store it had just finished reading. ADR-014 says
+  // the key comes from the environment and nothing else, which is what that
+  // refusal was; ADR-022 is why relaxing it gives nothing away. Reading
+  // `vault/key` from here needs exactly the access that already hands over
+  // Gmail, Drive and iCloud, and the vault is the smaller asset — that ADR's
+  // own words for why it stopped living behind the taller fence.
+  //
+  // A `file` vault gets none of this. It mints its own key beside the document
+  // at 0600 and there is no ref to read.
+  const stored: StoredKey = {
+    ref: VAULT_KEY_REF,
+    get: (ref) => credentials.get(ref),
+    describeStore: "this target's credential store",
+  };
+  const remedy = `lanes link deploy --workspace ${input.target}`;
+
   switch (vault.adapter) {
     case 'file':
       return createFileVaultStore({
@@ -65,12 +92,16 @@ export function openVault(
       return createSecretVaultStore({
         store: credentials,
         ref: vaultRef(declared, config),
+        stored,
+        remedy,
       });
 
     case 'blob':
       return createBlobVaultStore({
         store: storage(),
         key: vault.path ?? layout.vaultKey(connection),
+        stored,
+        remedy,
       });
   }
 }

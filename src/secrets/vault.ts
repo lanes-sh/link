@@ -1,14 +1,15 @@
 import {
   blobDocumentIO,
-  envOnlyKeySource,
   fileDocumentIO,
   fileKeySource,
   secretDocumentIO,
   generateKey,
   open,
   seal,
+  suppliedKeySource,
   type DocumentIO,
   type KeySource,
+  type StoredKey,
 } from './document.ts';
 import type { BlobStore } from '#stores/blobs';
 
@@ -115,9 +116,13 @@ export interface BlobVaultStoreOptions {
   readonly store: BlobStore;
   /** Object key. One document, so one key. */
   readonly key?: string;
-  /** 32-byte key. When omitted, `LANES_LINK_VAULT_KEY` — and nothing else. */
+  /** 32-byte key. When omitted, `LANES_LINK_VAULT_KEY`, then `stored`. */
   readonly encryptionKey?: Uint8Array;
   readonly env?: Record<string, string | undefined>;
+  /** Where this target keeps the key, for a caller that is not the revision. */
+  readonly stored?: StoredKey | undefined;
+  /** The command that supplies one. The caller knows the target; this file does not. */
+  readonly remedy?: string | undefined;
 }
 
 /**
@@ -133,12 +138,14 @@ export function createBlobVaultStore(options: BlobVaultStoreOptions): VaultStore
 
   return new DocumentVaultStore(
     blobDocumentIO(options.store, key),
-    envOnlyKeySource({
+    suppliedKeySource({
       envVar: KEY_ENV,
       env,
       explicit: options.encryptionKey,
       label: key,
-      remedy: 'lanes link vault key generate',
+      describes: 'a blob-backed vault',
+      remedy: options.remedy ?? 'lanes link vault key generate',
+      ...(options.stored ? { stored: options.stored } : {}),
     }),
   );
 }
@@ -151,9 +158,13 @@ export interface SecretVaultStoreOptions {
   };
   /** Where the document lives. One document, so one ref. */
   readonly ref?: string;
-  /** 32-byte key. When omitted, `LANES_LINK_VAULT_KEY` — and nothing else. */
+  /** 32-byte key. When omitted, `LANES_LINK_VAULT_KEY`, then `stored`. */
   readonly encryptionKey?: Uint8Array;
   readonly env?: Record<string, string | undefined>;
+  /** Where this target keeps the key, for a caller that is not the revision. */
+  readonly stored?: StoredKey | undefined;
+  /** The command that supplies one. The caller knows the target; this file does not. */
+  readonly remedy?: string | undefined;
 }
 
 /**
@@ -189,12 +200,14 @@ export function createSecretVaultStore(options: SecretVaultStoreOptions): VaultS
 
   return new DocumentVaultStore(
     secretDocumentIO(options.store, ref),
-    envOnlyKeySource({
+    suppliedKeySource({
       envVar: KEY_ENV,
       env,
       explicit: options.encryptionKey,
       label: ref,
-      remedy: 'lanes link vault key generate',
+      describes: "a vault in the target's secret store",
+      remedy: options.remedy ?? 'lanes link vault key generate',
+      ...(options.stored ? { stored: options.stored } : {}),
     }),
   );
 }
