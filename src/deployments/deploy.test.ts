@@ -11,6 +11,7 @@ import {
   isWorkspaceConfig,
   publishWorkspace,
   uploadWorkspace,
+  uploadsWorkspace,
 } from './upload.ts';
 import { repairOwnerLayer } from '#cli/config-repair-sweep.ts';
 import { layout, parseConfig, workspaceFiles } from '#profile';
@@ -163,6 +164,45 @@ describe('what a deploy sends up', () => {
  * covers. Repairing only the resolved profile while sending the whole workspace
  * up would leave the others broken and look like it had not.
  */
+
+/**
+ * Whether a deploy copies anything up, asked once.
+ *
+ * The condition existed and was right; what was wrong is that only one of the
+ * two places that needed it had it. `--dry-run` announced an upload the real run
+ * would skip, which is the worst direction for a dry run to be wrong in: it is
+ * the output you read to decide whether running it for real is safe.
+ */
+describe('whether a deploy uploads at all', () => {
+  test('a remote workspace is a copy onto itself, so nothing goes', () => {
+    // After ADR-052 the profiles a deployed target serves live in that target's
+    // workspace. The self-copy is how the bucket's registry came to be
+    // overwritten.
+    expect(uploadsWorkspace('gs://a-bucket', 'gs://a-bucket')).toBe(false);
+  });
+
+  test('the one-way trip still goes: a profile here, a bucket that lacks it', () => {
+    expect(uploadsWorkspace('/home/someone/.lanes/link', 'gs://a-bucket')).toBe(true);
+  });
+
+  test('a target with no bucket uploads nothing', () => {
+    expect(uploadsWorkspace('/home/someone/.lanes/link', undefined)).toBe(false);
+  });
+
+  test('the dry run and the real upload ask the same question', async () => {
+    // The defect was one fact spelled twice and the halves disagreeing. Reading
+    // the source is how `selection.test.ts` stops a second spelling appearing,
+    // and it is the only thing that stops this one coming back.
+    const source = await readFile(new URL('./deploy.ts', import.meta.url), 'utf8');
+
+    const guards = source.match(/uploadsWorkspace\(/g) ?? [];
+    expect(guards.length).toBe(2);
+
+    // Neither the announcement nor the upload may test it any other way.
+    expect(source).not.toMatch(/resolution\.workspaceRoot !== workspace/);
+  });
+});
+
 describe('what a deploy repairs before sending it', () => {
   /** An old profile: a real connection, its grant, and no setup surface. */
   const OLD = (name: string) => `contract: 5
