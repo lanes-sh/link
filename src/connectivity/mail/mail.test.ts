@@ -622,6 +622,40 @@ describe('composing the message', () => {
     expect(raw).toContain('In-Reply-To: <original@example.com>');
     expect(raw).toContain('References: <original@example.com>');
   });
+
+  test('a Message-ID with space around it, or no brackets, still composes one clean header', async () => {
+    // nodemailer trims `References` and not `In-Reply-To`, so the first of
+    // these reached the header as `< <original@example.com>` on every provider.
+    for (const inReplyTo of [' <original@example.com> ', 'original@example.com']) {
+      const composed = await composeMime({
+        from: 'ada@example.com',
+        message: { to: ['sam@example.com'], subject: 'Re: Invoice', text: 'Yes', inReplyTo },
+      });
+
+      const raw = new TextDecoder().decode(composed.raw);
+
+      expect(raw).toContain('In-Reply-To: <original@example.com>\r\n');
+      expect(raw).toContain('References: <original@example.com>\r\n');
+    }
+  });
+
+  test('two Message-IDs are passed through as written, not merged into one', async () => {
+    // Both headers may hold several, and a clean-up that stripped the outer
+    // brackets of `<a> <b>` would hand nodemailer `a> <b`.
+    const composed = await composeMime({
+      from: 'ada@example.com',
+      message: {
+        to: ['sam@example.com'],
+        subject: 'Re: Invoice',
+        text: 'Yes',
+        inReplyTo: '<a@example.com> <b@example.com>',
+      },
+    });
+
+    expect(new TextDecoder().decode(composed.raw)).toContain(
+      'In-Reply-To: <a@example.com> <b@example.com>\r\n',
+    );
+  });
 });
 
 describe('which store a handle belongs to', () => {

@@ -66,13 +66,45 @@ const sending = (
 const parsed = (result: unknown): Record<string, unknown> =>
   JSON.parse(((result as ToolResult).content[0] as { text: string }).text);
 
+const uploaded = (call: Call): boolean => call.contentType?.startsWith('multipart/related') ?? false;
+
+/**
+ * An upload-host body taken apart: the resource Gmail was given, then the message.
+ *
+ * Split on the boundary the request itself declared, so a body whose delimiters
+ * disagree with its own header fails here rather than passing.
+ */
+const partsOf = (call: Call): { resource: Record<string, unknown>; message: string } => {
+  const boundary = /^multipart\/related; boundary=(\S+)$/.exec(call.contentType ?? '')?.[1];
+  if (boundary === undefined) throw new Error(`not a multipart body: ${call.contentType}`);
+
+  const [, first = '', second = ''] = call.body.split(`--${boundary}`);
+  const content = (part: string) =>
+    part.slice(part.indexOf('\r\n\r\n') + 4, part.lastIndexOf('\r\n'));
+
+  return { resource: JSON.parse(content(first)), message: content(second) };
+};
+
+/** The resource Gmail was handed, whichever of the two routes it took. */
+const resourceOf = (call: Call): Record<string, unknown> =>
+  uploaded(call) ? partsOf(call).resource : (JSON.parse(call.body) as Record<string, unknown>);
+
 /** What Gmail was handed, decoded back into the message it represents. */
 const rawOf = (call: Call): string => {
-  if (call.contentType === 'message/rfc822') return call.body;
+  if (uploaded(call)) return partsOf(call).message;
   const body = JSON.parse(call.body) as { raw?: string; message?: { raw?: string } };
   const encoded = body.raw ?? body.message?.raw ?? '';
   return Buffer.from(encoded, 'base64url').toString('utf8');
 };
+
+/**
+ * What `messages.list` answers when the message being replied to is here.
+ *
+ * The Message-ID carries `+` and `=` because Gmail's own do, and both are
+ * characters a query string can quietly change the meaning of.
+ */
+const REPLIED_TO = '<a+b=c@example.com>';
+const FOUND = { messages: [{ id: '18e0002', threadId: '18e0001' }], resultSizeEstimate: 1 };
 
 describe('the tool the endpoint advertises', () => {
   test('gmail offers send_message, in the write bundle', () => {
@@ -226,9 +258,12 @@ describe('revising a draft', () => {
     });
 
     expect(calls[0]!.url).toBe(
-      'https://gmail.googleapis.com/upload/gmail/v1/users/me/drafts/r-8?uploadType=media',
+      'https://gmail.googleapis.com/upload/gmail/v1/users/me/drafts/r-8?uploadType=multipart',
     );
-    expect(calls[0]!.contentType).toBe('message/rfc822');
+    // A draft nests its message on this route exactly as on the JSON one; this
+    // one answers nothing, so there is no thread to name inside it.
+    expect(resourceOf(calls[0]!)).toEqual({ message: {} });
+    expect(rawOf(calls[0]!)).toContain('Content-Disposition: attachment');
   });
 
   test('without draft_only it updates and then sends, by id', async () => {
@@ -300,6 +335,282 @@ describe('revising a draft', () => {
     expect(names).toContain('gmail.send_message');
     expect(names).not.toContain('gmail.users.drafts.update');
     expect(names).not.toContain('gmail.users.drafts.create');
+  });
+});
+
+describe('replying', () => {
+  /**
+   * Gmail's own document names three conditions for filing a message in a
+   * conversation, and the headers are only one of them: the request has to name
+   * the thread. Without that a reply carries every header a recipient's client
+   * threads by, and still lands in the sender's own mailbox as a conversation of
+   * one — which is how this was found.
+   */
+  test('is filed in the thread that holds the message it answers', async () => {
+    const { calls, harness } = sending({ answers: [FOUND, { id: '18f0a1', threadId: '18e0001' }] });
+
+    const result = await harness.invoke('send_message', {
+      to: ['ada.lovelace@example.com'],
+      subject: 'Re: Quote',
+      text: 'Yes, go ahead.',
+      in_reply_to: REPLIED_TO,
+    });
+
+    expect(calls).toHaveLength(2);
+
+    const lookup = new URL(calls[0]!.url);
+    expect(lookup.pathname).toBe('/gmail/v1/users/me/messages');
+    // Bare, and intact: an unencoded `+` reads as a space, and the search then
+    // misses without saying so.
+    expect(lookup.searchParams.get('q')).toBe('rfc822msgid:a+b=c@example.com');
+    // The list leaves both out by default, and a reply to a message in either is
+    // still a reply to it.
+    expect(lookup.searchParams.get('includeSpamTrash')).toBe('true');
+
+    expect(calls[1]!.url).toBe('https://gmail.googleapis.com/gmail/v1/users/me/messages/send');
+    expect(resourceOf(calls[1]!)).toMatchObject({ threadId: '18e0001' });
+    const raw = rawOf(calls[1]!);
+    expect(raw).toContain('In-Reply-To: <a+b=c@example.com>');
+    expect(raw).toContain('References: <a+b=c@example.com>');
+
+    expect(parsed(result)).toMatchObject({ sent: true, thread_id: '18e0001' });
+    expect(parsed(result)).not.toHaveProperty('note');
+  });
+
+  test('saved as a draft, it nests the thread inside the message', async () => {
+    const { calls, harness } = sending({
+      answers: [FOUND, { id: 'r-5', message: { id: '18f0b2', threadId: '18e0001' } }],
+    });
+
+    const result = await harness.invoke('send_message', {
+      to: ['ada.lovelace@example.com'],
+      subject: 'Re: Quote',
+      text: 'Draft reply.',
+      in_reply_to: REPLIED_TO,
+      draft_only: true,
+    });
+
+    expect(calls[1]!.url).toBe('https://gmail.googleapis.com/gmail/v1/users/me/drafts');
+    expect(resourceOf(calls[1]!)).toMatchObject({ message: { threadId: '18e0001' } });
+    // A draft reports its thread one level down, beside its message id.
+    expect(parsed(result)).toMatchObject({ drafted: true, draft_id: 'r-5', thread_id: '18e0001' });
+  });
+
+  test('revised, it stays in the thread, and sending it by id adds nothing', async () => {
+    // Gmail destroys a draft's message and replaces it with the one supplied, so a
+    // revision that does not name the thread again takes the draft out of it.
+    const { calls, harness } = sending({
+      answers: [FOUND, { id: 'r-12' }, { id: '18f0d4', threadId: '18e0001', labelIds: ['SENT'] }],
+    });
+
+    const result = await harness.invoke('send_message', {
+      to: ['ada.lovelace@example.com'],
+      subject: 'Re: Quote',
+      text: 'Corrected reply.',
+      in_reply_to: REPLIED_TO,
+      draft_id: 'r-12',
+    });
+
+    expect(calls).toHaveLength(3);
+    expect(calls[1]!.url).toBe('https://gmail.googleapis.com/gmail/v1/users/me/drafts/r-12');
+    expect(resourceOf(calls[1]!)).toMatchObject({ message: { threadId: '18e0001' } });
+    // The draft already holds the thread, so the send names the draft and nothing else.
+    expect(JSON.parse(calls[2]!.body)).toEqual({ id: 'r-12' });
+    expect(parsed(result)).toMatchObject({ sent: true, thread_id: '18e0001' });
+  });
+
+  test('to a message this mailbox does not hold, it is still sent, and says where it went', async () => {
+    // Nothing to join here. The headers still go, for the recipient's client,
+    // but in this mailbox it is a conversation of one, and the caller should
+    // not report otherwise.
+    const { calls, harness } = sending({
+      answers: [{ resultSizeEstimate: 0 }, { id: '18f0a1', threadId: '18f0a1' }],
+    });
+
+    const result = await harness.invoke('send_message', {
+      to: ['ada.lovelace@example.com'],
+      subject: 'Re: Quote',
+      text: 'Body',
+      in_reply_to: '<elsewhere@example.com>',
+    });
+
+    expect(calls).toHaveLength(2);
+    expect(resourceOf(calls[1]!)).not.toHaveProperty('threadId');
+    expect(rawOf(calls[1]!)).toContain('In-Reply-To: <elsewhere@example.com>');
+    expect(parsed(result)).toMatchObject({ sent: true, thread_id: '18f0a1' });
+    expect(String(parsed(result)['note'])).toContain('new conversation');
+  });
+
+  test('a thread Gmail was handed and did not use is said, with the condition that failed', async () => {
+    // A thread asked for is not a thread joined: Gmail files the reply there
+    // only when all three of its conditions hold, and the answer is the one
+    // place that says which happened.
+    const { harness } = sending({ answers: [FOUND, { id: '18f0a1', threadId: '18f0a1' }] });
+
+    const result = await harness.invoke('send_message', {
+      to: ['ada.lovelace@example.com'],
+      subject: 'Something else entirely',
+      text: 'Body',
+      in_reply_to: REPLIED_TO,
+    });
+
+    expect(parsed(result)).toMatchObject({ sent: true, thread_id: '18f0a1' });
+    expect(String(parsed(result)['note'])).toContain('subject');
+  });
+
+  test('what the lookup read is recorded on the send, as identifiers', async () => {
+    // A read made by a write, so the write's row says what it read — the same
+    // reasoning that gives a mailbox attachment its `origin`.
+    const { harness } = sending({ answers: [FOUND, { id: '18f0a1', threadId: '18e0001' }] });
+
+    await harness.invoke('send_message', {
+      to: ['ada.lovelace@example.com'],
+      subject: 'Re: Quote',
+      text: 'Body',
+      in_reply_to: REPLIED_TO,
+    });
+
+    expect(harness.annotations()).toEqual({
+      in_reply_to: 'a+b=c@example.com',
+      thread_id: '18e0001',
+    });
+  });
+
+  test('two Message-IDs are refused before anything is asked of Gmail', async () => {
+    // One message is searched for. The parent's `References` pasted whole would
+    // search for neither, and the receipt would then say it is not here.
+    const { calls, harness } = sending();
+
+    const result = (await harness.invoke('send_message', {
+      to: ['ada.lovelace@example.com'],
+      subject: 'Re: Quote',
+      text: 'Body',
+      in_reply_to: '<a@example.com> <b@example.com>',
+    })) as ToolResult;
+
+    expect(result.isError).toBe(true);
+    const text = (result.content[0] as { text: string }).text;
+    expect(text).toContain('names one message');
+    expect(text).toContain('Nothing was sent');
+    expect(calls).toHaveLength(0);
+  });
+
+  test('a message that answers nothing makes no lookup and names no thread', async () => {
+    const { calls, harness } = sending({ answers: [{ id: '18f0a1', threadId: '18f0a1' }] });
+
+    const result = await harness.invoke('send_message', {
+      to: ['ada.lovelace@example.com'],
+      subject: 'Hello',
+      text: 'Body',
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(resourceOf(calls[0]!)).not.toHaveProperty('threadId');
+    expect(parsed(result)).toMatchObject({ sent: true, thread_id: '18f0a1' });
+    expect(parsed(result)).not.toHaveProperty('note');
+    expect(harness.annotations()).toEqual({});
+  });
+
+  test('a Message-ID with stray space around it composes one clean header', async () => {
+    // nodemailer trims `References` and not `In-Reply-To`, so this reached the
+    // header as `< <a+b=c@example.com>` — and the search would have missed.
+    const { calls, harness } = sending({ answers: [FOUND, {}] });
+
+    await harness.invoke('send_message', {
+      to: ['ada.lovelace@example.com'],
+      subject: 'Re: Quote',
+      text: 'Body',
+      in_reply_to: ` ${REPLIED_TO} `,
+    });
+
+    expect(new URL(calls[0]!.url).searchParams.get('q')).toBe('rfc822msgid:a+b=c@example.com');
+    expect(rawOf(calls[1]!)).toContain('In-Reply-To: <a+b=c@example.com>\r\n');
+  });
+
+  /** A Gmail that answers the lookup one way and every other request another. */
+  const routed = (
+    lookup: () => Response,
+    verify?: (response: Response) => { retry: boolean } | undefined,
+  ) => {
+    const calls: string[] = [];
+    const seen: number[] = [];
+
+    const capability = gmailSend({
+      fetch: (async (request: Request) => {
+        calls.push(request.url);
+        return new URL(request.url).pathname.endsWith('/messages')
+          ? lookup()
+          : Response.json({ id: '18f0a1', threadId: '18e0001' });
+      }) as never,
+    });
+
+    const harness = harnessFor(
+      defineProviderWithCapabilities({ manifest: manifestOf(gmail), capabilities: [capability] }),
+      'main',
+      {
+        verify: async (response) => {
+          seen.push(response.status);
+          return verify?.(response);
+        },
+      },
+    );
+
+    return { calls, seen, harness };
+  };
+
+  test('a lookup Gmail refuses sends nothing, fetches nothing, and says so', async () => {
+    // Before the attachments, which can take tens of seconds: a lookup that is
+    // going to fail should fail first. And sending it anyway, unthreaded, would
+    // be the failure this whole path exists to prevent.
+    const { calls, seen, harness } = routed(
+      () => new Response('{"error":{"message":"Backend Error"}}', { status: 500 }),
+    );
+
+    const result = (await harness.invoke('send_message', {
+      to: ['ada.lovelace@example.com'],
+      subject: 'Re: Quote',
+      text: 'Body',
+      in_reply_to: REPLIED_TO,
+      attachments: [{ message_id: '18eff00' }],
+    })) as ToolResult;
+
+    expect(result.isError).toBe(true);
+    const text = (result.content[0] as { text: string }).text;
+    expect(text).toContain('500');
+    expect(text).toContain('Backend Error');
+    expect(text).toContain('Nothing was sent');
+    // The lookup and nothing after it: no attachment fetched, nothing submitted.
+    expect(calls).toHaveLength(1);
+    // Handed to the same check every other refusal gets.
+    expect(seen).toEqual([500]);
+  });
+
+  test('a lookup refused on a stale token is made once more on a fresh one', async () => {
+    // A read, so repeating it is the same read — which is what the http
+    // transport does for every generated tool. The send after it is never
+    // repeated; the credential tests below hold that half.
+    let lookups = 0;
+    const { calls, seen, harness } = routed(
+      () => {
+        lookups += 1;
+        return lookups === 1
+          ? new Response('{"error":{"code":401,"message":"Invalid Credentials"}}', { status: 401 })
+          : Response.json(FOUND);
+      },
+      (response) => (response.status === 401 ? { retry: true } : undefined),
+    );
+
+    const result = await harness.invoke('send_message', {
+      to: ['ada.lovelace@example.com'],
+      subject: 'Re: Quote',
+      text: 'Body',
+      in_reply_to: REPLIED_TO,
+    });
+
+    expect(lookups).toBe(2);
+    expect(seen).toEqual([401]);
+    expect(calls).toHaveLength(3);
+    expect(parsed(result)).toMatchObject({ sent: true, thread_id: '18e0001' });
   });
 });
 
@@ -472,7 +783,7 @@ describe('sending with an attachment', () => {
 });
 
 describe('a message too large for a JSON field', () => {
-  test('goes to the upload host as message/rfc822 instead', async () => {
+  test('goes to the upload host, raw, behind the resource it belongs to', async () => {
     // Lifts the ceiling from "what fits in a JSON string" to Gmail's own 35 MiB.
     // `raw` is base64url inside JSON, so a large message would otherwise be a
     // third bigger again and meet a generic request limit first.
@@ -489,12 +800,88 @@ describe('a message too large for a JSON field', () => {
     });
 
     expect(calls[0]!.url).toBe(
-      'https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=media',
+      'https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=multipart',
     );
-    expect(calls[0]!.contentType).toBe('message/rfc822');
+    expect(calls[0]!.contentType).toMatch(/^multipart\/related; boundary=/);
+    // The resource the JSON route would have sent, less `raw` — and this message
+    // answers nothing, so there is nothing in it.
+    expect(resourceOf(calls[0]!)).toEqual({});
     // Raw MIME, not base64url of it.
-    expect(calls[0]!.body).toContain('Content-Disposition: attachment');
+    expect(rawOf(calls[0]!)).toContain('Content-Disposition: attachment');
     expect(parsed(result)).toMatchObject({ sent: true });
+  });
+
+  test('a large reply carries its thread there, which a media upload could not', async () => {
+    // `uploadType=media` carries the bytes and nothing else, which made this the
+    // one route that lost the thread even once the JSON route kept it.
+    const root = await mkdtemp(join(tmpdir(), 'lanes-link-gmail-big-reply-'));
+    await writeFile(join(root, 'big.bin'), new Uint8Array(6 * 1024 * 1024));
+
+    const { calls, harness } = sending({ answers: [FOUND, { id: '18f0a1', threadId: '18e0001' }] });
+
+    const result = await harness.invoke('send_message', {
+      to: ['ada.lovelace@example.com'],
+      subject: 'Re: Large',
+      text: 'Attached.',
+      in_reply_to: REPLIED_TO,
+      attachments: [{ path: join(root, 'big.bin') }],
+    });
+
+    expect(calls[1]!.url).toBe(
+      'https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=multipart',
+    );
+    expect(resourceOf(calls[1]!)).toEqual({ threadId: '18e0001' });
+    expect(rawOf(calls[1]!)).toContain('In-Reply-To: <a+b=c@example.com>');
+    expect(parsed(result)).toMatchObject({ sent: true, thread_id: '18e0001' });
+  });
+
+  test('a large reply draft, and a large revision of one, name the thread inside the message', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'lanes-link-gmail-big-draft-'));
+    await writeFile(join(root, 'big.bin'), new Uint8Array(6 * 1024 * 1024));
+    const reply = {
+      to: ['ada.lovelace@example.com'],
+      subject: 'Re: Large',
+      in_reply_to: REPLIED_TO,
+      draft_only: true,
+      attachments: [{ path: join(root, 'big.bin') }],
+    };
+
+    const created = sending({ answers: [FOUND, { id: 'r-9', message: { id: '18f0b2' } }] });
+    await created.harness.invoke('send_message', reply);
+
+    expect(created.calls[1]!.url).toBe(
+      'https://gmail.googleapis.com/upload/gmail/v1/users/me/drafts?uploadType=multipart',
+    );
+    expect(resourceOf(created.calls[1]!)).toEqual({ message: { threadId: '18e0001' } });
+
+    const revised = sending({ answers: [FOUND, { id: 'r-9' }] });
+    await revised.harness.invoke('send_message', { ...reply, draft_id: 'r-9' });
+
+    expect(revised.calls[1]!.url).toBe(
+      'https://gmail.googleapis.com/upload/gmail/v1/users/me/drafts/r-9?uploadType=multipart',
+    );
+    expect(resourceOf(revised.calls[1]!)).toEqual({ message: { threadId: '18e0001' } });
+  });
+
+  test('the boundary occurs only as the delimiters', async () => {
+    // A boundary inside a part ends that part there (RFC 2046 §5.1.1), so it is
+    // checked against the message rather than trusted to be unlikely.
+    const root = await mkdtemp(join(tmpdir(), 'lanes-link-gmail-big-boundary-'));
+    await writeFile(join(root, 'big.bin'), new Uint8Array(6 * 1024 * 1024));
+
+    const { calls, harness } = sending();
+
+    await harness.invoke('send_message', {
+      to: ['sam@example.com'],
+      subject: 'Large',
+      attachments: [{ path: join(root, 'big.bin') }],
+    });
+
+    const boundary = /boundary=(\S+)$/.exec(calls[0]!.contentType ?? '')?.[1];
+    expect(boundary).toBeDefined();
+    // Two part openings and the close, and nowhere else.
+    expect(calls[0]!.body.split(`--${boundary}`)).toHaveLength(4);
+    expect(calls[0]!.body.endsWith(`\r\n--${boundary}--\r\n`)).toBe(true);
   });
 
   test('past what Gmail accepts at all, it is refused rather than attempted', async () => {
@@ -639,5 +1026,34 @@ describe('a credential the vendor refuses mid-send', () => {
     });
 
     expect(seen).toHaveLength(1);
+  });
+
+  test('not even when the verifier offers a fresh token', async () => {
+    // Reads take that offer — the thread lookup does — and a send never does,
+    // because the one that was refused may still have been delivered.
+    let submitted = 0;
+    const capability = gmailSend({
+      fetch: (async () => {
+        submitted += 1;
+        return new Response('{"error":{"code":401,"message":"Invalid Credentials"}}', {
+          status: 401,
+        });
+      }) as never,
+    });
+
+    const harness = harnessFor(
+      defineProviderWithCapabilities({ manifest: manifestOf(gmail), capabilities: [capability] }),
+      'main',
+      { verify: async () => ({ retry: true }) },
+    );
+
+    const result = await harness.invoke('send_message', {
+      to: ['ada.lovelace@example.com'],
+      subject: 'x',
+      text: 'y',
+    });
+
+    expect((result as ToolResult).isError).toBe(true);
+    expect(submitted).toBe(1);
   });
 });

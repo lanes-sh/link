@@ -34,9 +34,11 @@ export const GMAIL_MAX_MESSAGE_BYTES = 36_700_160;
 /**
  * Above this, submit through the upload host instead of as a JSON field.
  *
- * Google's guidance calls `uploadType=media` the route for files over roughly
- * this size, and the arithmetic agrees: `raw` is base64url inside a JSON string,
- * so a message near the 35 MiB ceiling would be ~47 MiB of text in a request body
- * and would meet a generic limit long before Gmail's own.
+ * Arithmetic, not guidance: `raw` is base64url inside a JSON string, so a message
+ * near the 35 MiB ceiling would be ~47 MiB of text in a request body and would
+ * meet a generic limit long before Gmail's own. Google's upload guide does not
+ * draw this line — it calls both single-request uploads "for smaller files" and
+ * suggests resumable for large ones — and `submit.ts` records why the upload
+ * here is one multipart request regardless.
  */
 export const GMAIL_JSON_LIMIT_BYTES = 5 * 1024 * 1024;
