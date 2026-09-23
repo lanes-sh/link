@@ -164,7 +164,7 @@ export function gmailSend(
           // exactly below.
           maxTotalBytes: Math.floor((GMAIL_MAX_MESSAGE_BYTES * 3) / 4),
           signal: context.signal,
-          mailbox: gmailAttachments({ authorize, fetch: doFetch, signal: context.signal }),
+          mailbox: gmailAttachments(channel),
           storage: context.storage,
           shared: context.attachments,
         });

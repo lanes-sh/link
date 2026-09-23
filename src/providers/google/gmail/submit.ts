@@ -11,17 +11,16 @@ import { GMAIL_API, GMAIL_JSON_LIMIT_BYTES, GMAIL_UPLOAD } from './api.ts';
  * reason `imap/send.ts` is apart from the IMAP capabilities — that file is the
  * tool, and this is the part that is actually Gmail.
  *
- * One rule holds for every request in this file, and it is the one each
+ * One rule holds for every request the capability makes, and it is the one each
  * transported call gets for free: a refusal is handed to `verify` before it is
  * reported, so a token the vendor refused is distrusted rather than resent for
- * the rest of the hour. `call` is where that happens. It used to be written out
- * once per request, and a third copy is how one of them comes to skip it —
- * which `attachment.ts`, reading a mailbox attachment through its own fetch,
- * still does.
+ * the rest of the hour. `call` is where that happens, for the requests here and
+ * for `attachment.ts` reading a mailbox attachment. It used to be written out
+ * once per request, and the copy in `attachment.ts` was the one that skipped it.
  */
 
 /** The connection's own credential path and reply check, which every request here goes through. */
-interface Channel {
+export interface Channel {
   readonly authorize: (request: Request) => Promise<Request>;
   readonly fetch: typeof globalThis.fetch;
   readonly context: ProviderContext;
@@ -254,7 +253,7 @@ function related(
  * be sent again. It also means the call's abort signal is attached here, once,
  * rather than by every request remembering to.
  */
-async function call(
+export async function call(
   channel: Channel,
   url: string,
   init: RequestInit,

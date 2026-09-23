@@ -749,6 +749,87 @@ describe('sending with an attachment', () => {
     ]);
   });
 
+  /**
+   * #215 taught the send to hand its refusals to `verify` and left these reads
+   * out: they made their own fetch, so a 401 while reading an attachment failed
+   * the call and left the refused token trusted for the rest of the hour.
+   */
+  const refusingTheRead = (reads: (count: number) => Response) => {
+    const seen: number[] = [];
+    const counts = { reads: 0, submitted: 0 };
+    const pdf = Buffer.from([1, 2, 3, 4]);
+
+    const capability = gmailSend({
+      fetch: (async (request: Request) => {
+        if (request.url.includes('format=full')) {
+          counts.reads += 1;
+          return reads(counts.reads);
+        }
+        if (request.url.includes('/attachments/')) {
+          return Response.json({ data: pdf.toString('base64url'), size: pdf.byteLength });
+        }
+        counts.submitted += 1;
+        return Response.json({ id: '18f0a1', threadId: '18f0a1' });
+      }) as never,
+    });
+
+    const harness = harnessFor(
+      defineProviderWithCapabilities({ manifest: manifestOf(gmail), capabilities: [capability] }),
+      'main',
+      {
+        verify: async (response) => {
+          seen.push(response.status);
+          return { retry: true };
+        },
+      },
+    );
+
+    return { seen, counts, harness };
+  };
+
+  const withAttachment = {
+    parts: [
+      { mimeType: 'application/pdf', filename: 'quote.pdf', body: { attachmentId: 'ANGjdJ8' } },
+    ],
+  };
+
+  test('a read refused on a stale token is verified, and made once more on a fresh one', async () => {
+    const { seen, counts, harness } = refusingTheRead((count) =>
+      count === 1
+        ? new Response('{"error":{"code":401,"message":"Invalid Credentials"}}', { status: 401 })
+        : Response.json({ payload: withAttachment }),
+    );
+
+    const result = await harness.invoke('send_message', {
+      to: ['ada.lovelace@example.com'],
+      subject: 'Fwd: Quote',
+      attachments: [{ message_id: '18eff00' }],
+    });
+
+    expect(seen).toEqual([401]);
+    expect(counts.reads).toBe(2);
+    expect(parsed(result)).toMatchObject({ sent: true });
+  });
+
+  test('a read refused twice is reported, and nothing is sent', async () => {
+    // The second refusal is verified too: on a reissued token it is the only
+    // evidence that the grant itself has ended.
+    const { seen, counts, harness } = refusingTheRead(
+      () => new Response('{"error":{"code":401,"message":"Invalid Credentials"}}', { status: 401 }),
+    );
+
+    const result = (await harness.invoke('send_message', {
+      to: ['ada.lovelace@example.com'],
+      subject: 'Fwd: Quote',
+      attachments: [{ message_id: '18eff00' }],
+    })) as ToolResult;
+
+    expect(result.isError).toBe(true);
+    expect((result.content[0] as { text: string }).text).toContain('401');
+    expect(seen).toEqual([401, 401]);
+    expect(counts.submitted).toBe(0);
+  });
+
   test('an ambiguous mailbox reference lists what is there', async () => {
     const capability = gmailSend({
       fetch: (async (request: Request) =>
