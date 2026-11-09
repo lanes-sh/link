@@ -89,15 +89,15 @@
     "#stores/state/*": "./src/stores/state/*"
   },
   "dependencies": {
-    "@modelcontextprotocol/client": "2.0.0",
-    "@modelcontextprotocol/core": "2.0.0",
-    "@modelcontextprotocol/server": "2.0.0",
+    "@modelcontextprotocol/client": "2.3.1",
+    "@modelcontextprotocol/core": "2.3.1",
+    "@modelcontextprotocol/server": "2.3.1",
     "@rgrove/parse-xml": "4.2.3",
     "mcp-from-openapi": "2.5.1",
-    "nodemailer": "9.1.1",
+    "nodemailer": "10.1.7",
     "postal-mime": "2.7.5",
     "yaml": "2.9.0",
-    "zod": "4.4.3"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@types/bun": "latest",
