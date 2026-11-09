@@ -209,6 +209,8 @@ function makeHandler(capabilityId: string, entry: MergedCapability, options: Bui
           ? { type: 'text' as const, text: block.text }
           : { type: 'resource_link' as const, uri: route(block.uri), name: block.name ?? block.uri },
       ),
+      // Required wherever the tool declared an output schema — see `ToolResult`.
+      ...(result.structuredContent ? { structuredContent: { ...result.structuredContent } } : {}),
       ...(result.isError ? { isError: true } : {}),
     };
   };
