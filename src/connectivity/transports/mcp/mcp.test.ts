@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { defineProvider } from '#connectivity';
+import { McpServer, createMcpHandler, type ContentBlock } from '@modelcontextprotocol/server';
+import { defineProvider, type ProviderContext, type ToolResult } from '#connectivity';
 import { createMcpConnector, inferBundle, readableUpstreamError, shortenName } from './index.ts';
 
 describe('shortening a redundantly prefixed name', () => {
@@ -156,5 +157,128 @@ describe('the headers a connection carries', () => {
 
     expect(headers.has('authorization')).toBe(false);
     expect(headers.get('x-mcp-toolsets')).toBe('issues,repos');
+  });
+});
+
+/**
+ * What a call hands back.
+ *
+ * `ToolResult` holds text and links. An upstream may answer with any block the
+ * protocol has — text, an image, audio, a link, or a resource embedded whole —
+ * and every one that was not text used to become a `resource_link` whose `uri`
+ * was read off the block's top level. Only a link has one there. An embedded
+ * resource keeps its address under `resource`, and an image has none, so each
+ * arrived as a link to the empty string with its content gone.
+ *
+ * GitHub answers a file read with exactly that — the file's text, embedded — so
+ * the file came back as nothing a client could open, and a client that fetches
+ * links as files was asked to approve fetching it.
+ */
+describe('what a call hands back', () => {
+  const manifest = defineProvider({
+    id: 'vendor_mcp',
+    name: 'Vendor',
+    connector: { kind: 'mcp', endpoint: 'https://mcp.example.test/mcp' },
+    auth: { kind: 'none' },
+  });
+
+  /** A real MCP server answering in-process, so the handshake is the real one. */
+  async function answering(
+    content: ContentBlock[],
+    structuredContent?: Record<string, unknown>,
+  ): Promise<ToolResult> {
+    const upstream = createMcpHandler(() => {
+      const server = new McpServer({ name: 'upstream', version: '1.0.0' });
+      server.registerTool('read', { description: 'Read a thing.' }, async () => ({
+        content,
+        ...(structuredContent ? { structuredContent } : {}),
+      }));
+      return server;
+    });
+
+    const connector = createMcpConnector({
+      endpoint: 'https://mcp.example.test/mcp',
+      accessToken: async () => null,
+      fetch: ((input: string | URL, init?: RequestInit) =>
+        upstream.fetch(new Request(String(input), init))) as unknown as typeof globalThis.fetch,
+    });
+
+    return (await connector.invoke(
+      { name: 'read', description: '', inputSchema: {}, target: { tool: 'read' } },
+      {},
+      { manifest, provider: {} as ProviderContext, authorize: async (request) => request },
+    )) as ToolResult;
+  }
+
+  /** The eight-byte PNG signature, base64. */
+  const PNG = 'iVBORw0KGgo=';
+
+  test('an embedded text resource comes back as its text', async () => {
+    const result = await answering([
+      { type: 'text', text: 'successfully downloaded text file' },
+      {
+        type: 'resource',
+        resource: { uri: 'repo://acme/widgets/contents/README.md', mimeType: 'text/markdown', text: '# Widgets\n' },
+      },
+    ]);
+
+    expect(result.content).toEqual([
+      { type: 'text', text: 'successfully downloaded text file' },
+      { type: 'text', text: '# Widgets\n' },
+    ]);
+  });
+
+  test('an image, audio, or a binary resource is described in one line, never carried', async () => {
+    const result = await answering([
+      { type: 'image', data: PNG, mimeType: 'image/png' },
+      { type: 'audio', data: PNG, mimeType: 'audio/wav' },
+      {
+        type: 'resource',
+        resource: { uri: 'repo://acme/widgets/contents/logo.png', mimeType: 'image/png', blob: PNG },
+      },
+    ]);
+
+    // Carrying the bytes would put them through the model, which is the cost
+    // ADR-017 exists to avoid. Saying what came back is what is left.
+    const lines = result.content.map((block) => (block.type === 'text' ? block.text : `<${block.type}>`));
+    expect(lines).toHaveLength(3);
+    expect(lines[0]).toContain('image/png');
+    expect(lines[0]).toContain('8 bytes');
+    expect(lines[1]).toContain('audio/wav');
+    expect(lines[2]).toContain('repo://acme/widgets/contents/logo.png');
+    for (const line of lines) expect(line).not.toContain(PNG);
+  });
+
+  test("a link the vendor sent is the vendor's link, as written", async () => {
+    const result = await answering([
+      { type: 'resource_link', uri: 'https://example.com/widgets/1', name: 'Widget 1' },
+    ]);
+
+    expect(result.content).toEqual([
+      { type: 'resource_link', uri: 'https://example.com/widgets/1', name: 'Widget 1' },
+    ]);
+  });
+
+  test('structured content comes back beside the text', async () => {
+    // Where an upstream declares an output schema this endpoint advertises it
+    // as its own, and a successful result must then carry data that fits it.
+    // Dropped here, every successful call to such a tool failed validation on
+    // the way out.
+    const result = await answering([{ type: 'text', text: '{"id":"w1","open":true}' }], {
+      id: 'w1',
+      open: true,
+    });
+
+    expect(result.structuredContent).toEqual({ id: 'w1', open: true });
+  });
+
+  test('nothing becomes a link to nowhere', async () => {
+    const result = await answering([
+      { type: 'image', data: PNG, mimeType: 'image/png' },
+      { type: 'resource', resource: { uri: 'repo://acme/widgets/contents/README.md', text: 'x' } },
+      { type: 'resource', resource: { uri: 'repo://acme/widgets/contents/logo.png', blob: PNG } },
+    ]);
+
+    expect(result.content.filter((block) => block.type === 'resource_link')).toEqual([]);
   });
 });

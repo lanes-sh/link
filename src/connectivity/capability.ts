@@ -38,6 +38,16 @@ export type ToolResult = {
     | { readonly type: 'text'; readonly text: string }
     | { readonly type: 'resource_link'; readonly uri: string; readonly name?: string }
   >;
+  /**
+   * The answer as data, beside the prose, where the provider sent some.
+   *
+   * Required rather than merely welcome wherever a tool declares an output
+   * schema: a successful result must then carry data that fits it, and the SDK
+   * refuses one that does not. An upstream MCP server's schema is advertised as
+   * this endpoint's own, so dropping this turned every successful call to such
+   * a tool into a validation error.
+   */
+  readonly structuredContent?: Readonly<Record<string, unknown>>;
   readonly isError?: boolean;
 };
 
