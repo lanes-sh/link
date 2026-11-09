@@ -88,11 +88,10 @@ export const entitiesProvider: ProviderDefinition = defineLocalProvider({
     /**
      * Retrieval by address — a resource, not a tool (ADR-006).
      *
-     * Not optional, and not decoration: `resourceLinkRouter` builds its set of
-     * routable origins from this provider's own `uriTemplate`s and returns the
-     * identity function when there are none. Without it every `resource_link`
-     * below would reach the client naming no profile and no connection, which
-     * no client can read.
+     * For a client that reads resources, through `resources/list` and
+     * `resources/read`, routed per profile and connection like every resource.
+     * A tool result names an entity by id and does not link it: a link is for a
+     * file, and an entity is a record — see `ToolResult`.
      */
     {
       kind: 'resource',
@@ -224,15 +223,12 @@ export const entitiesProvider: ProviderDefinition = defineLocalProvider({
           return { content: [{ type: 'text', text }] };
         }
 
+        // Every candidate is named by the id `get` takes, in the text, and none
+        // is linked — see the resource above.
         if (matches.candidates.length > 1) {
           return {
             content: [
               { type: 'text', text: renderCandidates(matches, criteria, context.connection.key) },
-              ...matches.candidates.map((one) => ({
-                type: 'resource_link' as const,
-                uri: `lanes-entities://entity/${encodeURIComponent(one.entity.id)}`,
-                name: one.entity.name,
-              })),
             ],
           };
         }
@@ -241,14 +237,7 @@ export const entitiesProvider: ProviderDefinition = defineLocalProvider({
         const file = await readEntity(context.storage, found.id);
 
         return {
-          content: [
-            {
-              type: 'resource_link' as const,
-              uri: `lanes-entities://entity/${encodeURIComponent(found.id)}`,
-              name: found.name,
-            },
-            { type: 'text', text: renderEntity(found, catalogue, file?.body ?? '') },
-          ],
+          content: [{ type: 'text', text: renderEntity(found, catalogue, file?.body ?? '') }],
         };
       },
     },

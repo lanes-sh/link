@@ -42,9 +42,15 @@ Three outcomes, and **none of them is an error**:
 
 | | What comes back |
 |---|---|
-| one match | the whole entity, with a resource link |
+| one match | the whole entity, its id in the heading |
 | several | all of them, ranked, showing only the fields that *differ* |
 | none | what was tried, and not to invent an address |
+
+> **Amended by issue #246.** One match used to carry a resource link to the entity as well, and
+> every candidate in several did. Neither does now, and no tool links a record: a client may treat
+> a link in a tool result as a file to fetch, and ChatGPT stops to ask the owner whether it may.
+> An entity is a record, and the id in the text is what `entities.get` takes. It is still a
+> resource for a client that reads them. See `ToolResult` in `src/connectivity/capability.ts`.
 
 An earlier draft refused on ambiguity: exactly one entity or an `isError` naming the candidates.
 It was rejected, and the reason is that it models the wrong thing. An assistant handed two people

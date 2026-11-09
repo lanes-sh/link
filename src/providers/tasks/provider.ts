@@ -162,19 +162,11 @@ export const tasksProvider: ProviderDefinition = defineLocalProvider({
           };
         }
 
-        // `resource_link` rather than a URI written into the text: core routes
-        // the link to the profile and connection this call was made on, and a
-        // provider must not learn either.
+        // Each row leads with the id `get` and `update` take, and is not linked:
+        // a link is for a file, and a task is a record — see `ToolResult`.
         return {
           content: [
-            ...shown.flatMap((task) => [
-              {
-                type: 'resource_link' as const,
-                uri: `lanes-tasks://task/${encodeURIComponent(task.id)}`,
-                name: task.title,
-              },
-              { type: 'text' as const, text: `${task.id}  ${line(task)}` },
-            ]),
+            ...shown.map((task) => ({ type: 'text' as const, text: `${task.id}  ${line(task)}` })),
             ...(found.length > shown.length
               ? [
                   {
@@ -261,7 +253,6 @@ export const tasksProvider: ProviderDefinition = defineLocalProvider({
               type: 'text',
               text: `${existing ? 'Replaced' : 'Added'} task "${taskId}" on ${context.connection.key}.`,
             },
-            { type: 'resource_link', uri: `lanes-tasks://task/${taskId}`, name: title },
           ],
         };
       },

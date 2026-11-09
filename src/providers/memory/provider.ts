@@ -318,22 +318,13 @@ export const memoryProvider: ProviderDefinition = defineLocalProvider({
           return { content: [{ type: 'text', text: `No memory entry matches on ${context.connection.key}.` }] };
         }
 
-        // A `resource_link` rather than a URI spelled into the text: core routes
-        // the link to the profile and connection this call was made on, and a
-        // provider must not learn either. Written as text it would name an
-        // address no client could read.
+        // Each match leads with the id `get` takes, and is not linked: a link is
+        // for a file, and an entry is a record — see `ToolResult`.
         return {
-          content: matches.flatMap(({ entry, snippet }) => [
-            {
-              type: 'resource_link' as const,
-              uri: `lanes-memory://entry/${encodeURIComponent(entry.id)}`,
-              name: entry.title,
-            },
-            {
-              type: 'text' as const,
-              text: `${entry.title}${entry.tags.length > 0 ? ` [${entry.tags.join(', ')}]` : ''}\n${snippet}`,
-            },
-          ]),
+          content: matches.map(({ entry, snippet }) => ({
+            type: 'text' as const,
+            text: `${entry.id}  ${entry.title}${entry.tags.length > 0 ? ` [${entry.tags.join(', ')}]` : ''}\n${snippet}`,
+          })),
         };
       },
     },
@@ -370,7 +361,6 @@ export const memoryProvider: ProviderDefinition = defineLocalProvider({
         return {
           content: [
             { type: 'text', text: `Stored memory entry "${entryId}" on ${context.connection.key}.` },
-            { type: 'resource_link', uri: `lanes-memory://entry/${entryId}`, name: title },
           ],
         };
       },
