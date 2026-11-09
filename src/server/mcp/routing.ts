@@ -53,9 +53,9 @@ function originOf(uri: string): string {
 /**
  * Route the `resource_link`s a tool hands back.
  *
- * A provider names its own resources — `lanes-memory://entry/deploy_window` — because
+ * A provider names its own resources — `lanes-assets://file/notes.txt` — because
  * it does not know, and must not learn, which profile or connection it is
- * serving. Core does. Without this, `memory.search` returns addresses that look
+ * serving. Core does. Without this, `assets.list` returns addresses that look
  * like resources and cannot be read, which is worse than returning none.
  *
  * Scoped **only** for a link whose scheme and authority match one of this

@@ -98,6 +98,19 @@ export function linksOf(result: CapabilityResult): string[] {
     .map((block) => block.uri);
 }
 
+/**
+ * The id each text block of a result leads with.
+ *
+ * How a record is named once it carries no `resource_link`: by the id its `get`
+ * takes, first in its own block, the way `tasks.list` has always written a row.
+ */
+export function idsOf(result: CapabilityResult): string[] {
+  if (!('content' in result)) return [];
+  return result.content
+    .filter((block): block is { type: 'text'; text: string } => block.type === 'text')
+    .map((block) => block.text.split(/\s/, 1)[0]!);
+}
+
 /** The text of a tool or resource result, joined — what a caller would read. */
 export function textOf(result: CapabilityResult): string {
   if ('content' in result) {

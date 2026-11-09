@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { isResourceListResult, isResourceResult, isToolResult } from '#connectivity';
 import { memoryProvider } from './provider.ts';
-import { harnessFor, linksOf, textOf } from '../harness.ts';
+import { harnessFor, idsOf, linksOf, textOf } from '../harness.ts';
 
 /**
  * Memory.
@@ -35,6 +35,17 @@ describe('storing and retrieving an entry', () => {
 
     expect(isResourceResult(read)).toBe(true);
     expect(textOf(read)).toBe('We ship on Friday.');
+  });
+
+  test('a write names the entry it stored, and links nothing', async () => {
+    // A `resource_link` is a file to a client that fetches one: ChatGPT stops
+    // and asks the owner to approve materialising it. An entry is a record,
+    // and what the next call needs is its id, which `get` takes.
+    const harness = memory();
+    const stored = await write(harness, 'Deploy window', 'Thursday evenings.', { id: 'deploy_window' });
+
+    expect(linksOf(stored)).toEqual([]);
+    expect(textOf(stored)).toContain('"deploy_window"');
   });
 
   test('the id derives from the title, and may be given instead', async () => {
@@ -145,9 +156,10 @@ describe('search', () => {
 
     const found = await harness.invoke('search', { query: 'thursday' });
 
-    // A link rather than a URI spelled into the text: core routes it to the
-    // profile and connection, which a provider must not learn.
-    expect(linksOf(found)).toEqual(['lanes-memory://entry/standup']);
+    // Each match leads with its id rather than arriving as a link: a client
+    // may fetch a `resource_link` as a file, and the id is what `get` takes.
+    expect(linksOf(found)).toEqual([]);
+    expect(idsOf(found)).toEqual(['standup']);
     expect(textOf(found)).toContain('Thursday evening');
   });
 
@@ -155,10 +167,8 @@ describe('search', () => {
     const harness = memory();
     await write(harness, 'Deploy runbook', 'unrelated content', { id: 'r', tags: ['ops'] });
 
-    expect(linksOf(await harness.invoke('search', { query: 'runbook' }))).toEqual([
-      'lanes-memory://entry/r',
-    ]);
-    expect(linksOf(await harness.invoke('search', { query: 'ops' }))).toEqual(['lanes-memory://entry/r']);
+    expect(idsOf(await harness.invoke('search', { query: 'runbook' }))).toEqual(['r']);
+    expect(idsOf(await harness.invoke('search', { query: 'ops' }))).toEqual(['r']);
   });
 
   test('a tag filter narrows before matching', async () => {
@@ -166,9 +176,9 @@ describe('search', () => {
     await write(harness, 'One', 'shared word', { id: 'one', tags: ['ops'] });
     await write(harness, 'Two', 'shared word', { id: 'two', tags: ['personal'] });
 
-    const found = linksOf(await harness.invoke('search', { query: 'shared', tag: 'ops' }));
+    const found = idsOf(await harness.invoke('search', { query: 'shared', tag: 'ops' }));
 
-    expect(found).toEqual(['lanes-memory://entry/one']);
+    expect(found).toEqual(['one']);
   });
 
   test('no match says so rather than returning nothing', async () => {
@@ -197,7 +207,7 @@ describe('search', () => {
 
     const found = await harness.invoke('search', { query: 'match', limit: 2 });
 
-    expect(linksOf(found)).toHaveLength(2);
+    expect(idsOf(found)).toHaveLength(2);
   });
 });
 
