@@ -88,7 +88,7 @@ async function openReconciled(options: {
   readonly reporter?: EndpointReporter | undefined;
 }): Promise<{ primary: Runtime; runtimes: Map<string, Runtime> }> {
   const reporter = options.reporter ?? SILENT;
-  const primary = await openRuntime(options.flags);
+  const primary = await openRuntime(options.flags, { serving: true });
 
   // One endpoint, every profile. The alternative — a port each — meant an agent
   // registering N servers to reach N profiles, and the ports leaked a detail
@@ -116,7 +116,7 @@ async function openReconciled(options: {
       // is not an assumption: it is reported, and `served` below is derived
       // from what actually opened rather than from what is on disk.
       try {
-        runtimes.set(name, await openRuntime({ ...options.flags, profile: name }));
+        runtimes.set(name, await openRuntime({ ...options.flags, profile: name }, { serving: true }));
       } catch (error) {
         if (name === primary.resolution.profile) throw error;
         reporter.skipped?.({ profile: name, reason: message(error) });
