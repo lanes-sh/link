@@ -41,12 +41,20 @@ export type ToolResult = {
      * by core to the profile and connection the call was made on, which a
      * provider must not learn — so it cannot spell that address into text.
      *
-     * **Only for a file.** A client may treat a link in a tool result as a file
-     * to fetch, and ChatGPT does: it stops to ask the owner whether it may
-     * materialise the link, then reads the address and keeps the result as a
-     * file. Memory, tasks and entities each linked the record a call had just
-     * written or found, so saving a note asked for that approval every time. A
-     * record is named by its id in the text, the id its `get` takes.
+     * **Only for a file, and only the one the call is about.** A client may
+     * treat a link in a tool result as a file to fetch, and ChatGPT does: it
+     * stops to ask the owner whether it may materialise the link, then reads the
+     * address and keeps the result as a file. Memory, tasks and entities each
+     * linked the record a call had just written or found, so saving a note asked
+     * for that approval every time. A record is named by its id in the text, the
+     * id its `get` takes.
+     *
+     * The second half was learned after the first. Assets kept their links on
+     * the argument that a stored file is a file — true of `store`, which hands
+     * back the one file the owner just gave it, and not of `list`, which offered
+     * every file they own. Asking what was in the index produced one approval
+     * covering all of it, and approving copied the contents out. A listing names
+     * its rows; a link belongs on the call that is about a single file.
      * `src/providers/resource-links.test.ts` lists the providers that link.
      */
     | { readonly type: 'resource_link'; readonly uri: string; readonly name?: string }

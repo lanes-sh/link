@@ -12,7 +12,10 @@ import { join } from 'node:path';
  * note asked for that approval every time.
  *
  * A record is named by its id in the text, which is what its provider's `get`
- * takes. A link is for something that is a file.
+ * takes. A link is for something that is a file — and for the one file the call
+ * is about. Assets link from `store`, which hands back the file just given to
+ * it, and no longer from `list`, which offered every file the owner has and made
+ * reading the index an approval to copy all of them.
  *
  * Read off the source rather than by calling every tool, because the failure is
  * a handler written the old way and there is no list of handlers to call. The
