@@ -66,8 +66,17 @@ export interface PolicyReader {
    * than 404 for a binding an identity does not hold, so that secrets cannot be
    * enumerated by their error codes. A policy that came back is a secret that
    * is there and readable; `null` is "could not look", and could be either.
+   *
+   * **Takes the project as well as the id**, because a secret is the one
+   * resource here that `gcloud` cannot locate from its name alone: it resolves
+   * an unqualified id against whatever `core/project` happens to be, which in a
+   * deploy is a property of the operator's shell rather than of the target. A
+   * dry run against a real project caught this answering `NOT_FOUND` for every
+   * secret that was in fact there, which `null` renders as "could not look" —
+   * so nothing was skipped and nothing failed, and the saving silently was not
+   * one.
    */
-  secret(id: string): Promise<readonly PolicyBinding[] | null>;
+  secret(project: string, id: string): Promise<readonly PolicyBinding[] | null>;
 }
 
 /** Whether an existing binding is exactly one of the grants being applied. */

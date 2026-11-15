@@ -209,6 +209,6 @@ export const gcloudPolicy: PolicyReader = {
     readPolicy(['storage', 'buckets', 'get-iam-policy', `gs://${bucket}`, '--format', 'json']),
   project: (project) =>
     readPolicy(['projects', 'get-iam-policy', project, '--format', 'json']),
-  secret: (id) =>
-    readPolicy(['secrets', 'get-iam-policy', id, '--format', 'json']),
+  secret: (project, id) =>
+    readPolicy(['secrets', 'get-iam-policy', id, '--project', project, '--format', 'json']),
 };

@@ -251,7 +251,7 @@ const reading = (input: {
   project: () => Promise.resolve(input.project ?? []),
   // `null` by default: a secret nothing has said anything about is one this
   // could not look at, which plans every step rather than skipping any.
-  secret: () => Promise.resolve(input.secret ?? null),
+  secret: (_project, _id) => Promise.resolve(input.secret ?? null),
 });
 
 const plan = (policy?: PolicyReader, readable: readonly string[] = ['profile/token']) =>

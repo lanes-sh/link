@@ -193,7 +193,7 @@ export async function secretGrantSteps(
   // in this same plan just left it.
   const current = new Map(
     await Promise.all(
-      refs.map(async (ref) => [encodeRef(ref), await policy.secret(encodeRef(ref))] as const),
+      refs.map(async (ref) => [encodeRef(ref), await policy.secret(project, encodeRef(ref))] as const),
     ),
   );
 
