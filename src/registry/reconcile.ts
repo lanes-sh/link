@@ -199,11 +199,13 @@ export async function planReconcile(
     // A provider needing no credential is authorized by construction; one whose
     // store refuses the question is not authorized and not an exception.
     let authorized = true;
+    let refused = false;
     if (ref) {
       try {
         authorized = await credentials.has(ref);
       } catch (error) {
         authorized = false;
+        refused = true;
         unreadable.push({
           connection: key,
           reason: error instanceof Error ? error.message : String(error),
@@ -241,9 +243,15 @@ export async function planReconcile(
         connection: key,
         from: record.status,
         to: desired,
+        // "Missing" is only one of the two ways to be unauthorized, and saying
+        // it for the other is the confusion this whole change exists to end:
+        // a credential the store refused is present and unreadable, and an
+        // operator told it is missing goes and writes another one.
         reason: authorized
           ? 'credential resolves'
-          : `credential ${ref} is missing from the credential store`,
+          : refused
+            ? `credential ${ref} could not be read`
+            : `credential ${ref} is missing from the credential store`,
       });
     } else if (changes.length === 0) {
       actions.push({ kind: 'unchanged', connection: key });

@@ -160,6 +160,23 @@ describe('a credential that cannot be read does not take the endpoint down', () 
     expect(formatPlan(plan)).toContain('could not be read');
   });
 
+  test('the status reason says which of the two it was', async () => {
+    // An operator told a credential is "missing" writes another one. For a
+    // credential that is present and unreadable that is the wrong move: the
+    // second value lands behind the same binding that could not be read.
+    const refused = await planReconcile(
+      WITH_GMAIL,
+      createMemoryState(),
+      credentialsRefusing('gmail/main'),
+      manifestFor,
+    );
+    expect(refused.actions).toContainEqual(
+      expect.objectContaining({ connection: 'gmail.main', status: 'unauthorized' }),
+    );
+    expect(formatPlan(refused)).toContain('could not be read');
+    expect(formatPlan(refused)).not.toContain('is missing from the credential store');
+  });
+
   test('a credential that is merely absent is not reported as unreadable', async () => {
     // The two must stay distinguishable in both directions, or the new field
     // becomes noise on every unconnected account.
