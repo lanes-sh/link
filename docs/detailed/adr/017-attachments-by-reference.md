@@ -351,9 +351,11 @@ to start a new one.
   `in_reply_to` description says where to read it, and that Gmail's own message id is not it.
 - Revising a reply draft replaces its message whole, thread included. The `draft_id` description
   says to name `in_reply_to` again to keep it a reply.
-- Every large message changed wire shape, including the ones that answer nothing. Google does not
-  document an empty resource part, so that path is settled by a rehearsal against a real mailbox,
-  not by a unit test.
+- Only a large *reply* changed wire shape. A large message answering nothing keeps
+  `uploadType=media`, the route it has always taken, because there is no resource for a multipart
+  part to carry and Google documents neither an empty one nor what it does with one. So the
+  rehearsal against a real mailbox covers the large reply, and the large non-reply is on the path it
+  was already on.
 - The lookup is a read made by a write capability, outside the read policy, as re-attaching by
   `message_id` already is. A caller denied reads learns only whether a Message-ID it already knows
   is in this mailbox, and that message's thread id. The send's audit row records both, and denying

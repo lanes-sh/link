@@ -53,7 +53,7 @@ const fixtureMail = defineLocalProvider({
   configSchema: z.object({}),
   connectionSchema: z.object({}),
   bundles: [
-    { name: 'read', description: 'Read.', oauth_scopes: [], capabilities: ['notes.list', 'notes.get', 'notes.count'], default: true },
+    { name: 'read', description: 'Read.', oauth_scopes: [], capabilities: ['notes.list', 'notes.get', 'notes.count', 'notes.summary'], default: true },
   ],
   capabilities: [
     {
@@ -97,6 +97,22 @@ const fixtureMail = defineLocalProvider({
       inputSchema: z.object({}),
       async handler() {
         return { content: [], structuredContent: { total: 7 } };
+      },
+    },
+    {
+      // A tool answering both ways, which is what a server following the
+      // protocol's SHOULD does — except that its prose is a summary and the
+      // records are only in the data.
+      kind: 'tool',
+      name: 'notes.summary',
+      title: 'Summarise notes',
+      description: 'A sentence of prose, with the rows beside it as data.',
+      inputSchema: z.object({}),
+      async handler() {
+        return {
+          content: [{ type: 'text' as const, text: 'Found 2 notes.' }],
+          structuredContent: { notes: [{ id: 'n0' }, { id: 'n1' }] },
+        };
       },
     },
   ],
@@ -487,5 +503,37 @@ describe('a tool that answers as data rather than prose', () => {
     expect(result.isError).toBe(false);
     expect(result.text).not.toBe('');
     expect(JSON.parse(result.text)).toEqual({ total: 7 });
+  });
+});
+
+describe('a tool that answers with prose and data both', () => {
+  test('the data is handed back too, not dropped behind the sentence', async () => {
+    // Rendering only when `content` was empty lost the records whenever the
+    // upstream sent a summary beside them: "Found 2 notes." looks like a whole
+    // answer, and the two were gone. Under `surface: crunched` every provider
+    // call takes this path.
+    const result = await call(mail.server.url, {
+      capability: 'fixture_mail.notes.summary',
+      profile: 'personal',
+      connection: 'fixture_mail.main',
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain('Found 2 notes.');
+    expect(result.text).toContain('"n0"');
+    expect(result.text).toContain('"n1"');
+  });
+
+  test('and is not repeated when the upstream already serialised it', async () => {
+    // The byte-for-byte skip. A server following the SHOULD sends the same JSON
+    // as its text, and appending a second copy of a large record set is a real
+    // cost on the path every crunched call takes.
+    const result = await call(mail.server.url, {
+      capability: 'fixture_mail.notes.count',
+      profile: 'personal',
+      connection: 'fixture_mail.main',
+    });
+
+    expect(result.text.match(/"total"/g)).toHaveLength(1);
   });
 });
