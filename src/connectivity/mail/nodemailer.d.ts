@@ -4,9 +4,22 @@
  * Declared here rather than by adding `@types/nodemailer`, which is a large
  * surface tracking its own version and would be a second dependency to keep
  * honest — in a repository that has six, holds live credentials, and enforces a
- * release-age floor for exactly that reason. What we call is a few fields wide
- * and stable; if that stops being true, this file fails to compile, which is the
- * behaviour we want.
+ * release-age floor for exactly that reason.
+ *
+ * **It does not verify itself, and this comment used to claim it did.** An
+ * ambient `declare module` overrides the types a package ships, so from 10.x —
+ * which ships its own, where 9.x shipped none — `tsc` checks every call against
+ * the assumption written here and never against nodemailer's actual exports. A
+ * changed signature in the surface below compiles clean and fails at runtime.
+ * So this file is a convenience, not a guarantee, and the thing that actually
+ * holds the two together is `mail.test.ts` composing a real message through a
+ * real transport and asserting the bytes.
+ *
+ * Deleting it in favour of the shipped types is the better end state and was
+ * tried: 10.x types `content` as `Buffer` where this passes `Uint8Array`, and
+ * `sendMail` as `Promise<StreamSentMessageInfo> & void`, so it is five call-site
+ * changes in `compose.ts` and `imap/send.ts` rather than a deletion. That is its
+ * own change, not a dependency bump's.
  *
  * Moved here from `transports/imap/` when a second caller appeared: an HTTP mail
  * API needs the same composed bytes SMTP does, so composition outgrew the

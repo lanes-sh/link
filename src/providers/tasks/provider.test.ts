@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { isResourceListResult, isResourceResult, isToolResult } from '#connectivity';
 import { tasksProvider } from './provider.ts';
 import { TASK_STATUSES, parseTask } from './store.ts';
-import { harnessFor, linksOf, textOf } from '../harness.ts';
+import { harnessFor, idsOf, linksOf, textOf } from '../harness.ts';
 
 /**
  * Tasks.
@@ -74,11 +74,22 @@ describe('a task carries a status, which is why this is not memory', () => {
     await add(harness, 'Open soon', { due: '2026-09-01' });
     await add(harness, 'Started', { status: 'in_progress' });
 
-    const order = linksOf(await harness.invoke('list')).map((uri) =>
-      uri.replace('lanes-tasks://task/', ''),
-    );
+    const order = idsOf(await harness.invoke('list'));
 
     expect(order).toEqual(['started', 'open-soon', 'open-late', 'open-undated']);
+  });
+
+  test('a listing names each task by id, and links nothing', async () => {
+    // A client may fetch a `resource_link` as a file — ChatGPT asks the owner
+    // to approve that first — and a task is a record. The id leading each row
+    // is what `get` and `update` take.
+    const harness = tasks();
+    await add(harness, 'Chase the invoice');
+
+    const listed = await harness.invoke('list');
+
+    expect(linksOf(listed)).toEqual([]);
+    expect(idsOf(listed)).toEqual(['chase-the-invoice']);
   });
 
   test('every declared status is accepted', async () => {
@@ -100,6 +111,14 @@ describe('storing and retrieving a task', () => {
 
     expect(isResourceResult(read)).toBe(true);
     expect(textOf(read)).toContain('Third reminder.');
+  });
+
+  test('adding a task names it, and links nothing', async () => {
+    const harness = tasks();
+    const added = await add(harness, 'Chase the invoice');
+
+    expect(linksOf(added)).toEqual([]);
+    expect(textOf(added)).toContain('"chase-the-invoice"');
   });
 
   test('the id derives from the title, and may be given instead', async () => {
