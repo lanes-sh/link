@@ -66,8 +66,9 @@ describe('the shape of the surface', () => {
       'forget',
     ]);
 
-    // Without a resource template, `resourceLinkRouter` has no origin to route
-    // and every link below reaches the client unreadable.
+    // The resource is how a client that reads resources reaches an entity by
+    // address, routed per profile and connection. A tool result names an
+    // entity by id instead — see 'one match is an answer'.
     const resource = entitiesProvider.capabilities.find((one) => one.kind === 'resource');
     expect(resource?.name).toBe('entity');
   });
@@ -88,13 +89,16 @@ describe('the shape of the surface', () => {
 });
 
 describe('one match is an answer', () => {
-  test('it returns a link and the text, so a client that ignores links still reads it', async () => {
+  test('it returns the whole entity as text, named by id, and links nothing', async () => {
+    // A client may fetch a `resource_link` as a file — ChatGPT asks the owner
+    // to approve that first — and an entity is a record. The id in the
+    // heading is what `get` and `link` take.
     const h = harness();
     await declare(h, JAN);
 
     const result = await h.invoke('find', { query: 'Jan' });
 
-    expect(linksOf(result)).toEqual(['lanes-entities://entity/jan-bakker']);
+    expect(linksOf(result)).toEqual([]);
     const text = textOf(result);
     expect(text).toContain('Jan Bakker — person (jan-bakker)');
     expect(text).toContain('jan@acme.test');
@@ -151,11 +155,13 @@ describe('several matches is a normal answer, not a failure', () => {
     expect(text).not.toContain('type person');
   });
 
-  test('every candidate carries a link, so none is privileged', async () => {
-    expect(linksOf(await (await twoJans()).invoke('find', { query: 'Jan' })).sort()).toEqual([
-      'lanes-entities://entity/jan-bakker',
-      'lanes-entities://entity/jan-de-vries',
-    ]);
+  test('every candidate is named by its id, and none is linked', async () => {
+    const result = await (await twoJans()).invoke('find', { query: 'Jan' });
+
+    expect(linksOf(result)).toEqual([]);
+    const text = textOf(result);
+    expect(text).toContain('jan-bakker');
+    expect(text).toContain('jan-de-vries');
   });
 
   test('a criterion narrows the same query to one', async () => {
@@ -165,7 +171,9 @@ describe('several matches is a normal answer, not a failure', () => {
       related: [{ predicate: 'works_at', entity: 'acme-bv' }],
     });
 
-    expect(linksOf(result)).toEqual(['lanes-entities://entity/jan-bakker']);
+    const text = textOf(result);
+    expect(text).toContain('Jan Bakker — person (jan-bakker)');
+    expect(text).not.toContain('jan-de-vries');
   });
 });
 
@@ -202,6 +210,13 @@ describe('no match', () => {
 });
 
 describe('writing', () => {
+  test('a write names the entity it declared, and links nothing', async () => {
+    const written = await declare(harness(), JAN);
+
+    expect(linksOf(written)).toEqual([]);
+    expect(textOf(written)).toContain('"jan-bakker"');
+  });
+
   test('a field that is not supplied keeps what is on disk', async () => {
     const h = harness();
     await declare(h, JAN);
