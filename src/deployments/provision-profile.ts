@@ -1,7 +1,7 @@
 import { openTarget, type TargetConfig } from '#profile';
 import { heading, print, style } from '#cli/output.ts';
 import { driverFor } from './drivers.ts';
-import { readableRefs, rotatableRefs } from './prepare.ts';
+import { readableRefs, rotatableRefs, type ConnectionScope } from './prepare.ts';
 import { printSteps, runSteps } from './steps.ts';
 import type { DeployStep } from './driver.ts';
 
@@ -75,13 +75,16 @@ export async function provisionStepsFor(input: {
    * takes a profile list, so the two cannot be confused again.
    */
   readonly profiles: readonly string[] | undefined;
+  /** Whether the workspace's accounts are this run's business. See `ConnectionScope`. */
+  readonly connections: ConnectionScope;
 }): Promise<DeployStep[]> {
   const deploy = input.declared.deploy;
   if (!deploy) return [];
 
   const driver = await driverFor(deploy.platform);
-  const rotatable = await rotatableRefs(input.workspaceRoot, input.profiles, input.declared);
-  const readable = await readableRefs(input.workspaceRoot, input.profiles, input.declared);
+  const scope = input.connections;
+  const rotatable = await rotatableRefs(input.workspaceRoot, input.profiles, input.declared, scope);
+  const readable = await readableRefs(input.workspaceRoot, input.profiles, input.declared, scope);
 
   return driver.provision({
     deploy,
@@ -126,7 +129,13 @@ export async function provisionProfiles(input: {
 
   let steps: DeployStep[];
   try {
-    steps = await provisionStepsFor({ ...input, declared });
+    // **`none`, because a profile is not an account.** What a deployed target
+    // needs before it can serve a profile is that profile's own vault container
+    // and the grant that reads it. A connection belongs to the workspace
+    // (ADR-057) and is bound when it is connected, so walking all of them here
+    // re-applied a binding per account on every `profile add` — fifty-four steps
+    // for a profile that grants nothing — and none of it was the profile's.
+    steps = await provisionStepsFor({ ...input, declared, connections: 'none' });
   } catch (error) {
     return { applicable: true, reason: `could not work out what to provision: ${message(error)}` };
   }

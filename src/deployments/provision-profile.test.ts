@@ -61,6 +61,7 @@ describe('provisioning a profile on a target', () => {
         target: 'local',
         declared,
         profiles: ['sandbox'],
+        connections: 'none',
       }),
     ).toEqual([]);
   });

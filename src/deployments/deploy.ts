@@ -164,6 +164,9 @@ export async function deploy(flags: DeployFlags): Promise<void> {
     target,
     declared,
     profiles: serving,
+    // Every account in `connections.yaml` goes up with it and is served
+    // whichever profiles were named, so every one of them is bound here.
+    connections: 'workspace',
   });
 
   // Where the running instance will read its config. The bucket the target
