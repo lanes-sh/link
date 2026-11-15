@@ -164,8 +164,8 @@ export function readState(
   for (const [name, runtime] of profiles) {
     // **A profile that does not name this caller is not described at all.**
     // Not listed and then greyed out: absent, exactly as `mergeCapabilities`
-    // omits it from a tool's `profile` enum, so the dashboard and the
-    // dispatcher hide the same set. This loop used to run over every profile
+    // omits it from what a tool advertises, so the dashboard and the dispatcher
+    // hide the same set. This loop used to run over every profile
     // the endpoint served, which is how a member of no profile read the whole
     // workspace's grants and rosters (ADR-079).
     if (!mayReach(caller, name)) continue;

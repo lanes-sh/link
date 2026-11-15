@@ -1,10 +1,11 @@
 /**
  * The MCP surface.
  *
- * Six files, each answering one question:
+ * Each file answering one question:
  *
  *   visibility  what this principal may see — policy, applied once
  *   naming      how a capability id is spelled on the wire
+ *   description how a tool says which accounts it accepts
  *   schema      how a vendor's JSON Schema is made safe to publish
  *   routing     how the profile and connection reach a resource or a prompt
  *   instructions  what the endpoint says it is for, before any tool is called

@@ -30,11 +30,14 @@ import { allocatePort, rpc, startHarness } from './harness.ts';
  * response "may be shared outside of the initial request's authorization
  * context (i.e. different access tokens can leverage the same cache)" — and this
  * endpoint's tool list is per principal by construction. `mergeCapabilities`
- * filters on `mayReach` and `allowedConnections`, and ADR-060 keeps a profile a
- * member is not on out of the `profile` enum specifically so they "never learn
- * it exists". Serving that list to another token from a shared cache would leak
- * the set of profiles and accounts a person can reach, which is the one thing
- * the enum is shaped to withhold.
+ * filters on `mayReach` and `allowedConnections`, so a profile a member is not
+ * on reaches none of it and ADR-060's "never learn it exists" holds. Since
+ * ADR-082 that set is carried by the tool names, their descriptions, the server
+ * `title` and the search's own account box rather than by a `profile` enum —
+ * which changes nothing here, because every one of those is per principal.
+ * Serving that list to another token from a shared cache would leak the set of
+ * profiles and accounts a person can reach, which is the one thing this surface
+ * is shaped to withhold.
  *
  * So `private` here is a correctness property of the surface rather than a
  * caching preference, and the spec is explicit that `cacheScope` is not an

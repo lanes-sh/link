@@ -475,12 +475,13 @@ export function serverInstructions(
   // "1 profiles" with a hundred characters of the budget unspent.
   //
   // Summarising rather than truncating, and safe to do: every tool carries the
-  // connections it accepts in its own `connection` enum, which is the
-  // authoritative list. This paragraph is orientation, so a count and the profile
-  // names lose nothing an agent cannot get exactly.
+  // connections it accepts in its own description, grouped by profile, which is
+  // the authoritative list — it was the `connection` enum until ADR-082. This
+  // paragraph is orientation, so a count and the profile names lose nothing an
+  // agent cannot get exactly.
   const total = [...reachable.values()].reduce((sum, list) => sum + list.length, 0);
   const names = [...reachable.keys()];
-  const tail = "Each tool's `connection` argument lists the ones it accepts.";
+  const tail = "Each tool's description lists the `connection` values it accepts, by profile.";
   const plural = names.length === 1 ? 'profile' : 'profiles';
 
   // Widest first. The last is bounded — it names no profile — which is what

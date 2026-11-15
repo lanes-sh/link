@@ -52,9 +52,11 @@ opens them. You never name one; the endpoint you are talking to is already in it
 
 ## Routing
 
-Every tool takes \`profile\` and \`connection\`. Both are enums, and both are
-already narrowed to what you may reach, so anything offered is something you are
-allowed to use.
+Every tool takes \`profile\` and \`connection\`. Both are plain strings, and the
+tool's own description lists what you may reach — so anything listed there is
+something you are allowed to use. That list is as of when your client read it: a
+profile or an account added since is missing from it and still works, so a name
+the owner has given you is worth passing even when you cannot see it.
 
 **When it is ambiguous which profile is meant, ask.** Do not default to whichever
 is listed first. A profile is a boundary somebody drew on purpose, and crossing
@@ -125,9 +127,11 @@ you cannot do it.
 A refusal is information, not an obstacle. Three kinds, and they mean different
 things:
 
-- **The profile is not available.** You are not a member of it. Nothing you can
-  do; its owner adds you.
-- **The connection is not part of this profile.** Look at what is, in the enum.
+- **The profile is not available.** Either you are not a member of it or there
+  is no such profile. This endpoint does not distinguish those, deliberately, so
+  check the spelling first — and if it is right, its owner adds you.
+- **The connection is not part of this profile.** Look at what is, in the tool's
+  description, which lists the accounts by profile.
 - **The capability is denied.** The profile allows a narrower set than the tool
   suggests. Say what was refused and let the owner decide whether to widen it.
 

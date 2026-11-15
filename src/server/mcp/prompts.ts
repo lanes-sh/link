@@ -5,7 +5,8 @@ import { z } from 'zod';
 import { isPromptResult } from '#connectivity';
 import { toolNameFor } from './naming.ts';
 import { resolveScope } from './routing.ts';
-import { describeWithConnections, type BuildServerOptions, type MergedCapability } from './visibility.ts';
+import { describeWithConnections } from './description.ts';
+import type { BuildServerOptions, MergedCapability } from './visibility.ts';
 
 /**
  * Prompts — the owner's own procedures, surfaced as slash commands.

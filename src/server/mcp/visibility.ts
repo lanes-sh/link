@@ -13,8 +13,8 @@ import { SURFACE_TOOL_NAMES, toolNameFor } from './naming.ts';
  *
  * The server is a pure function of resolved policy: a capability the principal
  * cannot reach on any connection is not registered, and one it can reach on some
- * connections advertises exactly those in its `connection` enum. A client
- * therefore cannot discover a connection it has no grant for.
+ * connections advertises exactly those in its description. A client therefore
+ * cannot discover a connection it has no grant for.
  *
  * Discovery filtering and invocation enforcement share one implementation
  * (`allowedConnections`, which calls the same `evaluate` the dispatcher uses).
@@ -109,8 +109,8 @@ function connectionsOf(runtime: ProfileRuntime): string[] {
  *
  * A capability is registered once even when several profiles offer it — two
  * mailboxes are still one `gmail.users.messages.list` tool — with the profile
- * chosen per call. `reachable` stays per profile because the connection enum
- * must not imply that an account of one profile can be used through another.
+ * chosen per call. `reachable` stays per profile because what is advertised must
+ * not imply that an account of one profile can be used through another.
  */
 export interface MergedCapability {
   readonly reachable: Map<string, string[]>;
@@ -146,7 +146,7 @@ export function mergeCapabilities(options: BuildServerOptions): Map<string, Merg
 
   for (const [name, runtime] of options.profiles) {
     // The same list the dispatcher enforces with. A member does not merely fail
-    // to call a profile they are not on — it is absent from the `profile` enum,
+    // to call a profile they are not on — nothing advertised to them names it,
     // so they never learn it exists (ADR-060). Discovery and enforcement share
     // one answer here for the same reason they share `allowedConnections`.
     if (!mayReach(options.principal, name)) continue;
@@ -310,51 +310,18 @@ export function advertisedNames(options: BuildServerOptions): string[] {
 }
 
 /**
- * Say which accounts are reachable, grouped by profile.
- *
- * Grouped rather than flattened because the two arguments are not independent:
- * `profile: personal` with a connection belonging to `work` is refused, and a
- * flat list would read as though any pairing were valid.
- *
- * **The account, not just the id.** This listed bare ids, and the id is the
- * only thing a model has to choose on — so two accounts of one vendor were
- * `ada_lovelace` and `ada_lovelace2` and nothing said which mailbox either was.
- * `idFromAccount` takes only the local part, so that is what two addresses at
- * different domains actually produce. Picking the wrong one sends mail as the
- * wrong person, which is the same class of failure ADR-056 rules out for
- * entities: ordering is not selection, and a caller that cannot tell two
- * candidates apart must be given what tells them apart.
- *
- * **The key is the grant ref, not the bare id.** `connectionsOf` fills the enum
- * from the grant rows (ADR-058), so `reachable` carries `gmail.con1`, and
- * `accountsByProfile` keys on that same `ref` — one string from one source, so
- * the two sides cannot drift. Keyed on `connection.id` instead it missed every
- * lookup, and no served description carried an account at all, while
- * `connection-choice.test.ts` passed bare ids in by hand and stayed green.
- * Contract 4 is what turned that from cosmetic into a real loss: the ids used to
- * carry the account and are `con1`, `con2` now, so the id says nothing about
- * which mailbox it is and this annotation is the only thing that does.
- */
-export function describeWithConnections(
-  description: string,
-  reachable: ReadonlyMap<string, readonly string[]>,
-  accounts: ReadonlyMap<string, ReadonlyMap<string, string>> = new Map(),
-): string {
-  const lines = [...reachable].flatMap(([profile, connections]) => {
-    const known = accounts.get(profile);
-    return [
-      `  ${profile}:`,
-      ...connections.map((id) => `    ${id}${known?.get(id) === undefined ? '' : ` — ${known.get(id)!}`}`),
-    ];
-  });
-  return `${description}\n\nAvailable connections, by profile:\n${lines.join('\n')}`;
-}
-
-/**
  * How each profile's connections should read to a caller choosing between them.
  *
  * `account` always, `label` where the operator set one — the two fields that
  * exist because the id cannot carry meaning and must not pretend to.
+ *
+ * **Filtered by `mayReach`, like `mergeCapabilities` beside it.** This read the
+ * profile map whole, and `lanes_tools_search` hands the result to a caller in
+ * two places — the `Reachable from here` prose and the structured `reachable`
+ * field — so a member was told the name of every profile the endpoint served.
+ * That is the leak ADR-079 closed in the `profile` enum, in the one read of the
+ * same map that nobody looked at. A profile is withheld whole rather than listed
+ * with no accounts under it: an empty row still names it.
  */
 export function accountsByProfile(
   options: BuildServerOptions,
@@ -362,6 +329,8 @@ export function accountsByProfile(
   const accounts = new Map<string, Map<string, string>>();
 
   for (const [name, runtime] of options.profiles) {
+    if (!mayReach(options.principal, name)) continue;
+
     const rows = new Map<string, string>();
     for (const { ref, connection } of runtime.connections ?? []) {
       rows.set(
