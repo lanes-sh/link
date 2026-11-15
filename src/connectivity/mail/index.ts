@@ -19,7 +19,7 @@ export type {
 } from './message.ts';
 export { receiptFor } from './message.ts';
 
-export { composeMime } from './compose.ts';
+export { bareMessageId, composeMime } from './compose.ts';
 
 export type { AttachmentRef, MailboxAttachmentSource, ResolveOptions } from './attachments.ts';
 export { guessContentType } from './content-type.ts';

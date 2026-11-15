@@ -287,3 +287,77 @@ and the 24-hour expiry.
   stages from inside a dispatched capability and annotates rather than writing a second row.
 - The staged area is swept on the next stage, as the connection-scoped one is, because there is
   still no scheduler in the process.
+
+## Amendment: a reply is filed in its thread
+
+A reply sent with `in_reply_to` carried both threading headers and a matching subject. It still
+arrived in the sender's own mailbox as a conversation of one. Headers are what a recipient's mail
+client threads by. Gmail's API files a message into a conversation only when the request names the
+thread, and its own document lists three conditions: the `threadId` on the message supplied,
+`References` and `In-Reply-To` set, and a matching subject. Nothing here ever supplied the first.
+
+**The thread is looked up, not asked for.** When `in_reply_to` is set, the send first searches the
+mailbox for that Message-ID with `rfc822msgid:`, Spam and Trash included. It names the thread that
+holds it on the message, or on the draft's message. A `thread_id` argument was the obvious
+alternative, and it is rejected. `in_reply_to` already promised to thread the reply, and a second
+argument would be one more thing a caller has to know to pass. That omission is what produced this.
+
+The lookup has three outcomes:
+
+- **Found:** the thread is named on every route, including a draft and its revision.
+- **Not found:** there is no conversation here to join. The reply is still sent, headers and all,
+  and the receipt says Gmail filed it as a new conversation. The caller should not report a reply
+  that did not land as one.
+- **Refused, about the credential:** the call fails before anything is sent, because the send is
+  about to present the same credential and would only fail again, later, with a message already
+  gone. The lookup is a read, so it is retried once on a fresh token when `verify` offers one. A
+  send never is.
+- **Refused, transiently:** a 429 or a 5xx does *not* fail the send. `messages.list` has a quota of
+  its own, so a burst of replies can throttle the lookup while sending is still fine, and refusing
+  to send at all because a lookup was rate-limited is a worse answer than the unthreaded reply this
+  whole change exists to improve on. The reply goes, the headers still make it a reply for the
+  recipient, and the receipt says the lookup is what failed — which is a different sentence from
+  "no such message here", because the remedy is different.
+
+**The upload host takes a resource when there is one.** A message over 5 MB went to the upload host
+as `uploadType=media`, which carries the bytes and nothing else. Google's upload guide describes
+that route as the one for when there is no metadata to send. So a large reply could not have named
+its thread however the JSON route was fixed. A large reply now goes as `uploadType=multipart`: a
+`multipart/related` body holding the same JSON resource the small route sends, less `raw`, and then
+the message as `message/rfc822`.
+
+**Only a large reply.** This was first written the other way — one shape for every large message, on
+the argument that keeping the media route keeps the defect for the next field that has to travel.
+That argument is about a field that might exist. Against it is a path that works today: a large
+message answering nothing has no resource to send, so multipart would carry `{}` for a plain send
+and `{"message":{}}` for a draft. Google documents neither an empty resource nor what it does with
+one, and the cost of being wrong is that a 6 MB send which works now stops working — for every
+caller, not only the ones replying. Changing the route for the messages that need it and leaving the
+rest on the proven one keeps the blast radius to the thing being rehearsed. When a second field does
+have to travel on a non-reply, that is the change that earns the wider route, and it will have a
+reason rather than an anticipation.
+
+It is also a single request rather than a resumable one, although Google suggests resumable for
+large files. The message is composed whole in memory and capped at 35 MiB before it is sent, so an
+interrupted upload has nothing to resume from that composing it again would not rebuild.
+
+**The receipt says where it landed.** `thread_id` is read off Gmail's answer rather than inferred
+from the request. A thread asked for is not a thread joined: a subject that does not match is enough
+to start a new one.
+
+### Consequences
+
+- An agent replying needs the Message-ID header, which Gmail's compact projection leaves out. The
+  `in_reply_to` description says where to read it, and that Gmail's own message id is not it.
+- Revising a reply draft replaces its message whole, thread included. The `draft_id` description
+  says to name `in_reply_to` again to keep it a reply.
+- Every large message changed wire shape, including the ones that answer nothing. Google does not
+  document an empty resource part, so that path is settled by a rehearsal against a real mailbox,
+  not by a unit test.
+- The lookup is a read made by a write capability, outside the read policy, as re-attaching by
+  `message_id` already is. A caller denied reads learns only whether a Message-ID it already knows
+  is in this mailbox, and that message's thread id. The send's audit row records both, and denying
+  `send_message` removes the lookup with the rest.
+- `References` still carries only the parent's id, not the parent's chain as RFC 5322 §3.6.4
+  describes. It is not what went wrong here. Fixing it means reading the parent on every reply, on
+  the SMTP providers as well as this one. Not taken here.

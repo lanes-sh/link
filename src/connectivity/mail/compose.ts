@@ -45,6 +45,7 @@ export async function composeMime(input: {
   readonly message: OutgoingMessage;
 }): Promise<ComposedMessage> {
   const { from, fromName, message } = input;
+  const inReplyTo = bareMessageId(message.inReplyTo);
 
   const composer = nodemailer.createTransport({ streamTransport: true, buffer: true });
   const built = await composer.sendMail({
@@ -57,7 +58,7 @@ export async function composeMime(input: {
     ...(message.html ? { html: message.html } : {}),
     // Threading is two headers, and clients that only read one of them are
     // common enough that setting just `In-Reply-To` orphans the reply.
-    ...(message.inReplyTo ? { inReplyTo: message.inReplyTo, references: [message.inReplyTo] } : {}),
+    ...(inReplyTo ? { inReplyTo, references: [inReplyTo] } : {}),
     ...(message.attachments?.length
       ? {
           attachments: message.attachments.map((attachment) => ({
@@ -70,4 +71,21 @@ export async function composeMime(input: {
   });
 
   return { messageId: built.messageId, raw: new Uint8Array(built.message) };
+}
+
+/**
+ * One Message-ID as a caller wrote it, without the angle brackets or the space
+ * around them.
+ *
+ * Here because nodemailer is not even about it: it puts the brackets back on
+ * both threading headers, and trims `References` but not `In-Reply-To`, so
+ * `" <id>"` reached the header as `< <id>` on every provider that sends. A
+ * value that is not one id — two of them, or text around one — comes back as it
+ * came, trimmed, for the caller to pass through or refuse.
+ */
+export function bareMessageId(value: string | undefined): string | undefined {
+  const trimmed = value?.trim() ?? '';
+  const single = /^<?([^<>\s]+)>?$/.exec(trimmed);
+  if (single) return single[1];
+  return trimmed === '' ? undefined : trimmed;
 }
