@@ -1,3 +1,4 @@
+import { SILENT, message, type EndpointReporter } from './reporter.ts';
 import { MCP_PATH, serve, type RunningServer } from './index.ts';
 import { serveOverStdio } from './stdio.ts';
 import { Generations, type OpenedWorkspace } from './generations.ts';
@@ -37,24 +38,7 @@ import { dataSurface, type DataSurface } from '#cli/owner-data/index.ts';
  * which is what makes "the same config with only the target switched" true.
  */
 
-export interface EndpointReporter {
-  /** A profile whose runtime state differed from its config, and what was applied. */
-  reconciled(input: { profile: string; plan: string; ofMany: boolean }): void;
-  /**
-   * A sibling profile that could not be opened against this target.
-   *
-   * Optional because it is new and every caller predates it, and because
-   * silence is a defensible reading for a caller that only wants what it got.
-   */
-  skipped?(input: { profile: string; reason: string }): void;
-}
-
-const SILENT: EndpointReporter = { reconciled() {} };
-
-/** The first line of an error, which is the part fit to print beside a name. */
-function message(error: unknown): string {
-  return error instanceof Error ? (error.message.split('\n')[0] ?? error.message) : String(error);
-}
+export { SILENT, type EndpointReporter } from './reporter.ts';
 
 export interface EndpointOptions {
   readonly flags: GlobalFlags;
@@ -143,6 +127,11 @@ async function openReconciled(options: {
       primary.credentials,
       primary.manifestFor,
     );
+    // Before the no-op gate, deliberately. An unreadable credential is a fact
+    // about this instance that stays true across boots, and the plan that
+    // reports it is a no-op from the second boot onward.
+    for (const entry of result.unreadable) reporter.unreadable?.(entry);
+
     if (!planIsNoop(result)) {
       reporter.reconciled({
         profile: primary.resolution.profile,
