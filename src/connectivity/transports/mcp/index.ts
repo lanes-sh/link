@@ -7,6 +7,7 @@ import type {
 } from '#connectivity';
 import { READ_BUNDLE, WRITE_BUNDLE } from '#connectivity';
 import { distrustIfRefused } from './refused.ts';
+import { handedBack, type UpstreamResult } from './result.ts';
 
 /**
  * The `mcp` connector — proxy an upstream MCP server.
@@ -371,23 +372,9 @@ export function createMcpConnector(options: McpConnectorOptions): Connector {
         const result = (await client.callTool({
           name: upstreamName,
           arguments: args as Record<string, unknown>,
-        })) as {
-          content?: Array<{ type: string; text?: string; uri?: string; name?: string }>;
-          isError?: boolean;
-        };
+        })) as UpstreamResult;
 
-        return {
-          content: (result.content ?? []).map((block) =>
-            block.type === 'text'
-              ? { type: 'text' as const, text: block.text ?? '' }
-              : {
-                  type: 'resource_link' as const,
-                  uri: block.uri ?? '',
-                  ...(block.name ? { name: block.name } : {}),
-                },
-          ),
-          ...(result.isError ? { isError: true } : {}),
-        };
+        return handedBack(result);
       } catch (error) {
         await distrustIfRefused(context.verify, error);
         throw readableUpstreamError(error, options.endpoint);
