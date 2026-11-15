@@ -175,14 +175,22 @@ export const assetsProvider: ProviderDefinition = defineLocalProvider({
 
         return {
           content: [
-            ...shown.flatMap((asset) => [
-              {
-                type: 'resource_link' as const,
-                uri: `lanes-assets://file/${encodeURIComponent(asset.name)}`,
-                name: asset.name,
-              },
-              { type: 'text' as const, text: describeAsset(asset) },
-            ]),
+            // One text block per asset and **no `resource_link`**. A link is a
+            // file to a client that fetches one, so a listing carrying one per
+            // row turned "what is in here" into an offer to transfer all of it:
+            // ChatGPT asks the owner to approve materialising every asset
+            // listed, and approving copies their contents out.
+            //
+            // #247 took this reasoning through memory, tasks and entities and
+            // left assets alone, on the argument that a stored file is a file.
+            // That argument is about `store` — one file the owner just handed
+            // over — and it does not reach a listing of every file they own.
+            // The index is addressable either way: `lanes-assets://file/{name}`
+            // is still a resource, and `get` still returns the file.
+            //
+            // `describeAsset` already leads with the name, which is the id `get`
+            // takes, so the row needs nothing added to stay actionable.
+            ...shown.map((asset) => ({ type: 'text' as const, text: describeAsset(asset) })),
             ...(found.length > shown.length
               ? [
                   {
