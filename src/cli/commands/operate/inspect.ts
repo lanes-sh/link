@@ -55,7 +55,16 @@ export async function plan(flags: GlobalFlags): Promise<void> {
   const runtime = await openRuntime(flags);
   try {
     announce(runtime.resolution);
-    const result = await planReconcile(grantedConnections(runtime), runtime.state, runtime.credentials, runtime.manifestFor);
+    // The workspace's whole list, not this profile's grants. Runtime state is
+    // one store per workspace, so what reconcile calls "undeclared" has to be
+    // measured against everything in it — the same list `openReconciled` passes,
+    // and for the same reason it had to learn to.
+    const result = await planReconcile(
+      runtime.workspaceConnections,
+      runtime.state,
+      runtime.credentials,
+      runtime.manifestFor,
+    );
     print(formatPlan(result));
   } finally {
     await runtime.close();
@@ -350,7 +359,16 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
       ),
     );
 
-    const drift = await planReconcile(grantedConnections(runtime), runtime.state, runtime.credentials, runtime.manifestFor);
+    // Same list as `plan`, because this warning's whole content is "go and run
+    // that". Asked with one profile's grants it reported drift on every profile
+    // narrower than the workspace, and sent the operator to a plan that would
+    // have disabled the accounts the other profiles depend on.
+    const drift = await planReconcile(
+      runtime.workspaceConnections,
+      runtime.state,
+      runtime.credentials,
+      runtime.manifestFor,
+    );
     if (!planIsNoop(drift)) {
       warnings.push({
         kind: 'reconcile_drift',

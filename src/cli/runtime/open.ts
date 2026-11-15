@@ -63,12 +63,12 @@ export type { Runtime } from './types.ts';
 /**
  * The accounts a profile reaches, as most callers want them.
  *
- * `runtime.connections` pairs each with the grant governing it, which is what
- * policy and the setup surface need. Everything else — probing credentials,
- * listing accounts, reconciling state — wants the rows alone, and unwrapping
- * them at twenty call sites is twenty chances to reach for
- * `workspaceConnections` by mistake and answer for accounts this profile was
- * never granted.
+ * `runtime.connections` pairs each with the grant governing it, which policy and
+ * the setup surface need. Everything else — probing credentials, listing accounts
+ * — wants the rows alone, and unwrapping them at twenty call sites is twenty
+ * chances to reach for `workspaceConnections` by mistake and answer for accounts
+ * this profile was never granted. **Reconcile is the one exception, and was an
+ * example here until it cost twelve accounts: its state is one store per workspace.**
  */
 export function grantedConnections(
   runtime: Pick<Runtime, 'connections'>,
