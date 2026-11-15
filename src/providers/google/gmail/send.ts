@@ -1,19 +1,16 @@
 import { z } from 'zod';
-import type { ProviderContext, ToolCapability, ToolResult } from '#connectivity';
+import type { ToolCapability, ToolResult } from '#connectivity';
 import {
   attachmentRefSchema,
+  bareMessageId,
   composeMime,
   receiptFor,
   resolveAttachments,
   type ResolvedAttachment,
 } from '#connectivity/mail';
-import {
-  GMAIL_API,
-  GMAIL_JSON_LIMIT_BYTES,
-  GMAIL_MAX_MESSAGE_BYTES,
-  GMAIL_UPLOAD,
-} from './api.ts';
+import { GMAIL_MAX_MESSAGE_BYTES } from './api.ts';
 import { gmailAttachments } from './attachment.ts';
+import { isTransient, messageIdOf, sendDraft, submit, threadFor, threadIdOf } from './submit.ts';
 
 /**
  * Sending mail, composed here rather than by the caller.
@@ -56,10 +53,16 @@ const schema = z.object({
   subject: z.string(),
   text: z.string().optional().describe('Plain-text body.'),
   html: z.string().optional().describe('HTML body. Send text as well where you can.'),
+  // Named as the header rather than as "the message", because this tool's own
+  // `attachments[].message_id` is Gmail's id and the two look interchangeable.
+  // Gmail's id here composes `In-Reply-To: <18f…>`, finds nothing, and starts
+  // a new conversation without a word.
   in_reply_to: z
     .string()
     .optional()
-    .describe('Message-ID being replied to, which threads the reply.'),
+    .describe(
+      'The Message-ID header of the message being answered — the value with an @ in it, not Gmail\'s own message id; users.messages.get returns it with format "metadata" and metadataHeaders ["Message-ID"]. Files the reply in that conversation, here and for the recipient, provided the subject is kept (a "Re:" in front is fine).',
+    ),
   from_name: z
     .string()
     .optional()
@@ -90,7 +93,7 @@ const schema = z.object({
     .string()
     .optional()
     .describe(
-      'Revise this existing draft instead of writing a new one — pass the id a previous call returned. Every other argument describes the message as it should now read, because the draft is replaced rather than merged into: name the attachments again to keep them. With draft_only the revision stays a draft; without it, the revised draft is sent.',
+      'Revise this existing draft instead of writing a new one — pass the id a previous call returned. Every other argument describes the message as it should now read, because the draft is replaced rather than merged into: name the attachments again to keep them, and in_reply_to to keep it a reply. With draft_only the revision stays a draft; without it, the revised draft is sent.',
     ),
 });
 
@@ -122,6 +125,61 @@ export function gmailSend(
         return fail('This connection has no credential, so it cannot send.');
       }
 
+      const channel = { authorize, fetch: doFetch, context };
+
+      // Bare, so the search names the same message the header does.
+      const inReplyTo = bareMessageId(input.in_reply_to);
+
+      // One message is searched for, so one has to be named. Two ids — the
+      // parent's `References` pasted whole is the likely way — would search for
+      // neither, and the receipt would then say the message is not here.
+      //
+      // An `@` is required for the same reason. Gmail's own message id — the
+      // `18f0a1b2c3` form, which is the mistake `in_reply_to`'s description
+      // exists to prevent — has none, and without this it passes the guard, is
+      // searched for as an RFC Message-ID, misses, and still goes out to the
+      // recipient as `In-Reply-To: <18f0a1b2c3>`: a bogus header on a real
+      // message. Refusing it up front is the same answer the two-id case gets.
+      if (inReplyTo !== undefined && !/^[^<>\s@]+@[^<>\s@]+$/.test(inReplyTo)) {
+        return fail(
+          `in_reply_to names one message, by its own Message-ID, and "${inReplyTo}" is not one. ` +
+            `A Message-ID looks like an address — it contains an "@" — and is not Gmail's own message id. Nothing was sent.`,
+        );
+      }
+
+      // Before the attachments, which can take tens of seconds to fetch: a
+      // lookup that is going to fail should fail first. Sending anyway, with no
+      // thread, would be the very thing the lookup exists to prevent.
+      let threadId: string | undefined;
+      // Whether the lookup ran at all, as distinct from running and finding
+      // nothing. The receipt has to tell those apart: "no such message here" is
+      // about the mailbox, "Gmail would not say" is about the moment.
+      let lookedUp = true;
+      if (inReplyTo !== undefined) {
+        try {
+          threadId = await threadFor(inReplyTo, channel);
+        } catch (failure) {
+          // A credential Gmail rejected fails the send, because the send is
+          // about to present the same one. A rate limit or a 5xx does not: the
+          // reply still goes, unthreaded, and the receipt says so. Refusing to
+          // send at all because a *lookup* was throttled is a worse answer than
+          // the unthreaded reply this change exists to improve on — `messages.list`
+          // has its own quota, so a burst of replies can trip it while sending
+          // is still fine.
+          if (!isTransient(failure)) return fail(`${(failure as Error).message} Nothing was sent.`);
+          lookedUp = false;
+        }
+
+        // A read made by a write, so the write's row says what it read — as
+        // re-attaching from the mailbox does, through `origin`. Identifiers
+        // only: which message was answered, and the thread that holds it.
+        context.audit.annotate({
+          in_reply_to: inReplyTo,
+          thread_id: threadId ?? null,
+          ...(lookedUp ? {} : { thread_lookup: 'refused' }),
+        });
+      }
+
       let attachments: ResolvedAttachment[];
       try {
         attachments = await resolveAttachments(input.attachments, {
@@ -130,7 +188,7 @@ export function gmailSend(
           // exactly below.
           maxTotalBytes: Math.floor((GMAIL_MAX_MESSAGE_BYTES * 3) / 4),
           signal: context.signal,
-          mailbox: gmailAttachments({ authorize, fetch: doFetch, signal: context.signal }),
+          mailbox: gmailAttachments(channel),
           storage: context.storage,
           shared: context.attachments,
         });
@@ -158,7 +216,7 @@ export function gmailSend(
           subject: input.subject,
           text: input.text,
           html: input.html,
-          inReplyTo: input.in_reply_to,
+          inReplyTo,
           ...(attachments.length > 0 ? { attachments } : {}),
         },
       });
@@ -191,9 +249,8 @@ export function gmailSend(
           raw: composed.raw,
           draftOnly: drafting,
           draftId: input.draft_id,
-          authorize,
-          fetch: doFetch,
-          context,
+          threadId,
+          ...channel,
         });
 
         // A revision that is not staying a draft is sent by id, now that the
@@ -202,18 +259,22 @@ export function gmailSend(
         // states and only one of them is worth retrying as composed.
         if (input.draft_id !== undefined && !drafting) {
           try {
-            sent = await sendDraft({
-              draftId: input.draft_id,
-              authorize,
-              fetch: doFetch,
-              context,
-            });
+            sent = await sendDraft({ draftId: input.draft_id, ...channel });
           } catch (failure) {
             return fail(
               `The draft was revised but not sent: ${(failure as Error).message} The new message is saved as draft ${input.draft_id}, so send that rather than composing it again.`,
             );
           }
         }
+
+        // Where Gmail filed it, off its own answer — so a caller can tell a reply
+        // that joined its conversation from one that did not, without going back
+        // to the mailbox to look.
+        const landed = threadIdOf(sent);
+        const note =
+          inReplyTo === undefined
+            ? revisionNote(input.draft_id, drafting)
+            : replyNote({ asked: threadId, landed, lookedUp, drafting });
 
         return {
           content: [
@@ -225,7 +286,13 @@ export function gmailSend(
                     ? { drafted: true, draft_id: sent['id'] ?? input.draft_id ?? null }
                     : { sent: true }),
                   message_id: messageIdOf(sent) ?? composed.messageId,
+                  // Gmail's `drafts.update` answer does not always carry a
+                  // thread, and `null` there reads as "not threaded" for a draft
+                  // that is. Fall back to the one that was asked for, which is
+                  // what the message was filed under if it was honoured at all.
+                  thread_id: landed ?? threadId ?? null,
                   recipients: input.to.length + (input.cc?.length ?? 0) + (input.bcc?.length ?? 0),
+                  ...(note ? { note } : {}),
                   // Names, sizes and digests, never content — see `receiptFor`.
                   ...(attachments.length > 0
                     ? { attachments: attachments.map(receiptFor) }
@@ -248,147 +315,59 @@ export function gmailSend(
 export const gmailSendMessage = gmailSend();
 
 /**
- * Hand the assembled message to Gmail.
+ * What a reply's receipt says when it did not land in the conversation it answers.
  *
- * Two routes, chosen by size. A small message goes as base64url in a JSON field,
- * which is the ordinary endpoint and the overwhelmingly common case. A large one
- * goes to the upload host as `message/rfc822` with the raw MIME as the body —
- * `uploadType=media`, no multipart assembly, no resumable session — which is what
- * lifts the ceiling from "what fits in a JSON string" to Gmail's own 35 MiB.
+ * Said rather than left for the caller to notice, because the caller's next
+ * sentence is "sent as a reply", and a reply that went out on its own reads
+ * exactly like one that did not until someone opens the mailbox. There are two
+ * ways it happens, and they call for different things: a message this mailbox
+ * does not hold has no thread here to join, and a thread Gmail was given but did
+ * not use means one of its other conditions failed, the subject being the one a
+ * caller controls.
  */
-/**
- * Hand a refusal back for the credential check a transport's reply would get.
- *
- * This capability is authored because no OpenAPI document describes composing
- * an RFC 2822 message, and calling the vendor directly meant skipping the one
- * thing every other call gets for free: a token the vendor refuses is
- * distrusted, so the next call renews it instead of resending it for the rest
- * of the hour.
- *
- * Distrust without retry, deliberately. `verify` may answer `{ retry: true }`
- * and that is right for a read; a send that came back 401 may still have been
- * delivered, and deciding to repeat it is not this function's to make. The
- * outcome is dropped on purpose — what is wanted is the connection repaired
- * for the call after this one.
- *
- * Cloned before the body is read, because a response cannot be cloned once it
- * has been.
- */
-async function noteRefusal(context: ProviderContext, refused: Response | undefined): Promise<void> {
-  if (refused) await context.verify?.(refused);
-}
+function replyNote(outcome: {
+  readonly asked: string | undefined;
+  readonly landed: string | null;
+  readonly lookedUp: boolean;
+  readonly drafting: boolean;
+}): string | undefined {
+  // "Filed" rather than "sent" when it is a draft. The note was written for a
+  // send and returned verbatim for a draft, so a caller reading one could
+  // reasonably report the reply as delivered when nothing had left the mailbox
+  // and there was not yet a recipient to deliver it to.
+  const what = outcome.drafting ? 'saved this draft in' : 'filed this as';
 
-async function submit(input: {
-  readonly raw: Uint8Array;
-  readonly draftOnly: boolean;
-  readonly draftId: string | undefined;
-  readonly authorize: (request: Request) => Promise<Request>;
-  readonly fetch: typeof globalThis.fetch;
-  readonly context: ProviderContext;
-}): Promise<Record<string, unknown>> {
-  const { raw, draftOnly, draftId, authorize, context } = input;
-  const large = raw.byteLength > GMAIL_JSON_LIMIT_BYTES;
-
-  // Revising is a `PUT` at the draft's own address; the other two are a `POST`
-  // at a collection. The upload host takes the same path either way, so size
-  // still chooses the host and nothing else.
-  const revising = draftId !== undefined;
-  const path = revising
-    ? `/drafts/${encodeURIComponent(draftId)}`
-    : draftOnly
-      ? '/drafts'
-      : '/messages/send';
-  const url = large ? `${GMAIL_UPLOAD}${path}?uploadType=media` : `${GMAIL_API}${path}`;
-
-  const encoded = large ? undefined : Buffer.from(raw).toString('base64url');
-  // A draft nests the message, whether it is being created or replaced; only a
-  // straight send carries `raw` at the top level.
-  const body: Uint8Array | string = large
-    ? raw
-    : JSON.stringify(draftOnly || revising ? { message: { raw: encoded } } : { raw: encoded });
-
-  const request = await authorize(
-    new Request(url, {
-      method: revising ? 'PUT' : 'POST',
-      headers: {
-        'content-type': large ? 'message/rfc822' : 'application/json',
-        accept: 'application/json',
-      },
-      body,
-      ...(context.signal ? { signal: context.signal } : {}),
-    }),
-  );
-
-  const response = await input.fetch(request);
-  // Cast as the http transport does: the fetch types and the global Response
-  // disagree about `headers`, and the verifier reads neither.
-  const refused = response.ok ? undefined : (response.clone() as unknown as Response);
-  const text = await response.text();
-
-  if (!response.ok) {
-    await noteRefusal(context, refused);
-    throw new Error(`Gmail refused the message with ${response.status}: ${text}`);
+  if (!outcome.lookedUp) {
+    return `Gmail would not answer the search for the message being replied to, so it ${what} a new conversation. The headers still name the message it answers, so the recipient's mail client can show it as a reply. Sending it again later is what puts it in the thread.`;
   }
-
-  try {
-    return JSON.parse(text) as Record<string, unknown>;
-  } catch {
-    return {};
+  if (outcome.asked === undefined) {
+    return `No message with that Message-ID was found in this mailbox, so Gmail ${what} a new conversation. The recipient's mail client can still show it as a reply, from its headers.`;
   }
+  if (outcome.landed !== null && outcome.landed !== outcome.asked) {
+    return `Gmail ${what} a new conversation rather than the thread holding the message it answers. It keeps a reply in that thread only when the subject matches.`;
+  }
+  return undefined;
 }
 
 /**
- * Send a draft that already exists, by id.
+ * What a revision's receipt says when it names no message to answer.
  *
- * Always small — the body is one identifier — so there is no upload-host branch
- * here even when the draft it names carries 30 MiB. The bytes were already
- * handed over by the `PUT` that preceded this.
+ * A draft revised without `in_reply_to` is replaced whole, which takes it out of
+ * any thread it was in — and that is silent, because the one case with no
+ * `in_reply_to` is also the one case `replyNote` never ran for. Said here
+ * because it is recoverable only before the draft is sent.
+ *
+ * **Only while it is still a draft, and that is the whole guard.** Written
+ * without it, a revision that was sent — `draft_id` set and `draft_only` unset,
+ * which revises and then sends — carried "compose it again with in_reply_to
+ * set" on a message that had already gone to real recipients. An agent
+ * following that advice sends a second copy. The note exists to make something
+ * recoverable, and after a send there is nothing to recover and nothing worth
+ * saying that a caller can act on without doing harm.
  */
-async function sendDraft(input: {
-  readonly draftId: string;
-  readonly authorize: (request: Request) => Promise<Request>;
-  readonly fetch: typeof globalThis.fetch;
-  readonly context: ProviderContext;
-}): Promise<Record<string, unknown>> {
-  const request = await input.authorize(
-    new Request(`${GMAIL_API}/drafts/send`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json' },
-      body: JSON.stringify({ id: input.draftId }),
-      ...(input.context.signal ? { signal: input.context.signal } : {}),
-    }),
-  );
-
-  const response = await input.fetch(request);
-  // Cast as the http transport does: the fetch types and the global Response
-  // disagree about `headers`, and the verifier reads neither.
-  const refused = response.ok ? undefined : (response.clone() as unknown as Response);
-  const text = await response.text();
-
-  if (!response.ok) {
-    await noteRefusal(input.context, refused);
-    throw new Error(`Gmail refused to send the draft with ${response.status}: ${text}`);
-  }
-
-  try {
-    return JSON.parse(text) as Record<string, unknown>;
-  } catch {
-    return {};
-  }
-}
-
-/** Gmail answers with its own id; a draft nests the message inside. */
-function messageIdOf(body: Record<string, unknown>): string | null {
-  const id = body['id'];
-  if (typeof id === 'string' && !('message' in body)) return id;
-
-  const message = body['message'];
-  if (message !== null && typeof message === 'object') {
-    const nested = (message as { id?: unknown }).id;
-    if (typeof nested === 'string') return nested;
-  }
-
-  return typeof id === 'string' ? id : null;
+function revisionNote(draftId: string | undefined, drafting: boolean): string | undefined {
+  if (draftId === undefined || !drafting) return undefined;
+  return 'This revision named no in_reply_to, so it does not carry a thread. If the draft was a reply, revise it again with in_reply_to set, or Gmail keeps it as a conversation of its own.';
 }
 
 function fail(message: string): ToolResult {

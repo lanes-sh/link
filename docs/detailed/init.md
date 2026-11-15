@@ -440,6 +440,13 @@ This project holds long-lived credentials, so dependency compromise is a live th
 
 - Set `minimumReleaseAge = 604800` (seven days) in `bunfig.toml` so newly published versions must age before entering the lockfile. This blunts the common pattern where a compromised package is published and yanked within hours. **Verified rather than assumed:** `bun add hono` resolves to the newest release older than the floor, not to `latest`.
 - Pin the Bun version in `.bun-version`. Commit the lockfile. CI installs with `bun install --frozen-lockfile`. Run `bun pm scan` for lockfile CVEs.
+
+> **Amended.** `bun pm scan` does nothing without `[install.security] scanner` configured in
+> `bunfig.toml` — it prints how to configure one and exits zero. So the control was documented,
+> scripted, and inert, and `SECURITY.md` claimed a lockfile CVE check from the first release that
+> was never running. `bun audit` needs no scanner package: it resolves the whole lockfile against
+> npm's advisory database, and `ci.yml` runs it as a blocking step. It is also the only control here
+> that sees a transitive dependency, because GitHub's dependency graph cannot read `bun.lock`.
 - Urgent security fixes may be pulled in ahead of the window by installing an exact version explicitly, or via `minimumReleaseAgeExcludes`.
 
 > **Amended.** The original text specified npm (`.npmrc`, `npm ci`, `.node-version`). Bun provides

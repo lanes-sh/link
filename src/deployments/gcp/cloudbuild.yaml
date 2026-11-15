@@ -15,7 +15,19 @@
 # what reaches the builder. `data/` must not — see the note in that file.
 
 steps:
-  - name: gcr.io/cloud-builders/docker
+  # Pinned by digest with the tag beside it, for the reason the Dockerfile states
+  # at length: a tag is a pointer its publisher can move, and this step builds the
+  # image that holds live OAuth refresh tokens. Unpinned it was not even a tag —
+  # a bare name resolves to `latest`, in a `gcr.io/cloud-builders/*` namespace
+  # Google no longer adds to, so this pins onto something already still rather
+  # than something current. That is worth saying rather than implying the builder
+  # moves.
+  #
+  # To bump:
+  #   TOKEN=$(curl -fsSL "https://gcr.io/v2/token?scope=repository:cloud-builders/docker:pull&service=gcr.io" \
+  #     | sed -E 's/.*"token":"([^"]+)".*/\1/')
+  #   curl -fsSL -H "Authorization: Bearer $TOKEN" https://gcr.io/v2/cloud-builders/docker/tags/list
+  - name: gcr.io/cloud-builders/docker@sha256:dccbdf9b7877dc1b66427d769a55fe9d82c21655a88301e5eba3d0754c76d146  # 20.10.24
     args:
       - build
       - --file

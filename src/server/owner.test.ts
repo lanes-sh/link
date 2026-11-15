@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { ownerPrincipal } from '#auth';
 import { parseConfig } from '#profile';
 import {
+  assetsProvider,
   createMemoryVaultStore,
   createSkillsProvider,
   createVaultProvider,
@@ -13,7 +14,7 @@ import { allocatePort, rpc, startHarness } from './harness.ts';
 /**
  * The owner layer, end to end over real HTTP.
  *
- * This is the milestone's own gate. Three providers that hold no third-party
+ * This is the milestone's own gate. Four providers that hold no third-party
  * account, registered through the same SDK, configured by the same connections,
  * scoped by the same profiles, and gated by the same policy evaluation —
  * exercised through the actual endpoint rather than by calling handlers.
@@ -41,7 +42,7 @@ async function seededVault(): Promise<VaultStore> {
 const vaultStore = await seededVault();
 
 /**
- * The three owner-layer rows a test grants, each carrying the same rules.
+ * The four owner-layer rows a test grants, each carrying the same rules.
  *
  * A grant lives inside the row that names one connection now (ADR-058), so the
  * flat block each test writes is indented once more and repeated per row —
@@ -54,7 +55,7 @@ function ownerConfig(profile: string, port: number, policy: string) {
   // is not a broader grant — it is one the loader refuses.
   const lines = policy.split('\n').filter((line) => line.trim().length > 0);
 
-  const grants = ['lanes_memory', 'lanes_skills', 'lanes_vault']
+  const grants = ['lanes_memory', 'lanes_skills', 'lanes_vault', 'lanes_assets']
     .map((provider) => {
       let field = 'allow';
       const kept: string[] = [];
@@ -101,6 +102,7 @@ members: []
 function ownerProviders() {
   return [
     memoryProvider,
+    assetsProvider,
     createSkillsProvider({ skills: [SKILL] }),
     createVaultProvider({
       store: vaultStore,
@@ -124,7 +126,8 @@ const full = startHarness({
     `  allow:
     - "lanes_memory.*"
     - "lanes_skills.*"
-    - "lanes_vault.*"`,
+    - "lanes_vault.*"
+    - "lanes_assets.*"`,
   ),
 });
 
@@ -210,6 +213,22 @@ describe('memory', () => {
     expect(contents[0]?.text).toBe('We deploy on Thursday evenings, never Fridays.');
   });
 
+  test('a write names the entry, and hands back no link', async () => {
+    // A `resource_link` is a file to a client that fetches one: ChatGPT asked
+    // the owner to approve materialising the entry after every write. It is
+    // still a resource, read by address above — just not presented as a file.
+    const stored = await callTool('lanes_memory_write', {
+      connection: 'lanes_memory.owner',
+      title: 'Standing order',
+      text: 'Pay the rent on the first.',
+      id: 'standing_order',
+    });
+
+    expect(stored.isError).toBe(false);
+    expect(stored.links).toEqual([]);
+    expect(stored.text).toContain('"standing_order"');
+  });
+
   test('entries are listed as resources', async () => {
     await callTool('lanes_memory_write', {
       connection: 'lanes_memory.owner',
@@ -239,14 +258,11 @@ describe('memory', () => {
       query: 'queue worker',
     });
 
-    // Routed, so the address a search hands back is one the client can read.
-    // The provider wrote `lanes-memory://entry/runbook` and never learned which
-    // profile or connection it was serving.
-    expect(found.links).toEqual(['lanes-memory://entry/personal/owner/runbook']);
-
-    const read = await rpc(full.server.url, 'resources/read', { uri: found.links[0]! });
-    const contents = (read.body['result'] as { contents?: Array<{ text?: string }> })?.contents ?? [];
-    expect(contents[0]?.text).toContain('Restart the queue worker');
+    // Named by the id `lanes_memory_get` takes, rather than linked — the same
+    // reason a write hands back no link.
+    expect(found.links).toEqual([]);
+    expect(found.text.split(/\s/, 1)[0]).toBe('runbook');
+    expect(found.text).toContain('Restart the queue worker');
   });
 
   test('a memory body never reaches the audit log', async () => {
@@ -261,6 +277,24 @@ describe('memory', () => {
     expect(JSON.stringify(events)).not.toContain('the confidential body text');
     // ...while the address is kept, so the log can say what was written.
     expect(JSON.stringify(events)).toContain('private');
+  });
+});
+
+describe('a stored file is the one result handed back as a link', () => {
+  test('routed, so the address a client is handed is one it can read', async () => {
+    const stored = await callTool('lanes_assets_store', {
+      connection: 'lanes_assets.owner',
+      source: { data: Buffer.from('the contents').toString('base64') },
+      name: 'notes.txt',
+    });
+
+    // The provider wrote `lanes-assets://file/notes.txt` and never learned
+    // which profile or connection it was serving.
+    expect(stored.links).toEqual(['lanes-assets://file/personal/owner/notes.txt']);
+
+    const read = await rpc(full.server.url, 'resources/read', { uri: stored.links[0]! });
+    const contents = (read.body['result'] as { contents?: Array<{ text?: string }> })?.contents ?? [];
+    expect(contents[0]?.text).toBe('the contents');
   });
 });
 

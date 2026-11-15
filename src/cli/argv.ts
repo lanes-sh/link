@@ -89,8 +89,15 @@ export function normaliseWorkspace(
     );
   }
 
+  // No longer "the next minor". ADR-061 promised removal in one and it has been
+  // eight, because ADR-065 made the desktop app update this CLI on its own
+  // lifecycle while that app still spells `--target` — so removing it breaks a
+  // settings page for anyone whose CLI moved first, which is now the ordinary
+  // case rather than the careless one. ADR-081 records the condition that
+  // replaces the deadline. A warning naming a release that keeps not arriving
+  // teaches people to ignore warnings.
   notify(
-    `warn  --target is now --workspace, and this spelling goes in the next minor. ` +
+    `warn  --target is now --workspace. This spelling still works and will be removed. ` +
       `Read it as: --workspace ${String(legacy)}`,
   );
 

@@ -1,0 +1,67 @@
+# Dependabot had no configuration file, and the default it fell back to was
+# wrong in a way that failed loudly and then did nothing quietly. With a
+# `bun.lock` and no `package-lock.json`, every "Dependabot Updates" run from
+# 2026-10-01 onward died on `misconfigured_tooling`: the npm_and_yarn updater
+# cannot edit a Bun lockfile, and nothing here said which updater to use.
+#
+# Two things this does not do, written here rather than discovered later:
+#
+#   - **It does not close a security alert.** GitHub lists Bun as
+#     version-updates-only, and the security path routes off the *advisory's*
+#     ecosystem (npm_and_yarn) rather than off this key — so no configuration
+#     here can reach it. The seventeen alerts open when this was written were
+#     closed by bumping the four direct dependencies that carried them, not by
+#     this file.
+#   - **It does not see a transitive dependency.** GitHub's dependency graph
+#     does not read `bun.lock`: it resolves the eleven packages named in
+#     `package.json` and nothing beneath them. `bun run audit` in `ci.yml`
+#     checks the whole resolved lockfile against the same advisory database,
+#     which is why that step is the control and this file is the convenience.
+version: 2
+
+updates:
+  - package-ecosystem: "bun"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+    # The same seven days `bunfig.toml` enforces with `minimumReleaseAge`, and
+    # it has to be restated because Dependabot does not read that file. Without
+    # it Dependabot proposes a version younger than the floor, ci installs it
+    # with `--frozen-lockfile` — which re-resolves nothing, so the floor is
+    # never consulted — and a version the floor exists to keep out lands in the
+    # lockfile with a green tick on it.
+    cooldown:
+      default-days: 7
+
+    open-pull-requests-limit: 5
+
+    # Only the development dependencies are grouped. A runtime dependency in a
+    # process holding live OAuth refresh tokens is reviewed on its own terms —
+    # CONTRIBUTING.md asks for a reason that survives scrutiny — and a group is
+    # the shape that stops that happening.
+    groups:
+      development:
+        dependency-type: "development"
+
+    commit-message:
+      prefix: "deps"
+
+  # The dependency graph already resolves these, and `release.yml` runs with
+  # `id-token: write` — the identity that publishes to npm. A compromised action
+  # in that job is the highest-value target here, which is also why they are
+  # pinned by digest below. Pinning without something that moves the pins is how
+  # pins rot, so the two belong together.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 3
+    groups:
+      actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "ci"

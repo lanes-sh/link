@@ -86,6 +86,27 @@ export function grantedConnections(
 export interface OpenOptions {
   /** Injected for tests. */
   readonly fetch?: FetchLike | undefined;
+  /**
+   * Opened to serve, rather than to run a command.
+   *
+   * The only thing it changes is that a vault which will not open refuses
+   * instead of being tolerated, and the distinction is the whole point. The
+   * tolerance exists so a remote vault that is down does not take out the
+   * commands that would diagnose it — `doctor` refused by the read it exists to
+   * explain was the case that earned it. An endpoint has no such excuse: there
+   * is deliberately no `vault.list`, so the per-item `vault.get.<id>` tools are
+   * the entire agent-visible surface, and withholding them silently serves a
+   * profile whose vault reads as empty rather than as broken. `/reload` and
+   * `/health` both called that profile healthy and only the container log
+   * disagreed.
+   *
+   * Refusing here means `openReconciled` skips the profile and the log says
+   * `not serving <profile>: <reason>`, which is what every other unopenable
+   * profile already does. It costs having the whole profile out of service for
+   * a vault fault; that is the right trade for a credential store, because the
+   * alternative is an agent being told a codeword does not exist.
+   */
+  readonly serving?: boolean | undefined;
 }
 
 export async function openRuntime(
@@ -176,8 +197,15 @@ export async function openRuntime(
   // vault that will not open otherwise takes down the ones that would diagnose
   // it. `vaultStore` itself is handed to the registry either way, so the vault's
   // own capabilities still refuse rather than report it empty.
-  const remoteVault = adapters.declared.vault?.adapter === 'secret' ||
-    adapters.declared.vault?.adapter === 'blob';
+  //
+  // Never when serving. A command refused by this read is an inconvenience with
+  // a diagnosis one line away; an endpoint that tolerates it serves a profile
+  // whose only vault surface is the per-item tools being withheld — so the
+  // vault reads as empty to the one caller that cannot ask it anything else.
+  // See `OpenOptions.serving`.
+  const remoteVault =
+    !options.serving &&
+    (adapters.declared.vault?.adapter === 'secret' || adapters.declared.vault?.adapter === 'blob');
 
   // `refreshSkills` is declared before the registry it mutates because the
   // provider has to be handed it at construction: a `skills.manage.write` says

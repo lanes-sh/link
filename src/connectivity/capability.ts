@@ -36,8 +36,37 @@ export interface CapabilityBase {
 export type ToolResult = {
   readonly content: ReadonlyArray<
     | { readonly type: 'text'; readonly text: string }
+    /**
+     * A link to a resource. One naming this provider's own resources is routed
+     * by core to the profile and connection the call was made on, which a
+     * provider must not learn — so it cannot spell that address into text.
+     *
+     * **Only for a file.** A client may treat a link in a tool result as a file
+     * to fetch, and ChatGPT does: it stops to ask the owner whether it may
+     * materialise the link, then reads the address and keeps the result as a
+     * file. Memory, tasks and entities each linked the record a call had just
+     * written or found, so saving a note asked for that approval every time. A
+     * record is named by its id in the text, the id its `get` takes.
+     * `src/providers/resource-links.test.ts` lists the providers that link.
+     */
     | { readonly type: 'resource_link'; readonly uri: string; readonly name?: string }
   >;
+  /**
+   * The answer as data, beside the prose, where the provider sent some.
+   *
+   * Required rather than merely welcome wherever a tool declares an output
+   * schema: a successful result must then carry data that fits it, and the SDK
+   * refuses one that does not. An upstream MCP server's schema is advertised as
+   * this endpoint's own, so dropping this turned every successful call to such
+   * a tool into a validation error.
+   *
+   * `unknown`, not an object. The protocol types this field `unknown` and a
+   * schema's root may be an array or a primitive, so narrowing it here would
+   * reintroduce exactly that validation error for any upstream whose schema is
+   * not object-rooted — this endpoint would advertise the schema verbatim and
+   * then drop the only value that could satisfy it.
+   */
+  readonly structuredContent?: unknown;
   readonly isError?: boolean;
 };
 

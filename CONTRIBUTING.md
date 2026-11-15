@@ -33,8 +33,13 @@ against the MCP surface. They are walls, and there is a test holding them up.
 **Weakening default deny.** Including indirectly: registering a capability that is then refused on
 call rather than filtering it out of discovery, or adding a policy operator beyond a trailing `.*`.
 
-**Bun-specific APIs outside the two files that are allowed them** —
-`src/deployments/adapters/sqlite.ts` and `src/server/index.ts`.
+**A Bun-specific API reached for where a portable one would do.** This used to say the
+APIs were confined to two named files, and that stopped being true without anyone noticing:
+one of the two, `src/deployments/adapters/sqlite.ts`, no longer exists, `Bun.*` appears in
+thirty-two source files, and no test ever enforced the claim. It is restated as what is
+actually asked rather than deleted, because the thing behind it still holds — `Bun.serve`
+in the server and `Bun.spawn` in the CLI are the runtime doing its job, and a `Bun.file`
+standing in for `node:fs` in a provider is a portability cost paid for nothing.
 
 **Anything `src/architecture.test.ts` refuses.** It holds four rules: the
 dependency direction between components, no vendor name in the code a request

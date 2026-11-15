@@ -53,7 +53,7 @@ const fixtureMail = defineLocalProvider({
   configSchema: z.object({}),
   connectionSchema: z.object({}),
   bundles: [
-    { name: 'read', description: 'Read.', oauth_scopes: [], capabilities: ['notes.list', 'notes.get'], default: true },
+    { name: 'read', description: 'Read.', oauth_scopes: [], capabilities: ['notes.list', 'notes.get', 'notes.count', 'notes.summary', 'notes.echo'], default: true },
   ],
   capabilities: [
     {
@@ -83,6 +83,53 @@ const fixtureMail = defineLocalProvider({
       async handler({ id, bytes }) {
         const note = { id, subject: `re: ${id}`, ...(bytes ? { body: 'x'.repeat(bytes) } : {}) };
         return { content: [{ type: 'text', text: JSON.stringify(note) }] };
+      },
+    },
+    {
+      // A tool that answers entirely as data. The protocol only asks a server
+      // to repeat `structuredContent` as text where it can, so an upstream that
+      // does not leaves `content` empty — and an upstream MCP server answering
+      // this way is what `handedBack` now passes through.
+      kind: 'tool',
+      name: 'notes.count',
+      title: 'Count notes',
+      description: 'How many notes this account holds, as data rather than prose.',
+      inputSchema: z.object({}),
+      async handler() {
+        return { content: [], structuredContent: { total: 7 } };
+      },
+    },
+    {
+      // A tool that serialises its own data as text, compactly, which is what a
+      // real vendor following the SHOULD does — and what the byte-for-byte
+      // check missed, because this end renders it indented.
+      kind: 'tool',
+      name: 'notes.echo',
+      title: 'Echo notes',
+      description: 'The same records as text and as data, serialised its own way.',
+      inputSchema: z.object({}),
+      async handler() {
+        const data = { notes: [{ id: 'n0' }, { id: 'n1' }] };
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(data) }],
+          structuredContent: data,
+        };
+      },
+    },
+    {
+      // A tool answering both ways, which is what a server following the
+      // protocol's SHOULD does — except that its prose is a summary and the
+      // records are only in the data.
+      kind: 'tool',
+      name: 'notes.summary',
+      title: 'Summarise notes',
+      description: 'A sentence of prose, with the rows beside it as data.',
+      inputSchema: z.object({}),
+      async handler() {
+        return {
+          content: [{ type: 'text' as const, text: 'Found 2 notes.' }],
+          structuredContent: { notes: [{ id: 'n0' }, { id: 'n1' }] },
+        };
       },
     },
   ],
@@ -454,5 +501,75 @@ describe('filling in a list that came back as references', () => {
     expect((bodyOf(text)['notes'] as Record<string, unknown>[])[0]).toMatchObject({
       subject: 're: n0',
     });
+  });
+});
+
+describe('a tool that answers as data rather than prose', () => {
+  test('its answer is rendered, rather than handed back empty', async () => {
+    // `lanes_tools_call` mapped `content` and nothing else, so a tool answering
+    // with `structuredContent` and no text came back as an empty result that
+    // was not an error — which reads as "the tool had nothing to say" rather
+    // than "the answer was dropped on the way through". Under `surface:
+    // crunched` every provider call arrives here, so this is the path it
+    // matters most on.
+    const result = await call(mail.server.url, {
+      capability: 'fixture_mail.notes.count',
+      profile: 'personal',
+      connection: 'fixture_mail.main',
+    });
+    expect(result.isError).toBe(false);
+    expect(result.text).not.toBe('');
+    expect(JSON.parse(result.text)).toEqual({ total: 7 });
+  });
+});
+
+describe('a tool that answers with prose and data both', () => {
+  test('the data is handed back too, not dropped behind the sentence', async () => {
+    // Rendering only when `content` was empty lost the records whenever the
+    // upstream sent a summary beside them: "Found 2 notes." looks like a whole
+    // answer, and the two were gone. Under `surface: crunched` every provider
+    // call takes this path.
+    const result = await call(mail.server.url, {
+      capability: 'fixture_mail.notes.summary',
+      profile: 'personal',
+      connection: 'fixture_mail.main',
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain('Found 2 notes.');
+    expect(result.text).toContain('"n0"');
+    expect(result.text).toContain('"n1"');
+  });
+
+  test('and is not repeated when the upstream already serialised it', async () => {
+    // The byte-for-byte skip. A server following the SHOULD sends the same JSON
+    // as its text, and appending a second copy of a large record set is a real
+    // cost on the path every crunched call takes.
+    const result = await call(mail.server.url, {
+      capability: 'fixture_mail.notes.count',
+      profile: 'personal',
+      connection: 'fixture_mail.main',
+    });
+
+    expect(result.text.match(/"total"/g)).toHaveLength(1);
+  });
+});
+
+describe('a tool that serialises its own data its own way', () => {
+  test('is not echoed back twice because the formatting differs', async () => {
+    // Measured against a real vendor: it serialised compactly, this end renders
+    // indented, and a byte-for-byte comparison therefore missed — so the caller
+    // got the whole payload twice. Under `surface: crunched` every provider
+    // call arrives here, so that is a doubling of the common case.
+    const result = await call(mail.server.url, {
+      capability: 'fixture_mail.notes.echo',
+      profile: 'personal',
+      connection: 'fixture_mail.main',
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain('"n0"');
+    // Once, not twice.
+    expect(result.text.match(/"n0"/g)).toHaveLength(1);
   });
 });
