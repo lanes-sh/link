@@ -1418,3 +1418,27 @@ describe('health, when the credential store will not answer', () => {
     expect(await response.json()).toEqual({ status: 'ok' });
   });
 });
+
+describe('a call body larger than the server SDK accepts by default', () => {
+  test('still reaches this endpoint, so the limit that binds is its own', async () => {
+    // `createMcpHandler` grew `maxRequestBodySize` in SDK 2.3 and defaults it to
+    // 4 MiB. An asset may be 25 MiB (`MAX_ASSET_BYTES`) and reaches a tool as
+    // base64 inside this body, a third larger again — so on the default the
+    // transport answers `413` before anything is parsed, for a file the endpoint
+    // itself accepts. Nothing is dispatched, so nothing is audited, and the
+    // refusal is worded by the SDK rather than by us.
+    //
+    // 6 MiB: over the SDK's default, far under the 64 MiB `/attachments` already
+    // answers with. The assertion is the absence of a transport refusal, not the
+    // call's own outcome — `get_note` is free to say the note is missing.
+    const oversize = 'k'.repeat(6 * 1024 * 1024);
+
+    const result = await rpc(personal.server.url, 'tools/call', {
+      name: 'example_get_note',
+      arguments: { key: oversize },
+    });
+
+    expect(result.status).not.toBe(413);
+    expect(result.status).toBe(200);
+  });
+});
