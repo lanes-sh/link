@@ -14,7 +14,7 @@ you keep your context, because none of it ever lived in the agent.
 
 ## Quickstart
 
-Needs [Bun](https://bun.com) 1.3.11+ and a Lanes sign-in.
+Needs [Bun](https://bun.com) 1.4.0+ and a Lanes sign-in.
 
 ```console
 $ bun install -g @lanes-sh/link
