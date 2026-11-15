@@ -286,6 +286,26 @@ export async function tokenRotate(flags: TokenFlags): Promise<void> {
       consequence: 'endpoint cannot read it, so every request presenting it is refused — and until #235 that refusal reached every other credential too.',
     });
 
+    // `--raw` writes the new value and nothing else, the way `token show --raw`
+    // does — and for the sharper version of its reason. Rotating is what an
+    // operator does *because* a token leaked, so the replacement is the one
+    // value that most deserves to reach its consumer through the shell rather
+    // than through a transcript:
+    //
+    //   export LANES_LINK_TOKEN="$(lanes link token rotate --raw --workspace local)"
+    //
+    // The notice below goes with it, deliberately. Under `--raw` there is
+    // nowhere to put a sentence, and anyone substituting the value into a
+    // variable is already the person who knows what was holding the old one.
+    //
+    // The bind above it rather than below, so `--raw` cannot be the one spelling
+    // of a rotate that writes a value the endpoint was never granted to read.
+    if (flags.raw) {
+      process.stdout.write(`${token}
+`);
+      return;
+    }
+
     print(ok(`rotated ${style.bold(row.id)}`));
     // Gated the way `tokenShow` gates it, and for the same reason: a token
     // printed here goes into the transcript of whatever ran the command.

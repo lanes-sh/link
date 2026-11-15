@@ -264,8 +264,30 @@ export async function unboundRotatableRefs(input: {
         const policy = JSON.parse(result.stdout) as {
           bindings?: { role?: string; members?: string[] }[];
         };
+        // Either *write* role counts as bound. `secretVersionManager` is what
+        // `rotateSteps` grants now, and `secretVersionAdder` is what every
+        // target provisioned before that still carries — both can write the
+        // version this check exists to protect, so reporting the older one as
+        // unbound would send an operator to fix a deployment that works. What
+        // the older one cannot do is retire the version it replaced, which
+        // costs money rather than correctness and is reported separately.
+        //
+        // A readable ref is deliberately not in that company. `secretAccessor`
+        // is the only role that answers the question asked of *it*, so the
+        // widening is applied to the write grant alone — accepting a write role
+        // as proof a revision can read would report an unreadable token as
+        // bound, which is the exact blindness this readable set was added to end.
+        const writes = new Set([
+          'roles/secretmanager.secretVersionManager',
+          'roles/secretmanager.secretVersionAdder',
+        ]);
+        const accepts = (granted: string): boolean =>
+          role.endsWith('secretVersionAdder') ? writes.has(granted) : granted === role;
         const bound = (policy.bindings ?? []).some(
-          (binding) => binding.role === role && (binding.members ?? []).includes(member),
+          (binding) =>
+            binding.role !== undefined &&
+            accepts(binding.role) &&
+            (binding.members ?? []).includes(member),
         );
         return { ref, role, bound, unknown: false };
       } catch {

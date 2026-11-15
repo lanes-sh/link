@@ -1,7 +1,7 @@
 import { formatPlan, planIsNoop, planReconcile } from '#registry';
 import { readEndpointTokens, type ConnectionConfig, type SelectedConnection } from '#profile';
 import { DEFAULT_SURFACES } from '../../config-repair.ts';
-import { announce, announceProfile, emit, fail, ok, print, progress, warn } from '../../output.ts';
+import { announce, announceProfile, emit, fail, ok, print, progress, waiting, warn } from '../../output.ts';
 import { staleNudge } from '../../release.ts';
 import { openRuntime, resolveProfileOnly, type GlobalFlags, type Runtime } from '../../runtime.ts';
 import type { FetchLike } from '#deployments/knowledge.ts';
@@ -128,6 +128,17 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
   const warnings: DoctorFinding[] = [];
   const problems: DoctorFinding[] = [];
 
+  // **Before the work, not after it.** Every other command prints this the
+  // moment it has resolved, and `doctor` printed it from inside the terminal
+  // callback at the end — so the one command whose whole job is to tell you
+  // what is wrong said nothing at all until every probe had settled. Against a
+  // cloud workspace with real connections that was reported as ten minutes of
+  // blank terminal, which is indistinguishable from a hang.
+  //
+  // `--json` still emits one object on stdout and nothing before it, which is
+  // why this is conditional rather than hoisted outright.
+  if (flags.json !== true) announce(runtime.resolution);
+
   try {
     const forSelection = (command: string) =>
       `${command} --profile ${runtime.resolution.profile} --workspace ${runtime.resolution.target}`;
@@ -179,7 +190,9 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
     // thing that actually knows. It kept its own module when `lanes link auth`
     // was removed, because the divergence it was extracted to stop was this
     // command answering the question a second, differently-wrong way.
-    const probed = await probeConnections(runtime, grantedConnections(runtime), forSelection);
+    const probed = await waiting('checking each connection can still sign in', () =>
+      probeConnections(runtime, grantedConnections(runtime), forSelection),
+    );
 
     for (const result of probed) {
       switch (result.verdict) {
@@ -331,8 +344,10 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
     const stale = await staleNudge();
     if (stale !== null) warnings.push({ kind: 'stale_release', message: stale });
 
-    await reportCapabilityDrift(runtime, (message) =>
-      warnings.push({ kind: 'capability_drift', message }),
+    await waiting('asking each provider what it serves now', () =>
+      reportCapabilityDrift(runtime, (message) =>
+        warnings.push({ kind: 'capability_drift', message }),
+      ),
     );
 
     const drift = await planReconcile(grantedConnections(runtime), runtime.state, runtime.credentials, runtime.manifestFor);
@@ -349,8 +364,6 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
     if (problems.length > 0) process.exitCode = 1;
 
     return emit(flags.json, { ok: problems.length === 0, checks, warnings, problems }, () => {
-      announce(runtime.resolution);
-
       for (const line of checks) print(ok(line));
       for (const finding of warnings) print(warn(finding.message));
       for (const finding of problems) print(fail(finding.message));

@@ -124,13 +124,19 @@ export async function addIdentity(
 }
 
 /**
- * Read the block, without opening a target.
+ * Read the block, without opening a target's stores.
  *
- * `resolveProfileOnly`, deliberately: this reads one field of a YAML file that
- * is declared once and applies to every target the profile has, so demanding
- * `--target` would be the ceremony ADR-037 warns is how a required flag stops
- * being a guard. `SELECTION` files it as `profile`, and this is the call that
- * makes that true rather than merely stated.
+ * `resolveProfileOnly`, deliberately: this reads one field of a YAML file and
+ * opens none of the stores the target holds, so it does the smaller half of
+ * what `resolveProfile` would.
+ *
+ * It still names a workspace, and the comment here used to say the opposite.
+ * `SELECTION` filed this as `profile` when there was a `profile`-alone level to
+ * file it under; ADR-052 gave a profile exactly one workspace to live in and
+ * ADR-061 deleted the level, so the row reads `profile+workspace` and
+ * `resolveProfileOnly` requires both. Five commands sat at the old level and
+ * none of them could run, which is the reason the level is gone rather than
+ * left empty.
  */
 export async function readIdentity(
   flags: GlobalFlags,

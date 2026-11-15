@@ -74,10 +74,13 @@ export const ACCEPTS: Record<string, readonly string[]> = {
   'token list': ['json'],
   'token issue': ['show', 'subject', 'me', 'label'],
   'token show': ['show', 'raw', 'id'],
-  'token rotate': ['show', 'raw', 'yes', 'id'],
+  // No `--yes`: `tokenRotate` asks nothing, so the flag was accepted and
+  // dropped. `--raw` stays and is now read — rotating is the one moment a
+  // script most needs the new value, and reading it off decorated output is
+  // what `--raw` exists to avoid.
+  'token rotate': ['show', 'raw', 'id'],
   'token revoke': ['yes', 'id'],
   'audit tail': ['limit', 'denied-only', 'format'],
-  'audit verify': ['limit', 'format'],
   attach: ['connection'],
   outputs: ['show'],
   start: ['port', 'only'],
@@ -93,7 +96,9 @@ export const ACCEPTS: Record<string, readonly string[]> = {
   // that is the one prompt in this CLI that puts an application on the machine.
   dashboard: ['print', 'yes'],
   desktop: ['print', 'yes'],
-  skill: ['print', 'force'],
+  // No `--force`, for the reason `mcp skill` has none: this prints a path or
+  // the document and writes nothing.
+  skill: ['print'],
   deploy: ['dry-run', 'iam', 'access', 'service-account', 'tag', 'yes', 'non-interactive'],
   'secrets push': ['from', 'to', 'overwrite', 'dry-run'],
   sync: ['dry-run', 'from', 'discover', 'prefer'],
@@ -101,16 +106,35 @@ export const ACCEPTS: Record<string, readonly string[]> = {
   'sync workspaces': ['dry-run', 'from', 'discover', 'prefer'],
   update: ['check'],
   'identity add': ['note'],
-  memory: ['connection', 'title', 'description', 'file', 'tag'],
-  // `--yes` on both, because both have a delete that asks first.
-  tasks: ['connection', 'title', 'status', 'due', 'tag', 'yes'],
-  assets: ['connection', 'name', 'content-type', 'yes'],
-  skills: ['connection', 'title', 'description', 'file'],
-  vault: ['connection'],
+  // Each row is exactly what its own file reads, plus what the shared helpers
+  // below read for all of them. `memory` listed `--description` and `--file`
+  // and `skills` listed `--title` and `--description`; none of the four was
+  // read anywhere, and none was ever documented — a memory entry takes its body
+  // on stdin and a skill takes its title from its own frontmatter. They were
+  // accepted and dropped, which is the half of this defect that leaves no trace
+  // at all.
+  //
+  // `--raw` and `--yes` belong to all six, because the helpers that read them
+  // are shared rather than per command: `withRuntime` skips the announce line
+  // under `--raw` so `$(…)` captures the value and nothing else, and `agreed`
+  // takes `--yes` for every delete. Listing them provider by provider is how
+  // `memory forget` came to refuse the flag its own refusal tells you to pass.
+  memory: ['connection', 'title', 'tag', 'raw', 'yes'],
+  tasks: ['connection', 'title', 'status', 'due', 'tag', 'raw', 'yes'],
+  assets: ['connection', 'name', 'content-type', 'raw', 'yes'],
+  skills: ['connection', 'file', 'raw', 'yes'],
+  // `--show` reveals a value and `--raw` writes it bare. Refusing both left a
+  // stored secret with no way out of the CLI at all, under a line that says
+  // `--show to reveal`. `--description` is `vault set`'s.
+  vault: ['connection', 'show', 'raw', 'description', 'yes'],
+  // Its own row because `SELECTION` files `vault key` as needing nothing, so it
+  // inherits none of `vault`'s. `vaultKeyGenerate` reads `--raw` itself rather
+  // than through `withRuntime`, having no runtime to open.
+  'vault key': ['raw'],
   // `alias`, `attr` and `related` are repeatable — see `ownerFlags`. `name`
   // overrides the id derived from the positional name, which is how you get
   // `acme-bv` rather than `acme-b-v`.
-  entities: ['connection', 'type', 'name', 'alias', 'attr', 'related', 'tag', 'yes'],
+  entities: ['connection', 'type', 'name', 'alias', 'attr', 'related', 'tag', 'raw', 'yes'],
   // `no-migrate` is listed beside `migrate` because they are three states
   // rather than two: neither one asks, and a run with no terminal has to be
   // able to say which it meant (ADR-041).
