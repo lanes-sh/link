@@ -2,7 +2,7 @@
 
 ## Getting started
 
-See [Local development](https://lanes.sh/docs/link/local-development). Short version: Bun 1.3.11+,
+See [Local development](https://lanes.sh/docs/link/local-development). Short version: Bun 1.4.0+,
 `bun install`, `bun test`. There is no build step.
 
 ## Before you open a pull request

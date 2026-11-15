@@ -13,7 +13,7 @@
 
 # Pinned by digest, with the tag kept beside it so the next bump is legible.
 #
-# A tag is a pointer its publisher can move. `1.3.11-slim` is not a promise about
+# A tag is a pointer its publisher can move. `1.4.4-slim` is not a promise about
 # bytes — it resolves to whatever was last pushed under that name — so a rebuild
 # months from now can ship a base image nobody here reviewed, in a container that
 # holds live OAuth refresh tokens. The digest is the bytes.
@@ -24,8 +24,21 @@
 #
 # To bump: change the tag, then resolve it —
 #   docker buildx imagetools inspect oven/bun:<tag> --format '{{.Manifest.Digest}}'
+#
+# Or, on a machine with no docker, which is the machine this is usually bumped
+# from. The two Accept headers are load-bearing: without them the registry
+# answers with a single platform's manifest, and pinning that digest breaks
+# every build on the other architecture.
+#
+#   TOKEN=$(curl -fsSL "https://auth.docker.io/token?service=registry.docker.io&scope=repository:oven/bun:pull" \
+#     | sed -E 's/.*"token":"([^"]+)".*/\1/')
+#   curl -fsSL -o /dev/null -D - -H "Authorization: Bearer $TOKEN" \
+#     -H "Accept: application/vnd.oci.image.index.v1+json" \
+#     -H "Accept: application/vnd.docker.distribution.manifest.list.v2+json" \
+#     "https://registry-1.docker.io/v2/oven/bun/manifests/<tag>" \
+#     | awk -F': ' 'tolower($1)=="docker-content-digest"{print $2}'
 # The digest below is the multi-arch index, so it still resolves per architecture.
-FROM oven/bun:1.3.11-slim@sha256:478281fdd196871c7e51ba6a820b7803a8ae97042ec86cdbc2e1c6b6626442d9
+FROM oven/bun:1.4.4-slim@sha256:1846adf22496bd711036aae8be147e57bdebbaea2e5264e3e0b5af1db187d9a4
 
 WORKDIR /app
 
