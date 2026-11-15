@@ -153,11 +153,13 @@ describe('the stdio surface', () => {
     try {
       const { tools } = await harness.client.listTools();
       const echo = tools.find((tool) => tool.name === 'example_echo');
-      const profiles = (
-        echo?.inputSchema as { properties?: { profile?: { enum?: string[] } } } | undefined
-      )?.properties?.profile?.enum;
+      // Named in the argument description since ADR-082, not constrained by an
+      // enum. What the pipe reaches is unchanged; only where it is written is.
+      const described = (
+        echo?.inputSchema as { properties?: { profile?: { description?: string } } } | undefined
+      )?.properties?.profile?.description;
 
-      expect(profiles?.sort()).toEqual(['personal', 'work']);
+      expect(described).toContain('personal, work');
     } finally {
       await harness.stop();
     }

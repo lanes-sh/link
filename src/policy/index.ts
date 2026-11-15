@@ -176,8 +176,9 @@ export function evaluate(
 /**
  * The connections a principal may use for a given capability.
  *
- * This is what populates the `connection` argument enum, so a client cannot
- * even discover a connection it has no grant for. Discovery filtering and
+ * This is what decides which accounts a tool advertises, and whether it is
+ * registered at all, so a client cannot even discover a connection it has no
+ * grant for. Discovery filtering and
  * invocation enforcement therefore share one implementation — if they were
  * separate, they could disagree, and a leak in discovery is still a leak.
  */
@@ -198,9 +199,9 @@ export function allowedConnections(
 
   // One evaluation per account, where this used to be all-or-nothing. That
   // difference is the whole of ADR-058 at the discovery boundary: a profile
-  // holding two mailboxes with different rules now advertises the `connection`
-  // enum each capability actually permits, instead of offering both wherever
-  // either was allowed.
+  // holding two mailboxes with different rules now advertises, for each
+  // capability, the accounts it actually permits, instead of offering both
+  // wherever either was allowed.
   return ofProvider.filter((connection) => {
     const request: PolicyRequest = at
       ? { principal, capability, connection, at }

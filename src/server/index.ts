@@ -195,7 +195,7 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
         // that is a list of what this endpoint holds, handed to anyone who asks.
         // And they are the *caller's* since ADR-068: this listed every profile
         // served to anybody holding a credential, so a delegated member read the
-        // ones `mayReach` keeps out of their own enum.
+        // ones `mayReach` keeps out of what they are shown.
         // Via `authenticateRequest` like the rest: asked directly, a throw was a 500.
         const named = await authenticateRequest(options.authenticator, request, options.log, addressed);
         if (named instanceof Response) return named;

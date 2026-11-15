@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { accountsByProfile, describeWithConnections } from './visibility.ts';
+import { ownerPrincipal } from '#auth';
+import { describeWithConnections } from './description.ts';
+import { accountsByProfile } from './visibility.ts';
 import type { BuildServerOptions, ProfileRuntime } from './visibility.ts';
 
 /**
  * That a caller can tell two accounts of one vendor apart.
  *
- * The `connection` argument is an enum of ids, and an id is all a model has to
+ * The `connection` argument is a bare id, and an id is all a model has to
  * choose on. `idFromAccount` takes only the local part of an address, so
  * `ada.lovelace@example.com` and `ada.lovelace@example.org` become
  * `ada_lovelace` and `ada_lovelace2` — two mailboxes, and nothing anywhere
@@ -22,8 +24,11 @@ const connection = (id: string, account: string, label?: string) => ({
   grant: { connection: `gmail.${id}`, allow: [], deny: [] },
 });
 
+// A principal, because `accountsByProfile` filters on `mayReach` — the fixture
+// stood up without one for as long as the function read the profile map whole.
 const options = (connections: readonly ReturnType<typeof connection>[]): BuildServerOptions =>
   ({
+    principal: ownerPrincipal('personal'),
     profiles: new Map<string, ProfileRuntime>([
       ['personal', { connections } as unknown as ProfileRuntime],
     ]),
@@ -46,8 +51,8 @@ describe('the connection argument says which account it is', () => {
     expect(described).toContain('gmail.ada_lovelace2 — ada.lovelace@example.org');
   });
 
-  test('keyed on the grant ref, which is what the enum carries', () => {
-    // The guard on the bug the tests below hid. `connectionsOf` fills the enum
+  test('keyed on the grant ref, which is what `reachable` carries', () => {
+    // The guard on the bug the tests below hid. `connectionsOf` fills `reachable`
     // from the grant rows, so `reachable` holds `gmail.ada_lovelace`; a map keyed
     // on the bare `connection.id` missed every lookup and no served description
     // ever showed an account, while these tests passed the bare id by hand and
@@ -88,7 +93,7 @@ describe('the connection argument says which account it is', () => {
   test('an account nobody resolved is still listed, by its id alone', () => {
     // A harness that builds a registry to read manifests has no selection to
     // join against. Degrading to what this showed everybody before beats
-    // omitting the connection from its own enum's description.
+    // omitting the connection from the block that describes it.
     const described = describeWithConnections(
       'Read a message.',
       new Map([['personal', ['ada_lovelace']]]),

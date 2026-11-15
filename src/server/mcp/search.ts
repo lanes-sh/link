@@ -9,6 +9,7 @@ import {
 } from './search-index.ts';
 import { EXPAND, type ExpandArgument, expandIfReferences } from './expand-result.ts';
 import { handedBackByGateway } from './gateway-result.ts';
+import { profileDescription, searchFilterDescription } from './description.ts';
 import { validate } from './validate.ts';
 import { SURFACE_TOOL_NAMES, toolNameFor } from './naming.ts';
 import {
@@ -87,12 +88,18 @@ export function registerSearchSurface(
   catalogue?: Map<string, MergedCapability>,
 ): void {
   const merged = catalogue ?? mergeCapabilities(options);
-  // **Filtered, like every other enum this server advertises.** Built from the
+  // **Filtered, because it is still what the descriptions name.** Built from the
   // whole map, these two schemas named every profile the endpoint served to a
   // caller no member list names — the only place a profile name still leaked
   // after ADR-060, because `mergeCapabilities` filters what it returns and this
   // read the map beside it. Dispatch refused the call either way; what was
   // disclosed was that the profile is there to ask about (ADR-079).
+  //
+  // Since ADR-082 these are strings rather than enums, so this list no longer
+  // decides what validates — only what the argument descriptions say is
+  // reachable. That makes the filter advisory where it used to be enforcing, and
+  // it stays exactly as it is: an unfiltered list would put the same name in
+  // front of the same caller, which is the disclosure, not the refusal.
   const profiles = [...options.profiles.keys()].filter((name) =>
     mayReach(options.principal, name),
   );
@@ -137,7 +144,7 @@ export function registerSearchSurface(
           .string()
           .optional()
           .describe('Only this provider, when you already know which account answers.'),
-        profile: z.enum(profiles as [string, ...string[]]).optional().describe('Only this profile.'),
+        profile: z.string().optional().describe(searchFilterDescription(profiles)),
         connection: z.string().optional().describe('Only capabilities this account can serve.'),
         readOnly: z
           .boolean()
@@ -205,7 +212,7 @@ export function registerSearchSurface(
           .describe(
             'Capability id, exactly as lanes_tools_search reports it — "<provider>.<capability>"',
           ),
-        profile: z.enum(profiles as [string, ...string[]]).describe('Which profile to act within'),
+        profile: z.string().min(1).describe(profileDescription(profiles)),
         connection: z
           .string()
           .min(1)
@@ -272,11 +279,12 @@ export function registerSearchSurface(
         };
       }
 
-      // The same refusal `makeHandler` makes, for the same reason: the enums are
-      // a union across profiles, so a caller can name a valid profile and a
-      // connection belonging to a different one, and routing a `work` account
-      // through `personal` would cross exactly the boundary profiles exist to
-      // hold.
+      // The same refusal `makeHandler` makes, for the same reason: both
+      // arguments are strings, so a caller can name a valid profile and a
+      // connection belonging to a different one — and the reachable sets they
+      // are described from are a union across profiles, so this was true before
+      // they were strings. Routing a `work` account through `personal` would
+      // cross exactly the boundary profiles exist to hold.
       if (!reachable.includes(connection)) {
         return {
           content: [

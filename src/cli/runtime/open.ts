@@ -220,9 +220,9 @@ export async function openRuntime(
 
   // Computed before the registry because the setup surface is handed a way to
   // ask what this principal may reach — through the *same* `allowedConnections`
-  // the dispatcher enforces with and `mergeCapabilities` builds the connection
-  // enum from. Computing visibility a second way is how discovery and
-  // enforcement drift, and a leak in discovery is still a leak.
+  // the dispatcher enforces with and `mergeCapabilities` builds a tool's
+  // advertised accounts from. Computing visibility a second way is how discovery
+  // and enforcement drift, and a leak in discovery is still a leak.
   const policy = toPolicyDocument(config);
   // The owner, explicitly, rather than assumed: when a delegated principal
   // arrives this becomes the seam, and `reachable` grows a parameter instead of

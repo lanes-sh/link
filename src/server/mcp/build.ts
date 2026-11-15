@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { isPrompt, isResource, isTool } from '#connectivity';
+import { mayReach } from '#auth';
 import { SERVER_ICONS } from './icon.ts';
 import { GUIDE_TITLE, GUIDE_URI, guideDocument } from './guide.ts';
 import { serverInstructions } from './instructions.ts';
@@ -18,7 +19,13 @@ import { advertisedTools, mergeCapabilities, type BuildServerOptions } from './v
  * only decides how each surviving capability is spelled in the protocol.
  */
 export function buildMcpServer(options: BuildServerOptions): McpServer {
-  const names = [...options.profiles.keys()];
+  // Filtered, for the same reason the enums and `mergeCapabilities` are: `title`
+  // is served to every caller on `initialize`, and built from the whole map it
+  // named every profile the endpoint held to a member of one of them — the
+  // ADR-079 leak, in the last read of the profile map that was still unfiltered.
+  // `serverInstructions` is unaffected either way: it uses this list only to
+  // order a listing it takes from `merged`.
+  const names = [...options.profiles.keys()].filter((name) => mayReach(options.principal, name));
 
   // One evaluation, two consumers. `mergeCapabilities` runs policy over every
   // capability on every connection, and the instructions describe exactly the

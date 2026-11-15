@@ -1,7 +1,7 @@
 import { openTarget, type TargetConfig } from '#profile';
 import { heading, print, style } from '#cli/output.ts';
 import { driverFor } from './drivers.ts';
-import { readableRefs, rotatableRefs } from './prepare.ts';
+import { readableRefs, rotatableRefs, type ConnectionScope } from './prepare.ts';
 import { printSteps, runSteps } from './steps.ts';
 import type { DeployStep } from './driver.ts';
 
@@ -62,18 +62,29 @@ export async function provisionStepsFor(input: {
   readonly target: string;
   readonly declared: TargetConfig;
   /**
-   * Which profiles to walk. The target-level refs — the pairing token, the vault
-   * key — are added by `readableRefs` whatever this says, so a one-profile call
-   * still re-grants them, and re-granting is a no-op.
+   * Which profiles' refs to walk. The target-level refs — the pairing token, the
+   * vault key — are added by `readableRefs` whatever this says, so a one-profile
+   * call still re-grants them, and re-granting is a no-op.
+   *
+   * **It reaches the refs and nothing else.** It used to be handed to the driver
+   * as well, where `bucketGrants` read it as the complete set of profiles the
+   * revision serves and wrote a binding naming only those — so `profile add`,
+   * passing the one profile it was adding, narrowed the write grant to it and
+   * took the rest away. Narrowing a ref walk omits work that was already done;
+   * narrowing that binding removed access to live data. The driver no longer
+   * takes a profile list, so the two cannot be confused again.
    */
   readonly profiles: readonly string[] | undefined;
+  /** Whether the workspace's accounts are this run's business. See `ConnectionScope`. */
+  readonly connections: ConnectionScope;
 }): Promise<DeployStep[]> {
   const deploy = input.declared.deploy;
   if (!deploy) return [];
 
   const driver = await driverFor(deploy.platform);
-  const rotatable = await rotatableRefs(input.workspaceRoot, input.profiles, input.declared);
-  const readable = await readableRefs(input.workspaceRoot, input.profiles, input.declared);
+  const scope = input.connections;
+  const rotatable = await rotatableRefs(input.workspaceRoot, input.profiles, input.declared, scope);
+  const readable = await readableRefs(input.workspaceRoot, input.profiles, input.declared, scope);
 
   return driver.provision({
     deploy,
@@ -81,10 +92,6 @@ export async function provisionStepsFor(input: {
     target: input.target,
     rotatable,
     readable,
-    // Spread rather than passed, because `exactOptionalPropertyTypes` makes an
-    // explicit `undefined` a different thing from an absent key — and here they
-    // mean the same: walk every profile the workspace holds.
-    ...(input.profiles !== undefined ? { profiles: input.profiles } : {}),
   });
 }
 
@@ -122,7 +129,13 @@ export async function provisionProfiles(input: {
 
   let steps: DeployStep[];
   try {
-    steps = await provisionStepsFor({ ...input, declared });
+    // **`none`, because a profile is not an account.** What a deployed target
+    // needs before it can serve a profile is that profile's own vault container
+    // and the grant that reads it. A connection belongs to the workspace
+    // (ADR-057) and is bound when it is connected, so walking all of them here
+    // re-applied a binding per account on every `profile add` — fifty-four steps
+    // for a profile that grants nothing — and none of it was the profile's.
+    steps = await provisionStepsFor({ ...input, declared, connections: 'none' });
   } catch (error) {
     return { applicable: true, reason: `could not work out what to provision: ${message(error)}` };
   }

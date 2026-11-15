@@ -82,17 +82,20 @@ leave it as `<name>` for them to complete — never drop a required one.
 
 A `connection` names an account the profile grants, and it is a **fully
 qualified** `<provider>.<id>` — `lanes_memory.lan1`, not `lan1`. The bare id is
-refused, so take the value out of the enum rather than assembling one.
+refused, so take the value from the tool's own description rather than
+assembling one.
 
 Ids are opaque: `con1`, `con2` for accounts and `lan1`, `lan2` for Lanes' own
-surfaces. They carry no meaning and are not worth guessing at — the enum prints
-each one's account and label beside it, and that is what tells `con1` from
-`con2`. One profile may grant several of the same kind and govern each
+surfaces. They carry no meaning and are not worth guessing at — the tool's
+description prints each one's account and label beside it, grouped by profile,
+and that is what tells `con1` from `con2`. One profile may grant several of the same kind and govern each
 differently, so `gmail.con1` may be readable where `gmail.con2` is writable.
 
 Naming a connection the profile does not grant is refused rather than guessed
-at, and one it does not grant is absent from the enum entirely: if you cannot
-see it there, it was not withheld by accident.
+at, and one it does not grant is absent from that description entirely. Absence
+is not proof, though: the description is as of when your client read its tool
+list, so an account connected since is missing from it and still works. The same
+goes for `profile`. If the owner has named one you cannot see, pass it.
 
 ## Which store a thing goes in
 

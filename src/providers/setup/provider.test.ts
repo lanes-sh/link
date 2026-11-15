@@ -220,7 +220,7 @@ describe('lanes_setup.overview', () => {
   test('a profile the caller cannot reach is counted, never named', async () => {
     // The leak this had: `options.profiles` is every profile on disk, and
     // naming them told a delegated member about profiles `mayReach` keeps out
-    // of the `profile` enum they were shown (ADR-068). A count is not a leak —
+    // of everything else they were shown (ADR-068). A count is not a leak —
     // and it is what stops an agent concluding the others do not exist.
     const text = await textOf(
       tool('overview', {

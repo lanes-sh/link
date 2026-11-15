@@ -158,8 +158,8 @@ export const ACCOUNT_ID_PREFIX = 'con';
  * local part tells accounts apart in practice. It does not: the same name at
  * two domains produced `ada_lovelace` and `ada_lovelace2`, and an id that half
  * describes its account is worse than one that does not, because it invites
- * being trusted. What made that concrete is that the id is the whole of the
- * `connection` enum a model chooses from.
+ * being trusted. What made that concrete is that the id is the whole of what a
+ * model has to choose a `connection` by.
  *
  * So the id is a key and nothing else. `account` carries the identity the
  * provider reports and `label` the operator's own word, which means a `relabel`

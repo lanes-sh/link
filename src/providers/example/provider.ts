@@ -14,8 +14,8 @@ import { defineLocalProvider, keepKeys, type ProviderContext } from '#connectivi
  * setup.
  *
  * Note what is absent: no `connection` argument is declared anywhere. Core
- * injects it, fills its enum per profile from resolved policy, and resolves it
- * to `context.connection` before a handler runs. A provider never thinks about
+ * injects it, describes per profile what resolved policy permits, and resolves
+ * it to `context.connection` before a handler runs. A provider never thinks about
  * which account it is serving — that is ADR-001, and it is what lets one tool
  * set scale to any number of accounts.
  */

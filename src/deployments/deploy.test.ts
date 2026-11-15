@@ -1,4 +1,5 @@
-import { CONNECTIONS_FILE, type TargetConfig } from '#profile';
+import { CONNECTIONS_FILE, PAIR_TOKEN_REF, type TargetConfig } from '#profile';
+import { VAULT_KEY_REF } from '#secrets';
 import { workspaceYaml, writeProfileFixture } from '#profile/testing.ts';
 import { afterAll, describe, expect, test } from 'bun:test';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -415,8 +416,8 @@ members: []
         'tokens:\n  - { id: tok1, subject: "lanes:ada000", ref: tokens/tok1, issued_at: "2026-01-01T00:00:00.000Z" }\n',
     );
 
-    expect(await readableRefs(root, undefined, undefined)).toContain('tokens/tok1');
-    expect(await rotatableRefs(root, undefined, undefined)).not.toContain('tokens/tok1');
+    expect(await readableRefs(root, undefined, undefined, 'workspace')).toContain('tokens/tok1');
+    expect(await rotatableRefs(root, undefined, undefined, 'workspace')).not.toContain('tokens/tok1');
   });
 
   test('an OAuth connection contributes the ref its refresh writes', async () => {
@@ -429,7 +430,7 @@ members: []
     // Per connection, never per provider: two mailboxes hold two refresh
     // tokens, and binding one would leave the other failing exactly as before.
     // Sorted, which is what makes the list stable across runs.
-    expect(await rotatableRefs(root, undefined, undefined)).toEqual([
+    expect(await rotatableRefs(root, undefined, undefined, 'workspace')).toEqual([
       'gmail/ada_lovelace',
       'gmail/rin_shaw',
     ]);
@@ -462,9 +463,9 @@ members: []
     });
     const declared = vaultTarget({ adapter: 'secret' });
 
-    expect(await rotatableRefs(root, undefined, declared)).toContain('vault/personal/main');
-    expect(await readableRefs(root, undefined, declared)).toContain('vault/personal/main');
-    expect(await rotatableRefs(root, undefined, declared)).not.toContain('vault/document');
+    expect(await rotatableRefs(root, undefined, declared, 'workspace')).toContain('vault/personal/main');
+    expect(await readableRefs(root, undefined, declared, 'workspace')).toContain('vault/personal/main');
+    expect(await rotatableRefs(root, undefined, declared, 'workspace')).not.toContain('vault/document');
   });
 
   test('a hand-written ref still wins, because a sealed document keeps its name', async () => {
@@ -473,7 +474,7 @@ members: []
     });
     const declared = vaultTarget({ adapter: 'secret', ref: 'vault/kept' });
 
-    expect(await rotatableRefs(root, undefined, declared)).toContain('vault/kept');
+    expect(await rotatableRefs(root, undefined, declared, 'workspace')).toContain('vault/kept');
   });
 
   test('a provider that authenticates with nothing contributes nothing', async () => {
@@ -481,7 +482,7 @@ members: []
 
     // A grant on a secret nobody writes is a grant that says the boundary is
     // wider than it is.
-    expect(await rotatableRefs(root, undefined, undefined)).toEqual([]);
+    expect(await rotatableRefs(root, undefined, undefined, 'workspace')).toEqual([]);
   });
 
   test('every profile the upload sends, when none is named', async () => {
@@ -493,7 +494,7 @@ members: []
       work: '  - { id: theirs, provider: gmail, account: b@example.test }',
     });
 
-    expect(await rotatableRefs(root, undefined, undefined)).toEqual(['gmail/mine', 'gmail/theirs']);
+    expect(await rotatableRefs(root, undefined, undefined, 'workspace')).toEqual(['gmail/mine', 'gmail/theirs']);
   });
 
   test('naming a profile changes nothing, because the accounts are the workspace\'s', async () => {
@@ -507,7 +508,52 @@ members: []
     // now (ADR-057) and `connections.yaml` always goes up, so every account is
     // served whichever profiles were named — and a credential the revision
     // cannot read is a broken account, not a boundary being widened.
-    expect(await rotatableRefs(root, ['personal'], undefined)).toEqual(['gmail/mine', 'gmail/theirs']);
+    expect(await rotatableRefs(root, ['personal'], undefined, 'workspace')).toEqual(['gmail/mine', 'gmail/theirs']);
+  });
+
+  test("'none' binds what the profile owns and not one account, which is `profile add`", async () => {
+    // **The whole of what `profile add` has to do**, and it is not the
+    // workspace's accounts. A connection belongs to the workspace (ADR-057) and
+    // is bound when it is connected; what a deployed target lacks for a profile
+    // created since the last rollout is that profile's own vault container and
+    // the grant that reads it.
+    //
+    // Walking them anyway cost a step per account on a command that touches
+    // none of them — and read as a new profile reaching into every connection
+    // in the workspace, which is the reading this scope exists to make wrong.
+    const root = await workspaceOf({
+      personal: '  - { id: mine, provider: gmail, account: a@example.test }',
+      work: '  - { id: theirs, provider: gmail, account: b@example.test }',
+    });
+    const declared = vaultTarget({ adapter: 'secret' });
+
+    const readable = await readableRefs(root, ['personal'], declared, 'none');
+
+    // Its own vault document, and the target-level refs that are added whatever
+    // the scope says.
+    expect(readable).toContain('vault/personal/main');
+    expect(readable).toContain(VAULT_KEY_REF);
+    expect(readable).toContain(PAIR_TOKEN_REF);
+
+    // And not one account, its own profile's included.
+    expect(readable.filter((ref) => ref.startsWith('gmail/'))).toEqual([]);
+    expect(await rotatableRefs(root, ['personal'], declared, 'none')).toEqual(['vault/personal/main']);
+  });
+
+  test("'workspace' is the same call with the accounts back, which is `deploy`", async () => {
+    // The pair, so the scope is pinned as a difference rather than each half
+    // being asserted alone against a fixture that might differ.
+    const root = await workspaceOf({
+      personal: '  - { id: mine, provider: gmail, account: a@example.test }',
+      work: '  - { id: theirs, provider: gmail, account: b@example.test }',
+    });
+    const declared = vaultTarget({ adapter: 'secret' });
+
+    expect(await rotatableRefs(root, ['personal'], declared, 'workspace')).toEqual([
+      'gmail/mine',
+      'gmail/theirs',
+      'vault/personal/main',
+    ]);
   });
 
   test('a profile that cannot be read is skipped, not fatal', async () => {
@@ -518,7 +564,7 @@ members: []
 
     // Matching the repair: a broken sibling nobody named should not cost the
     // operator a rollout, and provisioning happens before anything is uploaded.
-    expect(await rotatableRefs(root, undefined, undefined)).toEqual(['gmail/mine']);
+    expect(await rotatableRefs(root, undefined, undefined, 'workspace')).toEqual(['gmail/mine']);
   });
 });
 

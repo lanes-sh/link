@@ -83,10 +83,11 @@ export interface ToolCapability<Schema extends z.ZodType = z.ZodType> extends Ca
   /**
    * The provider's own arguments only.
    *
-   * Do NOT declare a `connection` argument. Core injects it, populates its enum
-   * per profile from resolved policy, and resolves it to a `ConnectionInfo`
-   * before the handler runs — so a client cannot even discover connections it
-   * has no grant for. That is ADR-001, and keeping it out of provider code is
+   * Do NOT declare a `connection` argument. Core injects it, describes per
+   * profile what resolved policy permits, and resolves it to a `ConnectionInfo`
+   * before the handler runs — and a capability with no permitted connection is
+   * never registered, so a client cannot even discover connections it has no
+   * grant for. That is ADR-001, and keeping it out of provider code is
    * what makes one tool set scale to any number of accounts.
    */
   readonly inputSchema: Schema;
