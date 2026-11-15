@@ -1,5 +1,6 @@
 import type { MailboxAttachmentSource } from '#connectivity/mail';
 import { GMAIL_API } from './api.ts';
+import { call, type Channel } from './submit.ts';
 
 /**
  * Re-attaching an attachment that is already in the mailbox.
@@ -17,28 +18,21 @@ import { GMAIL_API } from './api.ts';
  * `_` — which is most of them — and the result still arrives, still has the right
  * length, and still opens as a file. It is a silent, plausible failure, and it is
  * a known trap in other implementations of this same feature.
+ *
+ * Both reads go through `call`, as the send's own requests do. They used to
+ * make their own fetch, so a token Gmail refused here was never handed to
+ * `verify`: the call failed, and the refused token stayed trusted for the rest
+ * of the hour. Being reads, they are also made once more on a fresh token when
+ * `verify` offers one.
  */
-export function gmailAttachments(input: {
-  readonly authorize: (request: Request) => Promise<Request>;
-  readonly fetch?: typeof globalThis.fetch | undefined;
-  readonly signal?: AbortSignal | undefined;
-}): MailboxAttachmentSource {
-  const doFetch = input.fetch ?? globalThis.fetch;
-
-  const get = async (path: string): Promise<Record<string, unknown>> => {
-    const request = await input.authorize(
-      new Request(`${GMAIL_API}${path}`, {
-        headers: { accept: 'application/json' },
-        ...(input.signal ? { signal: input.signal } : {}),
-      }),
+export function gmailAttachments(channel: Channel): MailboxAttachmentSource {
+  const get = (path: string): Promise<Record<string, unknown>> =>
+    call(
+      channel,
+      `${GMAIL_API}${path}`,
+      { headers: { accept: 'application/json' } },
+      { read: true, refused: `Gmail refused the read of ${path}` },
     );
-
-    const response = await doFetch(request);
-    if (!response.ok) {
-      throw new Error(`Gmail answered ${response.status} for ${path}: ${await response.text()}`);
-    }
-    return (await response.json()) as Record<string, unknown>;
-  };
 
   return async ({ messageId, uid, attachmentId }) => {
     // Gmail's REST API has no mailbox uid — a message is named by the id

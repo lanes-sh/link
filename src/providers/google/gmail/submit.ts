@@ -11,17 +11,16 @@ import { GMAIL_API, GMAIL_JSON_LIMIT_BYTES, GMAIL_UPLOAD } from './api.ts';
  * reason `imap/send.ts` is apart from the IMAP capabilities — that file is the
  * tool, and this is the part that is actually Gmail.
  *
- * One rule holds for every request in this file, and it is the one each
+ * One rule holds for every request the capability makes, and it is the one each
  * transported call gets for free: a refusal is handed to `verify` before it is
  * reported, so a token the vendor refused is distrusted rather than resent for
- * the rest of the hour. `call` is where that happens. It used to be written out
- * once per request, and a third copy is how one of them comes to skip it —
- * which `attachment.ts`, reading a mailbox attachment through its own fetch,
- * still does.
+ * the rest of the hour. `call` is where that happens, for the requests here and
+ * for `attachment.ts` reading a mailbox attachment. It used to be written out
+ * once per request, and the copy in `attachment.ts` was the one that skipped it.
  */
 
 /** The connection's own credential path and reply check, which every request here goes through. */
-interface Channel {
+export interface Channel {
   readonly authorize: (request: Request) => Promise<Request>;
   readonly fetch: typeof globalThis.fetch;
   readonly context: ProviderContext;
@@ -300,7 +299,7 @@ export function isTransient(failure: unknown): boolean {
   return failure instanceof GmailRefused && (failure.status === 429 || failure.status >= 500);
 }
 
-async function call(
+export async function call(
   channel: Channel,
   url: string,
   init: RequestInit,
@@ -325,10 +324,21 @@ async function call(
   const text = await response.text();
   if (!response.ok) throw new GmailRefused(`${options.refused} with ${response.status}: ${text}`, response.status);
 
+  // An empty body is an answer — some of these routes legitimately return none,
+  // and `{}` is what the callers already read it as. A body that is present and
+  // is not JSON is not an answer, and swallowing it into `{}` made an attachment
+  // read report "no attachments" for what was really a proxy's error page: a
+  // wrong fact rather than a failure. The message leads with the status so that
+  // 200-and-not-JSON is distinguishable from a refusal at a glance.
+  if (text.trim() === '') return {};
+
   try {
     return JSON.parse(text) as Record<string, unknown>;
   } catch {
-    return {};
+    throw new GmailRefused(
+      `${options.refused}: Gmail answered ${response.status} with a body that is not JSON.`,
+      response.status,
+    );
   }
 }
 
