@@ -10,6 +10,7 @@ import {
   type MergedCapability,
   type ProfileRuntime,
 } from '#server/mcp';
+import { MAX_UPLOAD_BYTES } from './attachments.ts';
 import type { GenerationDeps, OpenedWorkspace } from './generations.ts';
 
 /** The search, whose own name never says what it is looking for. */
@@ -327,6 +328,17 @@ export class Generation {
       {
         onerror: (error: Error) =>
           this.#deps.log.error('mcp handler error', { message: error.message }),
+        // Stated, because the SDK's own default is below this endpoint's limits.
+        //
+        // `createMcpHandler` grew `maxRequestBodySize` in 2.3 and defaults it to
+        // 4 MiB, answering `413` before anything is parsed. An asset may be 25 MiB
+        // (`MAX_ASSET_BYTES`) and arrives base64 inside the call body, which is a
+        // third larger again — so the default refuses a file the endpoint accepts,
+        // before dispatch, with no audit row, and in the SDK's words rather than
+        // ours. `/attachments` already answers "how large may a file be"; this is
+        // the same answer for the other door, and it is still well under Bun's
+        // 128 MiB default so the binding refusal stays this endpoint's own.
+        maxRequestBodySize: MAX_UPLOAD_BYTES,
       },
     );
 

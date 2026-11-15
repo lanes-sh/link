@@ -49,8 +49,14 @@ export const ATTACHMENTS_PATH = '/attachments';
  * Above every mail host's own ceiling — 35 MiB is the largest here — so this is
  * never the binding limit on a legitimate send, and well under Bun's 128 MiB
  * default body cap so a refusal is ours and legible rather than the runtime's.
+ *
+ * Exported because `/mcp` needs the same number. A file reaches this endpoint
+ * two ways — multipart to `/attachments`, or base64 inside a `tools/call` body
+ * — and the second had no bound of its own until the server SDK grew one. One
+ * constant for both keeps the answer to "how large may a file be" from
+ * depending on which door it came through.
  */
-const MAX_UPLOAD_BYTES = 64 * 1024 * 1024;
+export const MAX_UPLOAD_BYTES = 64 * 1024 * 1024;
 
 export interface StageOptions {
   readonly profiles: ReadonlyMap<string, ProfileRuntime>;
