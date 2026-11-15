@@ -25,8 +25,8 @@
  * entities: ordering is not selection, and a caller that cannot tell two
  * candidates apart must be given what tells them apart.
  *
- * **The key is the grant ref, not the bare id.** `connectionsOf` fills the enum
- * from the grant rows (ADR-058), so `reachable` carries `gmail.con1`, and
+ * **The key is the grant ref, not the bare id.** `connectionsOf` fills
+ * `reachable` from the grant rows (ADR-058), so it carries `gmail.con1`, and
  * `accountsByProfile` keys on that same `ref` — one string from one source, so
  * the two sides cannot drift. Keyed on `connection.id` instead it missed every
  * lookup, and no served description carried an account at all, while

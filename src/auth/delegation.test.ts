@@ -12,7 +12,8 @@ import { EVERY_PROFILE, forProfile, mayReach, memberPrincipal, ownerPrincipal } 
  *
  * Two properties, and the second is the one worth having tests for. Being
  * refused is obvious. Being *invisible* is not: a member does not fail to call a
- * profile they are not on, they never see it in the `profile` enum — and a
+ * profile they are not on, they are never shown it at all — not in what a tool
+ * advertises, nor in what the search or the setup overview answers — and a
  * filter that ever disagreed with the gate would be a leak in discovery, which
  * is still a leak.
  */

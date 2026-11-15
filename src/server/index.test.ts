@@ -196,7 +196,7 @@ describe('authentication', () => {
     // The same rule as discovery, in the one place that had its own answer.
     // This listed every profile served, to anybody holding any credential — so
     // a delegated member read the names of profiles `mayReach` deliberately
-    // keeps out of the `profile` enum they were shown (ADR-068).
+    // keeps out of everything else they were shown (ADR-068).
     const harness = startHarness({
       profile: 'personal',
       port: allocatePort(),
@@ -409,9 +409,10 @@ describe('invocation', () => {
     expect(fromB.text).toContain('No note');
   });
 
-  test('a connection outside the enum is refused', async () => {
-    // Defence in depth: schema validation refuses it at the MCP layer, and
-    // policy would refuse it again at dispatch if it got through.
+  test('a connection the profile does not grant is refused', async () => {
+    // This endpoint's own refusal since ADR-082, not the SDK's: `connection` is
+    // a plain string, so the call reaches `makeHandler` and the check there is
+    // what answers. Policy would refuse it again at dispatch if it got through.
     const result = await callTool(personal.server.url, 'example_echo', {
       message: 'sneaky',
       connection: 'example.nonexistent',
@@ -825,9 +826,10 @@ describe('one endpoint, several profiles', () => {
   });
 
   test('naming a profile that does not grant the capability is refused', async () => {
-    // `side` has no grant for set_note, and the schema enum says so — but the
-    // enum is a union across profiles for tools that several offer, so the
-    // check has to exist at dispatch too.
+    // `side` has no grant for set_note. The reachable set a tool is described
+    // from is a union across profiles for tools that several offer, so naming a
+    // profile that does not grant it has always had to be checked rather than
+    // constrained — and since ADR-082 nothing in the schema narrows it at all.
     const result = await callTool(
       both.server.url,
       'example_set_note',

@@ -13,8 +13,8 @@ import { SURFACE_TOOL_NAMES, toolNameFor } from './naming.ts';
  *
  * The server is a pure function of resolved policy: a capability the principal
  * cannot reach on any connection is not registered, and one it can reach on some
- * connections advertises exactly those in its `connection` enum. A client
- * therefore cannot discover a connection it has no grant for.
+ * connections advertises exactly those in its description. A client therefore
+ * cannot discover a connection it has no grant for.
  *
  * Discovery filtering and invocation enforcement share one implementation
  * (`allowedConnections`, which calls the same `evaluate` the dispatcher uses).
@@ -109,8 +109,8 @@ function connectionsOf(runtime: ProfileRuntime): string[] {
  *
  * A capability is registered once even when several profiles offer it — two
  * mailboxes are still one `gmail.users.messages.list` tool — with the profile
- * chosen per call. `reachable` stays per profile because the connection enum
- * must not imply that an account of one profile can be used through another.
+ * chosen per call. `reachable` stays per profile because what is advertised must
+ * not imply that an account of one profile can be used through another.
  */
 export interface MergedCapability {
   readonly reachable: Map<string, string[]>;
@@ -146,7 +146,7 @@ export function mergeCapabilities(options: BuildServerOptions): Map<string, Merg
 
   for (const [name, runtime] of options.profiles) {
     // The same list the dispatcher enforces with. A member does not merely fail
-    // to call a profile they are not on — it is absent from the `profile` enum,
+    // to call a profile they are not on — nothing advertised to them names it,
     // so they never learn it exists (ADR-060). Discovery and enforcement share
     // one answer here for the same reason they share `allowedConnections`.
     if (!mayReach(options.principal, name)) continue;

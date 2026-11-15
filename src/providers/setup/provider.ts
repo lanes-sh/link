@@ -19,8 +19,8 @@ import { planAll, planFor, type ProviderPlan, type ReachableConnection } from '.
  *
  * Everything it reports is either shipped code (which providers exist, what
  * their setup blocks say) or already visible to the same caller through
- * `tools/list`, the injected `profile` and `connection` enums, and the
- * unauthenticated `/health`. The one genuinely new fact is the account *label*
+ * `tools/list`, the descriptions the injected `profile` and `connection` carry,
+ * and the unauthenticated `/health`. The one genuinely new fact is the account *label*
  * on a connection — `you@example.com` — and it is deliberate: a caller holding a
  * grant on `gmail.main` can already read that mailbox, which discloses the
  * address on the first message. Withholding it here while serving the mailbox
@@ -78,9 +78,9 @@ export interface SetupProviderOptions {
    * A function, not a snapshot, so it is evaluated per call. Computed by the
    * caller because filtering it is a policy decision and `#providers` may not
    * import `#policy` — `open.ts` runs it through the same `allowedConnections`
-   * the dispatcher enforces with and `mergeCapabilities` builds the connection
-   * enum from. Computing it separately here is how discovery and enforcement
-   * drift, and a leak in discovery is still a leak.
+   * the dispatcher enforces with and `mergeCapabilities` builds a tool's
+   * advertised accounts from. Computing it separately here is how discovery and
+   * enforcement drift, and a leak in discovery is still a leak.
    */
   readonly reachable?: () => ReadonlyArray<ReachableConnection>;
 }
@@ -138,8 +138,8 @@ export function createSetupProvider(options: SetupProviderOptions): ProviderDefi
               {
                 type: 'text',
                 // The caller's set, not the workspace's (ADR-068): rendering
-                // `options.profiles` named profiles `mayReach` hides from the
-                // same caller's `profile` enum.
+                // `options.profiles` named profiles `mayReach` keeps out of
+                // everything else the same caller is shown.
                 text: renderOverview(options, connections, plans, handlerContext.connection.key, {
                   reachable: handlerContext.profiles,
                   total: options.profiles?.length ?? handlerContext.profiles.length,

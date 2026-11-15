@@ -293,10 +293,11 @@ describe('what it cannot do', () => {
   });
 
   /**
-   * The refusal `makeHandler` makes, made here too. The `profile` enum is a
-   * union across profiles, so a caller can name a valid profile and a
-   * connection belonging to another — and routing one profile's account through
-   * another crosses exactly the boundary profiles exist to hold.
+   * The refusal `makeHandler` makes, made here too. The reachable set these are
+   * described from is a union across profiles, so a caller can name a valid
+   * profile and a connection belonging to another — and routing one profile's
+   * account through another crosses exactly the boundary profiles exist to
+   * hold.
    */
   test('refuses a connection that is not part of the named profile', async () => {
     const outcome = await call(personal.server.url, {

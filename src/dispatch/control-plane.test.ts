@@ -217,7 +217,7 @@ describe('the provider context exposes no control-plane handle', () => {
       'log',
       // The caller's reachable profile names (ADR-068). A design decision, and
       // the argument for it is that it is not a handle: it is the same routing
-      // fact the client already holds in every tool's `profile` enum, and a
+      // fact the client already holds in every tool it was shown, and a
       // provider still acts in exactly one profile per dispatch. It is here so
       // a surface describing what a caller can reach is given the caller's
       // answer rather than the workspace's.

@@ -279,7 +279,7 @@ describe('the habits it teaches', () => {
     // small — three profiles of ten accounts passed 2,000 characters silently.
     // Beyond a point the listing is summarised instead, which loses nothing an
     // agent cannot get exactly: every tool carries the connections it accepts in
-    // its own `connection` enum.
+    // its own description, grouped by profile.
     const profiles = ['personal', 'work', 'clients', 'archive', 'shared'];
     const reachable = new Map(
       profiles.map((profile) => [
@@ -338,7 +338,7 @@ describe('the habits it teaches', () => {
 
     expect(worst.length).toBeLessThan(MAX_INSTRUCTIONS);
     // Degraded to a count rather than truncated: the names are the nicety, the
-    // number is the fact, and every tool carries its own connection enum.
+    // number is the fact, and every tool's description carries its own accounts.
     expect(worst).toContain('20 profiles');
   });
 

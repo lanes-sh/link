@@ -279,11 +279,12 @@ export function registerSearchSurface(
         };
       }
 
-      // The same refusal `makeHandler` makes, for the same reason: the enums are
-      // a union across profiles, so a caller can name a valid profile and a
-      // connection belonging to a different one, and routing a `work` account
-      // through `personal` would cross exactly the boundary profiles exist to
-      // hold.
+      // The same refusal `makeHandler` makes, for the same reason: both
+      // arguments are strings, so a caller can name a valid profile and a
+      // connection belonging to a different one — and the reachable sets they
+      // are described from are a union across profiles, so this was true before
+      // they were strings. Routing a `work` account through `personal` would
+      // cross exactly the boundary profiles exist to hold.
       if (!reachable.includes(connection)) {
         return {
           content: [

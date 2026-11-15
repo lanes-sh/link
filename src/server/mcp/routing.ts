@@ -90,9 +90,9 @@ export function resourceLinkRouter(
  * Which profile and connection a prompt call meant.
  *
  * Same refusal a tool gets when a profile and a connection belong to different
- * profiles, for the same reason: the enums are a union, and routing a `work`
- * account through `personal` would cross exactly the boundary profiles exist to
- * hold.
+ * profiles, for the same reason: the reachable set is a union across them, and
+ * routing a `work` account through `personal` would cross exactly the boundary
+ * profiles exist to hold.
  */
 export function resolveScope(
   entry: MergedCapability,
