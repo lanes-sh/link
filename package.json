@@ -93,14 +93,14 @@
     "@modelcontextprotocol/core": "2.3.1",
     "@modelcontextprotocol/server": "2.3.1",
     "@rgrove/parse-xml": "4.2.3",
-    "mcp-from-openapi": "2.5.1",
+    "mcp-from-openapi": "2.9.1",
     "nodemailer": "10.1.7",
     "postal-mime": "2.7.5",
-    "yaml": "2.9.0",
+    "yaml": "2.9.1",
     "zod": "4.6.7"
   },
   "devDependencies": {
-    "@types/bun": "latest",
-    "typescript": "^5"
+    "@types/bun": "1.4.4",
+    "typescript": "5.9.3"
   }
 }
