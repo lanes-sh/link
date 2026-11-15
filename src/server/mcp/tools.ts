@@ -7,9 +7,9 @@ import { clientLabelFrom } from './client-info.ts';
 import { toolNameFor } from './naming.ts';
 import { resourceLinkRouter } from './routing.ts';
 import { sanitizeSchema } from './schema.ts';
+import { describeWithConnections } from './description.ts';
 import {
   accountsByProfile,
-  describeWithConnections,
   type BuildServerOptions,
   type MergedCapability,
 } from './visibility.ts';

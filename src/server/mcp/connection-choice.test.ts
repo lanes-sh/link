@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { accountsByProfile, describeWithConnections } from './visibility.ts';
+import { ownerPrincipal } from '#auth';
+import { describeWithConnections } from './description.ts';
+import { accountsByProfile } from './visibility.ts';
 import type { BuildServerOptions, ProfileRuntime } from './visibility.ts';
 
 /**
@@ -22,8 +24,11 @@ const connection = (id: string, account: string, label?: string) => ({
   grant: { connection: `gmail.${id}`, allow: [], deny: [] },
 });
 
+// A principal, because `accountsByProfile` filters on `mayReach` — the fixture
+// stood up without one for as long as the function read the profile map whole.
 const options = (connections: readonly ReturnType<typeof connection>[]): BuildServerOptions =>
   ({
+    principal: ownerPrincipal('personal'),
     profiles: new Map<string, ProfileRuntime>([
       ['personal', { connections } as unknown as ProfileRuntime],
     ]),
