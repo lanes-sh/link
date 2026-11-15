@@ -1,6 +1,7 @@
 import { CONNECTIONS_FILE, nextTokenId, readConnections, tokenRef } from '#profile';
 import { readSession } from '#auth/lanes/session.ts';
 import { ConfigError } from '#profile';
+import { bindRefs } from '#deployments/bind.ts';
 import { ConfigDocument } from '../../config-edit.ts';
 import { openOrCreateConnections } from '../../config-repair-sweep.ts';
 import { heading, ok, print, style, warn } from '../../output.ts';
@@ -117,6 +118,27 @@ export async function tokenIssue(flags: TokenFlags): Promise<void> {
     // that matches nothing — a working-looking registry whose token is refused.
     await runtime.credentials.set(ref, token);
 
+    // **Bound, not just written.** On a deployed target `runtime.credentials` is
+    // the secret store, whose `set` creates the container and writes no IAM
+    // policy — so this wrote a row the runtime identity was never granted to
+    // read, every time, and still printed `ok issued`. `connect` has bound its
+    // credential since #87; this path reached the same store and did not.
+    //
+    // Unconditional and with no flag to skip, the way `profile add` provisions:
+    // what a deployed target needs before it can serve something does not
+    // depend on how old that thing is, and a target declaring no deployment
+    // reaches no cloud. A token ref is deliberately read-only — `prepare.ts`
+    // keeps it out of the rotatable set so a compromised revision cannot mint
+    // itself a new one — so only `readable` is asked for here.
+    const bound = await bindRefs({
+      deploy: runtime.declared.deploy,
+      target: runtime.target,
+      readable: [ref],
+      rotatable: [],
+      describe: `endpoint token ${id}`,
+      consequence: 'endpoint cannot read it, so every request presenting it is refused — and until #235 that refusal reached every other credential too.',
+    });
+
     // Created from the template if absent, which is what a workspace whose
     // profiles predate `connections.yaml` looks like — and `token issue` is a
     // plausible first write into a fresh one.
@@ -133,6 +155,10 @@ export async function tokenIssue(flags: TokenFlags): Promise<void> {
     print(ok(`issued ${style.bold(id)} to ${subject}`));
     print(`  ${show(token, flags.show)}`);
     print();
+    if (bound.failed) {
+      print(warn(bound.failed));
+      print();
+    }
 
     const reaches = await profilesFor(root, subject);
     if (reaches.length === 0) {
@@ -248,6 +274,18 @@ export async function tokenRotate(flags: TokenFlags): Promise<void> {
     const token = generateProfileToken();
     await runtime.credentials.set(row.ref, token);
 
+    // The same bind, because a rotate lands on a ref that may have been issued
+    // before this existed. Repairing one is a reason to run it rather than a
+    // reason to skip it.
+    const bound = await bindRefs({
+      deploy: runtime.declared.deploy,
+      target: runtime.target,
+      readable: [row.ref],
+      rotatable: [],
+      describe: `endpoint token ${row.id}`,
+      consequence: 'endpoint cannot read it, so every request presenting it is refused — and until #235 that refusal reached every other credential too.',
+    });
+
     // `--raw` writes the new value and nothing else, the way `token show --raw`
     // does — and for the sharper version of its reason. Rotating is what an
     // operator does *because* a token leaked, so the replacement is the one
@@ -259,8 +297,12 @@ export async function tokenRotate(flags: TokenFlags): Promise<void> {
     // The notice below goes with it, deliberately. Under `--raw` there is
     // nowhere to put a sentence, and anyone substituting the value into a
     // variable is already the person who knows what was holding the old one.
+    //
+    // The bind above it rather than below, so `--raw` cannot be the one spelling
+    // of a rotate that writes a value the endpoint was never granted to read.
     if (flags.raw) {
-      process.stdout.write(`${token}\n`);
+      process.stdout.write(`${token}
+`);
       return;
     }
 
@@ -275,6 +317,7 @@ export async function tokenRotate(flags: TokenFlags): Promise<void> {
     // invalidate every agent on the endpoint, because there was one token and
     // every registration carried it. Registrations do not carry one now
     // (ADR-062), so this affects only what was given *this* row's value.
+    if (bound.failed) print(warn(bound.failed));
     print(warn(`anything holding ${row.id} must be given the new value`));
     print(style.dim('  Clients that signed in through a browser are unaffected — they hold their own tokens.'));
   } finally {

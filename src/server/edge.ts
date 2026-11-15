@@ -224,6 +224,8 @@ const HINTS: Record<RefusalReason, string> = {
   malformed: 'Present the profile token as: Authorization: Bearer <token>',
   invalid: 'Refresh the credential. Authorize again only if the refresh is refused too.',
   not_configured: 'This profile has no token yet. Run: lanes link token rotate',
+  unreadable:
+    'This profile has a token this endpoint may not read. Run: lanes link deploy',
 };
 
 /**

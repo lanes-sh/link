@@ -10,6 +10,7 @@ import {
   resolveWorkspaceRoot,
   requireTarget,
   type Config,
+  type DeployConfig,
   type LoadedConfig,
   type ProfileSelection,
   type ResolvedTarget,
@@ -183,6 +184,23 @@ export async function openSecretStoreFor(root: string, target: string): Promise<
   // without the caller having to follow either pointer itself.
   const resolved = await openTarget(root, target);
   return openSecrets({ declared: resolved.declared, root: resolved.workspaceRoot, target });
+}
+
+/**
+ * What a target declares about where it is deployed, with nothing opened.
+ *
+ * The sibling `secrets push` and `secrets set` need: both write into a target's
+ * secret store and then have to bind what they wrote to the identity that will
+ * read it, and neither has a runtime to ask. Resolved the way
+ * `openSecretStoreFor` resolves its store, so `--to cloud` follows the same
+ * pointer for the grant as it did for the write.
+ */
+export async function deployConfigFor(
+  root: string,
+  target: string,
+): Promise<DeployConfig | undefined> {
+  const resolved = await openTarget(root, target);
+  return resolved.declared.deploy;
 }
 
 /**

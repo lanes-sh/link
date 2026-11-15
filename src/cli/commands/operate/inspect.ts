@@ -8,7 +8,7 @@ import type { FetchLike } from '#deployments/knowledge.ts';
 import {
   duplicateAccountFindings,
   reportCapabilityDrift,
-  reportUnboundCredentials,
+  reportCredentialBindings,
 } from './findings.ts';
 import { probeConnections } from './connection-probe.ts';
 import { migratedContract, migratedRenamedProviders } from './migrate.ts';
@@ -359,7 +359,7 @@ export async function doctor(flags: DoctorFlags): Promise<void> {
       });
     }
 
-    await reportUnboundCredentials(runtime, forSelection, { problems, warnings });
+    await reportCredentialBindings(runtime, issued, forSelection, { problems, warnings });
 
     if (problems.length > 0) process.exitCode = 1;
 
