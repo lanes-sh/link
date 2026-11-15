@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { CONNECTIONS_FILE, WORKSPACE_FILE, installRoot, layout } from '#profile';
 import type { DeployStep } from '../driver.ts';
 import {
+  holdsGrant,
   removalStep,
   supersededBindings,
   type ConditionedGrant,
@@ -291,7 +292,17 @@ export async function bucketSteps(input: {
   const member = `serviceAccount:${input.serviceAccount}`;
   const grants = bucketGrants(input.bucket);
 
+  // Read before the additions, not after, because what is already on the policy
+  // decides which of them are worth running. The removals below still come last
+  // — that ordering is about the live policy and is argued in `removalStep`.
+  const current = (await input.policy?.bucket(input.bucket)) ?? null;
+
   for (const grant of grants) {
+    // Already exactly this binding, so adding it rewrites the policy to what it
+    // says and prints `+ done` for a change nobody made. A policy that could not
+    // be read is not evidence of absence, and `holdsGrant` keeps the step.
+    if (holdsGrant(current, member, grant)) continue;
+
     steps.push({
       title: TITLES[grant.title] ?? `bind ${grant.role}`,
       argv: [
@@ -311,7 +322,6 @@ export async function bucketSteps(input: {
   }
 
   // After the additions above, and only ever after them — see `removalStep`.
-  const current = (await input.policy?.bucket(input.bucket)) ?? null;
   if (current === null) return steps;
 
   for (const binding of supersededBindings({ current, member, desired: grants })) {

@@ -58,6 +58,16 @@ export interface PolicyReader {
   bucket(bucket: string): Promise<readonly PolicyBinding[] | null>;
   /** The project's policy, on the same contract. */
   project(project: string): Promise<readonly PolicyBinding[] | null>;
+  /**
+   * One secret's policy, by its encoded id, on the same contract.
+   *
+   * Answering at all also answers whether the secret exists, which is the one
+   * question Secret Manager will not answer directly: it returns 403 rather
+   * than 404 for a binding an identity does not hold, so that secrets cannot be
+   * enumerated by their error codes. A policy that came back is a secret that
+   * is there and readable; `null` is "could not look", and could be either.
+   */
+  secret(id: string): Promise<readonly PolicyBinding[] | null>;
 }
 
 /** Whether an existing binding is exactly one of the grants being applied. */
@@ -176,4 +186,47 @@ export function removalStep(input: {
     tolerateFailure: true,
     removes: true,
   };
+}
+
+/**
+ * Whether a policy already carries exactly the binding a deploy is about to add.
+ *
+ * `add-iam-policy-binding` is not free and is not quiet: it is a read-modify-
+ * write of the whole policy, and the runner prints `+ done` for it whether or
+ * not anything changed. Thirty-seven of them ran on one `profile add` and every
+ * one was already in place.
+ *
+ * `null` is never evidence. A policy that could not be read is not a policy
+ * without the binding, so the step is kept — the same direction
+ * `supersededBindings` takes when it cannot look.
+ */
+export function holdsGrant(
+  current: readonly PolicyBinding[] | null,
+  member: string,
+  grant: ConditionedGrant,
+): boolean {
+  return (current ?? []).some(
+    (binding) => (binding.members ?? []).includes(member) && isDesired(binding, [grant]),
+  );
+}
+
+/**
+ * The same question for a binding carrying no condition, which is every grant
+ * on a secret: they are scoped by naming one resource, so none of them needs one.
+ *
+ * A *conditioned* binding on the same role does not count. It grants something
+ * narrower than what is being asked for, and treating it as satisfaction is how
+ * a deploy would decide it had a permission it does not have.
+ */
+export function holdsUnconditioned(
+  current: readonly PolicyBinding[] | null,
+  member: string,
+  role: string,
+): boolean {
+  return (current ?? []).some(
+    (binding) =>
+      binding.role === role &&
+      !binding.condition &&
+      (binding.members ?? []).includes(member),
+  );
 }

@@ -1,9 +1,8 @@
-import type { SecretRef } from '#secrets';
 import type { DeployStep, ProvisionInput } from '../driver.ts';
-import { encodeRef, retiresOldVersions } from '../adapters/gcp-secret-manager.ts';
 import { bucketSteps } from './bucket.ts';
 import { requireProject } from './gcloud.ts';
 import type { PolicyReader } from './iam.ts';
+import { projectReadRemoval, secretGrantSteps } from './secrets.ts';
 
 /**
  * The project-level things a Cloud Run deploy needs to already exist.
@@ -45,217 +44,6 @@ const REQUIRED_SERVICES = [
   'cloudresourcemanager.googleapis.com',
 ];
 
-/**
- * Who the grant is for, and on what.
- *
- * A named type because these two functions are now called from two places that
- * must not disagree — see the note on `secretGrantSteps`.
- */
-export interface SecretGrant {
-  readonly project: string;
-  readonly serviceAccount: string;
-  readonly refs: readonly SecretRef[];
-}
-
-/**
- * Bring each secret into existence, so the bindings below have something to
- * attach to and the revision never needs `secrets.create` itself.
- *
- * That second half is the reason this is a step rather than left to whoever
- * writes the value: `secretmanager.secrets.create` is a project-level
- * permission, and a revision holding it could mint credential references of its
- * own. So the container is created here and the revision only ever adds a
- * version.
- *
- * The first half is why *read* grants need it too, which they did not have. A
- * binding cannot attach to a secret that does not exist — `gcloud` answers
- * `NOT_FOUND`, every step here tolerates failure, and the deploy carries on. On
- * a first deploy that is exactly what happened to the endpoint's own bearer
- * token: `prepareSecrets` mints it *after* provisioning, so the secret appeared
- * a step too late to be bound and the revision could not read the one value it
- * refuses to start without. A second deploy fixed it, which is why this survived
- * — the failure only ever showed up once per project.
- */
-export function createSteps(input: {
-  readonly project: string;
-  readonly refs: readonly SecretRef[];
-}): DeployStep[] {
-  return input.refs.map((ref) => ({
-    title: `create the secret ${encodeRef(ref)}, so the revision never needs secrets.create`,
-    argv: [
-      'secrets',
-      'create',
-      encodeRef(ref),
-      '--project',
-      input.project,
-      '--replication-policy',
-      'automatic',
-    ],
-    tolerateFailure: true,
-  }));
-}
-
-/** Read, named one secret at a time, so the grant needs no condition to be scoped. */
-export function readSteps({ project, serviceAccount, refs }: SecretGrant): DeployStep[] {
-  return refs.map((ref) => ({
-    title: `let the revision read ${ref}`,
-    argv: [
-      'secrets',
-      'add-iam-policy-binding',
-      encodeRef(ref),
-      '--project',
-      project,
-      '--member',
-      `serviceAccount:${serviceAccount}`,
-      '--role',
-      'roles/secretmanager.secretAccessor',
-      // Bindings are printed as the whole policy otherwise, which is pages
-      // of YAML per deploy and buries everything after it.
-      '--condition',
-      'None',
-    ],
-    tolerateFailure: true,
-  }));
-}
-
-/**
- * Write, named one secret at a time, and never `secrets.create` — the container
- * is made by `createSteps` so this grant stays inside one secret.
- *
- * **`secretVersionManager` where a write retires its predecessor, adder where
- * it does not.** Adder can write a version and not retire the one it replaced,
- * and Secret Manager bills for every active version — so a revision holding
- * only adder has no way to stop paying for tokens it has already superseded,
- * and an often-read mailbox accumulates one per refresh without limit. Manager
- * adds destroy, disable, enable, get and list on top of add.
- *
- * The split is `retiresOldVersions`, which is the same predicate `#retire`
- * branches on, so the grant cannot outgrow the behaviour. The vault is
- * read-modify-write and is deliberately never retired, so granting it manager
- * would be a permission held for a call that is never made.
- *
- * `secrets/vault.ts` says `versions.destroy` is "deliberately not granted to
- * the identity a deployment runs as", and the reasoning behind that sentence
- * still holds in the form it was made: the fear is a revision that can reach
- * the *store*. This binding cannot. It is `add-iam-policy-binding` on one
- * named secret, so what the revision gains is the ability to retire old copies
- * of a credential it already writes and already reads. The thing actually
- * withheld — `secretmanager.secrets.create`, which is project-level and would
- * let a revision mint references of its own — is in neither role and is still
- * only ever exercised by `createSteps`, from an operator's machine.
- */
-export function rotateSteps({ project, serviceAccount, refs }: SecretGrant): DeployStep[] {
-  return refs.map((ref) => ({
-    title: `let the revision rewrite ${ref}, and nothing else in the store`,
-    argv: [
-      'secrets',
-      'add-iam-policy-binding',
-      encodeRef(ref),
-      '--project',
-      project,
-      '--member',
-      `serviceAccount:${serviceAccount}`,
-      '--role',
-      retiresOldVersions(ref)
-        ? 'roles/secretmanager.secretVersionManager'
-        : 'roles/secretmanager.secretVersionAdder',
-      '--condition',
-      'None',
-    ],
-    tolerateFailure: true,
-  }));
-}
-
-/** The union of two ref lists, deduplicated and ordered, so nothing is created twice. */
-function union(...lists: readonly (readonly SecretRef[])[]): SecretRef[] {
-  return [...new Set(lists.flat())].sort();
-}
-
-/**
- * Both halves for one connection's credentials, for a caller that is not a deploy.
- *
- * **This exists because the grant was a deploy-time snapshot of a set that
- * changes between deploys.** `provisionSteps` walks the config's connections and
- * binds each secret it finds; `connect` then adds a connection, writes its
- * credential, and binds nothing. The revision can read the new secret — an older
- * deployment's project-wide `secretAccessor` covers it, and a current one does
- * not — but it cannot add a version, so the first OAuth refresh 403s. The
- * connection works for exactly as long as its initial access token lasts, which
- * is about an hour, and then stops for a reason nothing on the connection says.
- *
- * So the same steps are reachable from `connect`, over one connection's refs
- * rather than the whole config's. Deliberately the *same functions* rather than
- * a second implementation: `reconcile.ts` makes the same argument for planning
- * and applying, and it holds harder here, because a second spelling of a grant
- * is not a wrong answer on screen, it is a permission that is missing in one
- * path and present in the other.
- */
-export function secretGrantSteps(
-  grant: Omit<SecretGrant, 'refs'> & {
-    readonly readable: readonly SecretRef[];
-    readonly rotatable: readonly SecretRef[];
-  },
-): DeployStep[] {
-  const { project, serviceAccount } = grant;
-  return [
-    ...createSteps({ project, refs: union(grant.readable, grant.rotatable) }),
-    ...readSteps({ project, serviceAccount, refs: grant.readable }),
-    ...rotateSteps({ project, serviceAccount, refs: grant.rotatable }),
-  ];
-}
-
-/**
- * The project-wide secret read that per-secret bindings replaced.
- *
- * `roles/secretmanager.secretAccessor` on the whole project is what this deploy
- * used to grant, and removing it from the code did not remove it from anybody's
- * project: `add-iam-policy-binding` never took it away, and IAM unions what is
- * there. It kept working, which is the problem — a connection made after a
- * deploy could still be *read* by the revision through this binding while its
- * per-secret grant was missing, so the connection authorised, answered, and
- * reported `active` until the first token refresh needed a write. An hour of
- * looking healthy, and then a 403 nowhere near its cause.
- *
- * Only ever removed when this run granted read per secret. With no `readable`
- * set there is nothing to fall back to, and taking away the only grant the
- * revision has would be an outage caused by tidying.
- */
-async function projectReadRemoval(input: {
-  readonly project: string;
-  readonly member: string;
-  readonly readable: readonly SecretRef[];
-  readonly policy: PolicyReader | undefined;
-}): Promise<DeployStep[]> {
-  if (input.readable.length === 0 || !input.policy) return [];
-
-  const current = await input.policy.project(input.project);
-  const present = (current ?? []).some(
-    (binding) =>
-      binding.role === 'roles/secretmanager.secretAccessor' &&
-      (binding.members ?? []).includes(input.member),
-  );
-  if (!present) return [];
-
-  return [
-    {
-      title: 'drop the project-wide secret read the per-secret grants replaced',
-      argv: [
-        'projects',
-        'remove-iam-policy-binding',
-        input.project,
-        '--member',
-        input.member,
-        '--role',
-        'roles/secretmanager.secretAccessor',
-        // Irrespective of any condition: every shape of this binding is one an
-        // earlier version of this file wrote, and all of them are superseded.
-        '--all',
-      ],
-      tolerateFailure: true,
-      removes: true,
-    },
-  ];
-}
 
 export async function provisionSteps(
   input: ProvisionInput,
@@ -359,9 +147,10 @@ export async function provisionSteps(
     // `readableRefs` derives the set from config and manifests at deploy time.
     const readable = input.readable ?? [];
 
-    steps.push(...createSteps({ project, refs: union(readable, rotatable) }));
-    steps.push(...readSteps({ project, serviceAccount, refs: readable }));
-    steps.push(...rotateSteps({ project, serviceAccount, refs: rotatable }));
+    // Through the shared builder rather than the three pieces, so a deploy and
+    // a `connect` cannot drift — and so the policy read that decides what to
+    // skip happens in one place. See `secretGrantSteps`.
+    steps.push(...(await secretGrantSteps({ project, serviceAccount, readable, rotatable }, policy)));
     steps.push(
       ...(await projectReadRemoval({
         project,

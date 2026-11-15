@@ -51,6 +51,72 @@ const applied: PolicyBinding[] = desired.map((grant) => ({
   condition: { title: grant.title, expression: grant.expression },
 }));
 
+/**
+ * What a deploy does *not* run, which is most of it on every deploy after the
+ * first.
+ *
+ * `add-iam-policy-binding` is a read-modify-write of a whole policy and the
+ * runner prints `+ done` for it whether or not the policy changed. A single
+ * `profile add` against a live target ran thirty-seven of them and every one was
+ * already in place — so the command read as though it had rewritten the access
+ * of every account in the workspace, and took the time to match.
+ *
+ * The information to skip them was already being fetched for the removals. It
+ * was simply never consulted on the way in.
+ */
+describe('what a run skips because the policy already says it', () => {
+  const bound = (role: string): PolicyBinding => ({ role, members: [MEMBER] });
+
+  const adds = (steps: Awaited<ReturnType<typeof plan>>, noun: string) =>
+    steps.filter((step) => step.argv[0] === noun && step.argv[1] === 'add-iam-policy-binding');
+
+  test('a bucket binding already on the policy is not added again', async () => {
+    const withGrants = await plan(reading({ bucket: applied }));
+    const withNone = await plan(reading({ bucket: [] }));
+
+    // A bucket binding is `storage buckets add-iam-policy-binding`, so the verb
+    // is the third element rather than the second.
+    expect(withGrants.filter((step) => step.argv[2] === 'add-iam-policy-binding')).toEqual([]);
+
+    // And the same call plans them when the policy does not carry them, so the
+    // test cannot pass by the steps having moved somewhere else.
+    expect(withNone.filter((step) => step.argv[2] === 'add-iam-policy-binding').length)
+      .toBeGreaterThan(0);
+  });
+
+  test('a secret binding the member already holds is not added again', async () => {
+    const steps = await plan(reading({ secret: [bound('roles/secretmanager.secretAccessor')] }));
+
+    expect(adds(steps, 'secrets')).toEqual([]);
+    // The container is not created either: a policy that came back is a secret
+    // that is there, which is the one thing a 403-for-404 store will not say.
+    expect(steps.filter((step) => step.argv[1] === 'create')).toEqual([]);
+  });
+
+  test('a conditioned binding on the same role is not the grant being asked for', async () => {
+    // It grants something narrower. Counting it as satisfaction is how a deploy
+    // decides it holds a permission it does not hold.
+    const narrowed: PolicyBinding = {
+      role: 'roles/secretmanager.secretAccessor',
+      members: [MEMBER],
+      condition: { title: 'some-other-rule', expression: 'true' },
+    };
+
+    expect(adds(await plan(reading({ secret: [narrowed] })), 'secrets')).not.toEqual([]);
+  });
+
+  test('a policy that could not be read plans every step, because absence is not evidence', async () => {
+    // `null` is "could not look" — a missing `gcloud`, a secret that does not
+    // exist yet, a policy this login may not read. None of them is a reason to
+    // decide a binding is present. Same direction `supersededBindings` takes.
+    const steps = await plan(reading({ bucket: null, secret: null }));
+
+    expect(adds(steps, 'secrets')).not.toEqual([]);
+    expect(steps.filter((step) => step.argv[2] === 'add-iam-policy-binding')).not.toEqual([]);
+    expect(steps.filter((step) => step.argv[1] === 'create')).not.toEqual([]);
+  });
+});
+
 describe('which bindings a deploy has superseded', () => {
   test('an earlier expression under a title this deploy still writes', () => {
     const found = supersededBindings({
@@ -179,9 +245,13 @@ const target: TargetConfig = {
 const reading = (input: {
   bucket?: readonly PolicyBinding[] | null;
   project?: readonly PolicyBinding[] | null;
+  secret?: readonly PolicyBinding[] | null;
 }): PolicyReader => ({
   bucket: () => Promise.resolve(input.bucket ?? []),
   project: () => Promise.resolve(input.project ?? []),
+  // `null` by default: a secret nothing has said anything about is one this
+  // could not look at, which plans every step rather than skipping any.
+  secret: () => Promise.resolve(input.secret ?? null),
 });
 
 const plan = (policy?: PolicyReader, readable: readonly string[] = ['profile/token']) =>

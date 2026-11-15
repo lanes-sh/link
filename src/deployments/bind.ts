@@ -3,7 +3,7 @@ import { credentialRefFor, rotatableCredentialRefsFor } from '#registry';
 import type { SecretRef } from '#secrets';
 import type { DeployDriver } from './driver.ts';
 import { driverFor } from './drivers.ts';
-import { secretGrantSteps } from './gcp/provision.ts';
+import { secretGrantSteps } from './gcp/secrets.ts';
 import { requireProject } from './gcp/gcloud.ts';
 import { encodeRef } from './adapters/gcp-secret-manager.ts';
 
@@ -153,7 +153,9 @@ export async function bindRefs(input: {
     return { bound: [], skipped: NOTHING_TO_BIND };
   }
 
-  const steps = secretGrantSteps({
+  // No policy reader: `connect` binds the one or two refs it just wrote, where a
+  // read per secret would cost more than the write it might save.
+  const steps = await secretGrantSteps({
     project: cloudrun.project,
     serviceAccount,
     readable,
