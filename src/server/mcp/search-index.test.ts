@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { searchCapabilities, searchResults } from './search-index.ts';
+import { z } from 'zod';
+import { SEARCH_RESULT, searchCapabilities, searchResults } from './search-index.ts';
 import type { MergedCapability } from './visibility.ts';
 
 /**
@@ -366,5 +367,22 @@ describe('the accounts an answer names', () => {
       { profile: 'personal', connections: [{ connection: 'vendor_mail.main', account: 'ada.lovelace@example.com' }] },
       { profile: 'work', connections: [{ connection: 'vendor_chat.team', account: 'ada-lovelace' }] },
     ]);
+  });
+
+  test('and the schema the endpoint advertises declares it', () => {
+    // The half no test here reached, and the half a client checks. The endpoint
+    // does not validate its own structured answer, so a field the answer
+    // carries and `SEARCH_RESULT` does not declare went out looking correct and
+    // was refused by the consumer as an additional property — for
+    // `lanes_tools_search`, which every caller has and which is the only way to
+    // discover anything under `crunched`.
+    //
+    // `.strict()` is the whole point: the default strips unknown keys, which is
+    // exactly the leniency that let the two drift apart for a release. Asserted
+    // against a result with accounts, because `reachable` is empty without them
+    // and an empty array would pass a schema that never mentioned it.
+    const results = searchResults('spreadsheet', surface, {}, accounts);
+
+    expect(() => z.object(SEARCH_RESULT).strict().parse(results)).not.toThrow();
   });
 });
