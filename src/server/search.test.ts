@@ -53,7 +53,7 @@ const fixtureMail = defineLocalProvider({
   configSchema: z.object({}),
   connectionSchema: z.object({}),
   bundles: [
-    { name: 'read', description: 'Read.', oauth_scopes: [], capabilities: ['notes.list', 'notes.get', 'notes.count', 'notes.summary'], default: true },
+    { name: 'read', description: 'Read.', oauth_scopes: [], capabilities: ['notes.list', 'notes.get', 'notes.count', 'notes.summary', 'notes.echo'], default: true },
   ],
   capabilities: [
     {
@@ -97,6 +97,23 @@ const fixtureMail = defineLocalProvider({
       inputSchema: z.object({}),
       async handler() {
         return { content: [], structuredContent: { total: 7 } };
+      },
+    },
+    {
+      // A tool that serialises its own data as text, compactly, which is what a
+      // real vendor following the SHOULD does — and what the byte-for-byte
+      // check missed, because this end renders it indented.
+      kind: 'tool',
+      name: 'notes.echo',
+      title: 'Echo notes',
+      description: 'The same records as text and as data, serialised its own way.',
+      inputSchema: z.object({}),
+      async handler() {
+        const data = { notes: [{ id: 'n0' }, { id: 'n1' }] };
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(data) }],
+          structuredContent: data,
+        };
       },
     },
     {
@@ -535,5 +552,24 @@ describe('a tool that answers with prose and data both', () => {
     });
 
     expect(result.text.match(/"total"/g)).toHaveLength(1);
+  });
+});
+
+describe('a tool that serialises its own data its own way', () => {
+  test('is not echoed back twice because the formatting differs', async () => {
+    // Measured against a real vendor: it serialised compactly, this end renders
+    // indented, and a byte-for-byte comparison therefore missed — so the caller
+    // got the whole payload twice. Under `surface: crunched` every provider
+    // call arrives here, so that is a doubling of the common case.
+    const result = await call(mail.server.url, {
+      capability: 'fixture_mail.notes.echo',
+      profile: 'personal',
+      connection: 'fixture_mail.main',
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain('"n0"');
+    // Once, not twice.
+    expect(result.text.match(/"n0"/g)).toHaveLength(1);
   });
 });
