@@ -5,7 +5,7 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { isResourceListResult, isResourceResult, isToolResult } from '#connectivity';
 import { assetsProvider } from './provider.ts';
 import { assetStorage, isTextual } from './store.ts';
-import { harnessFor, linksOf, textOf } from '../harness.ts';
+import { harnessFor, idsOf, linksOf, textOf } from '../harness.ts';
 import { createMemoryBlobStore } from '#stores/blobs/testing.ts';
 
 /**
@@ -172,6 +172,41 @@ describe('the key is the filename, so the listing is the whole index', () => {
     expect(listed).toContain('notes.txt');
     expect(listed).toContain('text/plain');
     expect(listed).toContain('2 KB');
+  });
+
+  test('a listing links nothing, so reading the index is not a file transfer', async () => {
+    // A `resource_link` is a file to a client that fetches one: ChatGPT stops
+    // and asks the owner to approve materialising it. #247 took that reasoning
+    // through memory, tasks and entities and left assets alone — "a stored file
+    // is a file" — but it treated storing and listing the same way, and only one
+    // of them hands back a file the owner just chose.
+    //
+    // Asking what is in a directory offered a bulk transfer of everything in it,
+    // one prompt covering every asset listed, and the contents of each crossing
+    // into whatever the client runs on. Denying it still left the listing
+    // readable, which is the tell that the links were not carrying the answer.
+    const harness = assets();
+    await harness.invoke('store', { source: { path: await fileWith('notes.txt', 'x') } });
+    await harness.invoke('store', { source: { path: await fileWith('invoice.pdf', '%PDF-1.4') } });
+
+    const listed = await harness.invoke('list');
+
+    expect(linksOf(listed)).toEqual([]);
+    // Named by the id `get` takes, which for an asset is its filename — the
+    // same way `tasks.list` has always written a row.
+    expect(idsOf(listed).sort()).toEqual(['invoice.pdf', 'notes.txt']);
+  });
+
+  test('storing still hands back the file it stored', async () => {
+    // The half of #247's argument that survives: you just gave this one file to
+    // the endpoint, so handing one back is the honest answer, and it is one file
+    // you chose rather than every file you happen to own.
+    const harness = assets();
+    const stored = await harness.invoke('store', {
+      source: { path: await fileWith('notes.txt', 'x') },
+    });
+
+    expect(linksOf(stored)).toEqual(['lanes-assets://file/notes.txt']);
   });
 
   test('assets are addressable as resources', async () => {
