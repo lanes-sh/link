@@ -47,15 +47,29 @@ export function handedBackByGateway(
   // Under `crunched` every provider call arrives here, so this is the path it
   // matters most on and the one a unit test is least likely to cover.
   if (result.structuredContent !== undefined) {
-    const rendered = JSON.stringify(result.structuredContent, null, 2);
+    // Compared as values, not as bytes. A server following the SHOULD serialises
+    // the same data its own way — compact where this renders indented — so a
+    // byte-for-byte check misses the case it exists for and the caller gets the
+    // whole payload twice. That was measured against a real vendor: the answer
+    // came back duplicated, and under `crunched` every provider call arrives
+    // here, so it is a doubling of the common case rather than an edge.
+    //
+    // Parsing each text block is cheap beside the call that produced it, and a
+    // block that is not JSON simply does not match. Key order is not
+    // normalised: both sides came from the same upstream, so it agrees in
+    // practice, and disagreeing errs toward sending the data — which is the
+    // safe direction, since the failure it guards against is losing it.
+    const data = JSON.stringify(result.structuredContent);
+    const alreadySent = content.some((block) => {
+      try {
+        return JSON.stringify(JSON.parse(block.text)) === data;
+      } catch {
+        return false;
+      }
+    });
 
-    // Skipped only when the upstream already serialised exactly this, which is
-    // what a server following the SHOULD does. Byte-for-byte rather than a
-    // guess: every provider call under `crunched` comes through here, so
-    // appending a second copy of a large record set is a real cost, and
-    // anything looser would start dropping data again to save it.
-    if (!content.some((block) => block.text.includes(rendered))) {
-      content.push({ type: 'text' as const, text: rendered });
+    if (!alreadySent) {
+      content.push({ type: 'text' as const, text: JSON.stringify(result.structuredContent, null, 2) });
     }
   }
 
