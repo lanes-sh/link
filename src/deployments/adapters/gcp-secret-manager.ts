@@ -60,6 +60,31 @@ const SEPARATOR = '__';
 /** Secret Manager's own constraint on an id, checked before the round trip. */
 const SECRET_ID_PATTERN = /^[A-Za-z0-9_-]{1,255}$/;
 
+/**
+ * The one ref namespace that is read-modify-write rather than overwritten.
+ *
+ * Spelled here rather than imported from `#secrets`: `#deployments` may not
+ * reach into it (`architecture.test.ts`), and this is the same reason
+ * `prepare.ts` names the vault's refs without naming its types.
+ */
+const VAULT_NAMESPACE = 'vault';
+
+/**
+ * Whether a write to this ref retires the version it replaced.
+ *
+ * Exported because `rotateSteps` grants on it: a revision is given
+ * `secretVersionManager` exactly where this says yes, and the narrower
+ * `secretVersionAdder` everywhere else. Deriving the grant from the predicate
+ * that decides the behaviour is the point — a permission held for a call that
+ * is never made is privilege with nothing to show for it, and two separately
+ * maintained lists would drift the moment either side gained a namespace.
+ *
+ * See `#retire` for why the vault is the exception.
+ */
+export function retiresOldVersions(ref: SecretRef): boolean {
+  return !ref.startsWith(`${VAULT_NAMESPACE}/`);
+}
+
 export function encodeRef(ref: SecretRef): string {
   assertValidSecretRef(ref);
   const id = ref.replaceAll('/', SEPARATOR);
@@ -191,7 +216,8 @@ export class GcpSecretManagerStore implements SecretStore {
 
     const added = await this.#call('POST', version, payload);
     if (added.status !== 404) {
-      await this.#json(added, `write ${ref}`, ref);
+      const stored = await this.#json<{ name?: string }>(added, `write ${ref}`, ref);
+      await this.#retire(ref, id, stored?.name);
       return;
     }
 
@@ -204,7 +230,71 @@ export class GcpSecretManagerStore implements SecretStore {
       await this.#json(created, `create secret for ${ref}`, ref);
     }
 
-    await this.#json(await this.#call('POST', version, payload), `write ${ref}`, ref);
+    const stored = await this.#json<{ name?: string }>(
+      await this.#call('POST', version, payload),
+      `write ${ref}`,
+      ref,
+    );
+    await this.#retire(ref, id, stored?.name);
+  }
+
+  /**
+   * Destroy the version this write just replaced.
+   *
+   * Secret Manager bills per *active* version — enabled and disabled alike,
+   * about $0.06 each a month — and `addVersion` never retires its predecessor.
+   * Nothing reads anything but `versions/latest` (see `get` above), so every
+   * version behind it is paid for and unreachable in the same breath.
+   *
+   * That reads as a rounding error until you notice which writes go through
+   * here. `vault put` is a rare human action, which is the case the comment in
+   * `secrets/vault.ts` was written against. An OAuth refresh is not: it
+   * persists a rotated access token on a schedule the vendor sets, so a mailbox
+   * that is read often writes here several times a day, forever. Two mailboxes
+   * on one real target reached 138 and 121 active versions against a dozen for
+   * everything else — 83% of a bill that could only ever grow, for bytes no
+   * code path can reach.
+   *
+   * **Only the immediate predecessor**, deliberately. Listing versions to
+   * sweep a backlog would put a second round trip on the path every token
+   * refresh takes, to answer a question that is almost always "nothing to do".
+   * One targeted destroy holds the steady state at a single active version,
+   * which is what the next write needs and nothing more. A backlog from before
+   * this shipped is a one-off, and belongs to a command the operator runs
+   * rather than to the hot path.
+   *
+   * **Never the vault**, which is the one ref here that is not a blind
+   * overwrite. A credential is replaced whole: the version behind it is a
+   * retired token, worthless and arguably better gone. The vault is a document
+   * that is read, changed and written back, so two writers that both read
+   * version N produce N+1 and N+2 where each holds only its own change — and
+   * the losing write survives *only* in the version that this would destroy.
+   * Retiring it would turn a recoverable lost update into a permanent one.
+   *
+   * It costs nothing to leave out. `vault put` is a rare human action, which is
+   * the whole of the argument in `secrets/vault.ts` and is true of the vault
+   * even though it was wrong about the store: a handful of versions against the
+   * hundreds a refreshed mailbox accumulates.
+   *
+   * **A failure here never fails the write.** The credential is stored by the
+   * time this runs, so throwing would report a failed refresh for a refresh
+   * that succeeded — and would do it on every deployment whose grant predates
+   * `secretVersionManager`, turning a cost fix into an outage. The version
+   * stays, costs its $0.06, and `doctor` is where that is worth a sentence.
+   */
+  async #retire(ref: SecretRef, id: string, added: string | undefined): Promise<void> {
+    if (!retiresOldVersions(ref)) return;
+
+    // `projects/<p>/secrets/<id>/versions/<n>` — the number is the only part
+    // that matters, and a response without one is a response we cannot act on.
+    const latest = Number(added?.slice(added.lastIndexOf('/') + 1));
+    if (!Number.isInteger(latest) || latest < 2) return;
+
+    await this.#call(
+      'POST',
+      `/projects/${this.#project}/secrets/${id}/versions/${latest - 1}:destroy`,
+      {},
+    );
   }
 
   async delete(ref: SecretRef): Promise<void> {

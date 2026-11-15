@@ -189,10 +189,18 @@ export interface SecretVaultStoreOptions {
  * why this is one secret rather than one per item.
  *
  * The cost, stated: a secret store that versions writes gains a version per
- * `vault put`. That is a few cents a month on Secret Manager and `vault put` is
- * a rare human action, so nothing prunes them — a prune would need
- * `secretmanager.versions.destroy`, which is deliberately not granted to the
- * identity a deployment runs as.
+ * `vault put`, and Secret Manager bills for every active version. For a vault
+ * that really is a few cents a month, because `vault put` is a rare human
+ * action — which is the whole of what this paragraph used to say, and the
+ * reason it was wrong to generalise from.
+ *
+ * The same `set` carries OAuth refresh tokens, and those are written on the
+ * vendor's schedule rather than the owner's. The adapter now destroys the
+ * version each write replaces (`deployments/adapters/gcp-secret-manager.ts`),
+ * which is why `rotateSteps` grants `secretVersionManager` instead of
+ * `secretVersionAdder`. That is still per secret and still withholds
+ * `secretmanager.secrets.create`, the project-level permission that would let a
+ * revision mint references of its own.
  */
 export function createSecretVaultStore(options: SecretVaultStoreOptions): VaultStore {
   const ref = options.ref ?? DEFAULT_SECRET_REF;

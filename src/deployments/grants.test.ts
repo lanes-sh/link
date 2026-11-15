@@ -375,6 +375,9 @@ describe('the vault, which is the one thing a revision writes back to its store'
     )!;
 
     expect(binding.argv[2]).toBe('vault__main');
+    // Adder, not manager: the vault is the one ref a write never retires, so
+    // granting it the role that can destroy would be privilege with no call
+    // behind it. `retiresOldVersions` is what decides both.
     expect(binding.argv).toContain('roles/secretmanager.secretVersionAdder');
   });
 
@@ -396,6 +399,7 @@ describe('the vault, which is the one thing a revision writes back to its store'
       .flatMap((step) => step.argv)
       .filter((argument) => argument.startsWith('roles/'));
 
+    expect(roles).not.toContain('roles/secretmanager.secretVersionManager');
     expect(roles).not.toContain('roles/secretmanager.secretVersionAdder');
   });
 });
@@ -487,7 +491,8 @@ describe('the credentials a revision rotates, against what it is bound to', () =
         (step) =>
           step.argv[0] === 'secrets' &&
           step.argv[1] === 'add-iam-policy-binding' &&
-          step.argv.includes('roles/secretmanager.secretVersionAdder'),
+          (step.argv.includes('roles/secretmanager.secretVersionManager') ||
+            step.argv.includes('roles/secretmanager.secretVersionAdder')),
       )
       .map((step) => step.argv[2]!);
 
@@ -545,6 +550,27 @@ describe('the credentials a revision rotates, against what it is bound to', () =
     expect(boundSecrets(await provisionWith(rotatable))).not.toContain('google__client');
   });
 
+  test('grants manager where a write retires, and adder where it does not', async () => {
+    // The two halves have to agree with `retiresOldVersions`, because a grant
+    // that outgrew the behaviour is privilege nothing exercises and a grant
+    // that fell behind it is a destroy that 403s on every refresh.
+    const steps = await provisionSteps({
+      deploy: cloudrun,
+      declared: target,
+      target: 'cloud',
+      rotatable: ['gmail/ada_lovelace', 'vault/document'],
+      readable: [],
+    });
+
+    const roleFor = (ref: string) =>
+      steps.find(
+        (step) => step.argv[1] === 'add-iam-policy-binding' && step.argv[2] === ref.replace('/', '__'),
+      )?.argv.find((argument) => argument.startsWith('roles/'));
+
+    expect(roleFor('gmail/ada_lovelace')).toBe('roles/secretmanager.secretVersionManager');
+    expect(roleFor('vault/document')).toBe('roles/secretmanager.secretVersionAdder');
+  });
+
   test('nothing anywhere grants the permission that would let it mint a ref', async () => {
     // The recommendation this replaced was `roles/secretmanager.admin`, which
     // does fix the symptom and hands a deployed instance the ability to create
@@ -563,8 +589,17 @@ describe('the credentials a revision rotates, against what it is bound to', () =
 
     expect(roles).not.toContain('roles/secretmanager.admin');
     expect(roles).not.toContain('roles/secretmanager.secretCreator');
+    // `secretVersionManager` is wider than the `secretVersionAdder` it
+    // replaced — it adds destroy, disable, enable, get and list — and is still
+    // nowhere near the two above. What this test is actually guarding is
+    // `secretmanager.secrets.create`: project-level, the one permission that
+    // would let a revision mint references of its own, and in neither of the
+    // roles below.
     expect(new Set(roles)).toEqual(
-      new Set(['roles/secretmanager.secretAccessor', 'roles/secretmanager.secretVersionAdder']),
+      new Set([
+        'roles/secretmanager.secretAccessor',
+        'roles/secretmanager.secretVersionManager',
+      ]),
     );
   });
 

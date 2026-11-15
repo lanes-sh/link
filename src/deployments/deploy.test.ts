@@ -395,6 +395,30 @@ members: []
     return root;
   }
 
+  test('an issued endpoint token is readable and deliberately not rotatable', async () => {
+    // Both halves matter and they pull opposite ways. The revision has to
+    // *read* a token to authenticate the caller presenting it, and must not be
+    // able to *write* one — `prepare.ts` keeps tokens out of the rotatable set
+    // so a compromised revision cannot mint itself a credential.
+    //
+    // That exclusion is also why nothing noticed `token issue` writing a row
+    // the revision was never granted to read: the only IAM check `doctor` ran
+    // was over the rotatable set, which a token ref can never be in.
+    const root = await workspaceOf({
+      personal: '  - { id: ada_lovelace, provider: gmail, account: a@example.test }',
+    });
+    await writeFile(
+      join(root, CONNECTIONS_FILE),
+      'contract: 5\n' +
+        'connections:\n  - { id: ada_lovelace, provider: gmail, account: a@example.test }\n' +
+        'oauth_apps: {}\n' +
+        'tokens:\n  - { id: tok1, subject: "lanes:ada000", ref: tokens/tok1, issued_at: "2026-01-01T00:00:00.000Z" }\n',
+    );
+
+    expect(await readableRefs(root, undefined, undefined)).toContain('tokens/tok1');
+    expect(await rotatableRefs(root, undefined, undefined)).not.toContain('tokens/tok1');
+  });
+
   test('an OAuth connection contributes the ref its refresh writes', async () => {
     const root = await workspaceOf({
       personal:

@@ -41,7 +41,10 @@ export {
 
 export type AuthOutcome =
   | { readonly ok: true; readonly principal: Principal }
-  | { readonly ok: false; readonly reason: 'missing' | 'malformed' | 'invalid' | 'not_configured' };
+  | {
+      readonly ok: false;
+      readonly reason: 'missing' | 'malformed' | 'invalid' | 'not_configured' | 'unreadable';
+    };
 
 /**
  * What the request says about who is being addressed.
@@ -111,7 +114,7 @@ export class AuthenticatorChain implements Authenticator {
     authorizationHeader: string | null | undefined,
     context?: AuthContext,
   ): Promise<AuthOutcome> {
-    const rank = { invalid: 3, not_configured: 2, malformed: 1, missing: 0 } as const;
+    const rank = { invalid: 4, unreadable: 3, not_configured: 2, malformed: 1, missing: 0 } as const;
     let worst: Extract<AuthOutcome, { ok: false }> = { ok: false, reason: 'missing' };
 
     for (const link of this.#links) {

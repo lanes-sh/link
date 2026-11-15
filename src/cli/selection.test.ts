@@ -419,6 +419,72 @@ describe('every command is runnable in the spelling it demands', () => {
     }
   });
 
+  test('every owner provider accepts exactly the flags its own code reads', () => {
+    // The generalisation of the `customFlags` test above, and the one that
+    // would have caught this whole family at once. Three hand-written spot
+    // checks sat here instead, which is why `memory list --tag` was fixed and
+    // `vault get --show` was not: a spot check only covers the case somebody
+    // already found.
+    //
+    // Both directions matter and they fail differently. A flag read but not
+    // accepted is refused on a command that documents it — `vault get` printed
+    // "--show to reveal" and then rejected `--show`, so a stored secret had no
+    // way out of the CLI at all. A flag accepted but not read is worse to
+    // diagnose, because it is taken in silence and does nothing: `memory
+    // --description`, `memory --file`, `skills --title` and `skills --description`
+    // were all four of those.
+    //
+    // Derived from source rather than listed, so a flag added to either side
+    // has to appear on the other.
+    const argv = readFileSync(join(import.meta.dir, 'argv.ts'), 'utf8');
+    const owner = argv.slice(argv.indexOf('export function ownerFlags'));
+    const body = owner.slice(0, owner.indexOf('\n}'));
+
+    // `contentType: text(flags, 'content-type')` — the property the commands
+    // read on the left, the spelling argv carries on the right.
+    const kebab = new Map<string, string>();
+    for (const [, prop, flag] of body.matchAll(
+      /(\w+): (?:text\(flags, |list\(argv, |all\(argv, )'([a-z-]+)'/g,
+    )) {
+      kebab.set(prop!, flag!);
+    }
+    for (const [, prop, flag] of body.matchAll(/(\w+): flags\['([a-z-]+)'\] === true/g)) {
+      kebab.set(prop!, flag!);
+    }
+    expect(kebab.size).toBeGreaterThan(10);
+
+    const readsOf = (file: string): string[] => {
+      const source = readFileSync(join(import.meta.dir, 'commands', 'owner', file), 'utf8');
+      return [...source.matchAll(/flags\.(\w+)/g)]
+        .map((match) => kebab.get(match[1]!))
+        .filter((flag): flag is string => flag !== undefined);
+    };
+
+    // `withRuntime` reads `--raw` and `agreed` reads `--yes` for all six rather
+    // than per command, so every provider needs both however few of its own it
+    // has. That shared half is exactly what the per-provider lists kept losing.
+    const shared = readsOf('shared.ts');
+    expect(shared).toContain('raw');
+    expect(shared).toContain('yes');
+
+    for (const provider of ['memory', 'tasks', 'assets', 'skills', 'vault', 'entities']) {
+      const expected = [...new Set([...shared, ...readsOf(`${provider}.ts`)])].sort();
+      expect({ [provider]: [...(ACCEPTS[provider] ?? [])].sort() }).toEqual({
+        [provider]: expected,
+      });
+    }
+  });
+
+  test('vault key accepts --raw, which it inherits from nothing', () => {
+    // `SELECTION` files `vault key` as needing neither a profile nor a
+    // workspace, so `selectionKey` stops at the pair and it inherits none of
+    // `vault`'s row. `vaultKeyGenerate` reads `--raw` all the same, and with no
+    // row of its own the flag was refused on the one command whose entire
+    // output is a secret you want in a variable.
+    expect(() => assertKnownFlags('vault', 'key', { raw: true })).not.toThrow();
+    expect(() => assertKnownFlags('vault', 'key', { bogus: true })).toThrow();
+  });
+
   test('the flags a command reads are flags it accepts', () => {
     // Both were read by the parser and absent from the allowlist, so passing
     // either was refused on a command documented as taking it.
