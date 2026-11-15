@@ -21,11 +21,10 @@ import { provisionSteps } from './provision.ts';
  */
 
 const BUCKET = 'lanes-link-demo-data';
-const PROFILE = 'personal';
 const SERVICE_ACCOUNT = 'lanes-link-run@my-project.iam.gserviceaccount.com';
 const MEMBER = `serviceAccount:${SERVICE_ACCOUNT}`;
 
-const desired = bucketGrants(BUCKET, [PROFILE]);
+const desired = bucketGrants(BUCKET);
 
 const stale = {
   ownsSkills: {
@@ -192,7 +191,6 @@ const plan = (policy?: PolicyReader, readable: readonly string[] = ['profile/tok
       declared: target,
       target: 'cloud',
       readable,
-      profiles: [PROFILE],
     },
     policy,
   );
@@ -297,7 +295,6 @@ describe('a binding cannot attach to a secret that does not exist', () => {
       target: 'cloud',
       readable: ['gmail/ada_lovelace', 'profile/token'],
       rotatable: ['gmail/ada_lovelace'],
-      profiles: [PROFILE],
     });
 
     expect(created(steps)).toEqual(['gmail__ada_lovelace', 'profile__token']);

@@ -62,9 +62,17 @@ export async function provisionStepsFor(input: {
   readonly target: string;
   readonly declared: TargetConfig;
   /**
-   * Which profiles to walk. The target-level refs — the pairing token, the vault
-   * key — are added by `readableRefs` whatever this says, so a one-profile call
-   * still re-grants them, and re-granting is a no-op.
+   * Which profiles' refs to walk. The target-level refs — the pairing token, the
+   * vault key — are added by `readableRefs` whatever this says, so a one-profile
+   * call still re-grants them, and re-granting is a no-op.
+   *
+   * **It reaches the refs and nothing else.** It used to be handed to the driver
+   * as well, where `bucketGrants` read it as the complete set of profiles the
+   * revision serves and wrote a binding naming only those — so `profile add`,
+   * passing the one profile it was adding, narrowed the write grant to it and
+   * took the rest away. Narrowing a ref walk omits work that was already done;
+   * narrowing that binding removed access to live data. The driver no longer
+   * takes a profile list, so the two cannot be confused again.
    */
   readonly profiles: readonly string[] | undefined;
 }): Promise<DeployStep[]> {
@@ -81,10 +89,6 @@ export async function provisionStepsFor(input: {
     target: input.target,
     rotatable,
     readable,
-    // Spread rather than passed, because `exactOptionalPropertyTypes` makes an
-    // explicit `undefined` a different thing from an absent key — and here they
-    // mean the same: walk every profile the workspace holds.
-    ...(input.profiles !== undefined ? { profiles: input.profiles } : {}),
   });
 }
 

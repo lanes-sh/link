@@ -33,29 +33,36 @@ import {
  * directory (ADR-030), so `data/` alone no longer separates what the revision
  * owns from what declares what it is.
  *
- * **One `startsWith` per profile, because Cloud Storage IAM conditions cannot
- * express anything else.** Their CEL is a restricted subset — `resource.type`,
+ * **Cloud Storage IAM conditions take a restricted CEL subset** — `resource.type`,
  * `resource.name` with `startsWith`/`endsWith`/`==`, and the date functions —
  * and it has no `matches`. This was a regex, and it was refused twice over:
  * first because it spelled the dot `\.`, which is not a CEL escape, so the
  * string literal would not parse; then, with that fixed, because `matches` is
  * `undeclared` in this dialect.
  *
- * Enumerating the served profiles is expressible in the subset that does exist,
- * and it makes `grants.test.ts` honest as a side effect: that file evaluates
- * these as JavaScript, where `startsWith` means what it means here and `matches`
- * quietly did not.
+ * `endsWith` was in that subset the whole time and is what the write grant uses
+ * now. It also makes `grants.test.ts` honest, because that file evaluates these
+ * as JavaScript, where `startsWith` and `endsWith` mean what they mean here and
+ * `matches` quietly did not.
+ *
+ * **Takes no profile list, deliberately.** It used to, and that is the defect
+ * this shape removes rather than fixes: a caller that passed a subset narrowed
+ * the grant to that subset, and `supersededBindings` matches on the condition
+ * *title*, so the binding covering everything else was removed in the same run.
+ * `profile add` passed the one profile it was adding. There is nothing left to
+ * pass.
  */
-export function bucketGrants(bucket: string, profiles: readonly string[]): ConditionedGrant[] {
+export function bucketGrants(bucket: string): ConditionedGrant[] {
   const objectsUnder = (path: string): string =>
     `resource.name.startsWith("projects/_/buckets/${bucket}/objects/${path}")`;
   const objectIs = (path: string): string =>
     `resource.name == "projects/_/buckets/${bucket}/objects/${path}"`;
-  // Parenthesised, because `!` binds tighter than `==` in CEL: `!resource.name
-  // == "…"` negates the *name* and compares that, which is not a type error and
-  // not what it reads as. Bracketing is the whole difference between excluding
-  // one object and excluding nothing.
-  const objectIsNot = (path: string): string => `!(${objectIs(path)})`;
+  // Parenthesised, because `!` binds tighter than the call in CEL the same way
+  // it binds tighter than `==`: the unbracketed form negates the *name* and
+  // tests that, which is not a type error and not what it reads as. Bracketing
+  // is the whole difference between excluding these objects and excluding none.
+  const nameDoesNotEndWith = (suffix: string): string =>
+    `!(resource.name.endsWith("${suffix}"))`;
   /**
    * The bucket itself, which is a different resource from anything in it.
    *
@@ -100,25 +107,36 @@ export function bucketGrants(bucket: string, profiles: readonly string[]): Condi
    * `credentials.enc` is in it because `connect --from-endpoint` and a token
    * refresh both write there (ADR-025), and its `.key` sits beside it.
    */
-  // **Per profile, not `profiles/` wholesale.** Granting the whole tree and
-  // carving the served declarations back out left the revision `create` and
-  // `delete` on every *other* profile's `profile.yaml` — the configuration of a
-  // profile the same endpoint serves — and on any name it invented, which
-  // `listProfiles` would then pick up on the next boot. Before ADR-067 no
-  // declaration was writable at all, because `profiles/` sat outside `data/`;
-  // this restores that, one prefix per profile.
+  // **`profiles/` wholesale, minus the declarations, rather than one prefix per
+  // profile.** The per-profile spelling expressed the right intent and could not
+  // be applied: Google refuses a condition with more than twelve logical
+  // operators (`ConditionComplexityCheck`), each profile cost three of them —
+  // its `||`, and the `&&` and `!` of its own carve-out — and `3N + 2` crosses
+  // the cap at the fourth profile. The binding was then rejected outright while
+  // the removal of the one it superseded still ran, because both tolerate
+  // failure, so a deploy could leave the revision with no write grant at all.
   //
-  // `!==` on a whole object rather than a pattern, because Cloud Storage IAM
-  // conditions have no `matches` — see the note on the read binding below.
+  // **The exclusion is the suffix, and it covers both declaration shapes.**
+  // `listProfiles` accepts `<name>/profile.yaml` (ADR-067) and a bare
+  // `<name>.yaml` from contract 3, so excluding only the first leaves the second
+  // as a way for a revision to invent a profile that the next boot would serve.
+  // Nothing the endpoint writes is a `.yaml` — memory and skills are Markdown,
+  // the log is JSON, assets are opaque — which `grants.test.ts` pins against the
+  // keys the adapter really produces rather than against this list.
+  //
+  // What this gives up is that the revision may now write *another* served
+  // profile's data. That was defence in depth rather than a boundary: one
+  // process serves every profile in the workspace and holds the one credential
+  // document for all of them (ADR-057). What the condition is actually for is
+  // ADR-007 — a deployed instance never mutates its own configuration — and a
+  // suffix exclusion enforces that for every name, including ones that do not
+  // exist yet, where the enumeration only ever covered the names a deploy
+  // happened to pass.
   const writable = [
     objectsUnder(`${layout.audit()}/`),
     objectsUnder(`${layout.state()}/`),
     objectsUnder(layout.credentials()),
-    ...profiles.map(
-      (profile) =>
-        `(${objectsUnder(`${layout.profileDir(profile)}/`)} && ` +
-        `${objectIsNot(layout.profileConfig(profile))})`,
-    ),
+    `(${objectsUnder(`${layout.profilesRoot()}/`)} && ${nameDoesNotEndWith('.yaml')})`,
   ].join(' || ');
 
   return [
@@ -224,7 +242,6 @@ export async function bucketSteps(input: {
   readonly project: string;
   readonly region: string;
   readonly serviceAccount: string | undefined;
-  readonly profiles: readonly string[];
   readonly policy?: PolicyReader | undefined;
 }): Promise<DeployStep[]> {
   const steps: DeployStep[] = [
@@ -272,7 +289,7 @@ export async function bucketSteps(input: {
   if (!input.serviceAccount) return steps;
 
   const member = `serviceAccount:${input.serviceAccount}`;
-  const grants = bucketGrants(input.bucket, input.profiles);
+  const grants = bucketGrants(input.bucket);
 
   for (const grant of grants) {
     steps.push({

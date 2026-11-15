@@ -388,7 +388,6 @@ export async function provisionSteps(
         project,
         region,
         serviceAccount,
-        profiles: input.profiles ?? [],
         policy,
       })),
     );

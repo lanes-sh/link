@@ -266,7 +266,6 @@ describe('first-run provisioning', () => {
       declared: target(storage),
       target: 'cloud',
       readable,
-      profiles: ['personal'],
     });
 
   test('every step tolerates failure, because the second deploy finds them all present', async () => {
@@ -373,10 +372,11 @@ describe('first-run provisioning', () => {
     // The declaration is the one thing inside a writable prefix that a revision
     // must not write. ADR-067 put it beside the bytes, so the rule ADR-007 used
     // to get from `profiles/` sitting outside `data/` is now this negation —
-    // anchored to a whole object, never a prefix that would also catch the
-    // profile's skills.
+    // a suffix, so it holds for a name no deploy passed and for both shapes
+    // `listProfiles` accepts.
     expect(write).toContain('&& !(');
-    expect(write).toContain('/objects/profiles/personal/profile.yaml"');
+    expect(write).toContain('!(resource.name.endsWith(".yaml"))');
+    expect(write).not.toMatch(/objects\/profiles\/[a-z_]+\//);
 
     // The registry and the manifests are read-only for a different reason: the
     // revision reads them and never authors them.
