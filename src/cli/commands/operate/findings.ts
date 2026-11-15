@@ -5,6 +5,8 @@ import type { DiscoveredCapability } from '#connectivity';
 import { allowedConnections } from '#policy';
 import { toPolicyDocument } from '#registry';
 import { capabilityDiff, discoveryProbe } from '../../runtime/discovery.ts';
+import { unboundRotatableRefs } from '#deployments/bind.ts';
+import type { EndpointToken } from '#profile';
 import type { openRuntime } from '../../runtime.ts';
 import type { DoctorFinding } from './inspect.ts';
 
@@ -156,4 +158,74 @@ export function duplicateAccountFindings(
         `remove whichever no longer holds a working credential with "lanes link disconnect <ref>"`,
     };
   });
+}
+
+/**
+ * Whether the revision can reach the credentials it serves, asked of IAM.
+ *
+ * Two halves of one question, and each failed in its own way before this.
+ *
+ * **Rotate.** A credential the revision may read and not rewrite is a
+ * connection that works until its access token expires and then stops, while
+ * every other report on this machine calls it healthy — `status` and
+ * `setup_overview` read the state store, and the state store knows nothing
+ * about IAM.
+ *
+ * **Read.** An endpoint token is deliberately read-only: `prepare.ts` keeps it
+ * out of the rotatable set so a compromised revision cannot mint itself a new
+ * one. Right, and it meant no token ref was ever checked here — while
+ * `token issue` wrote them into Secret Manager and bound nothing, so the one
+ * command that asks IAM what was actually granted was blind to the refs that
+ * needed asking about most. `token issue` binds now; this answers for the rows
+ * written before it did, and the remedy differs from the one the endpoint's own
+ * refusal used to suggest, which was to issue another.
+ *
+ * Here rather than in `inspect.ts` for the reason `reportCapabilityDrift` is:
+ * that file holds the gate order, this one holds the analysis, and the size
+ * budget in `architecture.test.ts` is what keeps the seam honest.
+ *
+ * Skipped entirely for a local target, where credentials are a file this
+ * process owns and there is no revision to grant anything to.
+ */
+export async function reportCredentialBindings(
+  runtime: Awaited<ReturnType<typeof openRuntime>>,
+  issued: readonly EndpointToken[],
+  forSelection: (command: string) => string,
+  into: { problems: DoctorFinding[]; warnings: DoctorFinding[] },
+): Promise<void> {
+  const rotation = await unboundRotatableRefs({
+    deploy: runtime.declared.deploy,
+    target: runtime.target,
+    connections: grantedConnections(runtime),
+    manifestFor: runtime.manifestFor,
+    readable: issued.map((row) => row.ref),
+  });
+
+  if (rotation.unbound.length > 0) {
+    const one = rotation.unbound.length === 1;
+    into.problems.push({
+      kind: 'unbound_credentials',
+      message:
+        `the deployed endpoint can read ${rotation.unbound.join(', ')} but not rotate ` +
+        `${one ? 'it' : 'them'} — so ${one ? 'that connection' : 'those connections'} ` +
+        'will fail about an hour after each use, when the token refresh tries to persist. ' +
+        'A connection made since the last deploy is the usual cause',
+      fix: forSelection('lanes link deploy'),
+    });
+  }
+
+  if (rotation.unreadable.length > 0) {
+    into.problems.push({
+      kind: 'unreadable_tokens',
+      message:
+        `the deployed endpoint cannot read ${rotation.unreadable.join(', ')}, so every ` +
+        'request presenting one is refused. Issuing another only adds a second row it ' +
+        'cannot read either — the grant is what is missing, not the token',
+      fix: forSelection('lanes link deploy'),
+    });
+  }
+
+  if (rotation.unavailable) {
+    into.warnings.push({ kind: 'rotation_uncheckable', message: rotation.unavailable });
+  }
 }

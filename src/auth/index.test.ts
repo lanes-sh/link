@@ -481,6 +481,22 @@ describe('a credential that cannot be read', () => {
     ...(overrides.report ? { report: overrides.report } : {}),
   });
 
+  test('a workspace that has issued nothing still reads as unconfigured', async () => {
+    // The other side of the distinction above. Both fail closed; they differ
+    // only in which sentence `edge.ts` turns them into.
+    const auth = new BearerAuthenticator({
+      profile: 'personal',
+      tokens: async () => [],
+      credentials: storeRefusing({}, []),
+      profilesFor: async () => ['personal'],
+    });
+
+    expect(await auth.authenticate('Bearer llk_good')).toEqual({
+      ok: false,
+      reason: 'not_configured',
+    });
+  });
+
   test('the row beside it still authenticates', async () => {
     const auth = new BearerAuthenticator(withRefusal());
 
@@ -495,7 +511,7 @@ describe('a credential that cannot be read', () => {
     expect(await auth.authenticate('Bearer llk_wrong')).toEqual({ ok: false, reason: 'invalid' });
   });
 
-  test('every row unreadable refuses, rather than throwing', async () => {
+  test('every row unreadable refuses as unreadable, not as unconfigured', async () => {
     const auth = new BearerAuthenticator({
       profile: 'personal',
       tokens: async () => TWO_ROWS,
@@ -503,12 +519,16 @@ describe('a credential that cannot be read', () => {
       profilesFor: async () => ['personal'],
     });
 
-    // `not_configured` rather than a fourth reason: from here it is
-    // indistinguishable from a workspace that has issued nothing, and the
-    // report below is what carries the difference to whoever can act on it.
+    // This used to answer `not_configured`, on the reasoning that from here the
+    // two are indistinguishable. They are not: a row exists, it was read, and
+    // the read was refused — the only thing the empty list loses is *why* it is
+    // empty, and that is recoverable without leaving this function. It matters
+    // because the remedy differs and the wrong one is actively harmful:
+    // `not_configured` sends an operator to `token rotate`, which mints a
+    // second unreadable row beside the first.
     expect(await auth.authenticate('Bearer llk_good')).toEqual({
       ok: false,
-      reason: 'not_configured',
+      reason: 'unreadable',
     });
   });
 

@@ -1,7 +1,9 @@
 import { ConfigError } from '#profile';
 import { assertValidSecretRef } from '#secrets';
-import { announceWorkspace, announceProfile, heading, ok, print, style } from '../output.ts';
+import { announceWorkspace, announceProfile, heading, ok, print, style, warn } from '../output.ts';
+import { bindRefs } from '#deployments/bind.ts';
 import {
+  deployConfigFor,
   openSecretStoreFor,
   primaryProfile,
   resolveProfile,
@@ -91,7 +93,30 @@ export async function secretsPush(flags: SecretsFlags): Promise<void> {
     print(style.dim(`  --dry-run: ${copied.length} would be copied, ${skipped.length} skipped.`));
     return;
   }
+  // The same grant, over everything that landed. Read only: what makes a ref
+  // *rotatable* is the manifest behind its connection, which `deploy` has and a
+  // bulk copy does not — so this closes the gap the command actually opened
+  // (a row the runtime cannot read at all) and leaves the rotate half where it
+  // already lived.
+  const bound = await bindRefs({
+    deploy: await deployConfigFor(selection.workspaceRoot, flags.to),
+    target: flags.to,
+    readable: copied,
+    rotatable: [],
+    describe: `${copied.length} copied credential(s)`,
+    consequence: 'endpoint cannot read them, so every connection behind them is skipped.',
+  });
+
   print(ok(`copied ${copied.length}, skipped ${skipped.length}`));
+  if (bound.failed) print(warn(bound.failed));
+  if (bound.bound.length > 0) {
+    print(
+      style.dim(
+        '  Granted read on each to the deployed runtime. Run `lanes link deploy` for the ' +
+          'rotate half, which needs each connection\'s manifest to work out.',
+      ),
+    );
+  }
   if (skipped.length > 0 && !flags.overwrite) {
     print(style.dim('  --overwrite replaces what is already there.'));
   }
@@ -147,7 +172,21 @@ export async function secretsSet(ref: string | undefined, flags: GlobalFlags): P
   const replacing = await credentials.has(ref);
   await credentials.set(ref, value);
 
+  // Written *and* bound. On a deployed target this store is Secret Manager,
+  // whose `set` creates the container and writes no IAM policy — so this wrote
+  // a row the runtime identity was never granted to read, and said `stored`.
+  // This is the path the reference pages point at for `database.url_ref`.
+  const bound = await bindRefs({
+    deploy: await deployConfigFor(resolution.workspaceRoot, target),
+    target,
+    readable: [ref],
+    rotatable: [],
+    describe: ref,
+    consequence: 'endpoint cannot read it, so whatever names it fails when it is first needed.',
+  });
+
   print(ok(`${replacing ? 'replaced' : 'stored'} ${style.bold(ref)} in workspace ${target}`));
+  if (bound.failed) print(warn(bound.failed));
   if (replacing) {
     print(style.dim('  Anything still using the old value will start failing.'));
   }

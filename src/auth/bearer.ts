@@ -109,6 +109,16 @@ export class BearerAuthenticator implements Authenticator {
   readonly #now: () => number;
   #cached: readonly LoadedToken[] | null = null;
   #readAt = 0;
+  /**
+   * How many rows the last read could not open.
+   *
+   * Kept because `#cached` cannot answer it: an unreadable row is dropped on
+   * the way in, so a workspace whose every row is unreadable and one with no
+   * rows at all produce the same empty list and used to produce the same
+   * `not_configured` — and the remedy for that is "issue one", which mints a
+   * second unreadable row beside the first.
+   */
+  #unreadable = 0;
   /** Which rows were named last, so a standing fault says it once. */
   #reported: string | null = null;
 
@@ -151,6 +161,16 @@ export class BearerAuthenticator implements Authenticator {
     if (rows.length === 0) {
       // No token has been issued. Fail closed, and distinctly from a wrong one:
       // `lanes link doctor` reads this to say "issue one" rather than "check it".
+      //
+      // `rows` here is what `#reload` could *open*, not what the workspace
+      // declares — a row whose secret the runtime identity cannot read is
+      // dropped above. So "none opened" and "none issued" arrived at the same
+      // answer, and the remedy that answer produces is "issue one", which mints
+      // a second unreadable row beside the first. They are different sentences
+      // and they send an operator to different places: one needs a token, the
+      // other needs a grant. `token issue` binds the ref now, so this is for
+      // the rows written before it did.
+      if (this.#unreadable > 0) return { ok: false, reason: 'unreadable' };
       return { ok: false, reason: 'not_configured' };
     }
 
@@ -216,6 +236,7 @@ export class BearerAuthenticator implements Authenticator {
     }
 
     this.#report(unreadable);
+    this.#unreadable = unreadable.length;
     this.#cached = loaded;
     this.#readAt = this.#now();
     return loaded;

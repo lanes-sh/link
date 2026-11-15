@@ -81,14 +81,6 @@ export async function bindConnectionCredentials(input: {
   readonly driver?: DeployDriver | undefined;
 }): Promise<BindOutcome> {
   const { deploy, connection, manifest } = input;
-  if (!deploy) return { bound: [], skipped: 'this target runs here, not on a platform' };
-
-  const cloudrun = requireProject(deploy, input.target);
-  const serviceAccount = cloudrun.service_account;
-  if (!serviceAccount) {
-    return { bound: [], skipped: 'this deployment declares no runtime service account' };
-  }
-
   // Both halves, because a connection made since the last deploy has neither.
   // The read grant is the one an older deployment's project-wide
   // `secretAccessor` happens to cover, which is exactly what made this failure
@@ -98,10 +90,73 @@ export async function bindConnectionCredentials(input: {
   const rotatable = rotatableCredentialRefsFor(connection, manifest);
   if (!readable && rotatable.length === 0) return { bound: [], skipped: NOTHING_TO_BIND };
 
+  return bindRefs({
+    deploy,
+    target: input.target,
+    readable: readable ? [readable] : [],
+    rotatable,
+    describe: `${connection.provider}.${connection.id}'s credential`,
+    consequence:
+      'endpoint will be able to read it and not rotate it — which fails about an hour ' +
+      'after the first use.',
+    ...(input.driver ? { driver: input.driver } : {}),
+  });
+}
+
+/**
+ * The same grant, over refs with no connection behind them.
+ *
+ * `bindConnectionCredentials` derives its refs from a connection and a manifest,
+ * which is the one thing a token from `token issue` and a value from
+ * `secrets push` or `secrets set` do not have. They reach the same store and
+ * write the same kind of secret, and bound nothing — so a deployed target held
+ * a row its own runtime identity was never granted to read, every time, while
+ * the command printed `ok issued <id>`.
+ *
+ * Unconditional, with no flag to skip, for the reason `profile add` provisions
+ * unconditionally: what a deployed target needs before it can serve something
+ * does not depend on how old that thing is, and a target declaring no
+ * deployment reaches no cloud at all. The `skipped` strings are that answer.
+ *
+ * Extracted rather than copied for the reason this file already gives about
+ * `reconcile.ts`: two spellings of a grant do not disagree on screen, they
+ * disagree about which permission actually exists.
+ */
+export async function bindRefs(input: {
+  readonly deploy: DeployConfig | undefined;
+  readonly target: string;
+  readonly readable: readonly SecretRef[];
+  readonly rotatable: readonly SecretRef[];
+  /** What is being bound, for the sentence a failure produces. */
+  readonly describe: string;
+  /**
+   * What goes wrong if the binding stays missing, in the caller's own words.
+   *
+   * A connection fails about an hour in, when the first refresh tries to
+   * persist and finds it may read but not write. An endpoint token fails on the
+   * next request that presents it. Same missing grant, two different sentences,
+   * and the one an operator needs is the one about what they just did.
+   */
+  readonly consequence: string;
+  readonly driver?: DeployDriver | undefined;
+}): Promise<BindOutcome> {
+  const { deploy, readable, rotatable } = input;
+  if (!deploy) return { bound: [], skipped: 'this target runs here, not on a platform' };
+
+  const cloudrun = requireProject(deploy, input.target);
+  const serviceAccount = cloudrun.service_account;
+  if (!serviceAccount) {
+    return { bound: [], skipped: 'this deployment declares no runtime service account' };
+  }
+
+  if (readable.length === 0 && rotatable.length === 0) {
+    return { bound: [], skipped: NOTHING_TO_BIND };
+  }
+
   const steps = secretGrantSteps({
     project: cloudrun.project,
     serviceAccount,
-    readable: readable ? [readable] : [],
+    readable,
     rotatable,
   });
 
@@ -118,16 +173,15 @@ export async function bindConnectionCredentials(input: {
       return {
         bound: [],
         failed:
-          `could not bind ${connection.provider}.${connection.id}'s credential to ` +
-          `${serviceAccount}, so the deployed endpoint will be able to read it and not ` +
-          'rotate it — which fails about an hour after the first use. ' +
+          `could not bind ${input.describe} to ${serviceAccount}, so the deployed ` +
+          `${input.consequence} ` +
           `Run \`lanes link deploy --workspace ${input.target}\` to bind it. ` +
           `(${driver.tool}: ${result.stderr.trim().split('\n').slice(-1)[0] ?? 'failed'})`,
       };
     }
   }
 
-  return { bound: readable ? [readable, ...rotatable] : rotatable };
+  return { bound: [...readable, ...rotatable] };
 }
 
 /**
@@ -153,28 +207,50 @@ export async function unboundRotatableRefs(input: {
   readonly target: string;
   readonly connections: readonly ConnectionConfig[];
   readonly manifestFor: (providerId: string) => Parameters<typeof rotatableCredentialRefsFor>[1];
+  /**
+   * Refs the revision only has to *read*, checked for `secretAccessor`.
+   *
+   * Endpoint tokens, which `prepare.ts` deliberately keeps out of the rotatable
+   * set so a compromised revision cannot mint itself a new one. That exclusion
+   * is right and it meant no token ref could ever be checked here, while
+   * `token issue` was writing them unbound — so the one command that asks IAM
+   * what it actually granted was blind to the refs that needed asking about
+   * most.
+   */
+  readonly readable?: readonly SecretRef[] | undefined;
   readonly driver?: DeployDriver | undefined;
-}): Promise<{ unbound: readonly SecretRef[]; unavailable?: string | undefined }> {
+}): Promise<{
+  unbound: readonly SecretRef[];
+  unreadable: readonly SecretRef[];
+  unavailable?: string | undefined;
+}> {
   const { deploy } = input;
-  if (!deploy) return { unbound: [] };
+  const empty = { unbound: [], unreadable: [] };
+  if (!deploy) return empty;
 
   const cloudrun = requireProject(deploy, input.target);
   const serviceAccount = cloudrun.service_account;
-  if (!serviceAccount) return { unbound: [] };
+  if (!serviceAccount) return empty;
 
-  const refs = new Set<SecretRef>();
+  // One list, two roles: a rotatable ref needs the write grant and a readable
+  // one needs the read grant, and both are the same question asked of the same
+  // policy. Checking them together keeps it one concurrent pass.
+  const asked = new Map<SecretRef, string>();
   for (const connection of input.connections) {
     for (const ref of rotatableCredentialRefsFor(connection, input.manifestFor(connection.provider))) {
-      refs.add(ref);
+      asked.set(ref, 'roles/secretmanager.secretVersionAdder');
     }
   }
-  if (refs.size === 0) return { unbound: [] };
+  for (const ref of input.readable ?? []) {
+    if (!asked.has(ref)) asked.set(ref, 'roles/secretmanager.secretAccessor');
+  }
+  if (asked.size === 0) return empty;
 
   const driver = input.driver ?? (await driverFor(deploy.platform));
   const member = `serviceAccount:${serviceAccount}`;
 
   const verdicts = await Promise.all(
-    [...refs].map(async (ref) => {
+    [...asked].map(async ([ref, role]) => {
       const result = await driver.run(
         ['secrets', 'get-iam-policy', encodeRef(ref), '--project', cloudrun.project, '--format', 'json'],
         { quiet: true },
@@ -182,31 +258,35 @@ export async function unboundRotatableRefs(input: {
       // A ref whose policy cannot be read is not reported as unbound: "could not
       // look" and "is not granted" send an operator to different places, and
       // this command exists to be trusted about the second one.
-      if (!result.ok) return { ref, bound: true, unreadable: true };
+      if (!result.ok) return { ref, role, bound: true, unknown: true };
 
       try {
         const policy = JSON.parse(result.stdout) as {
           bindings?: { role?: string; members?: string[] }[];
         };
         const bound = (policy.bindings ?? []).some(
-          (binding) =>
-            binding.role === 'roles/secretmanager.secretVersionAdder' &&
-            (binding.members ?? []).includes(member),
+          (binding) => binding.role === role && (binding.members ?? []).includes(member),
         );
-        return { ref, bound, unreadable: false };
+        return { ref, role, bound, unknown: false };
       } catch {
-        return { ref, bound: true, unreadable: true };
+        return { ref, role, bound: true, unknown: true };
       }
     }),
   );
 
-  const unreadable = verdicts.filter((verdict) => verdict.unreadable).length;
+  const unknown = verdicts.filter((verdict) => verdict.unknown).length;
+  const missing = verdicts.filter((verdict) => !verdict.bound);
   return {
-    unbound: verdicts.filter((verdict) => !verdict.bound).map((verdict) => verdict.ref),
-    ...(unreadable > 0
+    unbound: missing
+      .filter((verdict) => verdict.role.endsWith('secretVersionAdder'))
+      .map((verdict) => verdict.ref),
+    unreadable: missing
+      .filter((verdict) => verdict.role.endsWith('secretAccessor'))
+      .map((verdict) => verdict.ref),
+    ...(unknown > 0
       ? {
           unavailable:
-            `${unreadable} of ${refs.size} credential policies could not be read, so this ` +
+            `${unknown} of ${asked.size} credential policies could not be read, so this ` +
             `check covered the rest. ${driver.tool} has to be installed and authorised for it.`,
         }
       : {}),

@@ -17,6 +17,7 @@
  */
 
 export {
+  deployConfigFor,
   openBlobStoreFor,
   openSecretStoreFor,
   ownerPrincipal,

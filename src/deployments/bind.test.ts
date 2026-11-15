@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { defineProvider } from '#connectivity';
 import { DEPLOY_DEFAULTS, type ConnectionConfig, type DeployConfig } from '#profile';
 import type { CommandResult, DeployDriver } from './driver.ts';
-import { bindConnectionCredentials, unboundRotatableRefs } from './bind.ts';
+import { bindConnectionCredentials, bindRefs, unboundRotatableRefs } from './bind.ts';
 
 /**
  * That a connection made between two deploys is bound to the revision serving it.
@@ -233,7 +233,7 @@ describe('finding a credential the revision cannot rewrite', () => {
         manifestFor,
         driver,
       }),
-    ).toEqual({ unbound: [] });
+    ).toEqual({ unbound: [], unreadable: [] });
   });
 
   test('does not call a policy it could not read unbound', async () => {
@@ -266,7 +266,154 @@ describe('finding a credential the revision cannot rewrite', () => {
         manifestFor,
         driver,
       }),
-    ).toEqual({ unbound: [] });
+    ).toEqual({ unbound: [], unreadable: [] });
     expect(calls).toEqual([]);
+  });
+});
+
+describe('binding a ref with no connection behind it', () => {
+  /**
+   * `token issue` and `secrets set` reach the same store and write the same
+   * kind of secret, and `bindConnectionCredentials` cannot serve them: it
+   * derives its refs from a connection and a manifest, which neither has. So
+   * they wrote rows the runtime identity was never granted to read, every time,
+   * while printing `ok`.
+   */
+  test('grants read on the ref, and asks for no write it will never use', async () => {
+    const { driver, calls } = fakeDriver(() => OK);
+
+    const outcome = await bindRefs({
+      deploy: cloudrun,
+      target: 'cloud',
+      readable: ['tokens/tok1'],
+      rotatable: [],
+      describe: 'endpoint token tok1',
+      consequence: 'endpoint cannot read it.',
+      driver,
+    });
+
+    expect(outcome.bound).toEqual(['tokens/tok1']);
+
+    const roles = calls.flat().filter((argument) => argument.startsWith('roles/'));
+    expect(roles).toEqual(['roles/secretmanager.secretAccessor']);
+
+    // The container is created here so the revision never needs
+    // `secrets.create` — a project-level permission that would let it mint
+    // credential references of its own.
+    expect(calls.some((argv) => argv[1] === 'create')).toBe(true);
+  });
+
+  test('reaches no cloud for a target that declares no deployment', async () => {
+    const { driver, calls } = fakeDriver(() => OK);
+
+    const outcome = await bindRefs({
+      deploy: undefined,
+      target: 'local',
+      readable: ['tokens/tok1'],
+      rotatable: [],
+      describe: 'endpoint token tok1',
+      consequence: 'endpoint cannot read it.',
+      driver,
+    });
+
+    expect(outcome.skipped).toContain('runs here');
+    expect(calls).toEqual([]);
+  });
+
+  test('a refused binding is carried, in the words of whoever asked', async () => {
+    // Never thrown: the value is in the store by the time this runs, so
+    // failing the command would report a failed write for a write that
+    // happened. The sentence is the caller's because the consequence differs —
+    // a connection fails an hour in, a token fails on the next request.
+    const { driver } = fakeDriver((argv) =>
+      argv.includes('add-iam-policy-binding')
+        ? { ok: false, stdout: '', stderr: 'ERROR: PERMISSION_DENIED' }
+        : OK,
+    );
+
+    const outcome = await bindRefs({
+      deploy: cloudrun,
+      target: 'cloud',
+      readable: ['tokens/tok1'],
+      rotatable: [],
+      describe: 'endpoint token tok1',
+      consequence: 'endpoint cannot read it, so every request presenting it is refused.',
+      driver,
+    });
+
+    expect(outcome.bound).toEqual([]);
+    expect(outcome.failed).toContain('endpoint token tok1');
+    expect(outcome.failed).toContain('every request presenting it is refused');
+    expect(outcome.failed).toContain('lanes link deploy --workspace cloud');
+  });
+});
+
+describe('finding a token the revision cannot read', () => {
+  const policy = (roles: readonly string[]): string =>
+    JSON.stringify({
+      bindings: roles.map((role) => ({
+        role,
+        members: [`serviceAccount:${cloudrun.service_account}`],
+      })),
+    });
+
+  test('reports a token ref with no read grant', async () => {
+    // The detection half. A token ref is read-only by design, so the rotate
+    // check could never cover it — and `token issue` was writing them unbound,
+    // which made this the one gap the command that asks IAM could not see.
+    const { driver } = fakeDriver(() => ({ ok: true, stdout: policy([]), stderr: '' }));
+
+    const found = await unboundRotatableRefs({
+      deploy: cloudrun,
+      target: 'cloud',
+      connections: [],
+      manifestFor: () => manifest,
+      readable: ['tokens/tok1'],
+      driver,
+    });
+
+    expect(found.unreadable).toEqual(['tokens/tok1']);
+    expect(found.unbound).toEqual([]);
+  });
+
+  test('says nothing when the read grant is there', async () => {
+    const { driver } = fakeDriver(() => ({
+      ok: true,
+      stdout: policy(['roles/secretmanager.secretAccessor']),
+      stderr: '',
+    }));
+
+    const found = await unboundRotatableRefs({
+      deploy: cloudrun,
+      target: 'cloud',
+      connections: [],
+      manifestFor: () => manifest,
+      readable: ['tokens/tok1'],
+      driver,
+    });
+
+    expect(found).toEqual({ unbound: [], unreadable: [] });
+  });
+
+  test('does not accept the write grant as a read grant', async () => {
+    // Different permissions, and `secretVersionAdder` does not include
+    // `versions.access`. A revision holding only the write grant can rewrite a
+    // token it cannot read, which is the shape that would pass a sloppier check.
+    const { driver } = fakeDriver(() => ({
+      ok: true,
+      stdout: policy(['roles/secretmanager.secretVersionAdder']),
+      stderr: '',
+    }));
+
+    const found = await unboundRotatableRefs({
+      deploy: cloudrun,
+      target: 'cloud',
+      connections: [],
+      manifestFor: () => manifest,
+      readable: ['tokens/tok1'],
+      driver,
+    });
+
+    expect(found.unreadable).toEqual(['tokens/tok1']);
   });
 });
