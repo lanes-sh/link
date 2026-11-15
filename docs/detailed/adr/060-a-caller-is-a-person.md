@@ -80,11 +80,30 @@ is cached; a machine offline for a day keeps serving. `lanes auth status` report
 expires and whether it can still refresh, because the failure this produces — an endpoint that
 worked yesterday — deserves a command that explains it rather than a 401.
 
-**A revoked member is not instantly locked out.** Access tokens live for their configured TTL
-(twelve hours by default, ADR-035's reasoning unchanged) and membership is read from the profile
-file at request time. Removing a member takes effect on the next token exchange, or immediately on
-`lanes link token rotate`. Stating it plainly is the point: this is delegation, not a session
-manager.
+**A revoked member is not instantly locked out, and which credential they hold decides how long
+"not instantly" is.** Membership is resolved **per request** for a static `llk_` token
+(`BearerAuthenticator`), an OIDC token (`OidcAuthenticator`) and a signed Lanes API key
+(`LanesKeyAuthenticator`) — the resolver reads the profile files behind a five-second cache — so
+`profile members remove` takes effect on their next call.
+
+A browser session is the exception, and it is the one that matters, because it is what a hosted
+client holds. `IssuedTokenAuthenticator` takes the list that was resolved when the code was minted,
+deliberately: re-reading it per request would mean a profile edit silently ending a live session. So
+a removal stops the next sign-in and lets one already made run its course.
+
+**Nothing closes that window.** This paragraph used to say "takes effect on the next token exchange,
+or immediately on `lanes link token rotate`", and the second half was false. `token rotate` rotates
+one API token row, it needs an `--id`, and it says in its own output that clients which signed in
+through a browser are unaffected; nothing in the CLI reaches `OAuthStore` at all. Naming it was
+worse than saying nothing, because an operator who ran it would be told something had been rotated
+and would believe the access was gone. Until a command exists, the window is
+`access_token_ttl_minutes` — twelve hours by default, ADR-035's reasoning unchanged — and
+`profile members remove` prints exactly that rather than naming a command.
+
+Deleting the **profile** is immediate, by a different route: the generation stops serving it, so no
+principal's baked-in list matters. The same goes for a profile a caller was never a member of.
+
+Stating it plainly is the point: this is delegation, not a session manager.
 
 **A workspace bound to a Lanes workspace inherits its membership as a source of truth.**
 `profile members add` validates a subject against `GET /v1/workspaces/{id}/members`, so a person
