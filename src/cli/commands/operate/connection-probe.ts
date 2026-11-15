@@ -2,6 +2,7 @@ import type { ConnectionConfig } from '#profile';
 import { credentialResolver, ReauthRequired } from '#connectivity/auth/index.ts';
 import type { ResolvedCredential } from '#connectivity/auth/credential.ts';
 import { credentialRefFor } from '#registry';
+import { mapWithLimit } from './pool.ts';
 import type { Runtime } from '../../runtime.ts';
 
 /**
@@ -123,7 +124,8 @@ const CONCURRENCY = 6;
  * `refreshDirectly` takes no `AbortSignal`, so this races rather than cancels —
  * the request finishes into nothing. That is acceptable for a read-shaped
  * command and avoids threading a signal through the refresh path for the
- * benefit of one caller.
+ * benefit of one caller. `withinTime` in `pool.ts` makes the same trade for the
+ * capability probe, which had no bound at all.
  */
 const PER_CONNECTION_TIMEOUT_MS = 8_000;
 
@@ -244,30 +246,4 @@ export async function probeConnections(
   };
 
   return mapWithLimit(connections, CONCURRENCY, probe);
-}
-
-/**
- * `Promise.all` with a ceiling, in the ten lines it takes.
- *
- * A pool rather than chunks: chunking would make every batch wait for its
- * slowest member, which is the shape this is trying to avoid.
- */
-async function mapWithLimit<T, R>(
-  items: readonly T[],
-  limit: number,
-  run: (item: T) => Promise<R>,
-): Promise<R[]> {
-  const results = new Array<R>(items.length);
-  let next = 0;
-
-  const worker = async (): Promise<void> => {
-    for (;;) {
-      const index = next++;
-      if (index >= items.length) return;
-      results[index] = await run(items[index]!);
-    }
-  };
-
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-  return results;
 }
