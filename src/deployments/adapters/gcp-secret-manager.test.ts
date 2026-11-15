@@ -41,7 +41,10 @@ interface Iam {
 }
 
 function fakeSecretManager(seed: Record<string, string> = {}, iam: Iam = {}) {
-  const secrets = new Map<string, string[]>();
+  // `null` is a destroyed version. Kept in place rather than spliced out,
+  // because version numbers do not renumber when one goes — a fake that
+  // renumbered would hand `addVersion` a number the real API never would.
+  const secrets = new Map<string, (string | null)[]>();
   for (const [id, value] of Object.entries(seed)) {
     secrets.set(id, [Buffer.from(value, 'utf8').toString('base64')]);
   }
@@ -110,6 +113,25 @@ function fakeSecretManager(seed: Record<string, string> = {}, iam: Iam = {}) {
       if (!versions) return failure(404, 'NOT_FOUND', `Secret [${id}] not found.`);
       versions.push((JSON.parse(String(init?.body)) as { payload: { data: string } }).payload.data);
       return json({ name: `projects/${PROJECT}/secrets/${id}/versions/${versions.length}` });
+    }
+
+    // Destroying leaves a hole rather than shortening the list: version numbers
+    // do not renumber when one goes, and a fake that renumbered them would make
+    // `addVersion` hand back a number the real API never would.
+    const destroyed = path.match(/^\/([^/]+)\/versions\/(\d+):destroy$/);
+    if (method === 'POST' && destroyed) {
+      const refused = denied('secretmanager.versions.destroy');
+      if (refused) return refused;
+
+      const versions = secrets.get(destroyed[1]!);
+      if (!versions) return failure(404, 'NOT_FOUND', `Secret [${destroyed[1]}] not found.`);
+
+      const index = Number(destroyed[2]) - 1;
+      if (index < 0 || index >= versions.length || versions[index] === null) {
+        return failure(400, 'FAILED_PRECONDITION', 'Secret version is already destroyed.');
+      }
+      versions[index] = null;
+      return json({ state: 'DESTROYED' });
     }
 
     const access = path.match(/^\/([^/]+)\/versions\/latest:access$/);
@@ -378,16 +400,44 @@ describe('as a deployed revision, which may add a version and not create a secre
     expect(await credentials.get('vault/document')).toBe('sealed-v2');
   });
 
-  test('spends one request when the secret is already there', async () => {
+  test('never asks to create when the secret is already there, and retires what it replaced', async () => {
     const { store: credentials, api } = store({ gmail__main: 'stored' }, REVISION);
 
     await credentials.set('gmail/main', 'rotated');
 
     // Not a performance assertion. A create call that is never made is a
-    // permission that is never needed, and the count is the only way to say
+    // permission that is never needed, and the calls are the only way to say
     // "did not ask" rather than "asked and tolerated the refusal".
-    expect(api.calls).toHaveLength(1);
+    expect(api.calls.filter((call) => call.path.includes('secretId='))).toEqual([]);
     expect(api.calls[0]!.path).toEndWith(':addVersion');
+
+    // The second call is the whole of the cost fix. `addVersion` leaves its
+    // predecessor active and Secret Manager bills per active version, so a
+    // mailbox refreshing on the vendor's schedule pays for every token it has
+    // already replaced.
+    expect(api.calls[1]!.path).toEndWith('/versions/1:destroy');
+    expect(api.calls).toHaveLength(2);
+
+    // And the value still reads back, which is the thing a wrong version
+    // number would break.
+    expect(await credentials.get('gmail/main')).toBe('rotated');
+  });
+
+  test('a refusal to retire never fails the write', async () => {
+    // A target provisioned before `rotateSteps` asked for `secretVersionManager`
+    // holds `secretVersionAdder`, so its revision can write a version and not
+    // destroy one. Throwing here would turn a cost fix into a failed token
+    // refresh on every such deployment — the credential is already stored by
+    // the time this runs.
+    const { store: credentials, api } = store(
+      { gmail__main: 'stored' },
+      { denied: [...REVISION.denied!, 'secretmanager.versions.destroy'] },
+    );
+
+    await expect(credentials.set('gmail/main', 'rotated')).resolves.toBeUndefined();
+
+    expect(api.calls[1]!.path).toEndWith('/versions/1:destroy');
+    expect(await credentials.get('gmail/main')).toBe('rotated');
   });
 
   test('names the ref and the command when the secret has no binding yet', async () => {
@@ -400,6 +450,61 @@ describe('as a deployed revision, which may add a version and not create a secre
     await expect(credentials.set('gmail/added_later', 'x')).rejects.toThrow(
       /gmail\/added_later[\s\S]*lanes link deploy/,
     );
+  });
+});
+
+describe('retiring the version a write replaces', () => {
+  test('retires nothing on the first version, because there is nothing behind it', async () => {
+    // The operator's identity, not the revision's: creating the container is
+    // never the revision's to do, so the only way to reach version 1 is from
+    // the side that may create.
+    const { store: credentials, api } = store();
+
+    await credentials.set('gmail/fresh', 'first');
+
+    expect(api.calls.filter((call) => call.path.includes(':destroy'))).toEqual([]);
+    expect(await credentials.get('gmail/fresh')).toBe('first');
+  });
+
+  test('never retires a vault version, because the vault is read-modify-write', async () => {
+    // Every other ref here is replaced whole, so the version behind it is a
+    // retired credential. The vault is a document: two writers that both read
+    // version N produce N+1 and N+2 holding only their own change, and the
+    // losing write survives only in the version a retirement would destroy.
+    // `vault put` is rare, so leaving it out costs a handful of versions.
+    const { store: credentials, api } = store({ vault__document: 'sealed-v1' });
+
+    await credentials.set('vault/document', 'sealed-v2');
+    await credentials.set('vault/document', 'sealed-v3');
+
+    expect(api.calls.filter((call) => call.path.includes(':destroy'))).toEqual([]);
+    expect(await credentials.get('vault/document')).toBe('sealed-v3');
+  });
+
+  test('nor the vault key, which shares the namespace', async () => {
+    const { store: credentials, api } = store({ vault__key: 'k1' });
+
+    await credentials.set('vault/key', 'k2');
+
+    expect(api.calls.filter((call) => call.path.includes(':destroy'))).toEqual([]);
+  });
+
+  test('holds at one active version across repeated writes', async () => {
+    // The property the whole change is for. Writing five times used to leave
+    // five billable versions behind and now leaves none — each write retires
+    // exactly the one before it, so the steady state does not depend on how
+    // often a vendor makes us refresh.
+    const { store: credentials, api } = store({ gmail__main: 'v1' });
+
+    for (const value of ['v2', 'v3', 'v4', 'v5']) await credentials.set('gmail/main', value);
+
+    expect(api.calls.filter((call) => call.path.includes(':destroy')).map((call) => call.path)).toEqual([
+      expect.stringContaining('/versions/1:destroy'),
+      expect.stringContaining('/versions/2:destroy'),
+      expect.stringContaining('/versions/3:destroy'),
+      expect.stringContaining('/versions/4:destroy'),
+    ]);
+    expect(await credentials.get('gmail/main')).toBe('v5');
   });
 });
 
