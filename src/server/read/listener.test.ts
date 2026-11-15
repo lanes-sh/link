@@ -46,16 +46,13 @@ function selfSigned(): { cert: string; key: string } {
     '-keyout', '/dev/stdout', '-out', '/dev/stdout', '-days', '1',
     '-subj', '/CN=127.0.0.1', '-addext', 'subjectAltName=IP:127.0.0.1']);
 
-  const out = generated.stdout.toString();
-  if (generated.exitCode !== 0) {
-    // Said rather than left to fail as a PEM that is not there. Both halves are
-    // cut out of this output by name, so an openssl that refused produces two
-    // empty strings and the failure surfaces as `Bun.serve` rejecting a
-    // certificate rather than as the thing that actually went wrong.
-    throw new Error(`openssl could not make a certificate: ${generated.stderr.toString()}`);
-  }
-
-  return { key: pem(out, 'PRIVATE KEY'), cert: pem(out, 'CERTIFICATE') };
+  // Deliberately not gated on the exit code. The ci runner's openssl writes a
+  // perfectly good certificate and *still* exits non-zero, because its config
+  // includes an `openssl.conf.d` directory that is not there —
+  // `process_include ... No such file or directory`. What matters is whether
+  // the two blocks came out, which is what `pem` checks, and that failure says
+  // which block is missing rather than blaming the exit status.
+  return { key: pem(generated.stdout.toString(), 'PRIVATE KEY'), cert: pem(generated.stdout.toString(), 'CERTIFICATE') };
 }
 
 /**
@@ -77,7 +74,9 @@ function pem(out: string, label: string): string {
   const end = `-----END ${label}-----`;
   const start = out.indexOf(begin);
   const stop = out.indexOf(end);
-  if (start === -1 || stop === -1) throw new Error(`openssl wrote no ${label} block`);
+  if (start === -1 || stop === -1) {
+    throw new Error(`openssl wrote no ${label} block. It said: ${out.slice(0, 200)}`);
+  }
 
   return `${out.slice(start, stop + end.length)}\n`;
 }
