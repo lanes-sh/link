@@ -161,6 +161,21 @@ export function schemaFor(entry: MergedCapability): Record<string, unknown> {
 export const SEARCH_RESULT = {
         query: z.string(),
         matched: z.number().int().describe('How many capabilities matched, including any not explained below.'),
+        // Declared, because the answer has carried it since #202 and this did
+        // not. A server that advertises an output schema must answer with data
+        // that fits it, and a field the data has and the schema does not is an
+        // additional property — which the endpoint itself does not check, so
+        // the answer went out looking fine and the *client* refused it. That is
+        // a failure no harness here can reproduce: the harness is not the
+        // client, and this is the half the consumer validates.
+        reachable: z
+          .array(
+            z.object({
+              profile: z.string(),
+              connections: z.array(z.object({ connection: z.string(), account: z.string() })),
+            }),
+          )
+          .describe('Every account this caller may pass, by profile. The same box the prose carries.'),
         capabilities: z.array(
           z.object({
             capability: z.string().describe('The id to pass to lanes_tools_call.'),
