@@ -1,4 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { serveRead, type AuditTail, type RunningReadListener } from './listener.ts';
 import { memberPrincipal } from '#auth';
 import type { ProfileRuntime } from '../mcp/visibility.ts';
@@ -40,45 +43,40 @@ let base: string;
  * result. Nothing here is a browser, so this only has to be a valid certificate
  * — `Bun.fetch` is told not to check it, which is the one place that is
  * acceptable and is why it is spelled out rather than configured globally.
+ *
+ * **Written to real files rather than to `/dev/stdout`.** Both halves used to
+ * go to that one stream and get cut apart by index, which worked until Bun
+ * 1.4.4: on Linux its `spawnSync` hands openssl a pipe, openssl cannot write
+ * its key there, and stdout came back empty. The failure surfaced three steps
+ * away, as `Bun.serve` answering
+ * `error:0900006e:PEM routines:OPENSSL_internal:NO_START_LINE` for an empty
+ * certificate — an error naming the start line of a block that was not there at
+ * all. macOS kept working throughout, so only ci ever saw it.
+ *
+ * Two files also mean no cutting, so each half is whatever openssl wrote,
+ * newline and all. A PEM block is defined as ending with a line break
+ * (RFC 7468 §2), and the old slice ended at the final `-` of `-----END …-----`.
  */
 function selfSigned(): { cert: string; key: string } {
+  const dir = mkdtempSync(join(tmpdir(), 'lanes-link-listener-tls-'));
+  const certPath = join(dir, 'cert.pem');
+  const keyPath = join(dir, 'key.pem');
+
   const generated = Bun.spawnSync(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
-    '-keyout', '/dev/stdout', '-out', '/dev/stdout', '-days', '1',
+    '-keyout', keyPath, '-out', certPath, '-days', '1',
     '-subj', '/CN=127.0.0.1', '-addext', 'subjectAltName=IP:127.0.0.1']);
 
-  // Deliberately not gated on the exit code. The ci runner's openssl writes a
-  // perfectly good certificate and *still* exits non-zero, because its config
-  // includes an `openssl.conf.d` directory that is not there —
-  // `process_include ... No such file or directory`. What matters is whether
-  // the two blocks came out, which is what `pem` checks, and that failure says
-  // which block is missing rather than blaming the exit status.
-  return { key: pem(generated.stdout.toString(), 'PRIVATE KEY'), cert: pem(generated.stdout.toString(), 'CERTIFICATE') };
-}
-
-/**
- * One PEM block out of a stream carrying two, ending in a newline.
- *
- * The newline is the point. Both halves are written to `/dev/stdout` and cut
- * apart by index, and cutting at the end of `-----END <label>-----` leaves a
- * block with nothing after it. Bun 1.3.11 accepted that; 1.4.4 on Linux does
- * not, and answers `error:0900006e:PEM routines:OPENSSL_internal:NO_START_LINE`
- * from inside `Bun.serve` — an error that names the *start* line for a block
- * whose start line is present and whose end is unterminated. macOS accepts it
- * either way, so this only ever failed in ci.
- *
- * A PEM block is defined as ending with a line break (RFC 7468 §2), so the
- * tolerant parser was the one in the wrong and this is not a workaround.
- */
-function pem(out: string, label: string): string {
-  const begin = `-----BEGIN ${label}-----`;
-  const end = `-----END ${label}-----`;
-  const start = out.indexOf(begin);
-  const stop = out.indexOf(end);
-  if (start === -1 || stop === -1) {
-    throw new Error(`openssl wrote no ${label} block. It said: ${out.slice(0, 200)}`);
+  try {
+    // Deliberately not gated on the exit code. The ci runner's openssl writes a
+    // good certificate and still exits non-zero, because its configuration
+    // includes an `openssl.conf.d` directory that is not there. What matters is
+    // whether the files have something in them, and reading them says so.
+    return { cert: readFileSync(certPath, 'utf8'), key: readFileSync(keyPath, 'utf8') };
+  } catch {
+    throw new Error(`openssl wrote no certificate: ${generated.stderr.toString().slice(-400)}`);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
-
-  return `${out.slice(start, stop + end.length)}\n`;
 }
 
 const AUDIT: AuditTail = {
