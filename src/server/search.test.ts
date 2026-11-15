@@ -53,7 +53,7 @@ const fixtureMail = defineLocalProvider({
   configSchema: z.object({}),
   connectionSchema: z.object({}),
   bundles: [
-    { name: 'read', description: 'Read.', oauth_scopes: [], capabilities: ['notes.list', 'notes.get'], default: true },
+    { name: 'read', description: 'Read.', oauth_scopes: [], capabilities: ['notes.list', 'notes.get', 'notes.count'], default: true },
   ],
   capabilities: [
     {
@@ -83,6 +83,20 @@ const fixtureMail = defineLocalProvider({
       async handler({ id, bytes }) {
         const note = { id, subject: `re: ${id}`, ...(bytes ? { body: 'x'.repeat(bytes) } : {}) };
         return { content: [{ type: 'text', text: JSON.stringify(note) }] };
+      },
+    },
+    {
+      // A tool that answers entirely as data. The protocol only asks a server
+      // to repeat `structuredContent` as text where it can, so an upstream that
+      // does not leaves `content` empty — and an upstream MCP server answering
+      // this way is what `handedBack` now passes through.
+      kind: 'tool',
+      name: 'notes.count',
+      title: 'Count notes',
+      description: 'How many notes this account holds, as data rather than prose.',
+      inputSchema: z.object({}),
+      async handler() {
+        return { content: [], structuredContent: { total: 7 } };
       },
     },
   ],
@@ -454,5 +468,24 @@ describe('filling in a list that came back as references', () => {
     expect((bodyOf(text)['notes'] as Record<string, unknown>[])[0]).toMatchObject({
       subject: 're: n0',
     });
+  });
+});
+
+describe('a tool that answers as data rather than prose', () => {
+  test('its answer is rendered, rather than handed back empty', async () => {
+    // `lanes_tools_call` mapped `content` and nothing else, so a tool answering
+    // with `structuredContent` and no text came back as an empty result that
+    // was not an error — which reads as "the tool had nothing to say" rather
+    // than "the answer was dropped on the way through". Under `surface:
+    // crunched` every provider call arrives here, so this is the path it
+    // matters most on.
+    const result = await call(mail.server.url, {
+      capability: 'fixture_mail.notes.count',
+      profile: 'personal',
+      connection: 'fixture_mail.main',
+    });
+    expect(result.isError).toBe(false);
+    expect(result.text).not.toBe('');
+    expect(JSON.parse(result.text)).toEqual({ total: 7 });
   });
 });

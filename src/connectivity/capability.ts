@@ -46,8 +46,14 @@ export type ToolResult = {
    * refuses one that does not. An upstream MCP server's schema is advertised as
    * this endpoint's own, so dropping this turned every successful call to such
    * a tool into a validation error.
+   *
+   * `unknown`, not an object. The protocol types this field `unknown` and a
+   * schema's root may be an array or a primitive, so narrowing it here would
+   * reintroduce exactly that validation error for any upstream whose schema is
+   * not object-rooted — this endpoint would advertise the schema verbatim and
+   * then drop the only value that could satisfy it.
    */
-  readonly structuredContent?: Readonly<Record<string, unknown>>;
+  readonly structuredContent?: unknown;
   readonly isError?: boolean;
 };
 

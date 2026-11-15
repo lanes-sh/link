@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { McpServer, createMcpHandler, type ContentBlock } from '@modelcontextprotocol/server';
 import { defineProvider, type ProviderContext, type ToolResult } from '#connectivity';
 import { createMcpConnector, inferBundle, readableUpstreamError, shortenName } from './index.ts';
+import { carried } from './result.ts';
 
 describe('shortening a redundantly prefixed name', () => {
   test('drops the provider prefix', () => {
@@ -183,16 +184,13 @@ describe('what a call hands back', () => {
   });
 
   /** A real MCP server answering in-process, so the handshake is the real one. */
-  async function answering(
-    content: ContentBlock[],
-    structuredContent?: Record<string, unknown>,
-  ): Promise<ToolResult> {
+  async function answering(content: ContentBlock[], structuredContent?: unknown): Promise<ToolResult> {
     const upstream = createMcpHandler(() => {
       const server = new McpServer({ name: 'upstream', version: '1.0.0' });
       server.registerTool('read', { description: 'Read a thing.' }, async () => ({
         content,
-        ...(structuredContent ? { structuredContent } : {}),
-      }));
+        ...(structuredContent === undefined ? {} : { structuredContent }),
+      })) as never;
       return server;
     });
 
@@ -213,7 +211,7 @@ describe('what a call hands back', () => {
   /** The eight-byte PNG signature, base64. */
   const PNG = 'iVBORw0KGgo=';
 
-  test('an embedded text resource comes back as its text', async () => {
+  test('an embedded text resource comes back as its text, led by its address', async () => {
     const result = await answering([
       { type: 'text', text: 'successfully downloaded text file' },
       {
@@ -224,8 +222,41 @@ describe('what a call hands back', () => {
 
     expect(result.content).toEqual([
       { type: 'text', text: 'successfully downloaded text file' },
-      { type: 'text', text: '# Widgets\n' },
+      { type: 'text', text: '[repo://acme/widgets/contents/README.md]\n# Widgets\n' },
     ]);
+  });
+
+  test('two embedded files can be told apart, which is what the address is for', async () => {
+    // A multi-file read is the ordinary case for a repository server, and
+    // without the address both arrive as anonymous text — the model can read
+    // them and cannot say which is which.
+    const result = await answering([
+      {
+        type: 'resource',
+        resource: { uri: 'repo://acme/widgets/contents/a.txt', mimeType: 'text/plain', text: 'first' },
+      },
+      {
+        type: 'resource',
+        resource: { uri: 'repo://acme/widgets/contents/b.txt', mimeType: 'text/plain', text: 'second' },
+      },
+    ]);
+
+    expect(result.content).toEqual([
+      { type: 'text', text: '[repo://acme/widgets/contents/a.txt]\nfirst' },
+      { type: 'text', text: '[repo://acme/widgets/contents/b.txt]\nsecond' },
+    ]);
+  });
+
+  test('an embedded resource with no address is still just its text', () => {
+    // `carried` directly, not through a server: the protocol requires `uri` on
+    // an embedded resource and the SDK refuses a result without one, so this
+    // shape cannot come off a conforming wire. The branch stays because the
+    // type admits it, and an upstream that is wrong about its own protocol
+    // should lose a label rather than have its content swallowed.
+    expect(carried({ type: 'resource', resource: { mimeType: 'text/plain', text: 'anonymous' } })).toEqual({
+      type: 'text',
+      text: 'anonymous',
+    });
   });
 
   test('an image, audio, or a binary resource is described in one line, never carried', async () => {
@@ -270,6 +301,15 @@ describe('what a call hands back', () => {
     });
 
     expect(result.structuredContent).toEqual({ id: 'w1', open: true });
+  });
+
+  test('structured content that is not an object survives too', async () => {
+    // An output schema's root may be an array. Keeping only objects dropped the
+    // one value that could satisfy the schema this endpoint advertises
+    // verbatim, which is the same validation error, for a narrower upstream.
+    const result = await answering([{ type: 'text', text: '["w1","w2"]' }], ['w1', 'w2']);
+
+    expect(result.structuredContent).toEqual(['w1', 'w2']);
   });
 
   test('nothing becomes a link to nowhere', async () => {

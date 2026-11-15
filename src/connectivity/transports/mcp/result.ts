@@ -27,13 +27,15 @@ export interface UpstreamResult {
 
 /** An upstream's whole answer, as a `ToolResult`. */
 export function handedBack(result: UpstreamResult): ToolResult {
-  const data = result.structuredContent;
-
   return {
     content: (result.content ?? []).map(carried),
-    ...(typeof data === 'object' && data !== null && !Array.isArray(data)
-      ? { structuredContent: data as Record<string, unknown> }
-      : {}),
+    // Passed through whatever shape it is in. An output schema's root may be an
+    // array or a primitive, and keeping only objects would refuse those on the
+    // way out with the very error this exists to fix — the schema is advertised
+    // verbatim, so the data that satisfies it has to travel verbatim too.
+    ...(result.structuredContent === undefined
+      ? {}
+      : { structuredContent: result.structuredContent }),
     ...(result.isError ? { isError: true } : {}),
   };
 }
@@ -72,8 +74,16 @@ export function carried(block: UpstreamBlock): ToolResult['content'][number] {
     return { type: 'resource_link', uri: block.uri, ...(block.name ? { name: block.name } : {}) };
   }
 
+  // Led by its address where it has one, as the binary branch below already is.
+  // An answer may embed several files — a multi-file read is the ordinary case —
+  // and without this they arrive as anonymous text blocks that cannot be told
+  // apart, which is a different way of losing what the block said.
   if (block.type === 'resource' && typeof block.resource?.text === 'string') {
-    return { type: 'text', text: block.resource.text };
+    const uri = block.resource.uri;
+    return {
+      type: 'text',
+      text: uri ? `[${uri}]\n${block.resource.text}` : block.resource.text,
+    };
   }
 
   const base64 = block.data ?? block.resource?.blob;
