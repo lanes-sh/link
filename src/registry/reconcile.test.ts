@@ -76,6 +76,100 @@ describe('first reconcile', () => {
   });
 });
 
+/**
+ * A credential store that answers one ref the way Secret Manager answers a
+ * secret the revision may not read: by throwing, not by saying no.
+ *
+ * This is the whole reason the test exists. `has` has two ways to mean "you
+ * cannot use this credential" and only one of them is a return value. Secret
+ * Manager answers a missing *binding* with 403 rather than 404 — deliberately,
+ * so an identity cannot enumerate secrets by their error codes — and the
+ * adapter returns null for the 404 and throws for the 403.
+ */
+function credentialsRefusing(ref: string, initial: Record<string, string> = {}) {
+  const store = createMemoryCredentials(initial);
+  const refuse = () => {
+    throw new Error(
+      `Secret Manager could not read ${ref} (HTTP 403). PERMISSION_DENIED: ` +
+        "Permission 'secretmanager.versions.access' denied on resource (or it may not exist).",
+    );
+  };
+  return {
+    ...store,
+    async get(asked: string) {
+      if (asked === ref) refuse();
+      return store.get(asked);
+    },
+    async has(asked: string) {
+      if (asked === ref) refuse();
+      return store.has(asked);
+    },
+  };
+}
+
+describe('a credential that cannot be read does not take the endpoint down', () => {
+  /**
+   * The failure this pins cost two revisions on a real target, and it is the
+   * one `planReconcile`'s own doc comment promises cannot happen: "a missing
+   * credential does NOT fail". It does not, for the 404 spelling. The 403
+   * spelling threw out of `planReconcile`, through `openReconciled`'s catch —
+   * which closes the runtimes and rethrows — and the container exited 1 before
+   * binding its port, so every profile went down for one dead connection.
+   *
+   * 403 is not a rare case. It is what a revision gets for a secret whose
+   * binding was never created, and what it gets for a secret that has been
+   * deleted — which is how an OAuth grant that the vendor has revoked ends up
+   * here, because invalidating one deletes the secret rather than a version.
+   */
+  test('an unreadable credential is unauthorized rather than an exception', async () => {
+    const state = createMemoryState();
+
+    const plan = await planReconcile(
+      WITH_GMAIL,
+      state,
+      credentialsRefusing('gmail/main'),
+      manifestFor,
+    );
+
+    expect(plan.unauthorized).toEqual(['gmail.main']);
+    // And the rest of the workspace still reconciles, which is the point: one
+    // connection nobody can read must not decide whether the others serve.
+    expect(plan.actions).toContainEqual({
+      kind: 'create',
+      connection: 'example.a',
+      displayName: 'Scratch',
+      status: 'active',
+    });
+  });
+
+  test('why it could not be read is kept, not swallowed', async () => {
+    // Marking it unauthorized and saying nothing would trade a crash for a
+    // silence: "you have not connected this" and "this deployment cannot read
+    // what you connected" send an operator to completely different places, and
+    // only the second is a fault in the deployment itself.
+    const plan = await planReconcile(
+      WITH_GMAIL,
+      createMemoryState(),
+      credentialsRefusing('gmail/main'),
+      manifestFor,
+    );
+
+    expect(plan.unreadable).toHaveLength(1);
+    expect(plan.unreadable[0]?.connection).toBe('gmail.main');
+    expect(plan.unreadable[0]?.reason).toContain('403');
+    expect(formatPlan(plan)).toContain('could not be read');
+  });
+
+  test('a credential that is merely absent is not reported as unreadable', async () => {
+    // The two must stay distinguishable in both directions, or the new field
+    // becomes noise on every unconnected account.
+    const plan = await planReconcile(WITH_GMAIL, createMemoryState(), createMemoryCredentials());
+
+    expect(plan.unauthorized).toEqual(['gmail.main']);
+    expect(plan.unreadable).toEqual([]);
+  });
+});
+
 describe('missing credentials do not block startup', () => {
   test('a connection with no stored credential becomes unauthorized, not an error', async () => {
     const state = createMemoryState();

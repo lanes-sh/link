@@ -100,6 +100,12 @@ try {
       skipped({ profile, reason }) {
         log(`not serving ${profile}: ${reason}`);
       },
+      // The line that was missing when a dead credential took the whole
+      // endpoint down: there was no log, because the process exited before it
+      // could write one. Now it serves and says which connection it cannot use.
+      unreadable({ connection, reason }) {
+        log(`not using ${connection}: ${reason}`);
+      },
     },
   });
 

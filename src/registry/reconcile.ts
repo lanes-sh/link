@@ -129,6 +129,18 @@ export interface ReconcilePlan {
   readonly undeclared: readonly string[];
   /** Declared connections whose credential could not be resolved. */
   readonly unauthorized: readonly string[];
+  /**
+   * The subset of `unauthorized` that failed because the store *refused*,
+   * rather than because nothing was stored, with what it said.
+   *
+   * Both are unauthorized — a revision that cannot read a credential cannot use
+   * it either way — but they send an operator to different places. "You have
+   * not connected this account" is answered by connecting it. "This deployment
+   * cannot read what you connected" is a fault in the deployment, and
+   * connecting again fixes nothing: it writes a second value behind the same
+   * binding that was missing the first time.
+   */
+  readonly unreadable: readonly { readonly connection: string; readonly reason: string }[];
 }
 
 export function planIsNoop(plan: ReconcilePlan): boolean {
@@ -142,6 +154,20 @@ export function planIsNoop(plan: ReconcilePlan): boolean {
  * startup continues, and the problem surfaces in `lanes link doctor` and as an
  * actionable error if that connection's capability is actually called. A
  * half-configured Gmail account must not stop the other providers from serving.
+ *
+ * **That holds for a credential the store refuses, not only one it lacks**, and
+ * it did not used to. A store has two ways to say "you cannot use this" and only
+ * one of them is a return value: Secret Manager answers a missing binding with
+ * 403 rather than 404 — so that an identity cannot enumerate secrets by their
+ * error codes — and the adapter returns null for the 404 and throws for the 403.
+ * The throw escaped this function, through `openReconciled`'s catch, and exited
+ * the container before it bound its port. One connection whose grant a vendor
+ * had revoked took every profile on the endpoint down with it, on a reconcile
+ * that runs over the whole workspace rather than one profile.
+ *
+ * So the probe is bounded here. What it cannot do is decide *why* the store
+ * refused, which is why the reason is carried out in `unreadable` rather than
+ * flattened into the same silence as an account nobody has connected yet.
  */
 export async function planReconcile(
   connections: readonly ConnectionConfig[],
@@ -162,6 +188,7 @@ export async function planReconcile(
   const actions: ReconcileAction[] = [];
   const missingInDatabase: string[] = [];
   const unauthorized: string[] = [];
+  const unreadable: { connection: string; reason: string }[] = [];
   const declared = new Set<string>();
 
   for (const connection of connections) {
@@ -169,9 +196,20 @@ export async function planReconcile(
     declared.add(key);
 
     const ref = credentialRefFor(connection, manifestFor(connection.provider));
-    const authorized = ref
-      ? await credentials.has(ref)
-      : true; // A provider needing no credential is authorized by construction.
+    // A provider needing no credential is authorized by construction; one whose
+    // store refuses the question is not authorized and not an exception.
+    let authorized = true;
+    if (ref) {
+      try {
+        authorized = await credentials.has(ref);
+      } catch (error) {
+        authorized = false;
+        unreadable.push({
+          connection: key,
+          reason: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
 
     if (!authorized) unauthorized.push(key);
 
@@ -225,7 +263,7 @@ export async function planReconcile(
     }
   }
 
-  return { actions, missingInDatabase, undeclared, unauthorized };
+  return { actions, missingInDatabase, undeclared, unauthorized, unreadable };
 }
 
 export async function applyReconcile(
@@ -304,9 +342,22 @@ export function formatPlan(plan: ReconcilePlan): string {
     }
   }
 
-  if (plan.unauthorized.length > 0) {
+  // Unreadable first, and listed separately, because the remedy differs and the
+  // wrong one makes it worse: `connect` on a credential the deployment cannot
+  // read writes a second value behind the same missing binding.
+  if (plan.unreadable.length > 0) {
+    lines.push('', 'Connections whose credential could not be read (startup continues):');
+    for (const { connection, reason } of plan.unreadable) {
+      lines.push(`    ${connection}  — ${reason}`);
+    }
+  }
+
+  const unauthorizedOnly = plan.unauthorized.filter(
+    (key) => !plan.unreadable.some((entry) => entry.connection === key),
+  );
+  if (unauthorizedOnly.length > 0) {
     lines.push('', 'Unauthorized connections (startup continues; these will error if called):');
-    for (const key of plan.unauthorized) lines.push(`    ${key}  — run: lanes link connect ${key}`);
+    for (const key of unauthorizedOnly) lines.push(`    ${key}  — run: lanes link connect ${key}`);
   }
 
   return lines.join('\n');
