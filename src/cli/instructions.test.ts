@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import type { Flags } from './argv.ts';
 import { ASSETS, readAsset } from './commands/mcp/assets.ts';
-import { assertKnownFlags, requirementFor, selectionKey } from './selection.ts';
+import { SELECTION, assertKnownFlags, requirementFor, selectionKey } from './selection.ts';
 import { PROGRAM, usage } from './usage.ts';
+import { SECTIONS } from './usage-data.ts';
 import { RESERVED_PROVIDER_IDS } from '#connectivity/manifest/owner-ids.ts';
 
 /**
@@ -224,7 +225,12 @@ describe.each(ASSETS.map((asset) => [asset.label, asset] as const))('the bundled
 
       const needs = requirementFor(shown.argv[0]!, shown.argv[1]);
       const flags = flagsOf(shown.argv);
-      const missing = ['profile', 'target'].filter(
+      // `workspace`, not `target`. `Requires` has read `'workspace'` since
+      // ADR-061 renamed the flag, so the second half of this filter could never
+      // match and the check has been running on `--profile` alone — on a test
+      // whose entire subject is a command missing the flag that selects what it
+      // acts on.
+      const missing = ['profile', 'workspace'].filter(
         (flag) => needs.includes(flag) && !(flag in flags),
       );
 
@@ -362,3 +368,76 @@ describe.each(ASSETS.map((asset) => [asset.label, asset] as const))(
     });
   },
 );
+
+
+/**
+ * The help text is held to the same gate as the bundled documents above.
+ *
+ * `assertKnownFlags` is what the CLI refuses with, so a command spelled here
+ * with a flag it rejects is a line the tool prints and then will not run. That
+ * had happened to eight of them: `vault get` printed `--show to reveal` under a
+ * truncated value and then refused `--show`, which left a stored secret with no
+ * way out of the CLI at all, and `memory forget` answered a non-interactive run
+ * with "Pass --yes to proceed" and refused `--yes`.
+ *
+ * The check above reads `ASSETS` — the documents shipped to clients — and never
+ * looked at this, which is the other half of the same surface and the half an
+ * operator reads first.
+ */
+describe('the help text', () => {
+  /** Every documented invocation, as the command path and the flags it shows. */
+  const documented = SECTIONS.flatMap((section) =>
+    section.entries
+      .filter((entry) => entry.flag !== true)
+      .map((entry) => {
+        // The command path is the leading run of bare words: everything up to
+        // the first `<placeholder>`, `[optional]` or flag. Two is as deep as
+        // `selectionKey` looks, and `knowledge use github` is the only entry
+        // with a third.
+        const path: string[] = [];
+        for (const token of entry.command.split(/\s+/).filter(Boolean)) {
+          if (!/^[a-z][a-z-]*$/.test(token) || path.length === 2) break;
+          path.push(token);
+        }
+
+        // Every `--flag` in the line, including the ones inside `[...]` and
+        // either side of a `|`. Both spellings of an alternative are offered,
+        // so both have to be accepted.
+        const flags: Flags = {};
+        for (const [, name] of entry.command.matchAll(/--([a-z][a-z-]+)/g)) flags[name!] = true;
+
+        return { shown: entry.command, path, flags };
+      })
+      .filter((entry) => entry.path.length > 0),
+  );
+
+  test('describes enough commands that the checks below are looking at something', () => {
+    expect(documented.length).toBeGreaterThan(80);
+  });
+
+  test('never offers a flag the command refuses', () => {
+    const refused: string[] = [];
+
+    for (const entry of documented) {
+      try {
+        assertKnownFlags(entry.path[0]!, entry.path[1], entry.flags);
+      } catch (error) {
+        refused.push(`${entry.shown} — ${(error as Error).message.split('\n')[0]}`);
+      }
+    }
+
+    expect(refused).toEqual([]);
+  });
+
+  test('names only commands the selection table knows', () => {
+    // The weaker half, kept because it fails differently. `requirementFor`
+    // cannot answer this — it defaults to `profile+workspace` for anything
+    // absent, so asking it would be a test that passes by never returning
+    // nothing. Membership is the question, so membership is what is asked.
+    const unknown = documented
+      .map((entry) => selectionKey(entry.path[0]!, entry.path[1]))
+      .filter((key) => !(key in SELECTION) && !(key.split(' ')[0]! in SELECTION));
+
+    expect(unknown).toEqual([]);
+  });
+});
