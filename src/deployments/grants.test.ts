@@ -140,7 +140,6 @@ async function conditionTitled(name: string): Promise<string> {
     deploy: cloudrun,
     declared: target,
     target: 'cloud',
-    profiles: [PROFILE],
   });
   const step = steps.find((candidate) => candidate.argv.join(' ').includes(name));
 
@@ -304,37 +303,64 @@ describe('what the revision is granted, against what it writes', () => {
     }
   });
 
-  test('another profile is outside it too, and so is a name the revision invents', async () => {
-    // The grant was `objectsUnder('profiles/')` with the *served* declarations
-    // carved out, so a deploy naming one profile handed the revision `create`
-    // and `delete` on every other profile's `profile.yaml` — the configuration
-    // of a profile the same endpoint serves — and on any directory it made up,
-    // which `listProfiles` would then pick up on the next boot. Before ADR-067
-    // no declaration was writable at all, because `profiles/` sat outside
-    // `data/`. It is one granted prefix per served profile now.
+  test('no profile declaration is writable, in either shape, under any name', async () => {
+    // **What the condition is actually for.** ADR-007: a deployed instance never
+    // mutates its own configuration. A declaration is the configuration, and
+    // `listProfiles` accepts two shapes for one — `<name>/profile.yaml` since
+    // ADR-067, and a bare `<name>.yaml` from contract 3 — so excluding only the
+    // first leaves the second as a way to invent a profile that the next boot
+    // picks up.
+    //
+    // This used to be spelled as one granted prefix per served profile with that
+    // profile's own declaration carved out, which expressed the same intent for
+    // the profiles a deploy happened to name and nothing at all for a name it
+    // did not. It is now a suffix exclusion over `profiles/` wholesale, so it
+    // covers every name including ones that do not exist yet.
     const condition = await writeCondition();
 
     for (const key of [
+      `profiles/${PROFILE}/profile.yaml`,
       'profiles/work/profile.yaml',
-      'profiles/work/lanes_memory/lan1/note.md',
       'profiles/attacker/profile.yaml',
+      // Contract 3's shape. Still accepted by `listProfiles`, so still a way in.
+      'profiles/attacker.yaml',
+      'profiles/work.yaml',
     ]) {
       expect({ key, permitted: permits(condition, key) }).toEqual({ key, permitted: false });
     }
 
-    // And the served profile's own data is still writable, or the endpoint
-    // cannot store a memory entry.
+    // And data is still writable, or the endpoint cannot store a memory entry.
     expect(permits(condition, `profiles/${PROFILE}/lanes_memory/lan1/note.md`)).toBe(true);
   });
 
-  test('the exclusion is bracketed, because ! binds tighter than == in CEL', async () => {
+  test('the condition does not grow with the number of profiles', async () => {
+    // **Google rejects a condition with more than 12 logical operators**
+    // (`LintValidationUnits/ConditionComplexityCheck`). One granted prefix per
+    // profile cost three operators each — the `||` joining it, and the `&&` and
+    // `!` of its own carve-out — so the expression was `3N + 2` and a fourth
+    // profile made it 14. It was refused outright, which on a live target meant
+    // the correct binding could not be written at all while the removal of the
+    // superseded one still ran: `tolerateFailure` is set on both.
+    //
+    // Pinned as a budget rather than an exact count, and well under the cap, so
+    // that a clause added here has room and a clause added *per profile* does
+    // not.
+    const condition = await writeCondition();
+    const operators = (condition.match(/\|\||&&|!/g) ?? []).length;
+
+    expect({ operators, cap: 12 }).toEqual({ operators: 5, cap: 12 });
+  });
+
+  test('the exclusion is bracketed, because ! binds tighter than the term in CEL', async () => {
     // `!resource.name == "…"` negates the *name* and compares that: not a type
     // error, not what it reads as, and it excludes nothing. The bug was written
     // and caught here, so the shape is pinned rather than the behaviour alone.
+    // The term is a suffix test now and the hazard is identical — `!` would bind
+    // to `resource.name` and `endsWith` would be called on the negation.
     const condition = await writeCondition();
 
-    expect(condition).not.toMatch(/!resource\.name ==/);
-    expect(condition).toContain('!(resource.name ==');
+    expect(condition).not.toMatch(/!resource\.name[ .]/);
+    expect(condition).toContain('!(resource.name.endsWith(');
   });
 });
 
@@ -351,7 +377,6 @@ describe('the vault, which is the one thing a revision writes back to its store'
       deploy: cloudrun,
       declared,
       target: 'cloud',
-      profiles: [PROFILE],
       rotatable: [VAULT],
     });
 
@@ -392,7 +417,6 @@ describe('the vault, which is the one thing a revision writes back to its store'
         deploy: cloudrun,
         declared: withoutVault as TargetConfig,
         target: 'cloud',
-        profiles: [PROFILE],
         rotatable: [],
       })
     )

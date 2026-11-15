@@ -65,10 +65,27 @@ export interface PrepareResult {
  * Called before `provision`, which is before any store is opened — so it reads
  * config and manifests only, and touches no credential.
  */
+/**
+ * Whether a run binds the workspace's accounts, or only what a profile owns.
+ *
+ * The two commands that provision want different sets, and the difference is
+ * not which profiles they named — that was the mistake `ProvisionInput.profiles`
+ * encoded. `deploy` sends the whole workspace up and every account in it is
+ * served whichever profiles were named, so it binds all of them. `profile add`
+ * makes one profile servable, and what a profile owns is its vault and its
+ * client; a connection belongs to the workspace (ADR-057) and was bound when it
+ * was connected.
+ *
+ * So this is the subject of the command, stated once, rather than inferred from
+ * a list that means something else.
+ */
+export type ConnectionScope = 'workspace' | 'none';
+
 export async function rotatableRefs(
   root: string,
   profiles: readonly string[] | undefined,
   declared: TargetConfig | undefined,
+  connections: ConnectionScope,
 ): Promise<string[]> {
   const refs = new Set<string>();
   const wanted = profiles === undefined ? undefined : new Set(profiles);
@@ -100,10 +117,12 @@ export async function rotatableRefs(
   // Every connection, not just granted ones: a credential a revision cannot read
   // is a broken account, and whether some profile currently grants it is a
   // question that changes without redeploying.
-  const registry = await buildRegistryWithWorkspace(root);
-  for (const connection of (await readConnections(root)).connections) {
-    const manifest = registry.manifest(connection.provider);
-    for (const ref of rotatableCredentialRefsFor(connection, manifest)) refs.add(ref);
+  if (connections === 'workspace') {
+    const registry = await buildRegistryWithWorkspace(root);
+    for (const connection of (await readConnections(root)).connections) {
+      const manifest = registry.manifest(connection.provider);
+      for (const ref of rotatableCredentialRefsFor(connection, manifest)) refs.add(ref);
+    }
   }
 
   // Sorted, and a set: two Gmail connections share one dynamically registered
@@ -143,6 +162,7 @@ export async function readableRefs(
   root: string,
   profiles: readonly string[] | undefined,
   declared: TargetConfig | undefined,
+  connections: ConnectionScope,
 ): Promise<string[]> {
   const refs = new Set<string>();
 
@@ -210,23 +230,26 @@ export async function readableRefs(
 
   }
 
-  // Once, for the reason `rotatableRefs` gives.
-  const connectionsFile = await readConnections(root);
+  // Once, for the reason `rotatableRefs` gives, and only where the workspace's
+  // accounts are the subject — see `ConnectionScope`.
+  if (connections === 'workspace') {
+    const connectionsFile = await readConnections(root);
 
-  // The endpoint's own tokens, which are the workspace's rather than any
-  // profile's since ADR-068. Pushed so a deployed revision can authenticate a
-  // headless caller; the *rows* travel with `connections.yaml`, so a ref here
-  // without its value is a row that matches nothing and reads to the client
-  // exactly like a wrong token.
-  for (const issued of connectionsFile.tokens) refs.add(issued.ref);
-  const registry = await buildRegistryWithWorkspace(root);
+    // The endpoint's own tokens, which are the workspace's rather than any
+    // profile's since ADR-068. Pushed so a deployed revision can authenticate a
+    // headless caller; the *rows* travel with `connections.yaml`, so a ref here
+    // without its value is a row that matches nothing and reads to the client
+    // exactly like a wrong token.
+    for (const issued of connectionsFile.tokens) refs.add(issued.ref);
+    const registry = await buildRegistryWithWorkspace(root);
 
-  for (const connection of connectionsFile.connections) {
-    const manifest = registry.manifest(connection.provider);
-    const ref = credentialRefFor(connection, manifest);
-    if (ref) refs.add(ref);
-    for (const rotatable of rotatableCredentialRefsFor(connection, manifest)) refs.add(rotatable);
-    for (const client of ownClientRefsFor(manifest, connectionsFile.oauth_apps)) refs.add(client);
+    for (const connection of connectionsFile.connections) {
+      const manifest = registry.manifest(connection.provider);
+      const ref = credentialRefFor(connection, manifest);
+      if (ref) refs.add(ref);
+      for (const rotatable of rotatableCredentialRefsFor(connection, manifest)) refs.add(rotatable);
+      for (const client of ownClientRefsFor(manifest, connectionsFile.oauth_apps)) refs.add(client);
+    }
   }
 
   return [...refs].sort();
