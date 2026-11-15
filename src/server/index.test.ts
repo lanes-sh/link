@@ -46,7 +46,10 @@ afterAll(async () => {
 
 interface ToolDefinition {
   name: string;
-  inputSchema: { properties?: { connection?: { enum?: string[] }; profile?: { enum?: string[] } } };
+  description?: string;
+  inputSchema: {
+    properties?: Record<string, { type?: string; enum?: string[]; description?: string }>;
+  };
 }
 
 /**
@@ -269,7 +272,7 @@ describe('discovery is filtered by policy', () => {
     expect(names).not.toContain('example_echo');
   });
 
-  test('the connection enum exposes only granted connections', async () => {
+  test('the description exposes only granted connections', async () => {
     const tools = await listTools(personal.server.url);
 
     const echo = tools.find((tool) => tool.name === 'example_echo');
@@ -278,7 +281,15 @@ describe('discovery is filtered by policy', () => {
     // A granted capability offers every account of its provider; a denied one
     // is not advertised at all, so a client cannot discover what it may not
     // call.
-    expect(echo?.inputSchema.properties?.connection?.enum).toEqual(['example.a', 'example.b']);
+    //
+    // Read off the description rather than the `connection` enum, which is a
+    // plain string since ADR-082. What is advertised did not change — only
+    // where it is written, and the description says it per profile rather than
+    // as a union across them.
+    expect(echo?.description).toContain('Available connections, by profile:');
+    expect(echo?.description).toContain('example.a');
+    expect(echo?.description).toContain('example.b');
+    expect(echo?.inputSchema.properties?.['connection']?.enum).toBeUndefined();
     expect(listNotes).toBeUndefined();
   });
 
@@ -766,19 +777,24 @@ describe('one endpoint, several profiles', () => {
     });
   });
 
-  test('a tool offered by both profiles is registered once, with both in its enum', async () => {
+  test('a tool offered by both profiles is registered once, naming both', async () => {
     const tools = await listTools(both.server.url);
     const getNote = tools.find((tool) => tool.name === 'example_get_note');
 
-    expect(getNote?.inputSchema.properties?.profile?.enum).toEqual(['personal', 'side']);
+    // In the argument description since ADR-082, not an enum. The reachable set
+    // still decides what is said; it no longer decides what validates.
+    expect(getNote?.inputSchema.properties?.['profile']?.description).toContain('personal, side');
+    expect(getNote?.inputSchema.properties?.['profile']?.enum).toBeUndefined();
   });
 
-  test('a tool only one profile grants offers only that profile', async () => {
+  test('a tool only one profile grants names only that profile', async () => {
     const tools = await listTools(both.server.url);
     const echo = tools.find((tool) => tool.name === 'example_echo');
 
     // `side` grants example.get_note alone, so echo is reachable in personal only.
-    expect(echo?.inputSchema.properties?.profile?.enum).toEqual(['personal']);
+    const described = echo?.inputSchema.properties?.['profile']?.description;
+    expect(described).toContain('personal');
+    expect(described).not.toContain('side');
   });
 
   test('the call is routed to the profile named', async () => {
@@ -972,11 +988,13 @@ members: []
     );
 
     try {
+      // Read off the description, which is where the accounts are written since
+      // ADR-082. The claim under test is unchanged and is the whole point of
+      // `/reload`: what a client is told changes without the process restarting.
       const before = await listTools(harness.server.url);
-      expect(
-        before.find((tool) => tool.name === 'example_get_note')?.inputSchema.properties?.connection
-          ?.enum,
-      ).toEqual(['example.a']);
+      const describedBefore = before.find((tool) => tool.name === 'example_get_note')?.description;
+      expect(describedBefore).toContain('example.a');
+      expect(describedBefore).not.toContain('example.c');
 
       // The operator connects a second account. Nothing restarts.
       edit(configWith('personal', port, ['a', 'c'], READ_ONLY));
@@ -987,10 +1005,9 @@ members: []
       expect(body['epoch']).toBe(1);
 
       const after = await listTools(harness.server.url);
-      expect(
-        after.find((tool) => tool.name === 'example_get_note')?.inputSchema.properties?.connection
-          ?.enum,
-      ).toEqual(['example.a', 'example.c']);
+      const describedAfter = after.find((tool) => tool.name === 'example_get_note')?.description;
+      expect(describedAfter).toContain('example.a');
+      expect(describedAfter).toContain('example.c');
 
     } finally {
       await harness.stop();

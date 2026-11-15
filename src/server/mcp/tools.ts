@@ -7,7 +7,11 @@ import { clientLabelFrom } from './client-info.ts';
 import { toolNameFor } from './naming.ts';
 import { resourceLinkRouter } from './routing.ts';
 import { sanitizeSchema } from './schema.ts';
-import { describeWithConnections } from './description.ts';
+import {
+  CONNECTION_DESCRIPTION,
+  describeWithConnections,
+  profileDescription,
+} from './description.ts';
 import {
   accountsByProfile,
   type BuildServerOptions,
@@ -24,18 +28,31 @@ import {
  * the schema arrived differently.
  */
 
-/** The two arguments core injects, and no provider declares. */
-function routingProperties(profiles: string[], connections: string[]): Record<string, unknown> {
+/**
+ * The two arguments core injects, and no provider declares.
+ *
+ * Plain strings, not enums — ADR-082. An enum here is a constraint fixed at a
+ * moment the caller cannot see the end of: nothing can push
+ * `notifications/tools/list_changed` from a stateless endpoint (ADR-002,
+ * ADR-032), so a client that cached its list holds the old values for as long as
+ * it lives. Every value in that cached enum is still correct, because adding a
+ * profile removes none — so the only call the constraint refuses is the one
+ * naming what has appeared since.
+ *
+ * `minLength` stays, and the difference is the whole of the decision: a
+ * constraint that cannot go stale is not the kind this removed.
+ */
+function routingProperties(profiles: string[]): Record<string, unknown> {
   return {
     profile: {
       type: 'string',
-      enum: profiles,
-      description: 'Which profile to act within',
+      minLength: 1,
+      description: profileDescription(profiles),
     },
     connection: {
       type: 'string',
-      enum: connections,
-      description: 'Which configured account to act on, within that profile',
+      minLength: 1,
+      description: CONNECTION_DESCRIPTION,
     },
   };
 }
@@ -48,7 +65,6 @@ export function registerDiscoveredTool(
 ): void {
   const discovered = entry.discovered!;
   const profiles = [...entry.reachable.keys()];
-  const connections = [...new Set([...entry.reachable.values()].flat())];
 
   const properties = (discovered.inputSchema['properties'] as Record<string, unknown>) ?? {};
   const required = (discovered.inputSchema['required'] as string[]) ?? [];
@@ -81,7 +97,7 @@ export function registerDiscoveredTool(
         sanitizeSchema({
           ...discovered.inputSchema,
           type: 'object',
-          properties: { ...properties, ...routingProperties(profiles, connections) },
+          properties: { ...properties, ...routingProperties(profiles) },
           required: [...required, 'profile', 'connection'],
         }),
       ),
@@ -98,7 +114,6 @@ export function registerLocalTool(
   options: BuildServerOptions,
 ): void {
   const profiles = [...entry.reachable.keys()];
-  const connections = [...new Set([...entry.reachable.values()].flat())];
   const shape = (capability.inputSchema as unknown as { shape?: z.ZodRawShape }).shape ?? {};
 
   server.registerTool(
@@ -113,13 +128,13 @@ export function registerLocalTool(
       annotations: annotationsFor(id, entry.reads),
       inputSchema: {
         ...shape,
-        // Injected by core, never declared by a provider — ADR-001. Both enums
-        // are built from resolved policy, so they double as the discovery
-        // filter.
-        profile: z.enum(profiles as [string, ...string[]]).describe('Which profile to act within'),
-        connection: z
-          .enum(connections as [string, ...string[]])
-          .describe('Which configured account to act on, within that profile'),
+        // Injected by core, never declared by a provider — ADR-001. Plain
+        // strings since ADR-082: the reachable set is still built from resolved
+        // policy and still decides what the description says, but it no longer
+        // decides what validates. The filter is `allowedConnections`; the enum
+        // was only its rendering, and the rendering is in the description above.
+        profile: z.string().min(1).describe(profileDescription(profiles)),
+        connection: z.string().min(1).describe(CONNECTION_DESCRIPTION),
       },
     },
     makeHandler(id, entry, options),
@@ -147,10 +162,20 @@ function makeHandler(capabilityId: string, entry: MergedCapability, options: Bui
     const runtime = options.profiles.get(name);
     const reachable = entry.reachable.get(name);
 
-    // The enums are a union across profiles, so a caller can name a valid
-    // profile and a connection that belongs to a different one. Refuse it here
-    // rather than dispatching: routing a `work` account through `personal`
-    // would cross exactly the boundary profiles exist to hold.
+    // Both arguments are strings, so a caller can name anything at all —
+    // including a valid profile with a connection belonging to a different one,
+    // which the enums admitted too because they were a union across profiles.
+    // Refuse it here rather than dispatching: routing a `work` account through
+    // `personal` would cross exactly the boundary profiles exist to hold.
+    //
+    // This branch is also what withholds a profile now. `options.profiles` holds
+    // every profile the endpoint serves and `entry.reachable` is
+    // `mayReach`-filtered, so a name that does not exist fails the first test, a
+    // name the caller is not a member of fails the second, and both arrive at
+    // one sentence — differing only in the name the caller supplied and in their
+    // own `Available:` list, which they already held. ADR-079's rule for
+    // `/data`, said again for tools: a distinguishable refusal would confirm the
+    // profile is there.
     if (!runtime || !reachable) {
       return {
         content: [

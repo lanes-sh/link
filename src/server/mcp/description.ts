@@ -49,3 +49,62 @@ export function describeWithConnections(
   });
   return `${description}\n\nAvailable connections, by profile:\n${lines.join('\n')}`;
 }
+
+/**
+ * The candidates as a clause, or nothing at all.
+ *
+ * Empty is reachable on the two surface tools, where the list is the whole
+ * endpoint's rather than one capability's: a caller no member list names reaches
+ * nothing. `" when this list was built."` with nothing in front of it reads as a
+ * bug, so there is no clause at all.
+ */
+function asOf(names: readonly string[]): string {
+  return names.length === 0 ? '' : ` ${names.join(', ')} when this list was built.`;
+}
+
+/**
+ * What `profile` says, on every tool that takes one.
+ *
+ * The candidates are named and then disclaimed in the same breath, which is the
+ * only shape that survives a list nothing can refresh (ADR-082). Naming them
+ * alone is what the enum did, and it tells a caller the set is closed — so a
+ * client holding a list from before `profile add` refuses the one name its owner
+ * has just handed it. Omitting them loses the at-a-glance list that is most of
+ * what makes the argument answerable without a second call.
+ *
+ * The last sentence is an instruction rather than a pointer somewhere else on
+ * purpose: a caller reading this is composing a call, not exploring, and
+ * `lanes_setup_overview` is a round trip away from what it already knows.
+ */
+export function profileDescription(profiles: readonly string[]): string {
+  return (
+    'Which profile to act within.' +
+    asOf(profiles) +
+    ' A profile added since is not listed here and is still valid, so pass the name you were given.'
+  );
+}
+
+/**
+ * What `profile` says on `lanes_tools_search`, where it filters rather than routes.
+ *
+ * The last clause is the whole of the behaviour change ADR-082 makes here, and
+ * it is a reduction in what a caller learns: an unreachable name used to be a
+ * validation error, distinguishable from a reachable name that matched nothing.
+ * Both are now the same empty answer.
+ */
+export function searchFilterDescription(profiles: readonly string[]): string {
+  return (
+    'Only this profile.' +
+    asOf(profiles) +
+    ' One that is not reachable from here returns nothing rather than an error.'
+  );
+}
+
+/**
+ * What `connection` says. Fixed, because the accounts are in the tool's own
+ * description already — grouped by profile, with the account beside each opaque
+ * id (ADR-073), which is strictly more than the flat enum carried: that enum was
+ * deduplicated *across* profiles, so it validated pairings the handler refuses.
+ */
+export const CONNECTION_DESCRIPTION =
+  "Which configured account to act on, within that profile — this tool's description lists them by profile.";
