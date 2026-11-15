@@ -84,8 +84,10 @@ describe('binding a connection made since the last deploy', () => {
     // to find. A deployment provisioned since that changed has neither.
     expect(roles).toContain('roles/secretmanager.secretAccessor');
     // The half that is never covered by anything else, and the one a token
-    // refresh needs.
-    expect(roles).toContain('roles/secretmanager.secretVersionAdder');
+    // refresh needs. `secretVersionManager` rather than `secretVersionAdder`
+    // since the write also has to retire the version it replaced — see
+    // `rotateSteps`.
+    expect(roles).toContain('roles/secretmanager.secretVersionManager');
 
     // The secret is created here so the revision only ever needs to add a
     // version, never `secrets.create` — a project-level permission that would
@@ -215,12 +217,39 @@ describe('finding a credential the revision cannot rewrite', () => {
     expect(found.unavailable).toBeUndefined();
   });
 
-  test('says nothing when the binding is there', async () => {
+  test('accepts the older role, so a target bound before this still reads as bound', async () => {
+    // `rotateSteps` grants `secretVersionManager` now. Every target provisioned
+    // before it carries `secretVersionAdder`, which can still write the version
+    // this check exists to protect — so reporting it unbound would send an
+    // operator to repair a deployment that works. What the older role cannot do
+    // is retire the version it replaced, which costs money rather than
+    // correctness.
     const { driver } = fakeDriver(() => ({
       ok: true,
       stdout: policy([
         'roles/secretmanager.secretAccessor',
         'roles/secretmanager.secretVersionAdder',
+      ]),
+      stderr: '',
+    }));
+
+    expect(
+      await unboundRotatableRefs({
+        deploy: cloudrun,
+        target: 'cloud',
+        connections: [connection],
+        manifestFor,
+        driver,
+      }),
+    ).toEqual({ unbound: [] });
+  });
+
+  test('says nothing when the binding is there', async () => {
+    const { driver } = fakeDriver(() => ({
+      ok: true,
+      stdout: policy([
+        'roles/secretmanager.secretAccessor',
+        'roles/secretmanager.secretVersionManager',
       ]),
       stderr: '',
     }));

@@ -188,9 +188,21 @@ export async function unboundRotatableRefs(input: {
         const policy = JSON.parse(result.stdout) as {
           bindings?: { role?: string; members?: string[] }[];
         };
+        // Either role counts as bound. `secretVersionManager` is what
+        // `rotateSteps` grants now, and `secretVersionAdder` is what every
+        // target provisioned before that still carries — both can write the
+        // version this check exists to protect, so reporting the older one as
+        // unbound would send an operator to fix a deployment that works. What
+        // the older one cannot do is retire the version it replaced, which
+        // costs money rather than correctness and is reported separately.
+        const writes = new Set([
+          'roles/secretmanager.secretVersionManager',
+          'roles/secretmanager.secretVersionAdder',
+        ]);
         const bound = (policy.bindings ?? []).some(
           (binding) =>
-            binding.role === 'roles/secretmanager.secretVersionAdder' &&
+            binding.role !== undefined &&
+            writes.has(binding.role) &&
             (binding.members ?? []).includes(member),
         );
         return { ref, bound, unreadable: false };

@@ -1,6 +1,6 @@
 import type { SecretRef } from '#secrets';
 import type { DeployStep, ProvisionInput } from '../driver.ts';
-import { encodeRef } from '../adapters/gcp-secret-manager.ts';
+import { encodeRef, retiresOldVersions } from '../adapters/gcp-secret-manager.ts';
 import { bucketSteps } from './bucket.ts';
 import { requireProject } from './gcloud.ts';
 import type { PolicyReader } from './iam.ts';
@@ -120,7 +120,29 @@ export function readSteps({ project, serviceAccount, refs }: SecretGrant): Deplo
 
 /**
  * Write, named one secret at a time, and never `secrets.create` — the container
- * is made by `createSteps` so this grant can stay at "add a version".
+ * is made by `createSteps` so this grant stays inside one secret.
+ *
+ * **`secretVersionManager` where a write retires its predecessor, adder where
+ * it does not.** Adder can write a version and not retire the one it replaced,
+ * and Secret Manager bills for every active version — so a revision holding
+ * only adder has no way to stop paying for tokens it has already superseded,
+ * and an often-read mailbox accumulates one per refresh without limit. Manager
+ * adds destroy, disable, enable, get and list on top of add.
+ *
+ * The split is `retiresOldVersions`, which is the same predicate `#retire`
+ * branches on, so the grant cannot outgrow the behaviour. The vault is
+ * read-modify-write and is deliberately never retired, so granting it manager
+ * would be a permission held for a call that is never made.
+ *
+ * `secrets/vault.ts` says `versions.destroy` is "deliberately not granted to
+ * the identity a deployment runs as", and the reasoning behind that sentence
+ * still holds in the form it was made: the fear is a revision that can reach
+ * the *store*. This binding cannot. It is `add-iam-policy-binding` on one
+ * named secret, so what the revision gains is the ability to retire old copies
+ * of a credential it already writes and already reads. The thing actually
+ * withheld — `secretmanager.secrets.create`, which is project-level and would
+ * let a revision mint references of its own — is in neither role and is still
+ * only ever exercised by `createSteps`, from an operator's machine.
  */
 export function rotateSteps({ project, serviceAccount, refs }: SecretGrant): DeployStep[] {
   return refs.map((ref) => ({
@@ -134,7 +156,9 @@ export function rotateSteps({ project, serviceAccount, refs }: SecretGrant): Dep
       '--member',
       `serviceAccount:${serviceAccount}`,
       '--role',
-      'roles/secretmanager.secretVersionAdder',
+      retiresOldVersions(ref)
+        ? 'roles/secretmanager.secretVersionManager'
+        : 'roles/secretmanager.secretVersionAdder',
       '--condition',
       'None',
     ],
