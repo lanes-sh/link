@@ -118,13 +118,33 @@ export async function submit(
   const resource = (fields: Record<string, unknown>) =>
     draftOnly || revising ? { message: fields } : fields;
 
-  const { url, body, contentType } = large
-    ? { url: `${GMAIL_UPLOAD}${path}?uploadType=multipart`, ...related(resource(message), raw) }
-    : {
+  // Three routes, and only the third is new. Small goes as base64url in a JSON
+  // field. Large with no thread to name goes to the upload host as
+  // `message/rfc822` and nothing else — `uploadType=media`, which is the route
+  // that has carried large mail here since this capability existed. A large
+  // *reply* is the one that cannot use it: media carries no resource, so there
+  // is nowhere to put `threadId`, which is the whole reason the lookup exists.
+  //
+  // Deliberately not multipart for every large message, which is what this
+  // change first did. The resource part would then be `{}` for a plain send and
+  // `{"message":{}}` for a draft; Google documents neither an empty resource nor
+  // what it does with one, and a 6 MB send that works today is not worth
+  // re-proving to save a branch. Narrowing it this way also means the only
+  // messages on the unproven route are the ones whose threading is the thing
+  // being rehearsed anyway.
+  const { url, body, contentType } = !large
+    ? {
         url: `${GMAIL_API}${path}`,
         body: JSON.stringify(resource({ ...message, raw: Buffer.from(raw).toString('base64url') })),
         contentType: 'application/json',
-      };
+      }
+    : threadId === undefined
+      ? {
+          url: `${GMAIL_UPLOAD}${path}?uploadType=media`,
+          body: raw as Uint8Array | string,
+          contentType: 'message/rfc822',
+        }
+      : { url: `${GMAIL_UPLOAD}${path}?uploadType=multipart`, ...related(resource(message), raw) };
 
   return call(
     input,
@@ -254,6 +274,32 @@ function related(
  * be sent again. It also means the call's abort signal is attached here, once,
  * rather than by every request remembering to.
  */
+/**
+ * A refusal from Gmail, carrying the status that produced it.
+ *
+ * Typed rather than a bare `Error` because one caller has to tell a refusal it
+ * must stop for from one it can carry on past: the thread lookup fails the
+ * whole send on a credential Gmail rejected, and does not on a rate limit.
+ * Reading that back out of the message text would make the wording load-bearing.
+ */
+export class GmailRefused extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+    this.name = 'GmailRefused';
+  }
+}
+
+/** Whether a refusal is worth carrying on past, rather than failing the call for. */
+export function isTransient(failure: unknown): boolean {
+  // 429 and 5xx only. A 401 or 403 is about the credential, which the send is
+  // about to use again; a 400 or 404 is about the request, which will not
+  // improve by being repeated.
+  return failure instanceof GmailRefused && (failure.status === 429 || failure.status >= 500);
+}
+
 async function call(
   channel: Channel,
   url: string,
@@ -277,7 +323,7 @@ async function call(
   }
 
   const text = await response.text();
-  if (!response.ok) throw new Error(`${options.refused} with ${response.status}: ${text}`);
+  if (!response.ok) throw new GmailRefused(`${options.refused} with ${response.status}: ${text}`, response.status);
 
   try {
     return JSON.parse(text) as Record<string, unknown>;

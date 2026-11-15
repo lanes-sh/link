@@ -308,23 +308,38 @@ The lookup has three outcomes:
 - **Not found:** there is no conversation here to join. The reply is still sent, headers and all,
   and the receipt says Gmail filed it as a new conversation. The caller should not report a reply
   that did not land as one.
-- **Refused:** the call fails before anything is sent, because sending it unthreaded would be this
-  failure again. The lookup is a read, so it is retried once on a fresh token when `verify` offers
-  one. A send never is.
+- **Refused, about the credential:** the call fails before anything is sent, because the send is
+  about to present the same credential and would only fail again, later, with a message already
+  gone. The lookup is a read, so it is retried once on a fresh token when `verify` offers one. A
+  send never is.
+- **Refused, transiently:** a 429 or a 5xx does *not* fail the send. `messages.list` has a quota of
+  its own, so a burst of replies can throttle the lookup while sending is still fine, and refusing
+  to send at all because a lookup was rate-limited is a worse answer than the unthreaded reply this
+  whole change exists to improve on. The reply goes, the headers still make it a reply for the
+  recipient, and the receipt says the lookup is what failed — which is a different sentence from
+  "no such message here", because the remedy is different.
 
-**The upload host takes a resource now.** A message over 5 MB went to the upload host as
-`uploadType=media`, which carries the bytes and nothing else. Google's upload guide describes that
-route as the one for when there is no metadata to send. So a large reply could not have named its
-thread however the JSON route was fixed. Every large message now goes as `uploadType=multipart`: a
+**The upload host takes a resource when there is one.** A message over 5 MB went to the upload host
+as `uploadType=media`, which carries the bytes and nothing else. Google's upload guide describes
+that route as the one for when there is no metadata to send. So a large reply could not have named
+its thread however the JSON route was fixed. A large reply now goes as `uploadType=multipart`: a
 `multipart/related` body holding the same JSON resource the small route sends, less `raw`, and then
 the message as `message/rfc822`.
 
-It is one shape for every large message, not media for most and multipart for replies. The defect
-was a route that could not carry the resource, and keeping that route would keep the defect for the
-next field that has to travel. It is also a single request rather than a resumable one, although
-Google suggests resumable for large files. The message is composed whole in memory and capped at
-35 MiB before it is sent, so an interrupted upload has nothing to resume from that composing it
-again would not rebuild.
+**Only a large reply.** This was first written the other way — one shape for every large message, on
+the argument that keeping the media route keeps the defect for the next field that has to travel.
+That argument is about a field that might exist. Against it is a path that works today: a large
+message answering nothing has no resource to send, so multipart would carry `{}` for a plain send
+and `{"message":{}}` for a draft. Google documents neither an empty resource nor what it does with
+one, and the cost of being wrong is that a 6 MB send which works now stops working — for every
+caller, not only the ones replying. Changing the route for the messages that need it and leaving the
+rest on the proven one keeps the blast radius to the thing being rehearsed. When a second field does
+have to travel on a non-reply, that is the change that earns the wider route, and it will have a
+reason rather than an anticipation.
+
+It is also a single request rather than a resumable one, although Google suggests resumable for
+large files. The message is composed whole in memory and capped at 35 MiB before it is sent, so an
+interrupted upload has nothing to resume from that composing it again would not rebuild.
 
 **The receipt says where it landed.** `thread_id` is read off Gmail's answer rather than inferred
 from the request. A thread asked for is not a thread joined: a subject that does not match is enough

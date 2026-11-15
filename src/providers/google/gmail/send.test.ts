@@ -257,13 +257,14 @@ describe('revising a draft', () => {
       attachments: [{ path: join(root, 'big.bin') }],
     });
 
+    // Raw bytes, not multipart: this revision answers nothing, so there is no
+    // thread to nest inside a message and no resource worth sending an empty
+    // `{"message":{}}` for.
     expect(calls[0]!.url).toBe(
-      'https://gmail.googleapis.com/upload/gmail/v1/users/me/drafts/r-8?uploadType=multipart',
+      'https://gmail.googleapis.com/upload/gmail/v1/users/me/drafts/r-8?uploadType=media',
     );
-    // A draft nests its message on this route exactly as on the JSON one; this
-    // one answers nothing, so there is no thread to name inside it.
-    expect(resourceOf(calls[0]!)).toEqual({ message: {} });
-    expect(rawOf(calls[0]!)).toContain('Content-Disposition: attachment');
+    expect(calls[0]!.contentType).toBe('message/rfc822');
+    expect(calls[0]!.body).toContain('Content-Disposition: attachment');
   });
 
   test('without draft_only it updates and then sends, by id', async () => {
@@ -495,6 +496,65 @@ describe('replying', () => {
     expect(calls).toHaveLength(0);
   });
 
+  test("Gmail's own message id is refused too, rather than composing a bogus header", async () => {
+    // The mistake `in_reply_to`'s description exists to prevent. Without the
+    // `@` check it passes the guard, is searched for as an RFC Message-ID,
+    // misses, and the reply still goes out to a real recipient carrying
+    // `In-Reply-To: <18f0a1b2c3>` — a header that names nothing.
+    const { calls, harness } = sending();
+
+    const result = (await harness.invoke('send_message', {
+      to: ['ada.lovelace@example.com'],
+      subject: 'Re: Quote',
+      text: 'Body',
+      in_reply_to: '18f0a1b2c3',
+    })) as ToolResult;
+
+    expect(result.isError).toBe(true);
+    const text = (result.content[0] as { text: string }).text;
+    expect(text).toContain('contains an "@"');
+    expect(text).toContain('Nothing was sent');
+    expect(calls).toHaveLength(0);
+  });
+
+  test('a reply saved as a draft says it was saved, not that it was sent', async () => {
+    // The note was written for a send and handed back verbatim for a draft, so
+    // a caller reading one could report the reply as delivered when nothing had
+    // left the mailbox and there was no recipient yet to deliver it to.
+    const { harness } = sending({
+      answers: [{ messages: [], resultSizeEstimate: 0 }, { id: 'r-12' }],
+    });
+
+    const result = await harness.invoke('send_message', {
+      to: ['ada.lovelace@example.com'],
+      subject: 'Re: Quote',
+      text: 'Body',
+      in_reply_to: '<nope@example.com>',
+      draft_only: true,
+    });
+
+    const note = parsed(result)['note'] as string;
+    expect(note).toContain('saved this draft in');
+    expect(note).not.toContain('filed this as');
+  });
+
+  test('a revision naming no in_reply_to is told it does not carry a thread', async () => {
+    // A draft revised without it is replaced whole, which takes it out of the
+    // thread it was in — and silently, because that is the one case the reply
+    // note never ran for.
+    const { harness } = sending({ answers: [{ id: 'r-8' }] });
+
+    const result = await harness.invoke('send_message', {
+      to: ['ada.lovelace@example.com'],
+      subject: 'Re: Quote, corrected',
+      text: 'Body',
+      draft_only: true,
+      draft_id: 'r-8',
+    });
+
+    expect(parsed(result)['note']).toContain('does not carry a thread');
+  });
+
   test('a message that answers nothing makes no lookup and names no thread', async () => {
     const { calls, harness } = sending({ answers: [{ id: '18f0a1', threadId: '18f0a1' }] });
 
@@ -558,12 +618,14 @@ describe('replying', () => {
     return { calls, seen, harness };
   };
 
-  test('a lookup Gmail refuses sends nothing, fetches nothing, and says so', async () => {
+  test('a lookup refused for the credential sends nothing, fetches nothing, and says so', async () => {
     // Before the attachments, which can take tens of seconds: a lookup that is
-    // going to fail should fail first. And sending it anyway, unthreaded, would
-    // be the failure this whole path exists to prevent.
+    // going to fail should fail first. 403 rather than 500 because only a
+    // refusal about the *credential* stops the send — the send is about to
+    // present the same one, so carrying on would just fail again, later and
+    // with a message already sent.
     const { calls, seen, harness } = routed(
-      () => new Response('{"error":{"message":"Backend Error"}}', { status: 500 }),
+      () => new Response('{"error":{"message":"Insufficient Permission"}}', { status: 403 }),
     );
 
     const result = (await harness.invoke('send_message', {
@@ -576,13 +638,54 @@ describe('replying', () => {
 
     expect(result.isError).toBe(true);
     const text = (result.content[0] as { text: string }).text;
-    expect(text).toContain('500');
-    expect(text).toContain('Backend Error');
+    expect(text).toContain('403');
+    expect(text).toContain('Insufficient Permission');
     expect(text).toContain('Nothing was sent');
     // The lookup and nothing after it: no attachment fetched, nothing submitted.
     expect(calls).toHaveLength(1);
     // Handed to the same check every other refusal gets.
-    expect(seen).toEqual([500]);
+    expect(seen).toEqual([403]);
+  });
+
+  test('a lookup Gmail throttles still sends the reply, and the receipt says it is unthreaded', async () => {
+    // `messages.list` has its own quota, so a burst of replies can trip it while
+    // sending is perfectly fine. Refusing to send at all because the *lookup*
+    // was throttled is a worse answer than the unthreaded reply this whole path
+    // exists to improve on — the headers still make it a reply for the
+    // recipient, and the note tells the caller what it did not get.
+    const { calls, harness } = routed(
+      () => new Response('{"error":{"message":"Rate Limit Exceeded"}}', { status: 429 }),
+    );
+
+    const result = (await harness.invoke('send_message', {
+      to: ['ada.lovelace@example.com'],
+      subject: 'Re: Quote',
+      text: 'Body',
+      in_reply_to: REPLIED_TO,
+    })) as ToolResult;
+
+    expect(result.isError).toBeUndefined();
+    const receipt = parsed(result);
+    expect(receipt).toMatchObject({ sent: true });
+    expect(receipt['note']).toContain('would not answer');
+    // The lookup, then the send: it did not stop.
+    expect(calls).toHaveLength(2);
+  });
+
+  test('a 5xx on the lookup degrades the same way, rather than failing the send', async () => {
+    const { harness } = routed(
+      () => new Response('{"error":{"message":"Backend Error"}}', { status: 500 }),
+    );
+
+    const result = (await harness.invoke('send_message', {
+      to: ['ada.lovelace@example.com'],
+      subject: 'Re: Quote',
+      text: 'Body',
+      in_reply_to: REPLIED_TO,
+    })) as ToolResult;
+
+    expect(result.isError).toBeUndefined();
+    expect(parsed(result)['note']).toContain('would not answer');
   });
 
   test('a lookup refused on a stale token is made once more on a fresh one', async () => {
@@ -783,10 +886,16 @@ describe('sending with an attachment', () => {
 });
 
 describe('a message too large for a JSON field', () => {
-  test('goes to the upload host, raw, behind the resource it belongs to', async () => {
+  test('answering nothing, goes to the upload host as raw bytes and no resource', async () => {
     // Lifts the ceiling from "what fits in a JSON string" to Gmail's own 35 MiB.
     // `raw` is base64url inside JSON, so a large message would otherwise be a
     // third bigger again and meet a generic request limit first.
+    //
+    // `uploadType=media` rather than multipart, because there is nothing to put
+    // in a resource part: this message answers none, so it names no thread. The
+    // multipart route exists for the large *reply* two tests down, and sending
+    // every large message that way would put a `{}` resource Google does not
+    // document on the path that already worked.
     const root = await mkdtemp(join(tmpdir(), 'lanes-link-gmail-big-'));
     await writeFile(join(root, 'big.bin'), new Uint8Array(6 * 1024 * 1024));
 
@@ -800,14 +909,11 @@ describe('a message too large for a JSON field', () => {
     });
 
     expect(calls[0]!.url).toBe(
-      'https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=multipart',
+      'https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=media',
     );
-    expect(calls[0]!.contentType).toMatch(/^multipart\/related; boundary=/);
-    // The resource the JSON route would have sent, less `raw` — and this message
-    // answers nothing, so there is nothing in it.
-    expect(resourceOf(calls[0]!)).toEqual({});
-    // Raw MIME, not base64url of it.
-    expect(rawOf(calls[0]!)).toContain('Content-Disposition: attachment');
+    expect(calls[0]!.contentType).toBe('message/rfc822');
+    // Raw MIME, not base64url of it, and not wrapped in anything.
+    expect(calls[0]!.body).toContain('Content-Disposition: attachment');
     expect(parsed(result)).toMatchObject({ sent: true });
   });
 
@@ -869,19 +975,22 @@ describe('a message too large for a JSON field', () => {
     const root = await mkdtemp(join(tmpdir(), 'lanes-link-gmail-big-boundary-'));
     await writeFile(join(root, 'big.bin'), new Uint8Array(6 * 1024 * 1024));
 
-    const { calls, harness } = sending();
+    // A reply, because that is the only thing that takes the multipart route
+    // now — a large message with no thread to carry goes as raw bytes.
+    const { calls, harness } = sending({ answers: [FOUND, { id: '18f0a1', threadId: '18e0001' }] });
 
     await harness.invoke('send_message', {
       to: ['sam@example.com'],
       subject: 'Large',
+      in_reply_to: REPLIED_TO,
       attachments: [{ path: join(root, 'big.bin') }],
     });
 
-    const boundary = /boundary=(\S+)$/.exec(calls[0]!.contentType ?? '')?.[1];
+    const boundary = /boundary=(\S+)$/.exec(calls[1]!.contentType ?? '')?.[1];
     expect(boundary).toBeDefined();
     // Two part openings and the close, and nowhere else.
-    expect(calls[0]!.body.split(`--${boundary}`)).toHaveLength(4);
-    expect(calls[0]!.body.endsWith(`\r\n--${boundary}--\r\n`)).toBe(true);
+    expect(calls[1]!.body.split(`--${boundary}`)).toHaveLength(4);
+    expect(calls[1]!.body.endsWith(`\r\n--${boundary}--\r\n`)).toBe(true);
   });
 
   test('past what Gmail accepts at all, it is refused rather than attempted', async () => {

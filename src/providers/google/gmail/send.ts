@@ -10,7 +10,7 @@ import {
 } from '#connectivity/mail';
 import { GMAIL_MAX_MESSAGE_BYTES } from './api.ts';
 import { gmailAttachments } from './attachment.ts';
-import { messageIdOf, sendDraft, submit, threadFor, threadIdOf } from './submit.ts';
+import { isTransient, messageIdOf, sendDraft, submit, threadFor, threadIdOf } from './submit.ts';
 
 /**
  * Sending mail, composed here rather than by the caller.
@@ -133,9 +133,17 @@ export function gmailSend(
       // One message is searched for, so one has to be named. Two ids — the
       // parent's `References` pasted whole is the likely way — would search for
       // neither, and the receipt would then say the message is not here.
-      if (inReplyTo !== undefined && /[<>\s]/.test(inReplyTo)) {
+      //
+      // An `@` is required for the same reason. Gmail's own message id — the
+      // `18f0a1b2c3` form, which is the mistake `in_reply_to`'s description
+      // exists to prevent — has none, and without this it passes the guard, is
+      // searched for as an RFC Message-ID, misses, and still goes out to the
+      // recipient as `In-Reply-To: <18f0a1b2c3>`: a bogus header on a real
+      // message. Refusing it up front is the same answer the two-id case gets.
+      if (inReplyTo !== undefined && !/^[^<>\s@]+@[^<>\s@]+$/.test(inReplyTo)) {
         return fail(
-          `in_reply_to names one message, by its own Message-ID, and "${inReplyTo}" is not one. Nothing was sent.`,
+          `in_reply_to names one message, by its own Message-ID, and "${inReplyTo}" is not one. ` +
+            `A Message-ID looks like an address — it contains an "@" — and is not Gmail's own message id. Nothing was sent.`,
         );
       }
 
@@ -143,17 +151,33 @@ export function gmailSend(
       // lookup that is going to fail should fail first. Sending anyway, with no
       // thread, would be the very thing the lookup exists to prevent.
       let threadId: string | undefined;
+      // Whether the lookup ran at all, as distinct from running and finding
+      // nothing. The receipt has to tell those apart: "no such message here" is
+      // about the mailbox, "Gmail would not say" is about the moment.
+      let lookedUp = true;
       if (inReplyTo !== undefined) {
         try {
           threadId = await threadFor(inReplyTo, channel);
         } catch (failure) {
-          return fail(`${(failure as Error).message} Nothing was sent.`);
+          // A credential Gmail rejected fails the send, because the send is
+          // about to present the same one. A rate limit or a 5xx does not: the
+          // reply still goes, unthreaded, and the receipt says so. Refusing to
+          // send at all because a *lookup* was throttled is a worse answer than
+          // the unthreaded reply this change exists to improve on — `messages.list`
+          // has its own quota, so a burst of replies can trip it while sending
+          // is still fine.
+          if (!isTransient(failure)) return fail(`${(failure as Error).message} Nothing was sent.`);
+          lookedUp = false;
         }
 
         // A read made by a write, so the write's row says what it read — as
         // re-attaching from the mailbox does, through `origin`. Identifiers
         // only: which message was answered, and the thread that holds it.
-        context.audit.annotate({ in_reply_to: inReplyTo, thread_id: threadId ?? null });
+        context.audit.annotate({
+          in_reply_to: inReplyTo,
+          thread_id: threadId ?? null,
+          ...(lookedUp ? {} : { thread_lookup: 'refused' }),
+        });
       }
 
       let attachments: ResolvedAttachment[];
@@ -247,7 +271,10 @@ export function gmailSend(
         // that joined its conversation from one that did not, without going back
         // to the mailbox to look.
         const landed = threadIdOf(sent);
-        const note = inReplyTo === undefined ? undefined : replyNote(threadId, landed);
+        const note =
+          inReplyTo === undefined
+            ? revisionNote(input.draft_id, drafting)
+            : replyNote({ asked: threadId, landed, lookedUp, drafting });
 
         return {
           content: [
@@ -259,7 +286,11 @@ export function gmailSend(
                     ? { drafted: true, draft_id: sent['id'] ?? input.draft_id ?? null }
                     : { sent: true }),
                   message_id: messageIdOf(sent) ?? composed.messageId,
-                  thread_id: landed,
+                  // Gmail's `drafts.update` answer does not always carry a
+                  // thread, and `null` there reads as "not threaded" for a draft
+                  // that is. Fall back to the one that was asked for, which is
+                  // what the message was filed under if it was honoured at all.
+                  thread_id: landed ?? threadId ?? null,
                   recipients: input.to.length + (input.cc?.length ?? 0) + (input.bcc?.length ?? 0),
                   ...(note ? { note } : {}),
                   // Names, sizes and digests, never content — see `receiptFor`.
@@ -294,14 +325,43 @@ export const gmailSendMessage = gmailSend();
  * not use means one of its other conditions failed, the subject being the one a
  * caller controls.
  */
-function replyNote(asked: string | undefined, landed: string | null): string | undefined {
-  if (asked === undefined) {
-    return 'No message with that Message-ID was found in this mailbox, so Gmail filed this as a new conversation. The recipient\'s mail client can still show it as a reply, from its headers.';
+function replyNote(outcome: {
+  readonly asked: string | undefined;
+  readonly landed: string | null;
+  readonly lookedUp: boolean;
+  readonly drafting: boolean;
+}): string | undefined {
+  // "Filed" rather than "sent" when it is a draft. The note was written for a
+  // send and returned verbatim for a draft, so a caller reading one could
+  // reasonably report the reply as delivered when nothing had left the mailbox
+  // and there was not yet a recipient to deliver it to.
+  const what = outcome.drafting ? 'saved this draft in' : 'filed this as';
+
+  if (!outcome.lookedUp) {
+    return `Gmail would not answer the search for the message being replied to, so it ${what} a new conversation. The headers still name the message it answers, so the recipient's mail client can show it as a reply. Sending it again later is what puts it in the thread.`;
   }
-  if (landed !== null && landed !== asked) {
-    return 'Gmail filed this as a new conversation rather than in the thread holding the message it answers. It keeps a reply in that thread only when the subject matches.';
+  if (outcome.asked === undefined) {
+    return `No message with that Message-ID was found in this mailbox, so Gmail ${what} a new conversation. The recipient's mail client can still show it as a reply, from its headers.`;
+  }
+  if (outcome.landed !== null && outcome.landed !== outcome.asked) {
+    return `Gmail ${what} a new conversation rather than the thread holding the message it answers. It keeps a reply in that thread only when the subject matches.`;
   }
   return undefined;
+}
+
+/**
+ * What a revision's receipt says when it names no message to answer.
+ *
+ * A draft revised without `in_reply_to` is replaced whole, which takes it out of
+ * any thread it was in — and that is silent, because the one case with no
+ * `in_reply_to` is also the one case `replyNote` never ran for. Said here
+ * because it is recoverable only before the draft is sent.
+ */
+function revisionNote(draftId: string | undefined, drafting: boolean): string | undefined {
+  if (draftId === undefined) return undefined;
+  return `This revision named no in_reply_to, so it does not carry a thread. If the draft was a reply, ${
+    drafting ? 'revise it again' : 'compose it again'
+  } with in_reply_to set, or Gmail keeps it as a conversation of its own.`;
 }
 
 function fail(message: string): ToolResult {
