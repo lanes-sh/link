@@ -42,17 +42,44 @@ let base: string;
  * acceptable and is why it is spelled out rather than configured globally.
  */
 function selfSigned(): { cert: string; key: string } {
-  const key = Bun.spawnSync(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
+  const generated = Bun.spawnSync(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
     '-keyout', '/dev/stdout', '-out', '/dev/stdout', '-days', '1',
     '-subj', '/CN=127.0.0.1', '-addext', 'subjectAltName=IP:127.0.0.1']);
 
-  const out = key.stdout.toString();
-  const keyStart = out.indexOf('-----BEGIN PRIVATE KEY-----');
-  const keyEnd = out.indexOf('-----END PRIVATE KEY-----') + '-----END PRIVATE KEY-----'.length;
-  const certStart = out.indexOf('-----BEGIN CERTIFICATE-----');
-  const certEnd = out.indexOf('-----END CERTIFICATE-----') + '-----END CERTIFICATE-----'.length;
+  const out = generated.stdout.toString();
+  if (generated.exitCode !== 0) {
+    // Said rather than left to fail as a PEM that is not there. Both halves are
+    // cut out of this output by name, so an openssl that refused produces two
+    // empty strings and the failure surfaces as `Bun.serve` rejecting a
+    // certificate rather than as the thing that actually went wrong.
+    throw new Error(`openssl could not make a certificate: ${generated.stderr.toString()}`);
+  }
 
-  return { key: out.slice(keyStart, keyEnd), cert: out.slice(certStart, certEnd) };
+  return { key: pem(out, 'PRIVATE KEY'), cert: pem(out, 'CERTIFICATE') };
+}
+
+/**
+ * One PEM block out of a stream carrying two, ending in a newline.
+ *
+ * The newline is the point. Both halves are written to `/dev/stdout` and cut
+ * apart by index, and cutting at the end of `-----END <label>-----` leaves a
+ * block with nothing after it. Bun 1.3.11 accepted that; 1.4.4 on Linux does
+ * not, and answers `error:0900006e:PEM routines:OPENSSL_internal:NO_START_LINE`
+ * from inside `Bun.serve` — an error that names the *start* line for a block
+ * whose start line is present and whose end is unterminated. macOS accepts it
+ * either way, so this only ever failed in ci.
+ *
+ * A PEM block is defined as ending with a line break (RFC 7468 §2), so the
+ * tolerant parser was the one in the wrong and this is not a workaround.
+ */
+function pem(out: string, label: string): string {
+  const begin = `-----BEGIN ${label}-----`;
+  const end = `-----END ${label}-----`;
+  const start = out.indexOf(begin);
+  const stop = out.indexOf(end);
+  if (start === -1 || stop === -1) throw new Error(`openssl wrote no ${label} block`);
+
+  return `${out.slice(start, stop + end.length)}\n`;
 }
 
 const AUDIT: AuditTail = {
