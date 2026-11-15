@@ -933,6 +933,29 @@ describe('sending with an attachment', () => {
     expect(counts.submitted).toBe(0);
   });
 
+  test('a 200 that is not JSON fails the read, rather than reading as no attachments', async () => {
+    // Routing these reads through `call` brought its tolerance with it: an
+    // unparseable body became `{}`, and `{}` has no `parts`, so a proxy's error
+    // page or a sign-in redirect served with a 200 was reported as "Message
+    // <id> has no attachments" — a wrong fact rather than a failure, and the
+    // caller's next move is to stop looking for a file that is there.
+    const { counts, harness } = refusingTheRead(
+      () => new Response('<html>signed out</html>', { status: 200 }),
+    );
+
+    const result = (await harness.invoke('send_message', {
+      to: ['ada.lovelace@example.com'],
+      subject: 'Fwd: Quote',
+      attachments: [{ message_id: '18eff00' }],
+    })) as ToolResult;
+
+    expect(result.isError).toBe(true);
+    const text = (result.content[0] as { text: string }).text;
+    expect(text).toContain('not JSON');
+    expect(text).not.toContain('has no attachments');
+    expect(counts.submitted).toBe(0);
+  });
+
   test('an ambiguous mailbox reference lists what is there', async () => {
     const capability = gmailSend({
       fetch: (async (request: Request) =>

@@ -324,10 +324,21 @@ export async function call(
   const text = await response.text();
   if (!response.ok) throw new GmailRefused(`${options.refused} with ${response.status}: ${text}`, response.status);
 
+  // An empty body is an answer — some of these routes legitimately return none,
+  // and `{}` is what the callers already read it as. A body that is present and
+  // is not JSON is not an answer, and swallowing it into `{}` made an attachment
+  // read report "no attachments" for what was really a proxy's error page: a
+  // wrong fact rather than a failure. The message leads with the status so that
+  // 200-and-not-JSON is distinguishable from a refusal at a glance.
+  if (text.trim() === '') return {};
+
   try {
     return JSON.parse(text) as Record<string, unknown>;
   } catch {
-    return {};
+    throw new GmailRefused(
+      `${options.refused}: Gmail answered ${response.status} with a body that is not JSON.`,
+      response.status,
+    );
   }
 }
 
