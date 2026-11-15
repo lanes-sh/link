@@ -35,17 +35,28 @@ export function handedBackByGateway(
       : { type: 'text' as const, text: `[${block.name ?? block.uri}] — ${linkAdvice}.` },
   );
 
-  // A tool may answer entirely as data. The protocol only asks a server to
-  // repeat `structuredContent` as text where it can, and an upstream that does
-  // not leaves `content` empty — so mapping `content` alone handed the caller an
-  // empty result that was not an error, which reads as "the tool had nothing to
-  // say" rather than "the answer was dropped here". This tool declares no output
-  // schema and hands back text, so the data is rendered rather than passed on.
+  // A tool may answer as data, and repeating it as text is a SHOULD rather than
+  // a MUST — so an upstream that declines leaves the records only in
+  // `structuredContent`, and mapping `content` alone dropped them. With no
+  // text at all that produced an empty result which was not an error, reading
+  // as "the tool had nothing to say"; with a sentence of prose beside the data
+  // it was quieter and worse, because "Found 12 issues." looks like a complete
+  // answer and the twelve were gone. This tool declares no output schema and
+  // hands back text, so the data is rendered rather than passed through.
   //
   // Under `crunched` every provider call arrives here, so this is the path it
   // matters most on and the one a unit test is least likely to cover.
-  if (content.length === 0 && result.structuredContent !== undefined) {
-    content.push({ type: 'text' as const, text: JSON.stringify(result.structuredContent, null, 2) });
+  if (result.structuredContent !== undefined) {
+    const rendered = JSON.stringify(result.structuredContent, null, 2);
+
+    // Skipped only when the upstream already serialised exactly this, which is
+    // what a server following the SHOULD does. Byte-for-byte rather than a
+    // guess: every provider call under `crunched` comes through here, so
+    // appending a second copy of a large record set is a real cost, and
+    // anything looser would start dropping data again to save it.
+    if (!content.some((block) => block.text.includes(rendered))) {
+      content.push({ type: 'text' as const, text: rendered });
+    }
   }
 
   return { content, ...(result.isError ? { isError: true } : {}) };

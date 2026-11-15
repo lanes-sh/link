@@ -356,12 +356,18 @@ function replyNote(outcome: {
  * any thread it was in — and that is silent, because the one case with no
  * `in_reply_to` is also the one case `replyNote` never ran for. Said here
  * because it is recoverable only before the draft is sent.
+ *
+ * **Only while it is still a draft, and that is the whole guard.** Written
+ * without it, a revision that was sent — `draft_id` set and `draft_only` unset,
+ * which revises and then sends — carried "compose it again with in_reply_to
+ * set" on a message that had already gone to real recipients. An agent
+ * following that advice sends a second copy. The note exists to make something
+ * recoverable, and after a send there is nothing to recover and nothing worth
+ * saying that a caller can act on without doing harm.
  */
 function revisionNote(draftId: string | undefined, drafting: boolean): string | undefined {
-  if (draftId === undefined) return undefined;
-  return `This revision named no in_reply_to, so it does not carry a thread. If the draft was a reply, ${
-    drafting ? 'revise it again' : 'compose it again'
-  } with in_reply_to set, or Gmail keeps it as a conversation of its own.`;
+  if (draftId === undefined || !drafting) return undefined;
+  return 'This revision named no in_reply_to, so it does not carry a thread. If the draft was a reply, revise it again with in_reply_to set, or Gmail keeps it as a conversation of its own.';
 }
 
 function fail(message: string): ToolResult {

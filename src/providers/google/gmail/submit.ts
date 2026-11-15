@@ -293,10 +293,19 @@ export class GmailRefused extends Error {
 
 /** Whether a refusal is worth carrying on past, rather than failing the call for. */
 export function isTransient(failure: unknown): boolean {
-  // 429 and 5xx only. A 401 or 403 is about the credential, which the send is
-  // about to use again; a 400 or 404 is about the request, which will not
-  // improve by being repeated.
-  return failure instanceof GmailRefused && (failure.status === 429 || failure.status >= 500);
+  // Terminal is the narrow set, not the wide one. A 4xx other than 429 is about
+  // the credential or the request — the send is about to present the same
+  // credential, and a malformed request will not improve by being repeated — so
+  // those fail the call.
+  //
+  // Everything else carries on: 429 and 5xx, and anything that is not a
+  // `GmailRefused` at all. Written the other way round, a dropped connection, a
+  // DNS failure or a TLS error on the *lookup* aborted a send that would have
+  // succeeded, which is the outcome this branch exists to avoid. So does a 200
+  // carrying a body that is not JSON, which is a proxy talking rather than
+  // Gmail.
+  if (!(failure instanceof GmailRefused)) return true;
+  return !(failure.status >= 400 && failure.status < 500 && failure.status !== 429);
 }
 
 export async function call(

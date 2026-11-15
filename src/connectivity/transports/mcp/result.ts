@@ -87,8 +87,12 @@ export function carried(block: UpstreamBlock): ToolResult['content'][number] {
   }
 
   const base64 = block.data ?? block.resource?.blob;
+  // `||`, not `??`: a malformed block carrying `uri: ''` is exactly the shape
+  // this file exists to stop mangling, and `??` would take the empty string as
+  // an address — which the filter below then drops, leaving `[]` and telling
+  // the caller nothing at all about what was withheld.
   const facts = [
-    block.resource?.uri ?? block.uri ?? block.type,
+    block.resource?.uri || block.uri || block.type,
     block.mimeType ?? block.resource?.mimeType,
     base64 === undefined ? undefined : `${bytesIn(base64)} bytes`,
   ].filter((fact) => fact !== undefined && fact !== '');

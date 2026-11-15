@@ -538,6 +538,47 @@ describe('replying', () => {
     expect(note).not.toContain('filed this as');
   });
 
+  test('a revision that was sent is told nothing, because there is nothing to recover', async () => {
+    // `draft_id` without `draft_only` revises and then sends. Advising "compose
+    // it again with in_reply_to set" there is advice to send a second copy to
+    // real recipients, and an agent reading a receipt follows it. The note
+    // exists to make something recoverable and after a send there is nothing to
+    // recover.
+    const { harness } = sending({ answers: [{ id: 'r-8' }, { id: '18f0a1', threadId: '18f0a1' }] });
+
+    const result = await harness.invoke('send_message', {
+      to: ['ada.lovelace@example.com'],
+      subject: 'Re: Quote, corrected',
+      text: 'Body',
+      draft_id: 'r-8',
+    });
+
+    const receipt = parsed(result);
+    expect(receipt).toMatchObject({ sent: true });
+    expect(receipt['note']).toBeUndefined();
+  });
+
+  test('a lookup that fails below Gmail still sends, as a throttled one does', async () => {
+    // A dropped connection, a DNS failure or a TLS error is not a refusal and
+    // carries no status, so reading transience off `GmailRefused` alone aborted
+    // a send that would have succeeded — the very outcome the transient branch
+    // exists to avoid.
+    const { calls, harness } = routed(() => {
+      throw new TypeError('fetch failed');
+    });
+
+    const result = (await harness.invoke('send_message', {
+      to: ['ada.lovelace@example.com'],
+      subject: 'Re: Quote',
+      text: 'Body',
+      in_reply_to: REPLIED_TO,
+    })) as ToolResult;
+
+    expect(result.isError).toBeUndefined();
+    expect(parsed(result)['note']).toContain('would not answer');
+    expect(calls).toHaveLength(2);
+  });
+
   test('a revision naming no in_reply_to is told it does not carry a thread', async () => {
     // A draft revised without it is replaced whole, which takes it out of the
     // thread it was in — and silently, because that is the one case the reply
