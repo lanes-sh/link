@@ -1,6 +1,7 @@
 # ADR-060: A caller is a person, and a profile declares who may consume it
 
-**Status:** accepted · **Fills the seam kept by** [ADR-003](003-auth-model.md) ·
+**Status:** accepted, revocation paragraph amended by
+[ADR-083](083-reach-is-resolved-per-request.md) · **Fills the seam kept by** [ADR-003](003-auth-model.md) ·
 **Closes most of** [ADR-009](009-one-endpoint-per-workspace.md)'s stated gap ·
 **Amends** [ADR-018](018-the-gate-is-in-the-application.md)
 
@@ -134,3 +135,47 @@ It does not let an agent edit a member list, add itself, or read one it is not o
 attribute a call to a client — MCP `clientInfo` is still self-reported and still observability
 only (ADR-003). It does not change what a grant means: who may call and what they may call are two
 questions, answered in two places, and this is only the first.
+
+## Amended by ADR-083
+
+The model stands whole: a caller is a person, a profile declares who may consume it, and
+`members:` is the one list that decides. What changes is one paragraph — the revocation one above
+— and most of that change is this decision's own sentence becoming true.
+
+**The browser-session exception is withdrawn.** The paragraph above says
+`IssuedTokenAuthenticator` takes the list resolved when the code was minted, "deliberately:
+re-reading it per request would mean a profile edit silently ending a live session". That is now
+the point rather than the objection. Membership is resolved per request for every credential,
+including this one, and an issued token that resolves to nobody is refused
+([ADR-083](083-reach-is-resolved-per-request.md)). A grant that lands late is an annoyance; a
+revocation that lands late is the security property failing, and this was the slowest path in the
+system — twelve hours by default, against seconds for everything else.
+
+**The five-second claim was true of one credential, not three.** The paragraph says membership is
+resolved per request for a static `llk_` token, an OIDC token and a signed Lanes API key, "the
+resolver reads the profile files behind a five-second cache". Only `BearerAuthenticator` did that.
+The OIDC gate and the signed-key link were handed a closure over the *live runtime map* — per
+request, but with no file read and no window, so their freshness was bounded by the last reload.
+Worse, that map holds the profiles which successfully *opened*, so a profile whose credentials
+nothing had provisioned made its own members look like strangers; at the mint it refused the
+sign-in outright, reporting a provisioning fault as a membership fault. All four now read the
+declared config through one implementation, which is what this paragraph described all along.
+
+**"Nothing closes that window" no longer holds, and `profile members remove` is what closes it.**
+This paragraph was corrected once before, to stop it naming `lanes link token rotate` — which
+rotates one API token row and says in its own output that browser clients are unaffected. The
+honest version then was that the window was `access_token_ttl_minutes`. It is now the resolver's
+own window, in both directions.
+
+**What this decision got right and keeps.** Reading membership from the API per request is still
+rejected, for the reason stated above: the profile file is the source of truth and the API is
+consulted when the list is *edited*. Nothing here reaches `api.lanes.sh` on a request. Per-profile
+tokens are still rejected, roles still decide nothing at the MCP boundary, and the inherited
+Lanes-workspace membership is still unreconciled.
+
+One cost this decision stated is now larger and should be read with the amendment: a live session
+may lose reach, and may also gain it, without the client asking for anything. Consent at sign-in
+is consent to what the owner declares later rather than to the list that existed at that moment.
+The stored list was always a membership snapshot rather than a consent record, so nothing that was
+being relied on is taken away — but it is a sharper statement of the same delegation this decision
+chose, and ADR-083 says so where a reader will find it.
