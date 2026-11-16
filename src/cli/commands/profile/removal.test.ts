@@ -414,6 +414,27 @@ describe('removalPlan', () => {
     });
 
     expect(plan.warnings.join(' ')).toMatch(/keep answering|still answer/i);
+    expect(plan.warnings.join(' ')).toContain('last profile');
+  });
+
+  test('and says nothing of the sort while the endpoint still has profiles to serve', async () => {
+    // It used to warn on every removal from a deployed target. Removing one
+    // profile of six announced that "every call will fail", while the endpoint
+    // went on serving the other five correctly — through the removal and
+    // after it, which the rehearsal confirmed against a real target. A warning
+    // that is false in the ordinary case is one an operator stops reading.
+    const plan = await removalPlan(subject(), '/ws', 'personal', {
+      target: 'cloud',
+      declared: target({
+        deploy: { platform: 'cloudrun', project: 'my-project', region: 'r', service: 's' },
+      } as never),
+      disposition: { kind: 'delete' as const },
+      openSecrets: async () => fakeSecrets([]),
+      openBlobs: async () => fakeBlobs([]),
+      survivors: [subject()],
+    });
+
+    expect(plan.warnings.join(' ')).not.toMatch(/keep answering|still answer|every call will fail/i);
   });
 
 
