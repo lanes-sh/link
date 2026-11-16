@@ -209,11 +209,18 @@ makes the cost bounded; the ceiling is what makes the window safe.
 cached client cannot see; ADR-075's answer to that is `lanes_tools_call`, and it already works.
 "Runtime state" here means **reachable**, not re-advertised.
 
-**It does not converge a change across instances by itself.** One notify reaches one instance
-([ADR-029](029-connecting-is-not-deploying.md) names that as its own gap), and the member rows
-converge on every instance only because they are read per request rather than held in a
-generation. Grants, policy and connections still live in the generation. The digest this resolver
-computes exists for that, and what consumes it is a separate decision.
+**The member rows converge across instances; the rest do so by a second mechanism.** Membership is
+read per request rather than held in a generation, so a member added or removed lands on every
+instance within the window with no notify at all. Grants, policy and connections still live in the
+generation, and one notify reaches one instance —
+[ADR-029](029-connecting-is-not-deploying.md) names that as its own gap and offered the error path
+as what closes it. For these rows the error path cannot fire: it needs
+`Generation.knows` to miss, and none of those edits moves a tool name.
+
+So the digest this resolver computes is what closes it, and it is consumed on the request path
+before the generation is pinned. That is recorded as an amendment to ADR-029 rather than here,
+because what it reverses is ADR-029's rejection of a poll — on ADR-029's own terms, since the
+listing it priced is not what this does.
 
 **It does not shorten a leaked token's life.** Resolving membership per request does nothing for a
 stolen credential whose member row is still there. That window is `access_token_ttl_minutes`, and
