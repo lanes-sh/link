@@ -310,12 +310,22 @@ describe('what can be reached', () => {
     expect(AUDIT.asked?.profiles).toEqual(['personal', 'work']);
   });
 
-  test('the tail says how much of the log it speaks for', async () => {
+  test('the tail says whether it reached the end of the log', async () => {
     const response = await read('/audit');
-    const body = (await response.json()) as { complete: boolean; scanned: number };
+    const body = (await response.json()) as { complete: boolean };
 
     expect(body.complete).toBe(true);
-    expect(body.scanned).toBe(2);
+  });
+
+  test('but not how many records it walked, which is everybody\u2019s volume', async () => {
+    // The store counts every record it read, and it reads the workspace's
+    // whole chain while this caller reaches part of it. Polling the count
+    // would measure how busy the other profiles are — the quiet form of the
+    // disclosure ADR-079 closed. `complete` is what a page can act on.
+    const response = await read('/audit');
+    const body = (await response.json()) as Record<string, unknown>;
+
+    expect(body['scanned']).toBeUndefined();
   });
 
   test('nothing else, and an unknown path does not confirm what this is', async () => {

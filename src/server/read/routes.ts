@@ -329,11 +329,25 @@ export async function readRoutes(request: Request, deps: ReadDeps): Promise<Resp
 
     return json(
       {
-        // What the walk reached, so a short answer can be read as short. A
-        // filtered tail stops at a budget, and silence here is the defect this
-        // route is being fixed for one layer up.
+        // Whether the walk reached the end, so a short answer can be read as
+        // short rather than as empty. Silence here is the defect this route is
+        // being fixed for, one layer up.
+        //
+        // `complete` and **not** `scanned`, which the store also returns. The
+        // walk reads the workspace's whole chain and the caller reaches some
+        // of it, so the count is a measure of everybody's activity answered to
+        // somebody entitled to their own — poll it and the rate of change is
+        // how busy the other profiles are. That is the side channel ADR-079
+        // closed in its louder form, where an unfiltered tail "would report the
+        // existence of every profile and every capability called in it to
+        // somebody no member list names". A volume signal is the quiet version
+        // of the same disclosure.
+        //
+        // Nothing is lost by withholding it. `complete: false` already says
+        // "narrow your query", which is the only thing a page can act on, and
+        // the exact figure stays available to the operator at the CLI, which
+        // reads the store directly rather than over this route.
         complete: page.complete,
-        scanned: page.scanned,
         events: page.events.map((event) => ({
           id: event.id,
           timestamp: event.timestamp.toISOString(),
