@@ -42,9 +42,14 @@ function memoryStore(): KeyValueStore {
  * them back, and nothing else.
  */
 
-function authenticator(): { store: OAuthStore; auth: IssuedTokenAuthenticator } {
+function authenticator(
+  // Resolved per request now (ADR-083), so the harness has to supply the answer
+  // the endpoint's `workspaceMembers` would. Defaults to the one profile these
+  // cases are about; a test drives revocation by passing `[]`.
+  profilesFor: (subject: string) => Promise<readonly string[]> = async () => ['personal'],
+): { store: OAuthStore; auth: IssuedTokenAuthenticator } {
   const store = new OAuthStore(memoryStore());
-  return { store, auth: new IssuedTokenAuthenticator(store, 'personal') };
+  return { store, auth: new IssuedTokenAuthenticator(store, 'personal', profilesFor) };
 }
 
 const HOUR = Date.now() + 3_600_000;

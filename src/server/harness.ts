@@ -303,6 +303,20 @@ export function startHarness(options: HarnessOptions): Harness {
   // demonstrate that the fake works.
   const log = options.log ?? silentLogger();
 
+  /**
+   * One answer for the mint and for every later request.
+   *
+   * Hoisted because `IssuedTokenAuthenticator` resolves membership per request
+   * now (ADR-083), and a harness whose two halves disagreed would make the
+   * revocation path untestable in the one direction that matters. A test drives
+   * it by passing `federation: { profilesFor: … }` reading a mutable set: the
+   * mint sees it, and so does the next request on the token it minted.
+   */
+  const memberOf =
+    options.federation?.profilesFor ??
+    (async (subject: string): Promise<readonly string[]> =>
+      subject === `lanes:${STRANGER}` ? [] : [options.profile]);
+
   const store = options.authorization ? new OAuthStore(state.kv, options.now) : null;
   const gate = store
     ? {
@@ -321,8 +335,7 @@ export function startHarness(options: HarnessOptions): Harness {
               // One reserved spelling answers "no profile names them", because
               // that refusal is a real branch — a person signs in successfully
               // and still reaches nothing — and there has to be a way to drive it.
-              profilesFor: async (subject) =>
-                subject === `lanes:${STRANGER}` ? [] : [options.profile],
+              profilesFor: memberOf,
               ...options.federation,
             },
           }),
@@ -330,7 +343,7 @@ export function startHarness(options: HarnessOptions): Harness {
           mcpPath: '/mcp',
           target: 'local',
         },
-        authenticator: new IssuedTokenAuthenticator(store, options.profile),
+        authenticator: new IssuedTokenAuthenticator(store, options.profile, memberOf),
       }
     : null;
 
