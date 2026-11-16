@@ -159,6 +159,17 @@ describe('a reload that left the edit out is not "served"', () => {
  * a command that thinks the change is worth an audit entry thinks it is a
  * change, and a change the endpoint has not heard about is a stale endpoint.
  */
+/** Every command module, nested directories included. Shared by both sweeps below. */
+async function modules(dir: string): Promise<string[]> {
+  const found: string[] = [];
+  for (const entry of await readdir(join(import.meta.dir, dir), { withFileTypes: true })) {
+    const path = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) found.push(...(await modules(path)));
+    else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) found.push(path);
+  }
+  return found;
+}
+
 describe('a recorded config edit reaches the endpoint', () => {
   /**
    * Commands that record a change and deliberately do not publish one.
@@ -174,16 +185,6 @@ describe('a recorded config edit reaches the endpoint', () => {
     // from.
     'commands/operate/pair.ts': 'the pairing credential is read per request, not held',
   };
-
-  async function modules(dir: string): Promise<string[]> {
-    const found: string[] = [];
-    for (const entry of await readdir(join(import.meta.dir, dir), { withFileTypes: true })) {
-      const path = `${dir}/${entry.name}`;
-      if (entry.isDirectory()) found.push(...(await modules(path)));
-      else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) found.push(path);
-    }
-    return found;
-  }
 
   test('every command that records one publishes it, or says why not', async () => {
     const offenders: string[] = [];
@@ -206,5 +207,98 @@ describe('a recorded config edit reaches the endpoint', () => {
       const source = await readFile(join(import.meta.dir, path), 'utf8');
       expect(source).toContain('recordConfigChange(');
     }
+  });
+});
+
+/**
+ * That an edit which *writes a profile's own config* also tells the endpoint.
+ *
+ * The sweep above uses `recordConfigChange` as its signal, and that signal has
+ * a hole exactly the shape of the bug it was written for. A command that edits
+ * a profile and audits nothing is not read by it — and `grant.ts` is that file.
+ * It writes a `grants:` row and records no audit entry, so neither
+ * `lanes link grant` nor `lanes link revoke` was ever covered, and `revoke`
+ * shipped with no publish at all: widening propagated, narrowing did not, which
+ * made it the slowest path in the system and the only one whose slowness was a
+ * permission still in force. `knowledge` was the second, and it decides which
+ * *store* a profile reads its memory out of.
+ *
+ * So this is the same rule asked of a second signal. A file that opens a
+ * profile's own config and saves it has, by construction, changed what a
+ * generation was built from. Two narrow signals rather than one wide one,
+ * because neither covers the other: `profile add` and `profile remove` write no
+ * `ConfigDocument` at all and are caught only above, while `grant` and
+ * `knowledge` record nothing and are caught only here.
+ *
+ * `openKey` is deliberately not the signal. It writes an arbitrary key, and the
+ * commands reaching for it write `workspaces.yaml` and a token row — neither of
+ * which any generation is built from. `open` means a profile config and nothing
+ * else, which is why this rule needs no exceptions.
+ *
+ * **Per function, and that is the whole point.** The first draft of this test
+ * asked whether the *file* imported `publish.ts`, and it passed on the very
+ * commit the defect was in: `grant.ts` already imported it for
+ * `grantConnectionTo`, so the import proved nothing about its sibling. A file
+ * is the wrong unit for a rule about two mutators drifting apart, because the
+ * drift is invisible at file scope. Checked against the pre-fix source, the
+ * file-level question answers "yes" and this one answers `MISS`.
+ *
+ * There are **no exceptions**, and if one is ever wanted it belongs here with an
+ * argument, for the reason the list above gives: an exception nobody has to
+ * justify is how a gap lasts.
+ */
+describe('a config edit a generation was built from reaches the endpoint', () => {
+  /** Each top-level `async function`, so one mutator cannot vouch for another. */
+  function functionsIn(source: string): { name: string; body: string }[] {
+    return source
+      .split(/^(?=(?:export )?async function )/m)
+      .map((body) => ({
+        name: /(?:export )?async function (\w+)/.exec(body)?.[1] ?? '(module)',
+        body,
+      }));
+  }
+
+  test('every function that saves a profile config publishes it', async () => {
+    const offenders: string[] = [];
+
+    for (const path of await modules('commands')) {
+      const source = await readFile(join(import.meta.dir, path), 'utf8');
+      if (!source.includes('ConfigDocument.open(')) continue;
+
+      for (const { name, body } of functionsIn(source)) {
+        // Both halves, because opening a config to *read* it is not an edit:
+        // `operate/migrate.ts` and `profile/subject.ts` each open one and save
+        // nothing, and a signal that caught them would need two exceptions.
+        if (!body.includes('ConfigDocument.open(')) continue;
+        if (!body.includes('.save()')) continue;
+        if (body.includes('publishProfileEdit(') || body.includes('publishRuntimeEdit(')) continue;
+        offenders.push(`${path} ${name}`);
+      }
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
+  test('the sweep reaches the two mutators whose drift produced it', async () => {
+    // Vacuity is the failure mode of a source-reading test: it keeps passing
+    // while covering less. These two are named because they are what it was
+    // written for, and both record no audit entry — which is exactly what put
+    // them outside the sweep above.
+    const covered = new Set<string>();
+
+    for (const path of ['commands/grant.ts', 'commands/knowledge/index.ts']) {
+      const source = await readFile(join(import.meta.dir, path), 'utf8');
+      expect(source).not.toContain('recordConfigChange(');
+
+      for (const { name, body } of functionsIn(source)) {
+        if (body.includes('ConfigDocument.open(') && body.includes('.save()')) covered.add(name);
+      }
+    }
+
+    expect([...covered].sort()).toEqual([
+      'grantConnectionTo',
+      'revokeConnectionFrom',
+      'writeBlock',
+    ]);
   });
 });
