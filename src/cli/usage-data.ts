@@ -194,6 +194,15 @@ export const SECTIONS: readonly Section[] = [
       },
       { command: 'token rotate [--id t] [--show]' },
       { command: 'token revoke --id <t>' },
+      {
+        command: 'session list [--json]',
+        description: 'browser sign-ins this endpoint is holding, and which client each one is',
+      },
+      {
+        command: 'session revoke --me|--subject <id> [--yes]',
+        description:
+          'end them now rather than waiting out the token. members remove decides the next sign-in; this ends the one already in progress',
+      },
     ],
   },
   {
