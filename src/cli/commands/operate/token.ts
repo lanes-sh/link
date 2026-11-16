@@ -389,11 +389,8 @@ function pick(
   return rows[0]!;
 }
 
-/** Every profile in this workspace whose `members:` names a subject. */
+/** Every profile whose `members:` names a subject. Uncached — see `declaredMembers`. */
 async function profilesFor(root: string, subject: string): Promise<string[]> {
-  const { loadWorkspaceProfiles } = await import('#profile');
-  const { loaded } = await loadWorkspaceProfiles(root);
-  return loaded
-    .filter((entry) => entry.config.members.some((member) => member.subject === subject))
-    .map((entry) => entry.profile);
+  const { declaredMembers } = await import('#profile');
+  return declaredMembers(root, subject);
 }

@@ -135,12 +135,18 @@ export {
 export { recordTarget, removeTarget } from './deployments.ts';
 export {
   anyIssuedToken,
-  membersResolver,
   nextTokenId,
   readEndpointTokens,
   tokenRef,
   type EndpointToken,
 } from './tokens.ts';
+export {
+  declaredMembers,
+  workspaceMembers,
+  INVENTORY_TTL_MS,
+  MEMBERS_TTL_MS,
+  type WorkspaceMembers,
+} from './members.ts';
 export {
   isRemoteWorkspace,
   readWorkspaceFile,

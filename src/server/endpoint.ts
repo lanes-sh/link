@@ -10,7 +10,7 @@ import { deployedReadDeps } from './read/deployed.ts';
 import { version } from '#cli/version.ts';
 import type { Logger } from '#connectivity';
 import { silentLogger } from './logging.ts';
-import { listProfiles, readConnections } from '#profile';
+import { listProfiles, readConnections, workspaceMembers } from '#profile';
 import {
   applyReconcile,
   formatPlan,
@@ -214,13 +214,19 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
     // disagree about what a pairing token may do (ADR-069).
     const data = dataSurface(() => serving);
 
-    // One closure for the gate and the key link, so neither can disagree on reach.
-    const membersOf = async (subject: string): Promise<readonly string[]> =>
-      [...serving]
-        .filter(([, runtime]) => runtime.config.members.some((m) => m.subject === subject))
-        .map(([name]) => name);
+    // One resolver for the gate and the key link, so neither can disagree. It
+    // used to filter `serving` — the profiles that actually *opened* — so reach
+    // followed what this instance managed to start rather than what the owner
+    // declared, and a profile nothing had provisioned made its own members look
+    // like strangers; at the mint that refused the sign-in outright. Reading the
+    // declaration cannot widen what a caller touches, because
+    // `mergeCapabilities` still iterates the served map. Held rather than
+    // inlined because `stamp()` is the other half of the same pass (ADR-083).
+    const members = workspaceMembers(primary.resolution.workspaceRoot, {
+      onStale: (reason) => log.warn('serving the last known member list', { reason }),
+    });
 
-    const gate = await openAuthorization(primary, log, membersOf);
+    const gate = await openAuthorization(primary, log, members.profilesFor);
 
     // The authenticator and the authorization gate are built once, from the
     // runtime this endpoint booted with, and are deliberately not part of what
@@ -267,7 +273,7 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
       },
     );
 
-    const authenticator = endpointAuthenticator(primary, gate, membersOf);
+    const authenticator = endpointAuthenticator(primary, gate, members.profilesFor);
 
     const server = serve({
       generations,

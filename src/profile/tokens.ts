@@ -1,4 +1,4 @@
-import { loadWorkspaceProfiles, readConnections } from './workspace.ts';
+import { readConnections } from './workspace.ts';
 import type { EndpointToken } from './schema.ts';
 
 /**
@@ -62,51 +62,6 @@ export async function readEndpointTokens(
 }
 
 export type { EndpointToken };
-
-/**
- * Which profiles in this workspace list a subject as a member.
- *
- * The rule is ADR-060's and is stated once: a caller reaches a profile if that
- * profile's `members:` names them. `server/endpoint.ts` answers the same
- * question from its live runtime map when an OAuth code is minted; this answers
- * it from disk, which is what a static token needs because it has no mint to be
- * resolved at. Both are bounded by what the endpoint is actually serving —
- * `visibility.ts` iterates the served profiles, so a name returned here that is
- * not being served is filtered out rather than reachable.
- *
- * **Cached for the same window the token values are.** Without it a deployed
- * revision read every profile's YAML out of a bucket on every request. The
- * window is why `profile members remove` takes effect in seconds rather than on
- * the next rotation, which is the property worth keeping.
- */
-export function membersResolver(
-  workspaceRoot: string,
-  options: { readonly ttlMs?: number; readonly now?: () => number } = {},
-): (subject: string) => Promise<readonly string[]> {
-  const ttl = options.ttlMs ?? 5_000;
-  const now = options.now ?? Date.now;
-
-  let cached: ReadonlyMap<string, readonly string[]> | null = null;
-  let readAt = 0;
-
-  return async (subject) => {
-    if (cached === null || now() - readAt >= ttl) {
-      const { loaded } = await loadWorkspaceProfiles(workspaceRoot);
-      const bySubject = new Map<string, string[]>();
-      for (const entry of loaded) {
-        for (const member of entry.config.members) {
-          const known = bySubject.get(member.subject) ?? [];
-          known.push(entry.profile);
-          bySubject.set(member.subject, known);
-        }
-      }
-      cached = bySubject;
-      readAt = now();
-    }
-
-    return cached.get(subject) ?? [];
-  };
-}
 
 /**
  * Any token this workspace holds, for talking to its own endpoint.

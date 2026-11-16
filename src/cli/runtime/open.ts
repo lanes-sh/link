@@ -9,7 +9,7 @@ import {
   assertGrantsResolve,
   layout,
   listProfiles,
-  membersResolver,
+  workspaceMembers,
   readConnections,
   selectConnections,
   soleGrantFor,
@@ -364,7 +364,7 @@ export async function openRuntime(
       profile: config.instance.profile,
       tokens: async () => (await readConnections(root)).tokens,
       credentials,
-      profilesFor: membersResolver(root),
+      profilesFor: workspaceMembers(root).profilesFor,
       // **`error`, where the two closures above use `warn`, and that is the
       // point of it.** This logger is filtered by level and the container opens
       // its runtime with `quiet: true`, which sets the threshold to `error` —
