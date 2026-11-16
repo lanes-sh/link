@@ -31,7 +31,10 @@ function rig(options: { stamp?: () => string | null; reloaded?: boolean } = {}):
   const stale = staleness({
     generations,
     log: silentLogger(),
-    ...(options.stamp ? { members: { stamp: options.stamp } } : {}),
+    // `digest()` rather than a free `stamp()`, because the guard has to be able
+    // to provoke a pass: the authenticator chain stops at its first success, so
+    // on a static-token workspace the resolver is never otherwise asked.
+    ...(options.stamp ? { members: { digest: async () => options.stamp!() } } : {}),
     now: () => clock,
   });
 

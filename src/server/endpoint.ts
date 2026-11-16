@@ -49,6 +49,8 @@ export interface EndpointOptions {
   readonly reporter?: EndpointReporter | undefined;
   /** Operational events. Silent when absent, which is what the tests want. */
   readonly log?: Logger | undefined;
+  /** One clock for the member pass and the reload bound. See `convergence.test.ts`. */
+  readonly clock?: (() => number) | undefined;
 }
 
 export interface RunningEndpoint {
@@ -214,16 +216,13 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
     // disagree about what a pairing token may do (ADR-069).
     const data = dataSurface(() => serving);
 
-    // One resolver for the gate and the key link, so neither can disagree. It
-    // used to filter `serving` — the profiles that actually *opened* — so reach
-    // followed what this instance managed to start rather than what the owner
-    // declared, and a profile nothing had provisioned made its own members look
-    // like strangers; at the mint that refused the sign-in outright. Reading the
-    // declaration cannot widen what a caller touches, because
-    // `mergeCapabilities` still iterates the served map. Held rather than
-    // inlined because `stamp()` is the other half of the same pass (ADR-083).
+    // One resolver for the gate and the key link, so neither can disagree, and
+    // reading the *declaration* rather than the served map — which is what made
+    // an unprovisioned profile's members look like strangers (ADR-083). Held
+    // rather than inlined because `stamp()` is the other half of the same pass.
     const members = workspaceMembers(primary.resolution.workspaceRoot, {
       onStale: (reason) => log.warn('serving the last known member list', { reason }),
+      ...(options.clock ? { now: options.clock } : {}),
     });
 
     const gate = await openAuthorization(primary, log, members.profilesFor);
@@ -283,6 +282,7 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
       // For its digest, not for its answers: the request path asks whether the
       // declared config moved since this instance built what it is serving.
       members,
+      ...(options.clock ? { now: options.clock } : {}),
       ...(gate ? { authorization: gate.surface } : {}),
       ...(options.port !== undefined ? { port: options.port } : {}),
       ...(options.host !== undefined ? { host: options.host } : {}),

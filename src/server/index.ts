@@ -61,14 +61,16 @@ export interface ServerOptions {
   /** Hostnames this endpoint answers to. See `./rebinding.ts`. */
   readonly allowedHostnames?: readonly string[] | undefined;
   /**
-   * The member resolver, for the digest of the config it last read.
+   * The member resolver, for the digest of the declared config.
    *
    * Structural rather than the whole `WorkspaceMembers`, because this is the
-   * only half the request path wants: `stamp()` is free, since the pass that
-   * computed it ran inside authentication. Absent on a bind that has no
-   * resolver, which then behaves exactly as it did before (`./staleness.ts`).
+   * only half the request path wants. It runs a pass when the window has
+   * closed, rather than depending on which credential authenticated. Absent on
+   * a bind with no resolver, which behaves as before (`./staleness.ts`).
    */
-  readonly members?: { stamp(): string | null } | undefined;
+  readonly members?: { digest(): Promise<string | null> } | undefined;
+  /** The staleness guard's clock. A seam for the convergence tests; see `EndpointOptions`. */
+  readonly now?: (() => number) | undefined;
   /**
    * Meter the surface that answers before authentication.
    *
@@ -130,6 +132,7 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
     generations: options.generations,
     log: options.log,
     ...(options.members ? { members: options.members } : {}),
+    ...(options.now ? { now: options.now } : {}),
   });
 
   return {

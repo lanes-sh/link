@@ -67,6 +67,25 @@ export interface WorkspaceMembers {
    * one. Free — the pass that answered `profilesFor` computed it.
    */
   stamp(): string | null;
+  /**
+   * The same digest, running a pass first if the window has closed.
+   *
+   * `stamp()` is only ever as fresh as the last `profilesFor`, and which
+   * credential authenticated decides whether there has been one: the
+   * authenticator chain stops at the first link that succeeds, so a workspace
+   * whose callers hold static `llk_` tokens resolves at `BearerAuthenticator`
+   * and never reaches the gate or the key link. Those two are what call this
+   * resolver, so on such a workspace `stamp()` would stay null forever and
+   * anything watching it would never fire — which is most of CI.
+   *
+   * So a caller that wants the digest *as a question about the config* asks for
+   * it here, and pays the window rather than depending on a credential it does
+   * not choose. Returns null only while nothing is known, which is the same
+   * boot case `profilesFor` throws for; a failure after that serves the last
+   * good digest, because reporting a config as unmoved is the safe direction
+   * when the alternative is provoking a reload that cannot read it either.
+   */
+  digest(): Promise<string | null>;
 }
 
 /**
@@ -275,6 +294,16 @@ export function workspaceMembers(root: string, options: Options = {}): Workspace
     },
     stamp() {
       return good?.stamp ?? null;
+    },
+    async digest() {
+      try {
+        return (await refreshed()).stamp;
+      } catch {
+        // Nothing known, which is the boot case. `profilesFor` throws here so
+        // the authenticators fail closed; this one is asking whether the config
+        // moved, and "no idea" is not news.
+        return good?.stamp ?? null;
+      }
     },
   };
 }

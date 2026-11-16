@@ -73,8 +73,17 @@ export interface Staleness {
 export function staleness(options: {
   readonly generations: Generations;
   readonly log: Logger;
-  /** Absent on a bind with no member resolver, which then keeps the old behaviour. */
-  readonly members?: { stamp(): string | null } | undefined;
+  /**
+   * Absent on a bind with no member resolver, which then keeps the old behaviour.
+   *
+   * `digest()` rather than `stamp()`, and the difference is load-bearing:
+   * `stamp()` is only as fresh as the last `profilesFor`, and the authenticator
+   * chain stops at its first success — so on a workspace whose callers hold
+   * static `llk_` tokens the gate and the key link are never reached, this
+   * resolver is never asked, and a free read would have been null forever. The
+   * question here is about the config, not about whoever happened to call.
+   */
+  readonly members?: { digest(): Promise<string | null> } | undefined;
   readonly now?: (() => number) | undefined;
 }): Staleness {
   const now = options.now ?? Date.now;
@@ -104,7 +113,7 @@ export function staleness(options: {
     reload,
 
     async catchUp() {
-      const observed = options.members?.stamp() ?? null;
+      const observed = (await options.members?.digest()) ?? null;
       if (observed === null) return false;
 
       // The first observation is taken as what this instance booted with: it
