@@ -62,6 +62,7 @@ export const ACCEPTS: Record<string, readonly string[]> = {
   // exact defect this file was written for.
   'policy allow': ['connection'],
   'policy deny': ['connection'],
+  'policy remove': ['connection'],
   'workspace list': ['urls', 'workspace'],
   'target list': ['urls', 'workspace'],
   'workspace show': ['workspace'],

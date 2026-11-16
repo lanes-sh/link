@@ -120,7 +120,7 @@ export interface AuditSink {
 
 /** A sink whose events can be read back — a local directory, or a bucket. */
 export interface AuditReader {
-  tail(options?: AuditQuery): Promise<AuditEvent[]>;
+  tail(options?: AuditQuery): Promise<AuditPage>;
   /**
    * Check every chain in the log.
    *
@@ -143,6 +143,49 @@ export interface AuditQuery {
   readonly capability?: string;
   /** Restrict to denials — the common investigative question. */
   readonly deniedOnly?: boolean;
+  /**
+   * Only rows belonging to these profiles.
+   *
+   * The log is one chain per workspace and every row names the profile it
+   * happened in, so this is the predicate both surfaces that read the log
+   * actually want — and the one they could not ask for until now. The CLI's
+   * `--profile` narrows rows with it; the read surface intersects the caller's
+   * reach with the profile they asked about and passes the result.
+   *
+   * An empty array means **none**, and must not be collapsed to "unset". It is
+   * the honest answer for a caller asking about a profile they may not reach,
+   * and reading it as "no filter" would hand them the whole workspace's log.
+   */
+  readonly profiles?: readonly string[];
+  /**
+   * How many stored records this walk may examine before giving up.
+   *
+   * A predicate is applied to a record's *body*, so narrowing cannot narrow the
+   * walk: a profile with few rows in a busy workspace is found by reading past
+   * everybody else's. Without a budget one request can read the whole log, and
+   * the only existing bound is ten years of it. Defaults per adapter.
+   */
+  readonly budget?: number;
+}
+
+/**
+ * What a bounded walk returns: the rows, and how much of the log they speak for.
+ *
+ * `tail` answers with a page rather than an array because a filtered tail can
+ * stop early, and a short answer that cannot say it is short reads exactly like
+ * a complete one. That is the defect this shape exists to make impossible —
+ * asking for a hundred rows of one profile and being handed thirty, with
+ * nothing to distinguish "there are only thirty" from "we stopped looking".
+ *
+ * `verify()` already returns a report rather than a bare value, for the same
+ * reason: a reader has to be able to tell how much was looked at.
+ */
+export interface AuditPage {
+  readonly events: readonly AuditEvent[];
+  /** False when the budget stopped the walk before the window ended. */
+  readonly complete: boolean;
+  /** Records examined, so a short answer reads as short rather than as empty. */
+  readonly scanned: number;
 }
 
 /**

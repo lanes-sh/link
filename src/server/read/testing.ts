@@ -1,4 +1,5 @@
 import type { Authenticator, Principal } from '#auth';
+import type { AuditTail } from './routes.ts';
 
 /**
  * An authenticator that answers for one token.
@@ -22,4 +23,44 @@ export function fixedAuthenticator(
     header === `Bearer ${token}`
       ? { ok: true, principal }
       : { ok: false, reason: header ? 'invalid' : 'missing' };
+}
+
+type AuditRow = Awaited<ReturnType<AuditTail['tail']>>['events'][number];
+
+/** A stub audit log that honours its query, and remembers what it was asked. */
+export interface RecordingAuditTail extends AuditTail {
+  /** The options of the most recent call, or `undefined` if never called. */
+  readonly asked: { limit?: number; profiles?: readonly string[] } | undefined;
+}
+
+/**
+ * An audit log that actually applies the predicate it is handed.
+ *
+ * The stubs this replaces were `tail: async () => [rows]` — ignoring their
+ * options entirely. That is why `'the log narrows to one profile'` passed
+ * against a route which never pushed the predicate down and filtered the rows
+ * itself afterwards, with the limit already spent. A fixture that answers the
+ * same two rows whatever it is asked cannot tell a route that filters from a
+ * route that does not, so it reported the defect as working.
+ *
+ * It honours `limit` as well as `profiles`, in that order, because the order is
+ * the thing under test: filter, then cut. A fixture that cut first would hide
+ * the bug the same way the old one did.
+ */
+export function recordingAuditTail(rows: readonly AuditRow[]): RecordingAuditTail {
+  let asked: { limit?: number; profiles?: readonly string[] } | undefined;
+
+  return {
+    get asked() {
+      return asked;
+    },
+    tail: async (options) => {
+      asked = options;
+      const matching = options?.profiles
+        ? rows.filter((row) => options.profiles!.includes(row.profile))
+        : rows;
+      const events = options?.limit === undefined ? matching : matching.slice(0, options.limit);
+      return { events, complete: true, scanned: rows.length };
+    },
+  };
 }

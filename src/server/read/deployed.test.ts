@@ -6,7 +6,8 @@ import { ATTACHMENTS_PATH } from '../attachments.ts';
 import { ANY_ORIGIN, corsAware } from '../cors.ts';
 import { Generations } from '../generations.ts';
 import { silentLogger } from '../logging.ts';
-import type { AuditTail, ReadDeps } from './routes.ts';
+import type { ReadDeps } from './routes.ts';
+import { recordingAuditTail } from './testing.ts';
 
 /**
  * The read surface on a deployed endpoint (ADR-064).
@@ -36,8 +37,7 @@ const HOSTILE = 'https://evil.example';
  */
 const READS = TEST_TOKEN;
 
-const AUDIT: AuditTail = {
-  tail: async () => [
+const AUDIT = recordingAuditTail([
     {
       id: 'evt_1',
       timestamp: new Date('2026-01-01T00:00:00.000Z'),
@@ -50,8 +50,7 @@ const AUDIT: AuditTail = {
       status: 'ok',
       durationMs: 42,
     },
-  ],
-};
+]);
 
 /**
  * The placeholder `deployed()` swaps for the endpoint's real authenticator.

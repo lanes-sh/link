@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import type { AuditDraft, AuditStore } from './index.ts';
+import { describeQueryContract } from './conformance-query.ts';
+import { draft, ticking, type ContractSink } from './conformance-fixtures.ts';
+
+export type { ContractSink };
 
 /**
  * One behavioural suite, run against every backing store.
@@ -15,39 +18,6 @@ import type { AuditDraft, AuditStore } from './index.ts';
  * back, and there is no honest way to test that through the interface — the
  * absence of a way to mutate an event is the guarantee being tested.
  */
-export interface ContractSink {
-  open(options?: { now?: () => Date; run?: string }): AuditStore;
-  keys(): Promise<string[]>;
-  read(key: string): Promise<Uint8Array | null>;
-  write(key: string, bytes: Uint8Array): Promise<void>;
-  remove(key: string): Promise<void>;
-  dispose?(): Promise<void>;
-}
-
-function draft(overrides: Partial<AuditDraft> = {}): AuditDraft {
-  return {
-    profile: 'personal',
-    principal: 'personal:owner',
-    provider: 'gmail',
-    connection: 'gmail.main',
-    capability: 'gmail.users_messages_list',
-    arguments: { q: '<string:12>' },
-    authorization: 'allowed',
-    status: 'ok',
-    durationMs: 12,
-    ...overrides,
-  };
-}
-
-/** A clock that advances a second per call, so ordering is deterministic. */
-function ticking(start = Date.UTC(2026, 7, 12, 10, 0, 0)): () => Date {
-  let at = start;
-  return () => {
-    at += 1000;
-    return new Date(at);
-  };
-}
-
 export function describeAuditSinkContract(
   name: string,
   create: () => Promise<ContractSink> | ContractSink,
@@ -71,7 +41,7 @@ export function describeAuditSinkContract(
           expect(written.id).toMatch(/^evt_/);
           expect(written.timestamp).toBeInstanceOf(Date);
 
-          const [read] = await sink.tail();
+          const [read] = (await sink.tail()).events;
           expect(read?.id).toBe(written.id);
           expect(read?.capability).toBe('gmail.users_messages_list');
           expect(read?.timestamp.getTime()).toBe(written.timestamp.getTime());
@@ -85,7 +55,7 @@ export function describeAuditSinkContract(
           await sink.append(draft({ capability: 'two' }));
           await sink.append(draft({ capability: 'three' }));
 
-          expect((await sink.tail()).map((event) => event.capability)).toEqual([
+          expect((await sink.tail()).events.map((event) => event.capability)).toEqual([
             'one',
             'two',
             'three',
@@ -100,7 +70,7 @@ export function describeAuditSinkContract(
             await sink.append(draft({ capability }));
           }
 
-          expect((await sink.tail({ limit: 2 })).map((event) => event.capability)).toEqual([
+          expect((await sink.tail({ limit: 2 })).events.map((event) => event.capability)).toEqual([
             'three',
             'four',
           ]);
@@ -125,7 +95,7 @@ export function describeAuditSinkContract(
           await sink.append(draft({ capability: 'second' }));
           await sink.append(draft({ capability: 'third', authorization: 'denied_rate_limited' }));
 
-          expect((await sink.tail()).map((event) => event.capability)).toEqual([
+          expect((await sink.tail()).events.map((event) => event.capability)).toEqual([
             'first',
             'second',
             'third',
@@ -133,7 +103,7 @@ export function describeAuditSinkContract(
 
           // And a limit has to cut by that order too, not by the random half
           // of a key: the newest is the denial.
-          expect((await sink.tail({ limit: 1 })).map((event) => event.capability)).toEqual([
+          expect((await sink.tail({ limit: 1 })).events.map((event) => event.capability)).toEqual([
             'third',
           ]);
         });
@@ -145,7 +115,7 @@ export function describeAuditSinkContract(
           const args = { query: '<string:12>', nested: { keep: 1, list: [1, 'two', null] } };
           await sink.append(draft({ arguments: args }));
 
-          expect((await sink.tail())[0]?.arguments).toEqual(args);
+          expect((await sink.tail()).events[0]?.arguments).toEqual(args);
         });
       });
 
@@ -154,7 +124,7 @@ export function describeAuditSinkContract(
           const sink = fixture.open({ now: ticking() });
           await sink.append(draft({ arguments: {} }));
 
-          const [event] = await sink.tail();
+          const [event] = (await sink.tail()).events;
           expect(event).not.toHaveProperty('clientLabel');
           expect(event).not.toHaveProperty('error');
         });
@@ -167,7 +137,7 @@ export function describeAuditSinkContract(
             draft({ status: 'error', error: { kind: 'provider_error', message: 'upstream 500' } }),
           );
 
-          expect((await sink.tail())[0]?.error).toEqual({
+          expect((await sink.tail()).events[0]?.error).toEqual({
             kind: 'provider_error',
             message: 'upstream 500',
           });
@@ -188,7 +158,7 @@ export function describeAuditSinkContract(
           await sink.append(draft({ capability: 'before' }));
           await sink.append(draft({ capability: 'after' }));
 
-          expect((await sink.tail()).map((event) => event.capability)).toEqual([
+          expect((await sink.tail()).events.map((event) => event.capability)).toEqual([
             'before',
             'after',
           ]);
@@ -196,44 +166,7 @@ export function describeAuditSinkContract(
       });
     });
 
-    describe('filters', () => {
-      test('each predicate narrows the log', async () => {
-        await use(async (fixture) => {
-          const sink = fixture.open({ now: ticking() });
-          await sink.append(draft({ provider: 'gmail', capability: 'gmail.list' }));
-          await sink.append(
-            draft({ provider: 'drive', connection: 'drive.main', capability: 'drive.list' }),
-          );
-          await sink.append(
-            draft({ provider: 'vault', capability: 'vault.get', authorization: 'denied_by_policy' }),
-          );
-
-          expect((await sink.tail({ provider: 'drive' })).map((e) => e.capability)).toEqual([
-            'drive.list',
-          ]);
-          expect((await sink.tail({ connection: 'drive.main' })).map((e) => e.capability)).toEqual([
-            'drive.list',
-          ]);
-          expect((await sink.tail({ capability: 'gmail.list' })).map((e) => e.provider)).toEqual([
-            'gmail',
-          ]);
-          expect((await sink.tail({ deniedOnly: true })).map((e) => e.capability)).toEqual([
-            'vault.get',
-          ]);
-        });
-      });
-
-      test('since excludes anything older', async () => {
-        await use(async (fixture) => {
-          const sink = fixture.open({ now: ticking() });
-          const first = await sink.append(draft({ capability: 'old' }));
-          await sink.append(draft({ capability: 'new' }));
-
-          const after = new Date(first.timestamp.getTime() + 1);
-          expect((await sink.tail({ since: after })).map((e) => e.capability)).toEqual(['new']);
-        });
-      });
-    });
+    describeQueryContract(use);
 
     describe('the chain', () => {
       test('an untouched log verifies', async () => {
@@ -324,7 +257,7 @@ export function describeAuditSinkContract(
           expect(report.breaks[0]?.kind).toBe('malformed');
 
           // And a corrupt object must not take a tail down with it.
-          expect(await sink.tail()).toEqual([]);
+          expect((await sink.tail()).events).toEqual([]);
         });
       });
 

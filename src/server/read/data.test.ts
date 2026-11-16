@@ -12,9 +12,9 @@ import { ATTACHMENTS_PATH } from '../attachments.ts';
 import { ANY_ORIGIN, corsAware } from '../cors.ts';
 import { Generations } from '../generations.ts';
 import { silentLogger } from '../logging.ts';
-import { fixedAuthenticator } from './testing.ts';
+import { fixedAuthenticator, recordingAuditTail } from './testing.ts';
 import { memberPrincipal } from '#auth';
-import type { AuditTail, ReadDeps } from './routes.ts';
+import type { ReadDeps } from './routes.ts';
 
 /**
  * `/data`, the surface a pairing token may write (ADR-069).
@@ -37,7 +37,7 @@ const BEARER = 'llo_a-dashboard-bearer';
 /** The caller every case below is, unless it says otherwise. */
 const CALLER = memberPrincipal('lanes:HER', 'personal', ['personal']);
 
-const AUDIT: AuditTail = { tail: async () => [] };
+const AUDIT = recordingAuditTail([]);
 
 /** Every call recorded, so a test can assert what did and did not reach it. */
 interface Spy extends DataSurface {
@@ -418,7 +418,7 @@ describe('over the real composition, against a real workspace', () => {
       }),
     );
 
-    const events = await runtime.audit.tail({ limit: 50 });
+    const events = (await runtime.audit.tail({ limit: 50 })).events;
     const row = events.find(
       (event) => event.capability === 'memory.write' && event.arguments['id'] === 'logged-over-http',
     );

@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { serveRead, type AuditTail, type RunningReadListener } from './listener.ts';
+import { serveRead, type RunningReadListener } from './listener.ts';
+import { recordingAuditTail } from './testing.ts';
 import { memberPrincipal } from '#auth';
 import type { ProfileRuntime } from '../mcp/visibility.ts';
 
@@ -79,8 +80,7 @@ function selfSigned(): { cert: string; key: string } {
   }
 }
 
-const AUDIT: AuditTail = {
-  tail: async () => [
+const AUDIT = recordingAuditTail([
     {
       id: 'evt_1',
       timestamp: new Date('2026-01-01T00:00:00.000Z'),
@@ -109,8 +109,7 @@ const AUDIT: AuditTail = {
       durationMs: 7,
       error: { kind: 'upstream', message: 'the mailbox said no' },
     },
-  ],
-};
+]);
 
 /** No profiles: this file is about the wire, and `state.test.ts` is about the body. */
 const PROFILES = new Map<string, ProfileRuntime>();
@@ -284,6 +283,39 @@ describe('what can be reached', () => {
     const body = (await response.json()) as { events: { id: string }[] };
 
     expect(body.events.map((event) => event.id)).toEqual(['evt_2']);
+  });
+
+  test('and the narrowing reaches the store, rather than the response', async () => {
+    // The assertion the old fixture could not make, because it ignored its
+    // options. Filtering here instead spends the limit on rows this route is
+    // about to discard, so a hundred rows of one profile comes back as that
+    // profile's share of the global newest hundred — short, and silent about
+    // being short.
+    await read('/audit?profile=work');
+
+    expect(AUDIT.asked?.profiles).toEqual(['work']);
+  });
+
+  test('a profile the caller may not reach asks the store for nothing', async () => {
+    // An empty list, not an absent one: `undefined` means "no predicate" and
+    // would hand this caller the whole workspace's log.
+    await read('/audit?profile=stranger');
+
+    expect(AUDIT.asked?.profiles).toEqual([]);
+  });
+
+  test('a caller who names no profile is still narrowed to their own reach', async () => {
+    await read('/audit');
+
+    expect(AUDIT.asked?.profiles).toEqual(['personal', 'work']);
+  });
+
+  test('the tail says how much of the log it speaks for', async () => {
+    const response = await read('/audit');
+    const body = (await response.json()) as { complete: boolean; scanned: number };
+
+    expect(body.complete).toBe(true);
+    expect(body.scanned).toBe(2);
   });
 
   test('nothing else, and an unknown path does not confirm what this is', async () => {

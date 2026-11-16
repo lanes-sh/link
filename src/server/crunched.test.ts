@@ -259,6 +259,6 @@ describe('a crunched surface', () => {
 
     // De-advertising a tool must not make its own successful invocation look
     // like an agent reaching for something it was never offered.
-    expect(await crunched.audit.tail({ deniedOnly: true })).toHaveLength(0);
+    expect((await crunched.audit.tail({ deniedOnly: true })).events).toHaveLength(0);
   });
 });

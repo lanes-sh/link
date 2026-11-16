@@ -167,11 +167,11 @@ describe('a skill written over MCP is a prompt on the next call', () => {
     // The endpoint memoised the wire names it advertises. Left stale, a
     // just-added skill would be recorded as a refusal on its first use even
     // though it succeeded.
-    const events = await author.audit.tail({ capability: 'lanes_skills.draft-reply' });
-    const denied = await author.audit.tail({
+    const events = (await author.audit.tail({ capability: 'lanes_skills.draft-reply' })).events;
+    const denied = (await author.audit.tail({
       capability: 'lanes_skills.draft-reply',
       deniedOnly: true,
-    });
+    })).events;
 
     expect(events.length).toBeGreaterThan(0);
     expect(denied).toEqual([]);
@@ -299,10 +299,10 @@ describe('authoring is a separate grant', () => {
       { token },
     );
 
-    const refusals = await invokeOnly.audit.tail({
+    const refusals = (await invokeOnly.audit.tail({
       capability: 'lanes_skills.manage.write',
       deniedOnly: true,
-    });
+    })).events;
 
     expect(refusals.length).toBeGreaterThan(0);
     expect(await invokeFixture.store.has('x.md')).toBe(false);

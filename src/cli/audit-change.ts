@@ -54,6 +54,7 @@ export const CONFIG_CAPABILITIES = [
   'config.member.remove',
   'config.policy.allow',
   'config.policy.deny',
+  'config.policy.remove',
   'config.pair.mint',
   'config.pair.rotate',
 ] as const;

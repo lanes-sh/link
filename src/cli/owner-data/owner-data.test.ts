@@ -226,7 +226,7 @@ describe('the audit log', () => {
     const body = '---\ntitle: Logged\n---\n\nA sentence that must not be in the log.';
     await writeItem(runtime, 'memory', 'logged', body);
 
-    const events = await runtime.audit.tail({ limit: 50 });
+    const events = (await runtime.audit.tail({ limit: 50 })).events;
     const written = events.filter((event) => event.capability === 'memory.write');
     expect(written.length).toBeGreaterThan(0);
 
@@ -241,7 +241,7 @@ describe('the audit log', () => {
     await writeItem(runtime, 'memory', 'logged-removal', MEMORY);
     await removeItem(runtime, 'memory', 'logged-removal');
 
-    const events = await runtime.audit.tail({ limit: 50 });
+    const events = (await runtime.audit.tail({ limit: 50 })).events;
     expect(events.some((event) => event.capability === 'memory.forget')).toBe(true);
   });
 });

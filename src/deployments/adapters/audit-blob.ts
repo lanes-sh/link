@@ -9,6 +9,7 @@ import {
   verifyChain,
   type AuditDraft,
   type AuditEvent,
+  type AuditPage,
   type AuditQuery,
   type AuditStore,
   type AuditVerification,
@@ -56,6 +57,26 @@ import type { BlobStore } from '#stores/blobs';
  * `verify` does not use this — it enumerates everything, because it must.
  */
 const TAIL_YEAR_WINDOW = 10;
+
+/**
+ * How many stored records one `tail` may read before it stops looking.
+ *
+ * The year window bounds the *listing*; this bounds the *reading*, and until
+ * there was a predicate on something only the body carries, nothing needed it.
+ * A key says when an event happened and nothing about whose profile it was, so
+ * narrowing to one profile cannot narrow the walk — a quiet profile in a busy
+ * workspace is found by reading past everybody else's rows. Unbounded, one
+ * request for a profile that has written nothing reads ten years of the log.
+ *
+ * So the walk stops, and `complete: false` says that it did. A short answer
+ * that cannot say it is short is the defect this whole change is about, and
+ * reproducing it one layer down would be its own joke.
+ *
+ * Five thousand is ten times the read surface's own ceiling of 500 rows, so a
+ * caller asking for the maximum still has an order of magnitude of slack
+ * before the budget is what ends the walk.
+ */
+const SCAN_BUDGET = 5_000;
 
 const MARKER_PREFIX = 'runs.closed/';
 
@@ -122,14 +143,21 @@ export function createBlobAuditStore(options: BlobAuditOptions): AuditStore {
       );
     },
 
-    async tail(query: AuditQuery = {}): Promise<AuditEvent[]> {
+    async tail(query: AuditQuery = {}): Promise<AuditPage> {
       const limit = query.limit ?? 50;
+      const budget = query.budget ?? SCAN_BUDGET;
       const found: ChainedEvent[] = [];
+
+      // Records read, not records kept. The caller is being told how much of
+      // the log this answer speaks for, and a filtered walk reads far more
+      // than it returns — which is the whole reason the number is reported.
+      let scanned = 0;
+      let complete = true;
 
       const start = now().getUTCFullYear();
       const floor = query.since ? query.since.getUTCFullYear() : start - TAIL_YEAR_WINDOW;
 
-      for (let year = start; year >= floor && found.length < limit; year -= 1) {
+      for (let year = start; year >= floor && found.length < limit && complete; year -= 1) {
         const keys = (await storage.list(`${year}/`))
           .map((entry) => entry.key)
           .filter((key) => !key.startsWith(MARKER_PREFIX) && isOurs(key))
@@ -150,7 +178,15 @@ export function createBlobAuditStore(options: BlobAuditOptions): AuditStore {
           if (found.length >= limit && stamp !== lastStamp) break;
           lastStamp = stamp;
 
+          // Checked before the read rather than after it, so the budget bounds
+          // what this costs rather than merely reporting what it cost.
+          if (scanned >= budget) {
+            complete = false;
+            break;
+          }
+
           const bytes = await storage.get(key);
+          scanned += 1;
           if (bytes === null) continue;
 
           const record = decodeEvent(bytes);
@@ -167,7 +203,7 @@ export function createBlobAuditStore(options: BlobAuditOptions): AuditStore {
 
       // Collected newest-first so the limit keeps the most recent; presented
       // oldest-first, which is how a log is read.
-      return found.slice(0, limit).reverse().map(strip);
+      return { events: found.slice(0, limit).reverse().map(strip), complete, scanned };
     },
 
     async verify(): Promise<AuditVerification> {
@@ -204,6 +240,15 @@ function strip(record: ChainedEvent): AuditEvent {
 
 function matches(event: AuditEvent, query: AuditQuery): boolean {
   if (query.since && event.timestamp < query.since) return false;
+  // Inside `matches` rather than applied to the result, and that is the fix.
+  // The limit is spent during enumeration — see the guard above — so a
+  // predicate applied afterwards narrows an already-truncated set and returns
+  // one profile's share of the newest N instead of its own newest N.
+  //
+  // An empty array reaches here as a filter that matches nothing, which is
+  // deliberate: it is what a caller asking about a profile they may not reach
+  // is answered with. `query.profiles &&` is the guard, never `?.length`.
+  if (query.profiles && !query.profiles.includes(event.profile)) return false;
   if (query.provider && event.provider !== query.provider) return false;
   if (query.connection && event.connection !== query.connection) return false;
   if (query.capability && event.capability !== query.capability) return false;
