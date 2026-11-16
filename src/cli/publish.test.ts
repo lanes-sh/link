@@ -127,6 +127,26 @@ describe('a reload that left the edit out is not "served"', () => {
     expect(missingFrom(['personal'], undefined)).toEqual([]);
   });
 
+  test('and nothing is checked when the edit was a removal', () => {
+    // The one edit whose success *is* the name being absent. Defaulting to the
+    // profile it named made `profile remove` on a deployed target report that
+    // the endpoint "refused" the config and point at a "not serving" line that
+    // is never written — a false negative on the one row of this change where
+    // absence is the point. Found by running the removal against a real target.
+    expect(missingFrom(['personal', 'projects'], [])).toEqual([]);
+  });
+
+  test('the removal path is the one that passes an empty list, and still notifies', async () => {
+    // Pinned at the call site rather than only on the primitive, because what
+    // regressed here is which argument is passed, not what the function does
+    // with it. The `publishProfileEdit` call has to stay — the notify is what
+    // drops the profile from a warm instance — so this asserts both halves.
+    const source = await readFile(join(import.meta.dir, 'commands/profile/remove.ts'), 'utf8');
+
+    expect(source).toContain('publishProfileEdit(');
+    expect(source).toMatch(/publishProfileEdit\(\{[^}]*touched: \[\]/);
+  });
+
   test('a refused edit does not promise a restart will fix it', () => {
     // The wording that made this worth a field rather than just a reason: the
     // config *is* published, so the ordinary not-served tail — "the endpoint

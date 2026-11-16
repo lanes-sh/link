@@ -261,9 +261,12 @@ export const SELECTION: Record<string, Requires> = {
  * small version of the bug being fixed. `selection.test.ts` reads `main.ts` and
  * asserts this stays true.
  */
-const SUBCOMMANDS: Record<string, readonly string[]> = {
+export const SUBCOMMANDS: Record<string, readonly string[]> = {
   profile: ['add', 'list', 'default', 'remove', 'members'],
-  connection: ['list'],
+  // `declare` for the same reason `install-instructions` is below it: the
+  // command dispatches from `main.ts`, so leaving it out of this table does
+  // not break it — it silently switches its flag checking off.
+  connection: ['list', 'declare'],
   workspace: ['list', 'use', 'show'],
   target: ['list', 'use', 'show'],
   policy: ['list', 'allow', 'deny'],

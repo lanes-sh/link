@@ -2,7 +2,15 @@ import { describe, expect, test } from 'bun:test';
 import { readFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { ACCEPTS, SELECTION, assertKnownFlags, requirementFor } from './selection.ts';
+import {
+  ACCEPTS,
+  SELECTION,
+  SUBCOMMANDS,
+  assertKnownFlags,
+  dispatchWillRefuse,
+  requirementFor,
+} from './selection.ts';
+import { SECTIONS } from './usage-data.ts';
 import { requireSelection } from './selection-require.ts';
 import { CONNECT_CUSTOM_FLAGS, RESERVED_BY_GRAMMAR } from './commands/connect/custom/spec.ts';
 
@@ -513,6 +521,81 @@ describe('the grammar is read wherever it lives', () => {
 
     for (const command of ['memory get', 'skills add', 'vault key', 'entities find']) {
       expect(dispatched.has(command)).toBe(true);
+    }
+  });
+});
+
+/**
+ * That the help names only commands somebody can actually run.
+ *
+ * Found by running `lanes link --help` during a rehearsal and typing what it
+ * said. It documented `grant add <provider>.<id>` and `grant remove
+ * <provider>.<id>`; the dispatch has a bare `grant` and a bare `revoke`, so
+ * `grant remove <provider>.<id>` read "remove" as the connection id and failed
+ * with "this workspace holds no connection" — while `revoke`, the command that
+ * actually narrows a grant, appeared nowhere in the help at all.
+ *
+ * This file already reads the dispatch so a command cannot be added without
+ * declaring what it needs. This is the same check from the other end: the help
+ * is the only description of the grammar a user ever sees, and nothing compared
+ * it with the grammar.
+ *
+ * The second assertion catches the quieter half. `connection declare` worked
+ * and was documented, but was missing from `SUBCOMMANDS` — and a second word
+ * that table does not know makes `dispatchWillRefuse` return true, which makes
+ * `assertKnownFlags` and `requireSelection` both return early. So
+ * `connection declare --bogusflag` was accepted and ignored, which is precisely
+ * the defect the `mcp: install-instructions` comment in that table records.
+ */
+describe('the help names only commands that can be run', () => {
+  /**
+   * Where a bare second word is a positional value rather than a subcommand.
+   *
+   * `connect custom <id>` names the connector kind, not a subcommand of
+   * `connect` — every other provider is spelled `connect <provider>`, and
+   * `custom` is one of those names. An allowlist rather than a looser rule,
+   * because the looser rule is what let `grant add` through.
+   */
+  const POSITIONAL = new Set(['connect custom']);
+
+  /** Every documented command, as the two words dispatch reads. */
+  function documented(): { command: string; first: string; second: string }[] {
+    const out: { command: string; first: string; second: string }[] = [];
+    for (const section of SECTIONS) {
+      for (const entry of section.entries) {
+        const [first, second] = entry.command.split(/\s+/);
+        // `<name>`, `[--json]` and `--me` are arguments, not subcommands.
+        if (!first || !second || /^[<[-]/.test(second)) continue;
+        out.push({ command: entry.command, first, second });
+      }
+    }
+    return out;
+  }
+
+  test('every documented two-word command dispatches as two words', () => {
+    for (const { command, first, second } of documented()) {
+      const known = SUBCOMMANDS[first];
+      if (known === undefined) {
+        expect(
+          POSITIONAL.has(`${first} ${second}`),
+          `"${command}" — "${first}" takes no subcommands, so "${second}" is read as an argument`,
+        ).toBe(true);
+      } else {
+        expect(known, `"${command}" — "${second}" is not a subcommand of "${first}"`).toContain(second);
+      }
+    }
+  });
+
+  test('and every documented subcommand still has its flags checked', () => {
+    // `dispatchWillRefuse` returning true is what switches `assertKnownFlags`
+    // and `requireSelection` off, so a documented command it refuses is a
+    // command whose flags nothing validates.
+    for (const { first, second } of documented()) {
+      if (POSITIONAL.has(`${first} ${second}`)) continue;
+      expect(
+        dispatchWillRefuse(first, second),
+        `"${first} ${second}" is documented, so dispatch must not refuse it`,
+      ).toBe(false);
     }
   });
 });

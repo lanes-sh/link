@@ -87,10 +87,10 @@ export const SECTIONS: readonly Section[] = [
         description: 'name an account before authorising it, so its tools are advertised now and a client registered today does not have to be re-added after you connect it',
       },
       {
-        command: 'grant add <provider>.<id>',
+        command: 'grant <provider>.<id>',
         description: 'let a profile reach one, with nothing allowed yet',
       },
-      { command: 'grant remove <provider>.<id>' },
+      { command: 'revoke <provider>.<id>', description: 'take it back from this profile' },
       {
         command: 'start [--only]',
         description: 'reconcile and serve every profile on one endpoint',
