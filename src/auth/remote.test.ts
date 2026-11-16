@@ -546,3 +546,80 @@ describe('an API key the API signed', () => {
     });
   });
 });
+
+/**
+ * What a `session revoke` has to be able to see, and to end.
+ *
+ * `revokeFamily` existed with no caller because it takes a family id and
+ * nothing in the tree ever printed one — the hook was there and unreachable
+ * from a command. These cover the enumeration that makes it callable, and why
+ * the family rather than the token is the right unit to drop.
+ */
+describe('listing and ending sessions', () => {
+  const held = (): OAuthStore => new OAuthStore(memoryStore());
+
+  const access = (family: string, subject: string, expiresAt = HOUR) =>
+    ({ clientId: 'llc_desktop', kind: 'access', scope: 'mcp', family, subject, expiresAt }) as never;
+  const refresh = (family: string, subject: string) =>
+    ({ clientId: 'llc_desktop', kind: 'refresh', scope: 'mcp', family, subject, expiresAt: HOUR }) as never;
+
+  test('one authorization is one row, not three', async () => {
+    // A family holds an access token and the refresh that replaces it, and a
+    // spent refresh leaves a tombstone beside them. Counting rows rather than
+    // live access tokens would report three sessions where somebody opened one.
+    const store = held();
+    await store.putToken('lla_a', access('llf_one', 'lanes:HER'));
+    await store.putToken('llr_a', refresh('llf_one', 'lanes:HER'));
+
+    const sessions = await store.sessions();
+
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]!.subject).toBe('lanes:HER');
+    expect(sessions[0]!.family).toBe('llf_one');
+    expect(sessions[0]!.clientId).toBe('llc_desktop');
+  });
+
+  test('an expired row is not a session, and neither is one naming nobody', async () => {
+    // The second is a token minted before ADR-060. `IssuedTokenAuthenticator`
+    // already refuses it, so listing it would offer an operator something to
+    // end that nothing can use.
+    const store = held();
+    await store.putToken('lla_old', access('llf_old', 'lanes:HER', Date.now() - 1_000));
+    await store.putToken('lla_anon', {
+      clientId: 'llc_desktop',
+      kind: 'access',
+      scope: 'mcp',
+      family: 'llf_anon',
+      expiresAt: HOUR,
+    } as never);
+
+    expect(await store.sessions()).toEqual([]);
+  });
+
+  test('ending the family ends the refresh too, so nothing can mint another', async () => {
+    // Why the family is the unit. Dropping the access token alone would leave a
+    // refresh token able to exchange itself for a new one — a revocation that
+    // revokes nothing, with the holder back inside a minute.
+    const store = held();
+    await store.putToken('lla_a', access('llf_one', 'lanes:HER'));
+    await store.putToken('llr_a', refresh('llf_one', 'lanes:HER'));
+
+    await store.revokeFamily('llf_one');
+
+    expect(await store.token('lla_a')).toBeNull();
+    expect(await store.token('llr_a')).toBeNull();
+    expect(await store.sessions()).toEqual([]);
+  });
+
+  test("one subject's sessions are separable from another's", async () => {
+    const store = held();
+    await store.putToken('lla_a', access('llf_one', 'lanes:HER'));
+    await store.putToken('lla_b', access('llf_two', 'lanes:HIM'));
+
+    await store.revokeFamily('llf_one');
+
+    const left = await store.sessions();
+    expect(left).toHaveLength(1);
+    expect(left[0]!.subject).toBe('lanes:HIM');
+  });
+});

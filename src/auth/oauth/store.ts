@@ -44,30 +44,28 @@ export const OAUTH_SUBSPACES: readonly string[] = [CLIENTS, CODES, TOKENS, PENDI
 /** Far above any real number of connectors, and far below a problem. */
 const MAX_CLIENTS = 200;
 
+/** One live sign-in: the family a revocation names, and who holds it. */
+export interface LiveSession {
+  readonly subject: string;
+  readonly clientId: string;
+  readonly family: string;
+  readonly expiresAt: number;
+}
+
 /**
  * How long a resolved access-token record may be answered from memory.
  *
- * The memo this bounds was introduced to remove a store read per *request* — on
- * a deployed target, a bucket round trip before any of the caller's work begins
- * — and it was bounded by the record's own expiry on the reading that a record
- * is immutable until then. It is: `putToken` writes it once and nothing
- * rewrites it. What the reading missed is that a record can stop *existing*,
- * and that the deletion happens somewhere else.
+ * The memo was bounded by the record's own expiry, on the reading that a record
+ * is immutable until then. It is — but it can stop *existing*, and the delete
+ * happens in another process: `revokeToken` and `revokeFamily` clear this map
+ * only where they run, the store is built once in `openAuthorization`, and
+ * ADR-029 does not rebuild the gate on a reload. So a cached record outlived
+ * every revocation for its full `access_token_ttl_minutes`, and nothing could
+ * end a session on a warm instance (ADR-083).
  *
- * `revokeToken` and `revokeFamily` clear this map in whichever process runs
- * them. A revocation from the CLI writes the workspace store and cannot touch a
- * running endpoint's copy, the `OAuthStore` is built once in
- * `openAuthorization`, and ADR-029 deliberately does not rebuild the
- * authorization gate on a reload — so a cached record survived every reload for
- * its full `access_token_ttl_minutes`, twelve hours by default. Nothing could
- * end a session on a warm instance, which would have made a `session revoke`
- * command report a success it had not achieved.
- *
- * Five seconds, matching the window membership already resolves on, so the two
- * halves of "this caller may do this" go stale together. The cost is one store
- * read per active token per five seconds per instance, against the per-request
- * read the memo was added to remove — two orders of magnitude of the saving
- * kept, and the assumption that made it unsafe dropped (ADR-083).
+ * Five seconds, matching the window membership resolves on, so the two halves
+ * of "this caller may do this" go stale together. One read per active token per
+ * window per instance, against the per-request read the memo removed.
  */
 export const SEEN_TTL_MS = 5_000;
 
@@ -358,6 +356,28 @@ export class OAuthStore {
         await this.#state.delete(TOKENS, key);
       }
     }
+  }
+
+  /**
+   * Every live session, so a revocation can name one.
+   *
+   * `revokeFamily` takes a family id and nothing in the tree ever printed one,
+   * so it had no callable shape from a command. Access rows only, so a refresh
+   * row and a spent tombstone do not count one authorization three times.
+   */
+  async sessions(): Promise<readonly LiveSession[]> {
+    const live: LiveSession[] = [];
+
+    for (const key of await this.#state.keys(TOKENS)) {
+      const record = await this.#read<IssuedToken>(TOKENS, key);
+      if (!record || record.kind !== 'access' || record.subject === undefined) continue;
+      if (record.expiresAt <= this.#now()) continue;
+
+      const { subject, clientId, family, expiresAt } = record;
+      live.push({ subject, clientId, family, expiresAt });
+    }
+
+    return live;
   }
 
   async #read<T>(namespace: string, key: string): Promise<T | null> {
