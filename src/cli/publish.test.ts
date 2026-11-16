@@ -30,10 +30,19 @@ describe('what an edit says it did', () => {
 
     expect(line).toContain('Serving it now');
     expect(line).toContain('42 tools');
-    expect(line).toContain('reconnect');
     // Worded for a shrinking surface as well: `policy deny` prints this line,
     // and there is nothing to "pick up" after one.
     expect(line).not.toContain('pick them up');
+
+    // **Asserted on the meaning, not on the word.** This used to check that the
+    // line contained "reconnect", which still passes against a line reading
+    // "needs no reconnect" — the opposite advice. The blanket instruction was
+    // right for the wrong reason before ADR-082 and is wrong now: a cached
+    // client can name a profile, member or grant that appeared since it listed.
+    // What it cannot name is a tool name it never fetched, which is a new
+    // provider, and `lanes_tools_call` reaches those (ADR-075).
+    expect(line).toContain('needs no');
+    expect(line).toContain('lanes_tools_call');
   });
 
   test('an endpoint that did not report a count says only what it knows', () => {
