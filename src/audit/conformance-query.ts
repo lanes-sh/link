@@ -120,6 +120,44 @@ export function describeQueryContract(
       });
     });
 
+    test('batched reading changes neither which rows come back nor their order', async () => {
+      // The walk reads in batches, so the limit and the ordering are applied
+      // across a boundary rather than key by key. A first attempt advanced by
+      // the batch size while the budget had cut the batch short, which skipped
+      // keys silently — this is wide enough to cross several boundaries and
+      // asks for a count that is not a multiple of one.
+      await use(async (fixture) => {
+        const sink = fixture.open({ now: ticking() });
+        const wanted: string[] = [];
+        for (let i = 0; i < 90; i += 1) {
+          const mine = i % 3 === 0;
+          if (mine) wanted.push(`cap-${i}`);
+          await sink.append(
+            draft({ profile: mine ? 'personal' : 'noise', capability: `cap-${i}` }),
+          );
+        }
+
+        const page = await sink.tail({ profiles: ['personal'], limit: 25 });
+
+        // Newest 25 of the 30 that match, oldest-first, with none skipped.
+        expect(page.events.map((e) => e.capability)).toEqual(wanted.slice(-25));
+        expect(page.complete).toBe(true);
+      });
+    });
+
+    test('a budget that cuts a batch short still stops where it said', async () => {
+      await use(async (fixture) => {
+        const sink = fixture.open({ now: ticking() });
+        for (let i = 0; i < 90; i += 1) await sink.append(draft({ profile: 'noise' }));
+
+        // Not a multiple of the batch size, and smaller than one.
+        const page = await sink.tail({ profiles: ['absent'], budget: 20 });
+
+        expect(page.scanned).toBe(20);
+        expect(page.complete).toBe(false);
+      });
+    });
+
     test('a walk that reaches the end of the log is complete', async () => {
       await use(async (fixture) => {
         const sink = fixture.open({ now: ticking() });

@@ -72,11 +72,24 @@ const TAIL_YEAR_WINDOW = 10;
  * that cannot say it is short is the defect this whole change is about, and
  * reproducing it one layer down would be its own joke.
  *
- * Five thousand is ten times the read surface's own ceiling of 500 rows, so a
- * caller asking for the maximum still has an order of magnitude of slack
- * before the budget is what ends the walk.
+ * Set from a measurement rather than from taste, because the first guess at it
+ * was wrong by an order of magnitude. Five thousand objects read one at a time
+ * against a bucket is minutes, and the request this serves is answered inside
+ * one HTTP timeout or not at all. Read in batches (see `tail`) a thousand is
+ * roughly a second, which leaves room under that timeout for the listing and
+ * the response beside it.
  */
-const SCAN_BUDGET = 5_000;
+const SCAN_BUDGET = 1_000;
+
+/**
+ * How many objects one batch of the walk has in flight.
+ *
+ * The walk is latency-bound, not bandwidth-bound: an event is a few hundred
+ * bytes and a round trip is tens of milliseconds, so the whole cost is the
+ * number of times it waits. Thirty-two turns a thousand sequential waits into
+ * about thirty.
+ */
+const READ_BATCH = 32;
 
 const MARKER_PREFIX = 'runs.closed/';
 
@@ -166,31 +179,60 @@ export function createBlobAuditStore(options: BlobAuditOptions): AuditStore {
           .sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
 
         let lastStamp: string | null = null;
+        let enough = false;
 
-        for (const key of keys) {
-          const stamp = stampOf(key);
-
-          // Stop at the limit, but never mid-millisecond. Events sharing a
-          // timestamp sort by the random half of their id, so cutting inside
-          // one of those groups would keep an arbitrary subset of it — which
-          // is how a rate-limited call, answered in well under a millisecond,
-          // goes missing from the tail that exists to show it.
-          if (found.length >= limit && stamp !== lastStamp) break;
-          lastStamp = stamp;
-
-          // Checked before the read rather than after it, so the budget bounds
-          // what this costs rather than merely reporting what it cost.
-          if (scanned >= budget) {
+        // Read in ordered batches rather than one key at a time. A predicate on
+        // something only the body carries means the walk reads objects it will
+        // discard, and one round trip each is what that costs: against a bucket
+        // this took ten to fifteen seconds for twenty rows, and the default
+        // hundred exceeded the request timeout outright — correct, and too slow
+        // to use. Sequential was never a requirement; it was just what reading
+        // one key at a time looked like.
+        //
+        // Ordering is unchanged. The batch is a slice of the same descending
+        // key order and its results are examined in that order, so the limit
+        // and the mid-millisecond rule below see exactly the sequence they saw
+        // before. The cost is over-reading up to a batch at the boundary, which
+        // `scanned` counts honestly because it is paid.
+        // Advanced by what was actually taken, not by the batch size: the
+        // budget can cut a batch short, and stepping over the difference would
+        // skip keys and miss the next budget check at the same time.
+        let at = 0;
+        while (at < keys.length && !enough) {
+          // Bounds the fetch, not just the bookkeeping — a budget checked after
+          // the read would report the cost rather than cap it.
+          const room = budget - scanned;
+          if (room <= 0) {
             complete = false;
             break;
           }
 
-          const bytes = await storage.get(key);
-          scanned += 1;
-          if (bytes === null) continue;
+          const take = Math.min(READ_BATCH, room, keys.length - at);
+          const slice = keys.slice(at, at + take);
+          const bodies = await Promise.all(slice.map((key) => storage.get(key)));
+          scanned += take;
+          at += take;
 
-          const record = decodeEvent(bytes);
-          if (record && matches(record, query)) found.push(record);
+          for (const [offset, key] of slice.entries()) {
+            const stamp = stampOf(key);
+
+            // Stop at the limit, but never mid-millisecond. Events sharing a
+            // timestamp sort by the random half of their id, so cutting inside
+            // one of those groups would keep an arbitrary subset of it — which
+            // is how a rate-limited call, answered in well under a millisecond,
+            // goes missing from the tail that exists to show it.
+            if (found.length >= limit && stamp !== lastStamp) {
+              enough = true;
+              break;
+            }
+            lastStamp = stamp;
+
+            const bytes = bodies[offset];
+            if (bytes === null || bytes === undefined) continue;
+
+            const record = decodeEvent(bytes);
+            if (record && matches(record, query)) found.push(record);
+          }
         }
       }
 
