@@ -14,6 +14,7 @@
  *   pair.ts      pair — the dashboard's read surface (ADR-063)
  *   audit.ts     audit tail and verify, and the Markdown rendering of tail
  *   token.ts     token show, token rotate
+ *   session.ts   session list, session revoke
  *   policy.ts    policy list/allow/deny, config show
  *
  * This file stays a barrel because `./operate.ts` is the spelling `main.ts` and
@@ -42,4 +43,5 @@ export {
   tokenRotate,
   tokenShow,
 } from './operate/token.ts';
+export { sessionList, sessionRevoke, type SessionFlags } from './operate/session.ts';
 export { configShow, policyList, policyRule } from './operate/policy.ts';

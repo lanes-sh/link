@@ -80,6 +80,12 @@ export const ACCEPTS: Record<string, readonly string[]> = {
   // what `--raw` exists to avoid.
   'token rotate': ['show', 'raw', 'id'],
   'token revoke': ['yes', 'id'],
+  // `--subject`/`--me` rather than a positional, so the two commands that name
+  // a Lanes subject name it the same way. `--yes` because this ends a live
+  // sign-in and will ask before it does.
+  session: ['json'],
+  'session list': ['json'],
+  'session revoke': ['subject', 'me', 'yes'],
   'audit tail': ['limit', 'denied-only', 'format'],
   attach: ['connection'],
   outputs: ['show'],

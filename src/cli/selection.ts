@@ -220,6 +220,12 @@ export const SELECTION: Record<string, Requires> = {
   'token issue': 'workspace',
   'token list': 'workspace',
   'token revoke': 'workspace',
+  // A session is a live record in the workspace's `oauth.v1` state, not a
+  // declared row, so one store serves every profile and `--profile` could not
+  // affect the answer — the mistake ADR-068 took out of the `token` family.
+  session: 'workspace',
+  'session list': 'workspace',
+  'session revoke': 'workspace',
   'audit tail': 'workspace',
   'audit verify': 'workspace',
   'secrets set': 'workspace',
@@ -255,14 +261,18 @@ export const SELECTION: Record<string, Requires> = {
  * small version of the bug being fixed. `selection.test.ts` reads `main.ts` and
  * asserts this stays true.
  */
-const SUBCOMMANDS: Record<string, readonly string[]> = {
+export const SUBCOMMANDS: Record<string, readonly string[]> = {
   profile: ['add', 'list', 'default', 'remove', 'members'],
-  connection: ['list'],
+  // `declare` for the same reason `install-instructions` is below it: the
+  // command dispatches from `main.ts`, so leaving it out of this table does
+  // not break it — it silently switches its flag checking off.
+  connection: ['list', 'declare'],
   workspace: ['list', 'use', 'show'],
   target: ['list', 'use', 'show'],
   policy: ['list', 'allow', 'deny'],
   identity: ['add', 'list', 'remove'],
   token: ['show', 'rotate', 'issue', 'list', 'revoke'],
+  session: ['list', 'revoke'],
   audit: ['tail', 'verify'],
   config: ['show'],
   setup: ['plan'],
@@ -338,6 +348,9 @@ export const EXPLICIT_WORKSPACE = new Set([
   'profile remove',
   'disconnect',
   'token rotate',
+  // It destroys, and against the wrong endpoint it destroys somebody else's
+  // sign-in — which is exactly what ADR-061 keeps `default_workspace` away from.
+  'session revoke',
 ]);
 
 const UNIVERSAL = ['help', 'json', 'quiet'];

@@ -341,10 +341,28 @@ export function nextAfterEdit(outcome: PublishOutcome): string {
     // as nonsense after a deny, where the client is holding one tool too many
     // rather than one too few — and where the stale entry is a tool the model
     // will keep calling until it is gone.
+    //
+    // **"Reconnect it to match" was blanket advice and is now wrong for most of
+    // what prints this.** It was right for the wrong reason even before: the
+    // bug it was written for was a `profile` enum baked into every cached tool,
+    // which is gone (ADR-082), and the thing that actually needed reconnecting
+    // was a browser session's frozen reach, which is also gone (ADR-083). A
+    // cached client can now name a profile, a connection or an account that
+    // appeared after it last listed, and reach it.
+    //
+    // What a cached list still cannot carry is a *name* it never fetched, which
+    // is a new provider rather than a new profile, member or grant — and
+    // `lanes_tools_call` reaches those without a re-fetch (ADR-075).
+    //
+    // Both halves, unbranched, because this outcome does not know which kind of
+    // edit produced it and inventing a field to tell it would mean every caller
+    // deciding. Two sentences that are each always true beat one that is right
+    // for the common case and misleading for the other.
     return (
       `${served}\n` +
-      `  ${outcome.tools} tools are advertised now. A client connected before this is still\n` +
-      `  holding the list it fetched then — reconnect it to match.`
+      `  ${outcome.tools} tools are advertised now. A client connected before this needs no\n` +
+      `  reconnect to name what changed; a tool name that is new to it needs one, or\n` +
+      `  lanes_tools_call.`
     );
   }
 

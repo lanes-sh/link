@@ -95,6 +95,7 @@ Run.
 | [080](080-an-api-key-is-signed-not-stored.md) | The API key and the `lanes link token` were one object under two names; the dashboard mints it, `api.lanes.sh` signs it, and the endpoint verifies it against published keys instead of holding a copy |
 | [081](081-the-old-flag-outlives-its-deadline.md) | `--target` outlives the deadline ADR-061 set it, because the app now updates this CLI and still spells the old word |
 | [082](082-a-routing-argument-names-no-set.md) | `profile` and `connection` become plain strings on every tool: an enum in a list nothing can refresh refuses only the correct call, and non-disclosure moves from the schema to a refusal that cannot be told apart |
+| [083](083-reach-is-resolved-per-request.md) | Every credential resolves membership per request and from the declared config, so a profile added is reached by a client that never re-listed and a member removed loses it in seconds; an issued token that resolves to nobody is refused, because the mint would not have issued it |
 
 Where an ADR departs from init.md, it says so at the top. Three are significant:
 

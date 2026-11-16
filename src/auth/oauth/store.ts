@@ -44,6 +44,26 @@ export const OAUTH_SUBSPACES: readonly string[] = [CLIENTS, CODES, TOKENS, PENDI
 /** Far above any real number of connectors, and far below a problem. */
 const MAX_CLIENTS = 200;
 
+/** One live sign-in: the family a revocation names, and who holds it. */
+export interface LiveSession {
+  readonly subject: string;
+  readonly clientId: string;
+  readonly family: string;
+  readonly expiresAt: number;
+}
+
+/**
+ * How long a resolved access-token record may be answered from memory.
+ *
+ * It was bounded by the record's own expiry, on the reading that a record is
+ * immutable until then. It is — but it can stop *existing*, and the delete
+ * happens in another process, so a cached record outlived every revocation for
+ * its full `access_token_ttl_minutes` and nothing could end a session on a warm
+ * instance. Five seconds, matching the window membership resolves on, so the
+ * two halves of "this caller may do this" go stale together (ADR-083).
+ */
+export const SEEN_TTL_MS = 5_000;
+
 export interface RegisteredClient {
   readonly clientId: string;
   readonly redirectUris: readonly string[];
@@ -249,7 +269,7 @@ export class OAuthStore {
 
   async putToken(token: string, record: IssuedToken): Promise<void> {
     await this.#state.set(TOKENS, hashToken(token), JSON.stringify(record));
-    this.#seen.set(hashToken(token), record);
+    this.#seen.set(hashToken(token), { record, readAt: this.#now() });
   }
 
   /**
@@ -257,23 +277,27 @@ export class OAuthStore {
    *
    * Every authenticated request resolves one of these, and the resolution was a
    * store read every time — on a deployed target, a bucket round trip before
-   * any of the caller's work begins. The record it fetches is immutable until
-   * it expires: `putToken` writes it once at mint, and nothing rewrites it.
+   * any of the caller's work begins. The record it fetches is written once at
+   * mint and never rewritten.
    *
-   * Bounded by the record's own expiry, so a cached copy can never outlive the
-   * grant it represents, and a revocation is a `delete` that this map is asked
-   * about only until then.
+   * **Bounded by `SEEN_TTL_MS` rather than by the record's expiry**, which is
+   * the correction: the record cannot change, but it can be *deleted*, and the
+   * delete usually happens in another process. See the constant.
    */
-  readonly #seen = new Map<string, IssuedToken>();
+  readonly #seen = new Map<string, { record: IssuedToken; readAt: number }>();
 
   async token(token: string): Promise<IssuedToken | null> {
     const key = hashToken(token);
 
     const remembered = this.#seen.get(key);
     if (remembered) {
-      if (remembered.expiresAt > this.#now()) return remembered;
-      // Expired in memory: forget it and fall through, so the store's own
-      // expiry path still runs and still drops the row.
+      // Both bounds, and they answer different questions. The window is whether
+      // this process may still trust its copy; the record's own expiry is
+      // whether the grant is alive at all. A copy inside the window whose
+      // record has expired must still fall through, so the store's expiry path
+      // runs and drops the row.
+      const fresh = this.#now() - remembered.readAt < SEEN_TTL_MS;
+      if (fresh && remembered.record.expiresAt > this.#now()) return remembered.record;
       this.#seen.delete(key);
     }
 
@@ -288,7 +312,7 @@ export class OAuthStore {
       return null;
     }
 
-    this.#seen.set(key, record);
+    this.#seen.set(key, { record, readAt: this.#now() });
     return record;
   }
 
@@ -306,27 +330,58 @@ export class OAuthStore {
     const record = await this.#read<IssuedToken>(TOKENS, key);
     if (!record) return;
     const spent: IssuedToken = { ...record, kind: 'consumed', consumedAt: this.#now() };
-    this.#seen.set(key, spent);
+    this.#seen.set(key, { record: spent, readAt: this.#now() });
     await this.#state.set(TOKENS, key, JSON.stringify(spent));
   }
 
   /**
-   * Drop every token in a refresh family.
+   * Drop every token in one or more refresh families, in a single pass.
    *
-   * A replay no longer calls this, and a replay was the only thing that did —
-   * see `OAuthServer.#refresh` and ADR-035. Kept because it is the shape a
-   * deliberate revocation takes: one authorization's whole chain, dropped on
-   * purpose. Nothing in `src/` reaches it today, so read a call site as new
-   * policy rather than as the old one returning.
+   * `session revoke` is the caller; a replay no longer is (ADR-035). **Several
+   * at once**, since one sign-in is one family and four clients are four, and a
+   * pass is a LIST plus a GET per key over a store holding a row per rotation
+   * and tombstones for thirty days — per family, that took 2m43s for six.
    */
-  async revokeFamily(family: string): Promise<void> {
+  async revokeFamily(family: string | Iterable<string>): Promise<void> {
+    const wanted = new Set(typeof family === 'string' ? [family] : family);
+    if (wanted.size === 0) return;
     for (const key of await this.#state.keys(TOKENS)) {
       const record = await this.#read<IssuedToken>(TOKENS, key);
-      if (record?.family === family) {
+      if (record && wanted.has(record.family)) {
         this.#seen.delete(key);
         await this.#state.delete(TOKENS, key);
       }
     }
+  }
+
+  /**
+   * Every live session, one row per family, so a revocation can name one.
+   *
+   * **A family, and live if *any* row in it is.** The first version listed
+   * unexpired `access` rows only — so a client that had not called in twelve
+   * hours held an expired access row and a live thirty-day refresh, and
+   * `session revoke` reported no session while the holder could exchange that
+   * refresh and be back inside a minute. An enumeration that misses a
+   * credential is a revocation that does not revoke. `consumed` is skipped: a
+   * tombstone keeps nothing alive (ADR-035).
+   */
+  async sessions(): Promise<readonly LiveSession[]> {
+    const byFamily = new Map<string, LiveSession>();
+
+    for (const key of await this.#state.keys(TOKENS)) {
+      const record = await this.#read<IssuedToken>(TOKENS, key);
+      if (!record || record.kind === 'consumed' || record.subject === undefined) continue;
+      if (record.expiresAt <= this.#now()) continue;
+
+      const { subject, clientId, family, expiresAt } = record;
+      const held = byFamily.get(family);
+      // The furthest-out row: a refresh outlives its access token by design.
+      if (!held || held.expiresAt < expiresAt) {
+        byFamily.set(family, { subject, clientId, family, expiresAt });
+      }
+    }
+
+    return [...byFamily.values()];
   }
 
   async #read<T>(namespace: string, key: string): Promise<T | null> {

@@ -3,7 +3,7 @@ import { IssuedTokenAuthenticator, LanesKeyAuthenticator, OidcAuthenticator } fr
 import { EVERY_PROFILE, mayReach } from './principal.ts';
 import type { ApiKeyVerifier } from './lanes/api-key.ts';
 import type { OidcVerifier } from './oidc.ts';
-import { OAuthStore } from './oauth/store.ts';
+import { OAuthStore, SEEN_TTL_MS } from './oauth/store.ts';
 import type { KeyValueStore } from '#stores/state';
 
 /**
@@ -42,9 +42,14 @@ function memoryStore(): KeyValueStore {
  * them back, and nothing else.
  */
 
-function authenticator(): { store: OAuthStore; auth: IssuedTokenAuthenticator } {
+function authenticator(
+  // Resolved per request now (ADR-083), so the harness has to supply the answer
+  // the endpoint's `workspaceMembers` would. Defaults to the one profile these
+  // cases are about; a test drives revocation by passing `[]`.
+  profilesFor: (subject: string) => Promise<readonly string[]> = async () => ['personal'],
+): { store: OAuthStore; auth: IssuedTokenAuthenticator } {
   const store = new OAuthStore(memoryStore());
-  return { store, auth: new IssuedTokenAuthenticator(store, 'personal') };
+  return { store, auth: new IssuedTokenAuthenticator(store, 'personal', profilesFor) };
 }
 
 const HOUR = Date.now() + 3_600_000;
@@ -85,43 +90,92 @@ describe('a token that names nobody', () => {
 });
 
 describe('a token that names a person', () => {
-  test('carries the profiles resolved when it was minted', async () => {
-    const { store, auth } = authenticator();
-    await store.putToken('lla_hers', {
+  /** A stored access-token row for `lanes:HER`, with whatever list it was minted with. */
+  const hers = (profiles: readonly string[]) =>
+    ({
       clientId: 'llc_x',
       kind: 'access',
       scope: 'mcp',
       family: 'llf_x',
       subject: 'lanes:HER',
-      profiles: ['personal', 'shared'],
+      profiles,
       expiresAt: HOUR,
-    });
+    }) as never;
+
+  test('reaches what the member list says now, not what the mint recorded', async () => {
+    // The release this is. A browser session's reach was resolved once, when
+    // its code was minted, and rode unchanged through thirty days of refresh —
+    // so a profile added after a client signed in could not be reached by it at
+    // all, whatever the schema said. The stored list is still *written*, for the
+    // rollback reason `oauth/store.ts` gives, and deliberately no longer read:
+    // here it says one thing and the resolver says another, and the resolver
+    // wins (ADR-083 amends ADR-060).
+    const { store, auth } = authenticator(async () => ['personal', 'added-since']);
+    await store.putToken('lla_hers', hers(['personal', 'shared']));
 
     const outcome = await auth.authenticate('Bearer lla_hers');
 
     expect(outcome.ok && outcome.principal.kind).toBe('member');
     expect(outcome.ok && outcome.principal.id).toBe('lanes:HER');
-    expect(outcome.ok && outcome.principal.profiles).toEqual(['personal', 'shared']);
+    expect(outcome.ok && outcome.principal.profiles).toEqual(['personal', 'added-since']);
   });
 
-  test('a subject with no profiles reaches nothing, rather than everything', async () => {
-    // The direction this has to fail in. A stored row's list is optional, and a
-    // row that lost its list must not read as one that may open everything —
-    // `?? []` at the call site is what decides that, and this pins it.
-    const { store, auth } = authenticator();
-    await store.putToken('lla_nobody', {
-      clientId: 'llc_x',
-      kind: 'access',
-      scope: 'mcp',
-      family: 'llf_x',
-      subject: 'lanes:NOBODY',
-      profiles: [],
-      expiresAt: HOUR,
+  test('a member removed since the mint is refused, which ends the session', async () => {
+    // Renamed from "a subject with no profiles reaches nothing", because that is
+    // no longer what happens and the old name would keep passing while meaning
+    // the opposite. An empty list is not a principal reaching nothing any more;
+    // it is a refusal. `OAuthServer.callback` will not mint a token for a member
+    // of nothing, so an issued token resolving to empty can only mean membership
+    // was removed since — a revocation, and 401 is what tells the client to
+    // re-authorise and meet the mint's own explanation of why it cannot.
+    //
+    // **This is scoped to this credential**, and the two describes below pin
+    // that: for an OIDC token and a signed key an empty list has always been an
+    // ordinary non-error, because neither has a mint gate and empty may always
+    // have meant "never had any reach".
+    const { store, auth } = authenticator(async () => []);
+    await store.putToken('lla_removed', hers([]));
+
+    expect(await auth.authenticate('Bearer lla_removed')).toEqual({
+      ok: false,
+      reason: 'invalid',
     });
+  });
 
-    const outcome = await auth.authenticate('Bearer lla_nobody');
+  test('a resolver that throws fails closed, and says nothing more than the rest', async () => {
+    // A different branch in the code from the empty case above, and the same
+    // answer on the wire. `AuthOutcome`'s reasons are a closed set and both of
+    // these have to be a 401; a sixth value would leak "you exist but reach
+    // nothing" into a header, which is the disclosure property ADR-082 rests on.
+    // `workspaceMembers` only throws once it has no last-known-good answer at
+    // all, so in practice this is a boot against an unreachable workspace.
+    const { store, auth } = authenticator(async () => {
+      throw new Error('the workspace is unreachable');
+    });
+    await store.putToken('lla_hers', hers(['personal']));
 
-    expect(outcome.ok && outcome.principal.profiles).toEqual([]);
+    expect(await auth.authenticate('Bearer lla_hers')).toEqual({ ok: false, reason: 'invalid' });
+  });
+
+  test('one token answers differently as the member list moves, with no re-mint', async () => {
+    // The whole claim, in one test: three answers from one credential, with no
+    // reconnect and no new code minted. Driven off a mutable set rather than
+    // three authenticators, so what changes is the workspace rather than the
+    // thing under test — and the last step is the direction that matters, since
+    // a revocation landing later than a grant is the security property failing.
+    const reach = new Set(['personal']);
+    const { store, auth } = authenticator(async () => [...reach]);
+    await store.putToken('lla_hers', hers(['personal']));
+
+    const first = await auth.authenticate('Bearer lla_hers');
+    expect(first.ok && first.principal.profiles).toEqual(['personal']);
+
+    reach.add('work');
+    const widened = await auth.authenticate('Bearer lla_hers');
+    expect(widened.ok && widened.principal.profiles).toEqual(['personal', 'work']);
+
+    reach.clear();
+    expect(await auth.authenticate('Bearer lla_hers')).toEqual({ ok: false, reason: 'invalid' });
   });
 });
 
@@ -163,7 +217,12 @@ describe('a credential that is not an access token', () => {
  * caches, so the tests that matter are the ones about forgetting.
  */
 describe('resolving the same token twice', () => {
-  function counting(): { store: OAuthStore; reads: () => number } {
+  function counting(now?: () => number): {
+    store: OAuthStore;
+    /** A second instance over the same rows — what another warm instance is. */
+    elsewhere: OAuthStore;
+    reads: () => number;
+  } {
     const inner = memoryStore();
     let reads = 0;
     const counted: KeyValueStore = {
@@ -173,7 +232,11 @@ describe('resolving the same token twice', () => {
         return inner.get(namespace, key);
       },
     };
-    return { store: new OAuthStore(counted), reads: () => reads };
+    return {
+      store: new OAuthStore(counted, now),
+      elsewhere: new OAuthStore(counted, now),
+      reads: () => reads,
+    };
   }
 
   const record = (expiresAt: number) =>
@@ -200,6 +263,42 @@ describe('resolving the same token twice', () => {
     expect(await store.token('tok')).not.toBeNull();
 
     await store.revokeToken('tok');
+
+    expect(await store.token('tok')).toBeNull();
+  });
+
+  /**
+   * The assumption the window exists for, and the one the record's own expiry
+   * could never have covered.
+   *
+   * `revokeToken` clears this map in whichever process runs it. A revocation
+   * from the CLI writes the shared workspace store and cannot reach a running
+   * endpoint's copy; the store is built once and ADR-029 does not rebuild the
+   * authorization gate on a reload. So before the window, a cached record
+   * survived every reload for its full `access_token_ttl_minutes` — twelve
+   * hours by default — and nothing could end a session on a warm instance.
+   */
+  test('a revocation from another instance lands within the window', async () => {
+    let clock = 1_000_000;
+    const { store, elsewhere } = counting(() => clock);
+    // Twelve hours, the default TTL: the point is that the record is nowhere
+    // near its own expiry, so expiry cannot be what stops it resolving.
+    await store.putToken('tok', record(clock + 12 * 3_600_000));
+    expect(await store.token('tok')).not.toBeNull();
+
+    await elsewhere.revokeToken('tok');
+
+    // Still answered from memory, and that is the honest cost rather than a
+    // defect: the window is a real staleness, bounded instead of unbounded.
+    expect(await store.token('tok')).not.toBeNull();
+
+    // **Ten seconds, not `SEEN_TTL_MS`.** Advancing by the constant makes the
+    // test pass for the wrong reason: widen the window and the same jump also
+    // clears the record's own twelve hours, so the expiry path returns null and
+    // nothing is proven. This number has to sit above the window and far below
+    // the expiry, and the guard keeps it there if the constant moves.
+    expect(SEEN_TTL_MS).toBeLessThan(10_000);
+    clock += 10_000;
 
     expect(await store.token('tok')).toBeNull();
   });
@@ -445,5 +544,171 @@ describe('an API key the API signed', () => {
       ok: false,
       reason: 'malformed',
     });
+  });
+});
+
+/**
+ * What a `session revoke` has to be able to see, and to end.
+ *
+ * `revokeFamily` existed with no caller because it takes a family id and
+ * nothing in the tree ever printed one — the hook was there and unreachable
+ * from a command. These cover the enumeration that makes it callable, and why
+ * the family rather than the token is the right unit to drop.
+ */
+describe('listing and ending sessions', () => {
+  const held = (): OAuthStore => new OAuthStore(memoryStore());
+
+  const access = (family: string, subject: string, expiresAt = HOUR) =>
+    ({ clientId: 'llc_desktop', kind: 'access', scope: 'mcp', family, subject, expiresAt }) as never;
+  const refresh = (family: string, subject: string) =>
+    ({ clientId: 'llc_desktop', kind: 'refresh', scope: 'mcp', family, subject, expiresAt: HOUR }) as never;
+
+  test('one authorization is one row, not three', async () => {
+    // A family holds an access token and the refresh that replaces it, and a
+    // spent refresh leaves a tombstone beside them. Counting rows rather than
+    // live access tokens would report three sessions where somebody opened one.
+    const store = held();
+    await store.putToken('lla_a', access('llf_one', 'lanes:HER'));
+    await store.putToken('llr_a', refresh('llf_one', 'lanes:HER'));
+
+    const sessions = await store.sessions();
+
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]!.subject).toBe('lanes:HER');
+    expect(sessions[0]!.family).toBe('llf_one');
+    expect(sessions[0]!.clientId).toBe('llc_desktop');
+  });
+
+  test('an expired row is not a session, and neither is one naming nobody', async () => {
+    // The second is a token minted before ADR-060. `IssuedTokenAuthenticator`
+    // already refuses it, so listing it would offer an operator something to
+    // end that nothing can use.
+    const store = held();
+    await store.putToken('lla_old', access('llf_old', 'lanes:HER', Date.now() - 1_000));
+    await store.putToken('lla_anon', {
+      clientId: 'llc_desktop',
+      kind: 'access',
+      scope: 'mcp',
+      family: 'llf_anon',
+      expiresAt: HOUR,
+    } as never);
+
+    expect(await store.sessions()).toEqual([]);
+  });
+
+  test('ending the family ends the refresh too, so nothing can mint another', async () => {
+    // Why the family is the unit. Dropping the access token alone would leave a
+    // refresh token able to exchange itself for a new one — a revocation that
+    // revokes nothing, with the holder back inside a minute.
+    const store = held();
+    await store.putToken('lla_a', access('llf_one', 'lanes:HER'));
+    await store.putToken('llr_a', refresh('llf_one', 'lanes:HER'));
+
+    await store.revokeFamily('llf_one');
+
+    expect(await store.token('lla_a')).toBeNull();
+    expect(await store.token('llr_a')).toBeNull();
+    expect(await store.sessions()).toEqual([]);
+  });
+
+  test('a refresh that outlives its access token is still a session', async () => {
+    // The hole the first version of `sessions()` had, and the reason it lists
+    // families rather than access rows. An access token lasts twelve hours by
+    // default and the refresh beside it lasts thirty days, so a client that had
+    // not called since yesterday was invisible here — `session revoke` reported
+    // no session, and the holder could exchange that refresh for a new access
+    // token and be back inside a minute.
+    const store = held();
+    await store.putToken('lla_a', access('llf_one', 'lanes:HER', Date.now() - 1_000));
+    await store.putToken('llr_a', refresh('llf_one', 'lanes:HER'));
+
+    const sessions = await store.sessions();
+
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]!.family).toBe('llf_one');
+
+    // And it is revocable, which is the half that matters.
+    await store.revokeFamily('llf_one');
+    expect(await store.sessions()).toEqual([]);
+    expect(await store.token('llr_a')).toBeNull();
+  });
+
+  test('a spent refresh keeps nothing alive, because its replacement is its own row', async () => {
+    // A tombstone lives thirty days (ADR-035). Counting it would report a
+    // session for an authorization that has already rotated past it.
+    const store = held();
+    await store.putToken('llr_a', refresh('llf_one', 'lanes:HER'));
+    await store.consumeToken('llr_a');
+
+    expect(await store.sessions()).toEqual([]);
+  });
+
+  test("one subject's sessions are separable from another's", async () => {
+    const store = held();
+    await store.putToken('lla_a', access('llf_one', 'lanes:HER'));
+    await store.putToken('lla_b', access('llf_two', 'lanes:HIM'));
+
+    await store.revokeFamily('llf_one');
+
+    const left = await store.sessions();
+    expect(left).toHaveLength(1);
+    expect(left[0]!.subject).toBe('lanes:HIM');
+  });
+
+  test('ending several sessions walks the keyspace once, not once per family', async () => {
+    // Measured before this existed: 2m43s to end six sessions on a deployed
+    // target, because `session revoke` called the single-family version in a
+    // loop and each call is a LIST plus a GET per key against a bucket. Every
+    // refresh rotation writes a row and a tombstone lives thirty days
+    // (ADR-035), so the keyspace is large on a workspace in use.
+    //
+    // Counted rather than timed: a duration assertion would be flaky and would
+    // not say what was wrong, while the scan count is the thing that was
+    // multiplying.
+    const inner = memoryStore();
+    let scans = 0;
+    const counted: KeyValueStore = {
+      ...inner,
+      keys: async (namespace) => {
+        scans++;
+        return inner.keys(namespace);
+      },
+    };
+    const store = new OAuthStore(counted);
+
+    const families = ['llf_one', 'llf_two', 'llf_three', 'llf_four'];
+    for (const [index, family] of families.entries()) {
+      await store.putToken(`lla_${index}`, access(family, 'lanes:HER'));
+      await store.putToken(`llr_${index}`, refresh(family, 'lanes:HER'));
+    }
+    expect(await store.sessions()).toHaveLength(4);
+
+    scans = 0;
+    await store.revokeFamily(families);
+
+    expect(scans).toBe(1);
+    expect(await store.sessions()).toEqual([]);
+    for (const [index] of families.entries()) {
+      expect(await store.token(`llr_${index}`)).toBeNull();
+    }
+  });
+
+  test('and revoking nothing reads nothing at all', async () => {
+    // `session revoke` resolves the subject's families before calling, so an
+    // empty set means the subject held no session — which must not cost a walk
+    // of the whole keyspace to discover a second time.
+    const inner = memoryStore();
+    let scans = 0;
+    const store = new OAuthStore({
+      ...inner,
+      keys: async (namespace) => {
+        scans++;
+        return inner.keys(namespace);
+      },
+    });
+
+    await store.revokeFamily([]);
+
+    expect(scans).toBe(0);
   });
 });

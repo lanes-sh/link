@@ -43,12 +43,30 @@ const passTheReuseWindow = (): void => {
   skewMs += 31_000;
 };
 
+/**
+ * The member list the mint *and* every later request read, as a workspace would.
+ *
+ * One function for both halves, because that is now what the endpoint does:
+ * `IssuedTokenAuthenticator` resolves membership per request from the same
+ * resolver `lanesFederation` uses at the mint (ADR-083). A harness whose two
+ * halves disagreed could not drive the revocation case at all — the token would
+ * keep opening the endpoint no matter what the list said, which is precisely the
+ * defect.
+ *
+ * Mutable so one test can shrink it. Everything else sees the harness's own
+ * rule, in which the reserved spelling reaches nothing and anybody else reaches
+ * the one profile.
+ */
+let reaches: (subject: string) => readonly string[] = (subject) =>
+  subject === `lanes:${STRANGER}` ? [] : ['personal'];
+
 beforeAll(() => {
   harness = startHarness({
     profile: 'personal',
     port: allocatePort(),
     policy: `  allow:\n    - "example.*"`,
     authorization: true,
+    federation: { profilesFor: async (subject: string) => reaches(subject) },
     now: () => Date.now() + skewMs,
     log: {
       debug() {},
@@ -296,6 +314,62 @@ describe('the authorization code flow', () => {
       headers: { authorization: `Bearer ${issued.access_token}` },
     });
     expect(call.status).not.toBe(401);
+  });
+
+  test('a member removed after sign-in loses the session, with nothing re-minted', async () => {
+    // The half of the reconnect bug that ADR-082 did not fix, end to end on the
+    // wire. That decision made the *schema* able to name a profile added since a
+    // client listed; this is the token itself following the member list — and in
+    // the direction that matters, stopping.
+    //
+    // Before ADR-083 this test could not have been written. The reach was baked
+    // into the record at mint and copied forward through every refresh, so no
+    // change to the member list could affect a live session and the assertion
+    // below would have been `not.toBe(401)` for twelve hours.
+    const clientId = await register();
+    const exchanged = await tokenRequest({
+      grant_type: 'authorization_code',
+      code: await codeFrom(await authorise(clientId)),
+      client_id: clientId,
+      redirect_uri: REDIRECT,
+      code_verifier: VERIFIER,
+    });
+    const { access_token: token } = (await exchanged.json()) as { access_token: string };
+
+    const before = await fetch(`${origin}/mcp`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(before.status).not.toBe(401);
+
+    const held = reaches;
+    try {
+      // The owner removes them. Nothing re-mints, nothing reconnects, and no
+      // `/reload` is sent — the stored list on the record still says `personal`,
+      // and is no longer what is read.
+      reaches = () => [];
+
+      const after = await fetch(`${origin}/mcp`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+      });
+
+      // A 401, not a refusal per call. The mint will not issue to a member of
+      // nothing, so empty here can only mean removed since — a revocation. The
+      // client re-authorises and meets the mint's own explanation, which is the
+      // page the stranger test above asserts.
+      expect(after.status).toBe(401);
+    } finally {
+      reaches = held;
+    }
+
+    // And restoring the list restores the session, on the same token: the
+    // credential was never the thing that changed.
+    const again = await fetch(`${origin}/mcp`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(again.status).not.toBe(401);
   });
 
   test('there is no consent page here at all — the browser is sent to Lanes', async () => {

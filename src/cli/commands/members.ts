@@ -214,21 +214,23 @@ export async function membersRemove(
     announce(resolution);
     print(ok(`${subject} may no longer consume ${style.bold(resolution.profile)}`));
 
-    // The half that is not obvious, and is the difference between this and a
-    // session manager. A token already issued keeps working until it expires:
-    // membership is read when one is minted, not on every call (ADR-060).
+    // This used to say a token they already held kept working until it expired
+    // and that no command shortened it, which was true and is the thing ADR-083
+    // changed. Membership is resolved on every request now, from the declared
+    // config, for all four credentials — so the removal lands within seconds on
+    // every instance, with no notify and no redeploy.
     //
-    // **And there is no command that closes the window.** This used to name
-    // `lanes link token rotate`, which rotates one API token row — it needs an
-    // `--id`, and it says in its own output that clients which signed in
-    // through a browser are unaffected. Nothing in the CLI reaches `OAuthStore`,
-    // so pointing at it was worse than saying nothing: an operator who ran it
-    // would be told something had been rotated and would believe the access was
-    // gone.
+    // Both halves are printed because they differ, and the difference is the
+    // one an operator acts on. A browser session resolves to no profile and is
+    // refused, so the client asks to sign in again and meets the mint's
+    // explanation. A static token or a signed key keeps authenticating — it is
+    // still a valid credential — and reaches nothing, which is a refusal per
+    // call rather than a sign-in prompt.
     print(
       style.dim(
-        '      A token they already hold keeps working until it expires, and no\n' +
-          '      command shortens that. See access_token_ttl_minutes for how long.',
+        '      They lose it within seconds, on every instance — membership is read on\n' +
+          '      every request. A browser client is signed out and will ask again; a\n' +
+          '      token or key still authenticates and now reaches nothing.',
       ),
     );
     if (published) print(style.dim(`      ${published}`));

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { divider, heading, prose, steps, waiting } from './output.ts';
+import { divider, heading, printable, prose, steps, waiting } from './output.ts';
 import { stripAnsi, visibleWidth } from './typeset.ts';
 
 /**
@@ -101,5 +101,48 @@ describe('blocks', () => {
 
     expect(lines[0]).toStartWith('  1  ');
     expect(lines.at(-1)).toStartWith('     ');
+  });
+});
+
+/**
+ * Text from outside, on a terminal an operator is reading to make a decision.
+ *
+ * An OAuth `client_name` arrives through unauthenticated registration, and
+ * `session list` prints it next to the subject somebody is deciding whether to
+ * cut off. These are the sequences that move the cursor rather than colour it.
+ */
+describe('printable', () => {
+  test('cursor movement cannot erase or redraw the rows around it', () => {
+    // `2J` clears the screen and `A` walks up it. Either turns a listing into a
+    // place to hide a row, which is worse than having no listing.
+    expect(printable('Desktop\u001b[2J\u001b[A\u001b[AEvil')).toBe('Desktop?[2J?[A?[AEvil');
+  });
+
+  test('a carriage return cannot overwrite the line it is on', () => {
+    // The cheapest version of the same trick, and the one `stripAnsi` would
+    // leave untouched: it removes colour, which is not what moves a cursor.
+    expect(printable('real\r        fake')).toBe('real?        fake');
+  });
+
+  test('the bell and a null are flattened too', () => {
+    expect(printable('a\u0007b\u0000c')).toBe('a?b?c');
+  });
+
+  test('replaced rather than dropped, so an all-escape name reads as odd', () => {
+    // Dropping would render it blank, and a blank row beside a live session is
+    // indistinguishable from a tidy one.
+    expect(printable('\u001b\u001b\u001b')).toBe('???');
+  });
+
+  test('a name long enough to scroll the others away is capped', () => {
+    const capped = printable('x'.repeat(500));
+
+    expect(capped).toHaveLength(64);
+    expect(capped.endsWith('…')).toBe(true);
+  });
+
+  test('ordinary text is left exactly as it is', () => {
+    expect(printable('Claude Desktop')).toBe('Claude Desktop');
+    expect(printable('lanes:adalovelace')).toBe('lanes:adalovelace');
   });
 });

@@ -10,7 +10,7 @@ import { deployedReadDeps } from './read/deployed.ts';
 import { version } from '#cli/version.ts';
 import type { Logger } from '#connectivity';
 import { silentLogger } from './logging.ts';
-import { listProfiles, readConnections } from '#profile';
+import { listProfiles, readConnections, workspaceMembers } from '#profile';
 import {
   applyReconcile,
   formatPlan,
@@ -49,6 +49,8 @@ export interface EndpointOptions {
   readonly reporter?: EndpointReporter | undefined;
   /** Operational events. Silent when absent, which is what the tests want. */
   readonly log?: Logger | undefined;
+  /** One clock for the member pass and the reload bound. See `convergence.test.ts`. */
+  readonly clock?: (() => number) | undefined;
 }
 
 export interface RunningEndpoint {
@@ -214,13 +216,16 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
     // disagree about what a pairing token may do (ADR-069).
     const data = dataSurface(() => serving);
 
-    // One closure for the gate and the key link, so neither can disagree on reach.
-    const membersOf = async (subject: string): Promise<readonly string[]> =>
-      [...serving]
-        .filter(([, runtime]) => runtime.config.members.some((m) => m.subject === subject))
-        .map(([name]) => name);
+    // One resolver for the gate and the key link, so neither can disagree, and
+    // reading the *declaration* rather than the served map — which is what made
+    // an unprovisioned profile's members look like strangers (ADR-083). Held
+    // rather than inlined because `stamp()` is the other half of the same pass.
+    const members = workspaceMembers(primary.resolution.workspaceRoot, {
+      onStale: (reason) => log.warn('serving the last known member list', { reason }),
+      ...(options.clock ? { now: options.clock } : {}),
+    });
 
-    const gate = await openAuthorization(primary, log, membersOf);
+    const gate = await openAuthorization(primary, log, members.profilesFor);
 
     // The authenticator and the authorization gate are built once, from the
     // runtime this endpoint booted with, and are deliberately not part of what
@@ -267,13 +272,18 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
       },
     );
 
-    const authenticator = endpointAuthenticator(primary, gate, membersOf);
+    const authenticator = endpointAuthenticator(primary, gate, members.profilesFor);
 
     const server = serve({
       generations,
       primary: primary.resolution.profile,
       authenticator,
       log,
+      // For its digest rather than its answers, with the boot value read now:
+      // an edit landing before the first request must not become the baseline.
+      members,
+      serving: await members.digest(),
+      ...(options.clock ? { now: options.clock } : {}),
       ...(gate ? { authorization: gate.surface } : {}),
       ...(options.port !== undefined ? { port: options.port } : {}),
       ...(options.host !== undefined ? { host: options.host } : {}),

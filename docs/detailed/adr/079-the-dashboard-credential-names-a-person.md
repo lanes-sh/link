@@ -186,9 +186,18 @@ naming the profiles and the command that fixes them, because that is the last
 moment before somebody opens the link and finds a shorter list.
 
 **`profile members remove` still does not end a live session.** Unchanged from
-ADR-060, and now literally the same window rather than a second one beside it:
-the dashboard holds an access token, so `lanes link token rotate` is what closes
-it, exactly as for any other client.
+ADR-060, and now literally the same window rather than a second one beside it,
+because the dashboard holds an access token like any other client.
+
+> **Corrected twice since.** `lanes link token rotate` was named here as what
+> closes that window, and it does not: it rotates one API token row, needs an
+> `--id`, and says in its own output that clients which signed in through a
+> browser are unaffected. ADR-060's copy of the same claim was retracted first;
+> this one is the stale duplicate. And the premise no longer holds either —
+> membership is resolved per request for every credential now, so
+> `profile members remove` *is* what ends a live session, within the resolver's
+> window ([ADR-083](083-reach-is-resolved-per-request.md)). The sentence above
+> is kept as the record of what this decision believed, not as guidance.
 
 ## Alternatives rejected
 

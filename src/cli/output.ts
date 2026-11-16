@@ -362,3 +362,27 @@ export function reasonOf(error: unknown): string {
   const said = lines.find((line) => line !== '' && !line.endsWith(':'));
   return said ?? lines.find((line) => line !== '') ?? error.message;
 }
+
+/**
+ * Text that came from outside, made safe to put on a terminal.
+ *
+ * An OAuth client's `client_name` is whatever it sent to `POST /register`, and
+ * registration is unauthenticated — so it is attacker-chosen, and
+ * `session list` prints it beside the subject an operator is deciding whether
+ * to cut off. A name carrying `\u001b[2J`, or a few `\u001b[A`s, erases or
+ * redraws the rows above it: that turns the one command for seeing what is
+ * connected into somewhere to hide, which is worse than not having the command.
+ *
+ * `stripAnsi` in `./typeset.ts` is **not** this. It removes colour so a width
+ * can be measured and leaves cursor movement, carriage returns and the bell
+ * alone, which are the parts that move the cursor.
+ *
+ * Replaced rather than dropped, so a name that was nothing but escapes reads as
+ * visibly odd instead of silently blank. Capped too, because a kilobyte of
+ * padding scrolls the other rows away just as effectively.
+ */
+export function printable(text: string, limit = 64): string {
+  // eslint-disable-next-line no-control-regex
+  const flat = text.replace(/[\u0000-\u001f\u007f-\u009f]/g, '?');
+  return flat.length > limit ? `${flat.slice(0, limit - 1)}…` : flat;
+}

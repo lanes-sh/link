@@ -354,20 +354,30 @@ the line.
 **Never pass `--accept-broad-scopes` yourself.** When a provider asks for more than
 it needs, print the scopes and let the owner add the flag. Deciding that is theirs.
 
-**A new connection is served at once; the tools you were handed are not.**
+**A new connection is served at once, and you can usually call it at once.**
 Connecting publishes the config to wherever that workspace's endpoint reads it and
 asks the endpoint to re-read it, so a `lanes_setup_overview` straight after connecting
-*does* show the account. What has not changed is the set of tools this session
-was given when it connected — the endpoint does not announce that its tools
-changed, so a capability for a freshly connected account is not callable until
-the client reconnects. Say that, rather than reporting the connection as missing
-or asking them to connect again.
+*does* show the account. Whether you can *call* it depends on one thing only:
+whether the tool name is already in the list you were handed.
 
-One exception used to be here — that a `token rotate` needed the endpoint
-restarted. It does not: the authenticator re-reads both the issued rows and
-their values on a seconds-long cache window, so `token issue`, `token rotate`
-and `token revoke` all take effect on a running endpoint. So does a change to a
-profile's `members:`, which is what decides where a token reaches.
+- **A new account on a provider you already have** needs nothing. The `profile`
+  and `connection` arguments are plain strings, not enums, so you can name an
+  account that was connected after you listed and reach it.
+- **A new provider** brings tool names your list does not contain, and the
+  endpoint cannot announce them — it is stateless, so there is no stream on
+  which to say the list changed. Reach those through `lanes_tools_search` and
+  `lanes_tools_call`, which are always present and never change name, or tell
+  the owner the client needs reconnecting to see them as typed tools.
+
+Say which of the two it is, rather than reporting the connection as missing or
+asking them to connect again.
+
+Two exceptions used to be here. One was that a `token rotate` needed the endpoint
+restarted; it does not, because the authenticator re-reads both the issued rows
+and their values on a seconds-long cache window, so `token issue`, `token rotate`
+and `token revoke` all take effect on a running endpoint. The other was that a
+change to a profile's `members:` only reached some credentials. It reaches all of
+them now, within seconds, on every instance.
 
 ## Operating the workspace
 
@@ -435,10 +445,12 @@ in the workspace and could be given it. Somebody with an unaccepted invitation
 has no subject yet, so they are listed, marked, and refused; the answer there is
 for them to accept, not for anyone to invent a subject.
 
-Removing somebody does not end a browser session they already hold: membership
-is read when that token is minted. A **static** token is different — its
-membership is resolved on every call, so removing somebody takes effect within
-seconds for anything holding one.
+Removing somebody takes effect within seconds, whatever they are holding, and on
+every instance. Membership is resolved on every request from the profile files,
+for all four credentials. A browser session resolves to no profile and is
+refused, so that client asks to sign in again; a static token or a signed key
+still authenticates and reaches nothing. This used to be true only of a static
+token, and a browser session kept its reach for up to twelve hours.
 
 **A credential is an identity, not a selection.** Whether it arrived through a
 browser sign-in or is a static `llk_` token, it names a person, and what it
@@ -523,8 +535,8 @@ it does every harness installed; name one (`claude`, `codex`) to be specific.
 **It names no profile, and adding one changes nothing about who gets in.** One
 endpoint serves every profile in the workspace and each call names one in its
 `profile` argument, so a registration was never per-profile. What a client
-reaches is decided when its owner signs in: every profile whose `members:` lists
-them.
+reaches is every profile whose `members:` lists its owner, read on every request
+— so it follows the member list rather than the moment they signed in.
 
 **Do not write an `Authorization` header.** The registration is a bare URL:
 

@@ -129,7 +129,9 @@ things:
 
 - **The profile is not available.** Either you are not a member of it or there
   is no such profile. This endpoint does not distinguish those, deliberately, so
-  check the spelling first — and if it is right, its owner adds you.
+  check the spelling first — and if it is right, its owner adds you. Once they
+  have, retry: membership is read on every request, so it works within seconds
+  and you do not need to be reconnected for it.
 - **The connection is not part of this profile.** Look at what is, in the tool's
   description, which lists the accounts by profile.
 - **The capability is denied.** The profile allows a narrower set than the tool

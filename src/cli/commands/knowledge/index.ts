@@ -5,9 +5,9 @@ import {
   knowledgeTargetSchema,
   layout,
   parseRepository,
-  type Config,
   type KnowledgeConfig,
 } from '#profile';
+import { nextAfterEdit, publishRuntimeEdit } from '#cli/publish.ts';
 import { describeKnowledge, type FetchLike } from '#deployments/knowledge.ts';
 import { ConfigDocument } from '../../config-edit.ts';
 import { announce, heading, ok, print, style, table } from '../../output.ts';
@@ -176,10 +176,11 @@ async function useGithub(flags: KnowledgeFlags): Promise<void> {
     // a stored token nothing references is inert, and a config referencing a
     // token that was never stored is a profile that cannot read its own memory.
     await secrets.set(knowledge.token_ref, token);
-    await writeBlock(runtime.config, runtime.resolution.workspaceRoot, knowledge);
+    const published = await writeBlock(runtime, knowledge);
 
     print('');
     print(ok(`memory and skills are now kept in ${facts.fullName}`));
+    if (published) print(style.dim(`  ${published}`));
   } finally {
     await runtime.close();
   }
@@ -225,10 +226,11 @@ async function useLocal(flags: KnowledgeFlags): Promise<void> {
       );
     }
 
-    await writeBlock(runtime.config, runtime.resolution.workspaceRoot, undefined);
+    const published = await writeBlock(runtime, undefined);
 
     print('');
     print(ok('memory, skills and entities are back on this target\'s own storage'));
+    if (published) print(style.dim(`  ${published}`));
     print(
       style.dim(
         `  ${knowledge.repo} still holds everything — it is version control, so nothing was removed from it.`,
@@ -281,11 +283,13 @@ async function openLocalStores(
  * so there is one of it.
  */
 async function writeBlock(
-  config: Config,
-  root: string,
+  runtime: Runtime,
   knowledge: KnowledgeConfig | undefined,
-): Promise<void> {
-  const document = await ConfigDocument.open(root, config.instance.profile);
+): Promise<string> {
+  const document = await ConfigDocument.open(
+    runtime.resolution.workspaceRoot,
+    runtime.config.instance.profile,
+  );
 
   if (knowledge === undefined) {
     document.removeIn(['knowledge']);
@@ -300,6 +304,15 @@ async function writeBlock(
   }
 
   await document.save();
+
+  // Published here rather than at the two call sites, so writing the block and
+  // telling the endpoint about it cannot come apart — which is the failure
+  // `grantConnectionTo` and `revokeConnectionFrom` spent a release apart
+  // demonstrating. It matters more here than the name suggests: `openKnowledge`
+  // runs at open time, so until a reload this profile keeps reading memory,
+  // skills and entities out of wherever it was reading them before. A stale
+  // endpoint elsewhere serves an old answer; here it serves the wrong *store*.
+  return nextAfterEdit(await publishRuntimeEdit(runtime));
 }
 
 async function decideMigration(hasContent: boolean, flags: KnowledgeFlags): Promise<boolean> {

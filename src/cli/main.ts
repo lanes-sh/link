@@ -19,6 +19,8 @@ import {
   plan,
   policyList,
   policyRule,
+  sessionList,
+  sessionRevoke,
   start,
   status,
   tokenIssue,
@@ -329,6 +331,27 @@ export async function run(argv: readonly string[]): Promise<void> {
           return tokenRevoke(row);
         default:
           throw new Error(`Unknown: ${PROGRAM} token ${second}`);
+      }
+    }
+
+    case 'session': {
+      const who = {
+        ...global,
+        ...(typeof flags['subject'] === 'string' ? { subject: flags['subject'] } : {}),
+        me: flags['me'] === true,
+        yes: flags['yes'] === true,
+        json: flags['json'] === true,
+      };
+      switch (second) {
+        // A bare `session` lists, for the reason a bare `token` does: an
+        // inventory is the safe default, and this one destroys.
+        case 'list':
+        case undefined:
+          return sessionList(who);
+        case 'revoke':
+          return sessionRevoke(who);
+        default:
+          throw new Error(`Unknown: ${PROGRAM} session ${second}`);
       }
     }
 
