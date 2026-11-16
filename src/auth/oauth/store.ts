@@ -44,6 +44,33 @@ export const OAUTH_SUBSPACES: readonly string[] = [CLIENTS, CODES, TOKENS, PENDI
 /** Far above any real number of connectors, and far below a problem. */
 const MAX_CLIENTS = 200;
 
+/**
+ * How long a resolved access-token record may be answered from memory.
+ *
+ * The memo this bounds was introduced to remove a store read per *request* — on
+ * a deployed target, a bucket round trip before any of the caller's work begins
+ * — and it was bounded by the record's own expiry on the reading that a record
+ * is immutable until then. It is: `putToken` writes it once and nothing
+ * rewrites it. What the reading missed is that a record can stop *existing*,
+ * and that the deletion happens somewhere else.
+ *
+ * `revokeToken` and `revokeFamily` clear this map in whichever process runs
+ * them. A revocation from the CLI writes the workspace store and cannot touch a
+ * running endpoint's copy, the `OAuthStore` is built once in
+ * `openAuthorization`, and ADR-029 deliberately does not rebuild the
+ * authorization gate on a reload — so a cached record survived every reload for
+ * its full `access_token_ttl_minutes`, twelve hours by default. Nothing could
+ * end a session on a warm instance, which would have made a `session revoke`
+ * command report a success it had not achieved.
+ *
+ * Five seconds, matching the window membership already resolves on, so the two
+ * halves of "this caller may do this" go stale together. The cost is one store
+ * read per active token per five seconds per instance, against the per-request
+ * read the memo was added to remove — two orders of magnitude of the saving
+ * kept, and the assumption that made it unsafe dropped (ADR-083).
+ */
+export const SEEN_TTL_MS = 5_000;
+
 export interface RegisteredClient {
   readonly clientId: string;
   readonly redirectUris: readonly string[];
@@ -249,7 +276,7 @@ export class OAuthStore {
 
   async putToken(token: string, record: IssuedToken): Promise<void> {
     await this.#state.set(TOKENS, hashToken(token), JSON.stringify(record));
-    this.#seen.set(hashToken(token), record);
+    this.#seen.set(hashToken(token), { record, readAt: this.#now() });
   }
 
   /**
@@ -257,23 +284,27 @@ export class OAuthStore {
    *
    * Every authenticated request resolves one of these, and the resolution was a
    * store read every time — on a deployed target, a bucket round trip before
-   * any of the caller's work begins. The record it fetches is immutable until
-   * it expires: `putToken` writes it once at mint, and nothing rewrites it.
+   * any of the caller's work begins. The record it fetches is written once at
+   * mint and never rewritten.
    *
-   * Bounded by the record's own expiry, so a cached copy can never outlive the
-   * grant it represents, and a revocation is a `delete` that this map is asked
-   * about only until then.
+   * **Bounded by `SEEN_TTL_MS` rather than by the record's expiry**, which is
+   * the correction: the record cannot change, but it can be *deleted*, and the
+   * delete usually happens in another process. See the constant.
    */
-  readonly #seen = new Map<string, IssuedToken>();
+  readonly #seen = new Map<string, { record: IssuedToken; readAt: number }>();
 
   async token(token: string): Promise<IssuedToken | null> {
     const key = hashToken(token);
 
     const remembered = this.#seen.get(key);
     if (remembered) {
-      if (remembered.expiresAt > this.#now()) return remembered;
-      // Expired in memory: forget it and fall through, so the store's own
-      // expiry path still runs and still drops the row.
+      // Both bounds, and they answer different questions. The window is whether
+      // this process may still trust its copy; the record's own expiry is
+      // whether the grant is alive at all. A copy inside the window whose
+      // record has expired must still fall through, so the store's expiry path
+      // runs and drops the row.
+      const fresh = this.#now() - remembered.readAt < SEEN_TTL_MS;
+      if (fresh && remembered.record.expiresAt > this.#now()) return remembered.record;
       this.#seen.delete(key);
     }
 
@@ -288,7 +319,7 @@ export class OAuthStore {
       return null;
     }
 
-    this.#seen.set(key, record);
+    this.#seen.set(key, { record, readAt: this.#now() });
     return record;
   }
 
@@ -306,7 +337,7 @@ export class OAuthStore {
     const record = await this.#read<IssuedToken>(TOKENS, key);
     if (!record) return;
     const spent: IssuedToken = { ...record, kind: 'consumed', consumedAt: this.#now() };
-    this.#seen.set(key, spent);
+    this.#seen.set(key, { record: spent, readAt: this.#now() });
     await this.#state.set(TOKENS, key, JSON.stringify(spent));
   }
 

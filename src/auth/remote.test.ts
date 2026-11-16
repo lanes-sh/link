@@ -3,7 +3,7 @@ import { IssuedTokenAuthenticator, LanesKeyAuthenticator, OidcAuthenticator } fr
 import { EVERY_PROFILE, mayReach } from './principal.ts';
 import type { ApiKeyVerifier } from './lanes/api-key.ts';
 import type { OidcVerifier } from './oidc.ts';
-import { OAuthStore } from './oauth/store.ts';
+import { OAuthStore, SEEN_TTL_MS } from './oauth/store.ts';
 import type { KeyValueStore } from '#stores/state';
 
 /**
@@ -217,7 +217,12 @@ describe('a credential that is not an access token', () => {
  * caches, so the tests that matter are the ones about forgetting.
  */
 describe('resolving the same token twice', () => {
-  function counting(): { store: OAuthStore; reads: () => number } {
+  function counting(now?: () => number): {
+    store: OAuthStore;
+    /** A second instance over the same rows — what another warm instance is. */
+    elsewhere: OAuthStore;
+    reads: () => number;
+  } {
     const inner = memoryStore();
     let reads = 0;
     const counted: KeyValueStore = {
@@ -227,7 +232,11 @@ describe('resolving the same token twice', () => {
         return inner.get(namespace, key);
       },
     };
-    return { store: new OAuthStore(counted), reads: () => reads };
+    return {
+      store: new OAuthStore(counted, now),
+      elsewhere: new OAuthStore(counted, now),
+      reads: () => reads,
+    };
   }
 
   const record = (expiresAt: number) =>
@@ -254,6 +263,42 @@ describe('resolving the same token twice', () => {
     expect(await store.token('tok')).not.toBeNull();
 
     await store.revokeToken('tok');
+
+    expect(await store.token('tok')).toBeNull();
+  });
+
+  /**
+   * The assumption the window exists for, and the one the record's own expiry
+   * could never have covered.
+   *
+   * `revokeToken` clears this map in whichever process runs it. A revocation
+   * from the CLI writes the shared workspace store and cannot reach a running
+   * endpoint's copy; the store is built once and ADR-029 does not rebuild the
+   * authorization gate on a reload. So before the window, a cached record
+   * survived every reload for its full `access_token_ttl_minutes` — twelve
+   * hours by default — and nothing could end a session on a warm instance.
+   */
+  test('a revocation from another instance lands within the window', async () => {
+    let clock = 1_000_000;
+    const { store, elsewhere } = counting(() => clock);
+    // Twelve hours, the default TTL: the point is that the record is nowhere
+    // near its own expiry, so expiry cannot be what stops it resolving.
+    await store.putToken('tok', record(clock + 12 * 3_600_000));
+    expect(await store.token('tok')).not.toBeNull();
+
+    await elsewhere.revokeToken('tok');
+
+    // Still answered from memory, and that is the honest cost rather than a
+    // defect: the window is a real staleness, bounded instead of unbounded.
+    expect(await store.token('tok')).not.toBeNull();
+
+    // **Ten seconds, not `SEEN_TTL_MS`.** Advancing by the constant makes the
+    // test pass for the wrong reason: widen the window and the same jump also
+    // clears the record's own twelve hours, so the expiry path returns null and
+    // nothing is proven. This number has to sit above the window and far below
+    // the expiry, and the guard keeps it there if the constant moves.
+    expect(SEEN_TTL_MS).toBeLessThan(10_000);
+    clock += 10_000;
 
     expect(await store.token('tok')).toBeNull();
   });
