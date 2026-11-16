@@ -1,7 +1,7 @@
 import { OAuthStore, type LiveSession } from '#auth';
 import { readSession } from '#auth/lanes/session.ts';
 import { ConfigError } from '#profile';
-import { heading, ok, print, style } from '../../output.ts';
+import { heading, ok, print, printable, style } from '../../output.ts';
 import { confirm, isInteractive } from '../../prompt.ts';
 import { openWorkspaceRuntime, type GlobalFlags } from '../../runtime.ts';
 
@@ -92,10 +92,12 @@ async function describe(
 ): Promise<{ subject: string; client: string; family: string; expiresAt: number }[]> {
   return Promise.all(
     sessions.map(async (one) => ({
-      subject: one.subject,
-      // The name the client registered under, because a `client_id` is opaque
-      // and an operator deciding whether to end a session needs to recognise it.
-      client: (await store.client(one.clientId))?.clientName ?? one.clientId,
+      // Both through `printable`, because both reach a terminal and one of them
+      // is whatever an unauthenticated `POST /register` sent. The name is shown
+      // at all because a `client_id` is opaque and an operator deciding whether
+      // to end a session needs to recognise what they are ending.
+      subject: printable(one.subject),
+      client: printable((await store.client(one.clientId))?.clientName ?? one.clientId),
       family: one.family,
       expiresAt: one.expiresAt,
     })),

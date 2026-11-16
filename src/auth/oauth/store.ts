@@ -55,17 +55,12 @@ export interface LiveSession {
 /**
  * How long a resolved access-token record may be answered from memory.
  *
- * The memo was bounded by the record's own expiry, on the reading that a record
- * is immutable until then. It is — but it can stop *existing*, and the delete
- * happens in another process: `revokeToken` and `revokeFamily` clear this map
- * only where they run, the store is built once in `openAuthorization`, and
- * ADR-029 does not rebuild the gate on a reload. So a cached record outlived
- * every revocation for its full `access_token_ttl_minutes`, and nothing could
- * end a session on a warm instance (ADR-083).
- *
- * Five seconds, matching the window membership resolves on, so the two halves
- * of "this caller may do this" go stale together. One read per active token per
- * window per instance, against the per-request read the memo removed.
+ * It was bounded by the record's own expiry, on the reading that a record is
+ * immutable until then. It is — but it can stop *existing*, and the delete
+ * happens in another process, so a cached record outlived every revocation for
+ * its full `access_token_ttl_minutes` and nothing could end a session on a warm
+ * instance. Five seconds, matching the window membership resolves on, so the
+ * two halves of "this caller may do this" go stale together (ADR-083).
  */
 export const SEEN_TTL_MS = 5_000;
 
@@ -359,25 +354,33 @@ export class OAuthStore {
   }
 
   /**
-   * Every live session, so a revocation can name one.
+   * Every live session, one row per family, so a revocation can name one.
    *
-   * `revokeFamily` takes a family id and nothing in the tree ever printed one,
-   * so it had no callable shape from a command. Access rows only, so a refresh
-   * row and a spent tombstone do not count one authorization three times.
+   * **A family, and live if *any* row in it is.** The first version listed
+   * unexpired `access` rows only — so a client that had not called in twelve
+   * hours held an expired access row and a live thirty-day refresh, and
+   * `session revoke` reported no session while the holder could exchange that
+   * refresh and be back inside a minute. An enumeration that misses a
+   * credential is a revocation that does not revoke. `consumed` is skipped: a
+   * tombstone keeps nothing alive (ADR-035).
    */
   async sessions(): Promise<readonly LiveSession[]> {
-    const live: LiveSession[] = [];
+    const byFamily = new Map<string, LiveSession>();
 
     for (const key of await this.#state.keys(TOKENS)) {
       const record = await this.#read<IssuedToken>(TOKENS, key);
-      if (!record || record.kind !== 'access' || record.subject === undefined) continue;
+      if (!record || record.kind === 'consumed' || record.subject === undefined) continue;
       if (record.expiresAt <= this.#now()) continue;
 
       const { subject, clientId, family, expiresAt } = record;
-      live.push({ subject, clientId, family, expiresAt });
+      const held = byFamily.get(family);
+      // The furthest-out row: a refresh outlives its access token by design.
+      if (!held || held.expiresAt < expiresAt) {
+        byFamily.set(family, { subject, clientId, family, expiresAt });
+      }
     }
 
-    return live;
+    return [...byFamily.values()];
   }
 
   async #read<T>(namespace: string, key: string): Promise<T | null> {

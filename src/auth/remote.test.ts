@@ -611,6 +611,38 @@ describe('listing and ending sessions', () => {
     expect(await store.sessions()).toEqual([]);
   });
 
+  test('a refresh that outlives its access token is still a session', async () => {
+    // The hole the first version of `sessions()` had, and the reason it lists
+    // families rather than access rows. An access token lasts twelve hours by
+    // default and the refresh beside it lasts thirty days, so a client that had
+    // not called since yesterday was invisible here — `session revoke` reported
+    // no session, and the holder could exchange that refresh for a new access
+    // token and be back inside a minute.
+    const store = held();
+    await store.putToken('lla_a', access('llf_one', 'lanes:HER', Date.now() - 1_000));
+    await store.putToken('llr_a', refresh('llf_one', 'lanes:HER'));
+
+    const sessions = await store.sessions();
+
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0]!.family).toBe('llf_one');
+
+    // And it is revocable, which is the half that matters.
+    await store.revokeFamily('llf_one');
+    expect(await store.sessions()).toEqual([]);
+    expect(await store.token('llr_a')).toBeNull();
+  });
+
+  test('a spent refresh keeps nothing alive, because its replacement is its own row', async () => {
+    // A tombstone lives thirty days (ADR-035). Counting it would report a
+    // session for an authorization that has already rotated past it.
+    const store = held();
+    await store.putToken('llr_a', refresh('llf_one', 'lanes:HER'));
+    await store.consumeToken('llr_a');
+
+    expect(await store.sessions()).toEqual([]);
+  });
+
   test("one subject's sessions are separable from another's", async () => {
     const store = held();
     await store.putToken('lla_a', access('llf_one', 'lanes:HER'));

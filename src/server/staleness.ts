@@ -84,6 +84,20 @@ export function staleness(options: {
    * question here is about the config, not about whoever happened to call.
    */
   readonly members?: { digest(): Promise<string | null> } | undefined;
+  /**
+   * The digest the generation this instance booted with was built from.
+   *
+   * Captured by the caller at boot rather than taken from the first observation
+   * here, and that is a correctness fix rather than tidiness. Adopting the first
+   * observation as the baseline means a config edit landing between the
+   * generation opening and the first authenticated request becomes the baseline
+   * — so it is never acted on, and the instance serves the old generation until
+   * something *else* changes. On a scale-to-zero target that gap is every cold
+   * start. Reloading unconditionally on the first observation would also close
+   * it, and would make every cold start pay two of the most expensive thing
+   * this endpoint does.
+   */
+  readonly serving?: string | null | undefined;
   readonly now?: (() => number) | undefined;
 }): Staleness {
   const now = options.now ?? Date.now;
@@ -97,8 +111,11 @@ export function staleness(options: {
    * generation (`Generations.reload` returns `reloaded: false` and holds it),
    * so advancing this on anything but success would leave the endpoint
    * believing it had caught up and never retrying until the file moved again.
+   *
+   * Seeded from the caller's boot-time read where there is one. See `serving`
+   * on the options for why that is not the same as the first observation.
    */
-  let serving: string | null = null;
+  let serving: string | null = options.serving ?? null;
 
   const reload = async (reason: Reason): Promise<boolean> => {
     if (now() - probedAt < RELOAD_PROBE_MS) return false;
@@ -116,9 +133,9 @@ export function staleness(options: {
       const observed = (await options.members?.digest()) ?? null;
       if (observed === null) return false;
 
-      // The first observation is taken as what this instance booted with: it
-      // opened its generation by reading the same declared config a moment
-      // earlier. A change that landed in the gap is picked up by the next one.
+      // Only when the caller supplied no baseline, which is a bind with no
+      // boot-time read rather than the ordinary path. Adopting an observation
+      // as the baseline is what the `serving` option exists to avoid.
       if (serving === null) {
         serving = observed;
         return false;

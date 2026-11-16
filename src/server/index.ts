@@ -69,6 +69,8 @@ export interface ServerOptions {
    * a bind with no resolver, which behaves as before (`./staleness.ts`).
    */
   readonly members?: { digest(): Promise<string | null> } | undefined;
+  /** The digest the booted generation was built from. See `./staleness.ts`. */
+  readonly serving?: string | null | undefined;
   /** The staleness guard's clock. A seam for the convergence tests; see `EndpointOptions`. */
   readonly now?: (() => number) | undefined;
   /**
@@ -124,14 +126,13 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
   const failedAuth = failedAuthLimiter();
   const unauthenticated = options.meterUnauthenticated ? unauthenticatedLimiter() : null;
 
-  // Both ways a warm instance catches up on config it was not told about, over
-  // one clock so they cannot provoke two reloads for one request. `./staleness.ts`
-  // has the argument, including why ADR-029's rejection of a poll priced a
-  // different poll from this one.
+  // Both ways a warm instance catches up on config nobody told it about, over
+  // one clock so they cannot provoke two reloads for one request.
   const stale = staleness({
     generations: options.generations,
     log: options.log,
     ...(options.members ? { members: options.members } : {}),
+    ...(options.serving === undefined ? {} : { serving: options.serving }),
     ...(options.now ? { now: options.now } : {}),
   });
 

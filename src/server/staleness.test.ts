@@ -13,7 +13,9 @@ import type { Generations } from './generations.ts';
  * unrelated traffic happened to miss.
  */
 
-function rig(options: { stamp?: () => string | null; reloaded?: boolean } = {}): {
+function rig(
+  options: { stamp?: () => string | null; reloaded?: boolean; serving?: string | null } = {},
+): {
   stale: Staleness;
   reloads: () => number;
   tick: (ms: number) => void;
@@ -35,6 +37,7 @@ function rig(options: { stamp?: () => string | null; reloaded?: boolean } = {}):
     // to provoke a pass: the authenticator chain stops at its first success, so
     // on a static-token workspace the resolver is never otherwise asked.
     ...(options.stamp ? { members: { digest: async () => options.stamp!() } } : {}),
+    ...(options.serving === undefined ? {} : { serving: options.serving }),
     now: () => clock,
   });
 
@@ -57,9 +60,29 @@ describe('catching up on a config that moved', () => {
     expect(reloads()).toBe(0);
   });
 
-  test('takes the first digest as what this instance booted with', async () => {
-    // It opened its generation by reading the same declared config a moment
-    // earlier, so the first observation is agreement rather than news.
+  test('reloads at once when the boot digest and the first observation differ', async () => {
+    // The whole reason the baseline is supplied rather than observed. An edit
+    // landing between the generation opening and the first authenticated
+    // request would otherwise *become* the baseline — so it would never be
+    // acted on, and the instance would serve the old generation until something
+    // else changed. On a scale-to-zero target that gap is every cold start.
+    const { stale, reloads } = rig({ serving: 'aaa', stamp: () => 'bbb' });
+
+    expect(await stale.catchUp()).toBe(true);
+    expect(reloads()).toBe(1);
+  });
+
+  test('and does nothing when the boot digest is what it still reads', async () => {
+    const { stale, reloads } = rig({ serving: 'aaa', stamp: () => 'aaa' });
+
+    expect(await stale.catchUp()).toBe(false);
+    expect(reloads()).toBe(0);
+  });
+
+  test('with no baseline at all, the first observation becomes one', async () => {
+    // A bind that did no boot-time read. Not the ordinary path — `startEndpoint`
+    // always supplies one — and the fallback has to be *something*; adopting the
+    // first observation is the one that provokes no reload on a healthy boot.
     const { stale, reloads } = rig({ stamp: () => 'aaa' });
 
     expect(await stale.catchUp()).toBe(false);

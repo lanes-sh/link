@@ -279,9 +279,10 @@ export async function startEndpoint(options: EndpointOptions): Promise<RunningEn
       primary: primary.resolution.profile,
       authenticator,
       log,
-      // For its digest, not for its answers: the request path asks whether the
-      // declared config moved since this instance built what it is serving.
+      // For its digest rather than its answers, with the boot value read now:
+      // an edit landing before the first request must not become the baseline.
       members,
+      serving: await members.digest(),
       ...(options.clock ? { now: options.clock } : {}),
       ...(gate ? { authorization: gate.surface } : {}),
       ...(options.port !== undefined ? { port: options.port } : {}),
