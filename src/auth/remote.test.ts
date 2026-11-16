@@ -90,43 +90,92 @@ describe('a token that names nobody', () => {
 });
 
 describe('a token that names a person', () => {
-  test('carries the profiles resolved when it was minted', async () => {
-    const { store, auth } = authenticator();
-    await store.putToken('lla_hers', {
+  /** A stored access-token row for `lanes:HER`, with whatever list it was minted with. */
+  const hers = (profiles: readonly string[]) =>
+    ({
       clientId: 'llc_x',
       kind: 'access',
       scope: 'mcp',
       family: 'llf_x',
       subject: 'lanes:HER',
-      profiles: ['personal', 'shared'],
+      profiles,
       expiresAt: HOUR,
-    });
+    }) as never;
+
+  test('reaches what the member list says now, not what the mint recorded', async () => {
+    // The release this is. A browser session's reach was resolved once, when
+    // its code was minted, and rode unchanged through thirty days of refresh —
+    // so a profile added after a client signed in could not be reached by it at
+    // all, whatever the schema said. The stored list is still *written*, for the
+    // rollback reason `oauth/store.ts` gives, and deliberately no longer read:
+    // here it says one thing and the resolver says another, and the resolver
+    // wins (ADR-083 amends ADR-060).
+    const { store, auth } = authenticator(async () => ['personal', 'added-since']);
+    await store.putToken('lla_hers', hers(['personal', 'shared']));
 
     const outcome = await auth.authenticate('Bearer lla_hers');
 
     expect(outcome.ok && outcome.principal.kind).toBe('member');
     expect(outcome.ok && outcome.principal.id).toBe('lanes:HER');
-    expect(outcome.ok && outcome.principal.profiles).toEqual(['personal', 'shared']);
+    expect(outcome.ok && outcome.principal.profiles).toEqual(['personal', 'added-since']);
   });
 
-  test('a subject with no profiles reaches nothing, rather than everything', async () => {
-    // The direction this has to fail in. A stored row's list is optional, and a
-    // row that lost its list must not read as one that may open everything —
-    // `?? []` at the call site is what decides that, and this pins it.
-    const { store, auth } = authenticator();
-    await store.putToken('lla_nobody', {
-      clientId: 'llc_x',
-      kind: 'access',
-      scope: 'mcp',
-      family: 'llf_x',
-      subject: 'lanes:NOBODY',
-      profiles: [],
-      expiresAt: HOUR,
+  test('a member removed since the mint is refused, which ends the session', async () => {
+    // Renamed from "a subject with no profiles reaches nothing", because that is
+    // no longer what happens and the old name would keep passing while meaning
+    // the opposite. An empty list is not a principal reaching nothing any more;
+    // it is a refusal. `OAuthServer.callback` will not mint a token for a member
+    // of nothing, so an issued token resolving to empty can only mean membership
+    // was removed since — a revocation, and 401 is what tells the client to
+    // re-authorise and meet the mint's own explanation of why it cannot.
+    //
+    // **This is scoped to this credential**, and the two describes below pin
+    // that: for an OIDC token and a signed key an empty list has always been an
+    // ordinary non-error, because neither has a mint gate and empty may always
+    // have meant "never had any reach".
+    const { store, auth } = authenticator(async () => []);
+    await store.putToken('lla_removed', hers([]));
+
+    expect(await auth.authenticate('Bearer lla_removed')).toEqual({
+      ok: false,
+      reason: 'invalid',
     });
+  });
 
-    const outcome = await auth.authenticate('Bearer lla_nobody');
+  test('a resolver that throws fails closed, and says nothing more than the rest', async () => {
+    // A different branch in the code from the empty case above, and the same
+    // answer on the wire. `AuthOutcome`'s reasons are a closed set and both of
+    // these have to be a 401; a sixth value would leak "you exist but reach
+    // nothing" into a header, which is the disclosure property ADR-082 rests on.
+    // `workspaceMembers` only throws once it has no last-known-good answer at
+    // all, so in practice this is a boot against an unreachable workspace.
+    const { store, auth } = authenticator(async () => {
+      throw new Error('the workspace is unreachable');
+    });
+    await store.putToken('lla_hers', hers(['personal']));
 
-    expect(outcome.ok && outcome.principal.profiles).toEqual([]);
+    expect(await auth.authenticate('Bearer lla_hers')).toEqual({ ok: false, reason: 'invalid' });
+  });
+
+  test('one token answers differently as the member list moves, with no re-mint', async () => {
+    // The whole claim, in one test: three answers from one credential, with no
+    // reconnect and no new code minted. Driven off a mutable set rather than
+    // three authenticators, so what changes is the workspace rather than the
+    // thing under test — and the last step is the direction that matters, since
+    // a revocation landing later than a grant is the security property failing.
+    const reach = new Set(['personal']);
+    const { store, auth } = authenticator(async () => [...reach]);
+    await store.putToken('lla_hers', hers(['personal']));
+
+    const first = await auth.authenticate('Bearer lla_hers');
+    expect(first.ok && first.principal.profiles).toEqual(['personal']);
+
+    reach.add('work');
+    const widened = await auth.authenticate('Bearer lla_hers');
+    expect(widened.ok && widened.principal.profiles).toEqual(['personal', 'work']);
+
+    reach.clear();
+    expect(await auth.authenticate('Bearer lla_hers')).toEqual({ ok: false, reason: 'invalid' });
   });
 });
 
