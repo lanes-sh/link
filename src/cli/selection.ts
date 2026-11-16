@@ -201,6 +201,7 @@ export const SELECTION: Record<string, Requires> = {
   'sync workspaces': 'workspace',
   'policy allow': 'profile+workspace',
   'policy deny': 'profile+workspace',
+  'policy remove': 'profile+workspace',
   // Both, unlike `identity list`, and for the same reason the policy edits are:
   // each publishes the edit, which opens the target's credential store and
   // reaches that target's endpoint.
@@ -269,7 +270,7 @@ export const SUBCOMMANDS: Record<string, readonly string[]> = {
   connection: ['list', 'declare'],
   workspace: ['list', 'use', 'show'],
   target: ['list', 'use', 'show'],
-  policy: ['list', 'allow', 'deny'],
+  policy: ['list', 'allow', 'deny', 'remove'],
   identity: ['add', 'list', 'remove'],
   token: ['show', 'rotate', 'issue', 'list', 'revoke'],
   session: ['list', 'revoke'],

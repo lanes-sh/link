@@ -273,7 +273,7 @@ describe('memory', () => {
       id: 'private',
     });
 
-    const events = await full.audit.tail({ provider: 'lanes_memory' });
+    const events = (await full.audit.tail({ provider: 'lanes_memory' })).events;
     expect(JSON.stringify(events)).not.toContain('the confidential body text');
     // ...while the address is kept, so the log can say what was written.
     expect(JSON.stringify(events)).toContain('private');
@@ -335,7 +335,7 @@ describe('a read-only profile is a real configuration — ADR-012 §2', () => {
 
     expect(attempt.error).toBeDefined();
 
-    const probes = (await readOnly.audit.tail({ capability: 'lanes_memory.write' })).filter(
+    const probes = (await readOnly.audit.tail({ capability: 'lanes_memory.write' })).events.filter(
       (event) => event.error?.kind === 'not_available',
     );
 
@@ -358,7 +358,7 @@ describe('a read-only profile is a real configuration — ADR-012 §2', () => {
     expect(outcome.ok).toBe(false);
     expect(!outcome.ok && outcome.authorization).toBe('denied_by_policy');
 
-    const denials = (await readOnly.audit.tail({ capability: 'lanes_memory.write' })).filter(
+    const denials = (await readOnly.audit.tail({ capability: 'lanes_memory.write' })).events.filter(
       (event) => event.authorization === 'denied_by_policy',
     );
 
@@ -420,7 +420,7 @@ describe('skills are prompts — ADR-012 §1', () => {
   });
 
   test('the invocation is audited like any other', async () => {
-    const events = await full.audit.tail({ capability: 'lanes_skills.review-diff' });
+    const events = (await full.audit.tail({ capability: 'lanes_skills.review-diff' })).events;
 
     expect(events.length).toBeGreaterThan(0);
     expect(events[0]?.provider).toBe('lanes_skills');
@@ -458,7 +458,7 @@ describe('vault — ADR-012 §3', () => {
     await callTool('lanes_vault_get_github_token', { connection: 'lanes_vault.owner' });
     await callTool('lanes_vault_get_bank_api_key', { connection: 'lanes_vault.owner' });
 
-    const events = await full.audit.tail({ provider: 'lanes_vault' });
+    const events = (await full.audit.tail({ provider: 'lanes_vault' })).events;
     const serialised = JSON.stringify(events);
 
     expect(events.length).toBeGreaterThan(0);
@@ -476,7 +476,7 @@ describe('vault — ADR-012 §3', () => {
       value: 'a_brand_new_secret',
     });
 
-    const events = await full.audit.tail({ capability: 'lanes_vault.put' });
+    const events = (await full.audit.tail({ capability: 'lanes_vault.put' })).events;
     const written = events[0]!;
 
     expect(JSON.stringify(written.arguments)).not.toContain('a_brand_new_secret');

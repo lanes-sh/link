@@ -1,5 +1,5 @@
 import type { Logger } from '#connectivity';
-import { mayReach, type Authenticator, type Principal } from '#auth';
+import { EVERY_PROFILE, mayReach, type Authenticator, type Principal } from '#auth';
 import type { ProfileRuntime } from '../mcp/visibility.ts';
 import { bearer, cors, json } from './http.ts';
 import { dataRoutes, isDataPath, DATA_HEADERS, DATA_METHODS } from './data.ts';
@@ -94,10 +94,19 @@ const AUDIT_DEFAULT = 100;
  * would be the wrong direction to resolve it: these routes do not know how the
  * log is chained, stored, or verified, and nothing here should be able to find
  * out. What they need is the last N entries, so that is what they ask for.
+ *
+ * `profiles` is here because the alternative was to ask for N entries and throw
+ * most of them away: a row names the profile it happened in, and this route has
+ * to drop the ones the caller may not see. Done after the call, the limit is
+ * spent on rows nobody is going to be shown — so asking for a hundred of one
+ * profile returned that profile's share of the newest hundred, and said nothing
+ * about having done so. The predicate belongs on the side that walks the log.
  */
 export interface AuditTail {
-  tail(options?: { limit?: number }): Promise<
-    readonly {
+  tail(options?: { limit?: number; profiles?: readonly string[] }): Promise<{
+    readonly complete: boolean;
+    readonly scanned: number;
+    readonly events: readonly {
       readonly id: string;
       readonly timestamp: Date;
       readonly profile: string;
@@ -111,8 +120,8 @@ export interface AuditTail {
       readonly status: string;
       readonly durationMs: number;
       readonly error?: { readonly kind: string; readonly message: string } | undefined;
-    }[]
-  >;
+    }[];
+  }>;
 }
 
 export interface ReadDeps {
@@ -295,18 +304,51 @@ export async function readRoutes(request: Request, deps: ReadDeps): Promise<Resp
     );
     const profile = url.searchParams.get('profile');
 
-    const events = await deps.audit.tail({ limit });
     // Filtered by what the caller reaches before the `profile` argument narrows
     // it further. The log is the workspace's (ADR-063), but an entry names the
     // profile it happened in, so an unfiltered tail would report the existence
     // of every profile and every capability called in it to somebody no member
     // list names.
-    const mine = events.filter((event) => mayReach(caller, event.profile));
-    const shown = profile ? mine.filter((event) => event.profile === profile) : mine;
+    //
+    // Both predicates are on `profile`, so they intersect to one list and go to
+    // the store together — before the limit, which is the whole point. Doing it
+    // here, after a `tail(limit)`, spent the limit on rows this route was about
+    // to discard and returned a short answer that read like a complete one.
+    //
+    // `undefined` is "no predicate" and `[]` is "nothing matches", and the
+    // difference is load-bearing: an owner reaching EVERY_PROFILE must not be
+    // narrowed, and a caller naming a profile they may not reach must get an
+    // empty log rather than the workspace's. `reachWithin()` is the wrong
+    // helper for the first of those — it collapses EVERY_PROFILE to the
+    // principal's own profile, which would hide an owner's other profiles from
+    // their own audit tail.
+    const reach = caller.profiles === EVERY_PROFILE ? undefined : caller.profiles;
+    const want = profile ? (mayReach(caller, profile) ? [profile] : []) : reach;
+
+    const page = await deps.audit.tail({ limit, ...(want ? { profiles: want } : {}) });
 
     return json(
       {
-        events: shown.map((event) => ({
+        // Whether the walk reached the end, so a short answer can be read as
+        // short rather than as empty. Silence here is the defect this route is
+        // being fixed for, one layer up.
+        //
+        // `complete` and **not** `scanned`, which the store also returns. The
+        // walk reads the workspace's whole chain and the caller reaches some
+        // of it, so the count is a measure of everybody's activity answered to
+        // somebody entitled to their own — poll it and the rate of change is
+        // how busy the other profiles are. That is the side channel ADR-079
+        // closed in its louder form, where an unfiltered tail "would report the
+        // existence of every profile and every capability called in it to
+        // somebody no member list names". A volume signal is the quiet version
+        // of the same disclosure.
+        //
+        // Nothing is lost by withholding it. `complete: false` already says
+        // "narrow your query", which is the only thing a page can act on, and
+        // the exact figure stays available to the operator at the CLI, which
+        // reads the store directly rather than over this route.
+        complete: page.complete,
+        events: page.events.map((event) => ({
           id: event.id,
           timestamp: event.timestamp.toISOString(),
           profile: event.profile,

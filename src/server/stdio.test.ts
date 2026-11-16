@@ -48,7 +48,7 @@ describe('the stdio surface', () => {
 
       expect(JSON.stringify(result.content)).toContain('over a pipe');
 
-      const [event] = await harness.audit.tail();
+      const [event] = (await harness.audit.tail()).events;
       expect(event).toMatchObject({
         capability: 'example.echo',
         principal: 'personal:owner',
@@ -82,7 +82,7 @@ describe('the stdio surface', () => {
       // append a turn to land rather than racing it.
       await Bun.sleep(50);
 
-      const denied = await harness.audit.tail({ deniedOnly: true });
+      const denied = (await harness.audit.tail({ deniedOnly: true })).events;
       expect(denied).toHaveLength(1);
       expect(denied[0]).toMatchObject({
         capability: 'example.set_note',
@@ -109,8 +109,8 @@ describe('the stdio surface', () => {
 
       await Bun.sleep(50);
 
-      expect(await harness.audit.tail({ deniedOnly: true })).toHaveLength(0);
-      expect(await harness.audit.tail()).toHaveLength(1);
+      expect((await harness.audit.tail({ deniedOnly: true })).events).toHaveLength(0);
+      expect((await harness.audit.tail()).events).toHaveLength(1);
     } finally {
       await harness.stop();
     }
@@ -136,7 +136,7 @@ describe('the stdio surface', () => {
 
       await Bun.sleep(50);
 
-      expect(await harness.audit.tail({ deniedOnly: true })).toHaveLength(0);
+      expect((await harness.audit.tail({ deniedOnly: true })).events).toHaveLength(0);
     } finally {
       await harness.stop();
     }

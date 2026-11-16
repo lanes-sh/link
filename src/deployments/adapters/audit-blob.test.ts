@@ -206,7 +206,7 @@ describe('audit-blob: a dotfile in the audit directory', () => {
       now: () => new Date(Date.UTC(2026, 7, 12, 10, 4, 31, 221)),
     }).tail({ limit: 10 });
 
-    expect(tailed).toHaveLength(2);
+    expect(tailed.events).toHaveLength(2);
   });
 
   test('but a real event that will not decode still fails, loudly', async () => {

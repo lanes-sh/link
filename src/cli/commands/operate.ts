@@ -15,7 +15,7 @@
  *   audit.ts     audit tail and verify, and the Markdown rendering of tail
  *   token.ts     token show, token rotate
  *   session.ts   session list, session revoke
- *   policy.ts    policy list/allow/deny, config show
+ *   policy.ts    policy list/allow/deny/remove, config show
  *
  * This file stays a barrel because `./operate.ts` is the spelling `main.ts` and
  * `operate.test.ts` bind, and Bun will not resolve that to `operate/index.ts`.
@@ -44,4 +44,4 @@ export {
   tokenShow,
 } from './operate/token.ts';
 export { sessionList, sessionRevoke, type SessionFlags } from './operate/session.ts';
-export { configShow, policyList, policyRule } from './operate/policy.ts';
+export { configShow, policyList, policyRemove, policyRule } from './operate/policy.ts';
