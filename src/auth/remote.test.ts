@@ -654,4 +654,61 @@ describe('listing and ending sessions', () => {
     expect(left).toHaveLength(1);
     expect(left[0]!.subject).toBe('lanes:HIM');
   });
+
+  test('ending several sessions walks the keyspace once, not once per family', async () => {
+    // Measured before this existed: 2m43s to end six sessions on a deployed
+    // target, because `session revoke` called the single-family version in a
+    // loop and each call is a LIST plus a GET per key against a bucket. Every
+    // refresh rotation writes a row and a tombstone lives thirty days
+    // (ADR-035), so the keyspace is large on a workspace in use.
+    //
+    // Counted rather than timed: a duration assertion would be flaky and would
+    // not say what was wrong, while the scan count is the thing that was
+    // multiplying.
+    const inner = memoryStore();
+    let scans = 0;
+    const counted: KeyValueStore = {
+      ...inner,
+      keys: async (namespace) => {
+        scans++;
+        return inner.keys(namespace);
+      },
+    };
+    const store = new OAuthStore(counted);
+
+    const families = ['llf_one', 'llf_two', 'llf_three', 'llf_four'];
+    for (const [index, family] of families.entries()) {
+      await store.putToken(`lla_${index}`, access(family, 'lanes:HER'));
+      await store.putToken(`llr_${index}`, refresh(family, 'lanes:HER'));
+    }
+    expect(await store.sessions()).toHaveLength(4);
+
+    scans = 0;
+    await store.revokeFamily(families);
+
+    expect(scans).toBe(1);
+    expect(await store.sessions()).toEqual([]);
+    for (const [index] of families.entries()) {
+      expect(await store.token(`llr_${index}`)).toBeNull();
+    }
+  });
+
+  test('and revoking nothing reads nothing at all', async () => {
+    // `session revoke` resolves the subject's families before calling, so an
+    // empty set means the subject held no session — which must not cost a walk
+    // of the whole keyspace to discover a second time.
+    const inner = memoryStore();
+    let scans = 0;
+    const store = new OAuthStore({
+      ...inner,
+      keys: async (namespace) => {
+        scans++;
+        return inner.keys(namespace);
+      },
+    });
+
+    await store.revokeFamily([]);
+
+    expect(scans).toBe(0);
+  });
 });

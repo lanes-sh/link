@@ -335,18 +335,19 @@ export class OAuthStore {
   }
 
   /**
-   * Drop every token in a refresh family.
+   * Drop every token in one or more refresh families, in a single pass.
    *
-   * A replay no longer calls this, and a replay was the only thing that did —
-   * see `OAuthServer.#refresh` and ADR-035. Kept because it is the shape a
-   * deliberate revocation takes: one authorization's whole chain, dropped on
-   * purpose. Nothing in `src/` reaches it today, so read a call site as new
-   * policy rather than as the old one returning.
+   * `session revoke` is the caller; a replay no longer is (ADR-035). **Several
+   * at once**, since one sign-in is one family and four clients are four, and a
+   * pass is a LIST plus a GET per key over a store holding a row per rotation
+   * and tombstones for thirty days — per family, that took 2m43s for six.
    */
-  async revokeFamily(family: string): Promise<void> {
+  async revokeFamily(family: string | Iterable<string>): Promise<void> {
+    const wanted = new Set(typeof family === 'string' ? [family] : family);
+    if (wanted.size === 0) return;
     for (const key of await this.#state.keys(TOKENS)) {
       const record = await this.#read<IssuedToken>(TOKENS, key);
-      if (record?.family === family) {
+      if (record && wanted.has(record.family)) {
         this.#seen.delete(key);
         await this.#state.delete(TOKENS, key);
       }
