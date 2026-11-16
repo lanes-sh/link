@@ -2,6 +2,7 @@ import { layout, PROFILE_FILE } from './layout.ts';
 import { parseConfig } from './load.ts';
 import { readWorkspaceFile, workspaceFiles } from './files.ts';
 import { CONNECTIONS_FILE } from './workspace.ts';
+import type { BlobStore } from '#stores/blobs';
 
 /**
  * Which profiles declare a subject, and whether their declarations moved.
@@ -89,12 +90,48 @@ export const MEMBERS_TTL_MS = 5_000;
  */
 export const INVENTORY_TTL_MS = 60_000;
 
+/**
+ * How long a last-known-good answer may be served while the workspace is unreadable.
+ *
+ * Unbounded staleness is a revocation bypass, which is what an automated review
+ * of the first version of this file said and it was right. Two different faults
+ * were being held open by one catch:
+ *
+ * - A config that will not **parse** is now that profile's problem alone (see
+ *   `read`), so the pass still succeeds and every other profile's edits land.
+ *   That was the permanent case, and it no longer reaches this ceiling at all.
+ * - A workspace that cannot be **read** fails the pass. That is transient by
+ *   nature — but not always: credentials revoked for the bucket, or the bucket
+ *   deleted, fails every pass forever, and reach frozen forever is exactly the
+ *   bypass. So it is bounded.
+ *
+ * Five minutes rides out any blip worth riding out, and a workspace unreachable
+ * for longer is a broken endpoint rather than a hiccup. Past it this throws and
+ * the authenticators fail closed, which is the right end state: refusing every
+ * caller is visible and recoverable, while serving twelve-hour-old permissions
+ * is neither. It is also two orders of magnitude tighter than the window this
+ * whole change exists to close.
+ */
+export const STALE_CEILING_MS = 5 * 60_000;
+
 interface Options {
   readonly ttlMs?: number | undefined;
   readonly inventoryTtlMs?: number | undefined;
+  readonly staleCeilingMs?: number | undefined;
   readonly now?: (() => number) | undefined;
   /** Told once per failed pass, with the reason. Kept dependency-free on purpose. */
   readonly onStale?: ((reason: string) => void) | undefined;
+  /**
+   * The store to read through, where `workspaceFiles(root)` is not wanted.
+   *
+   * A seam, and it earns itself twice. The read failures this module's whole
+   * error handling exists for are a *bucket* misbehaving — a 503, a throttle, an
+   * expired metadata-server token — and the filesystem adapter cannot produce
+   * one: its `list` swallows `readdir` errors and returns nothing stored yet. So
+   * without this the fail-closed and stale-ceiling paths could only be tested
+   * against the one adapter that never takes them.
+   */
+  readonly files?: BlobStore | undefined;
 }
 
 /** One read of the declared configs: who is a member, and what the bytes hash to. */
@@ -106,7 +143,9 @@ interface Pass {
 export function workspaceMembers(root: string, options: Options = {}): WorkspaceMembers {
   const ttl = options.ttlMs ?? MEMBERS_TTL_MS;
   const inventoryTtl = options.inventoryTtlMs ?? INVENTORY_TTL_MS;
+  const staleCeiling = options.staleCeilingMs ?? STALE_CEILING_MS;
   const now = options.now ?? Date.now;
+  const files = options.files ?? workspaceFiles(root);
 
   // The last pass that fully succeeded, replaced only as a pair. A half-updated
   // map and stamp would mean reporting a change nobody can see the cause of.
@@ -123,7 +162,7 @@ export function workspaceMembers(root: string, options: Options = {}): Workspace
     // complete has to reach the caller as a failure, or every profile in the
     // workspace reads as deleted.
     const prefix = `${layout.profilesRoot()}/`;
-    const entries = await workspaceFiles(root).list(prefix);
+    const entries = await files.list(prefix);
     const found = new Set<string>();
 
     for (const entry of entries) {
@@ -148,7 +187,7 @@ export function workspaceMembers(root: string, options: Options = {}): Workspace
   }
 
   async function read(): Promise<Pass> {
-    const files = workspaceFiles(root);
+
     const hasher = new Bun.CryptoHasher('sha256');
     const bySubject = new Map<string, string[]>();
 
@@ -164,14 +203,32 @@ export function workspaceMembers(root: string, options: Options = {}): Workspace
       const text = await readWorkspaceFile(files, key);
 
       // Absent is removed, and that is an answer: its members lose it and its
-      // bytes leave the digest, so the removal converges. Unreadable is not an
-      // answer, and `parseConfig` throwing lands in the caller's catch — a
-      // half-written file must never read as a profile with no members.
+      // bytes leave the digest, so the removal converges.
       if (text === null) continue;
+
+      // Hashed before it is parsed, deliberately. The digest describes the
+      // bytes on disk whether or not they make sense, so repairing a broken
+      // config moves the stamp and provokes the reload that picks it up.
       hasher.update(`${key}\0${text}\0`);
 
-      const { config } = parseConfig(text, key);
-      for (const member of config.members) {
+      // **One profile's fault is one profile's problem.** This used to throw
+      // out of the whole pass, which held every *other* profile's reach at its
+      // last known value too — so a single typo in one config suspended
+      // revocation across the workspace, permanently, for as long as the typo
+      // lasted. Dropped on its own instead, which is also what the endpoint
+      // already does with it: `openRuntime` cannot open a profile whose config
+      // will not parse, so `openReconciled` skips it and nothing is served
+      // under it anyway. Contributing no members matches what is actually
+      // reachable, and it fails closed rather than open.
+      let members: readonly { readonly subject: string }[];
+      try {
+        members = parseConfig(text, key).config.members;
+      } catch (error) {
+        options.onStale?.(error instanceof Error ? error.message : String(error));
+        continue;
+      }
+
+      for (const member of members) {
         const held = bySubject.get(member.subject) ?? [];
         held.push(profile);
         bySubject.set(member.subject, held);
@@ -197,10 +254,16 @@ export function workspaceMembers(root: string, options: Options = {}): Workspace
       // path is reachable in a healthy deployment.
       if (good === null) throw error;
 
-      // Stale rather than loud, and symmetric: during an outage a grant and a
-      // revocation are equally old, so "revocation no slower than granting"
-      // still holds. The clock is deliberately not advanced, so the next
-      // request tries again rather than waiting out the window.
+      // **Bounded**, because reach frozen forever is a revocation bypass however
+      // good the reason for freezing it. `readAt` is only stamped by a pass that
+      // succeeded, so this is the age of the answer rather than of the attempt.
+      // Past the ceiling it rethrows and the authenticators fail closed.
+      if (now() - readAt >= staleCeiling) throw error;
+
+      // Inside it, stale rather than loud, and symmetric: during an outage a
+      // grant and a revocation are equally old, so "revocation no slower than
+      // granting" still holds. The clock is deliberately not advanced, so the
+      // next request retries rather than waiting out the window.
       options.onStale?.(reason);
       return good;
     }

@@ -4,7 +4,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { connectionsYaml, profileYaml, workspaceYaml, writeProfileFixture } from './testing.ts';
 import { layout } from './layout.ts';
-import { declaredMembers, workspaceMembers, INVENTORY_TTL_MS, MEMBERS_TTL_MS } from './members.ts';
+import { CONNECTIONS_FILE } from './workspace.ts';
+import { createMemoryBlobStore } from '#stores/blobs/testing.ts';
+import type { BlobStore } from '#stores/blobs';
+import {
+  declaredMembers,
+  workspaceMembers,
+  INVENTORY_TTL_MS,
+  MEMBERS_TTL_MS,
+  STALE_CEILING_MS,
+} from './members.ts';
 
 /**
  * The one rule four credentials now share.
@@ -103,61 +112,179 @@ describe('telling removed from unreadable', () => {
     expect(await members.profilesFor(ONE)).toEqual(['personal']);
   });
 
-  test('a config that will not parse keeps the last good answer', async () => {
-    // The stale-while-error rule, and the reason the module does not call
-    // `loadWorkspaceProfiles`: that function would report this profile as
-    // having no members, which under an empty-means-revoked caller logs its
-    // members out because a file was half-written.
+  test("a config that will not parse is that profile's problem alone", async () => {
+    // The first version of this module threw out of the whole pass here, and an
+    // automated review was right to call it a revocation bypass: one typo held
+    // every *other* profile's reach at its last known value too, for as long as
+    // the typo lasted. Dropping the one profile also matches what is actually
+    // reachable — `openRuntime` cannot open a config that will not parse, so
+    // `openReconciled` skips it and nothing is served under it anyway.
     let clock = 1_000;
     const stale: string[] = [];
-    const root = await workspace([{ name: 'personal', members: [ONE] }]);
+    const root = await workspace([
+      { name: 'personal', members: [ONE] },
+      { name: 'work', members: [ONE, TWO] },
+    ]);
     const members = workspaceMembers(root, { now: () => clock, onStale: (r) => stale.push(r) });
 
-    expect(await members.profilesFor(ONE)).toEqual(['personal']);
+    expect([...(await members.profilesFor(ONE))].sort()).toEqual(['personal', 'work']);
 
-    await writeFile(join(root, layout.profileConfig('personal')), 'contract: [unclosed\n');
+    await writeFile(join(root, layout.profileConfig('work')), 'contract: [unclosed\n');
     clock += MEMBERS_TTL_MS;
 
     expect(await members.profilesFor(ONE)).toEqual(['personal']);
+    expect(await members.profilesFor(TWO)).toEqual([]);
     expect(stale).toHaveLength(1);
   });
 
-  test('the clock is not advanced by a failed pass, so recovery is immediate', async () => {
-    // A failed pass that stamped the clock would hold the stale answer for the
-    // whole window after the cause had gone. It retries on the next call.
+  test('a broken config does not hold up a revocation elsewhere', async () => {
+    // The property the per-profile split exists for, stated on its own: a file
+    // nobody can parse must not become a way to keep reach somewhere else.
+    let clock = 1_000;
+    const root = await workspace([
+      { name: 'personal', members: [ONE] },
+      { name: 'broken', members: [TWO] },
+    ]);
+    const members = workspaceMembers(root, { now: () => clock, onStale: () => {} });
+
+    await members.profilesFor(ONE);
+
+    await writeFile(join(root, layout.profileConfig('broken')), 'contract: [unclosed\n');
+    await writeProfileFixture(root, 'personal', profileYaml('personal', { members: [] }));
+    clock += MEMBERS_TTL_MS;
+
+    expect(await members.profilesFor(ONE)).toEqual([]);
+  });
+});
+
+/**
+ * The other error class, which only a misbehaving store produces.
+ *
+ * A bucket 503, a throttle, an expired metadata-server token. These go through
+ * an injected store because the filesystem adapter cannot produce one — its
+ * `list` swallows `readdir` errors and reports nothing stored yet — so without
+ * the seam the fail-closed paths could only be exercised against the one
+ * adapter that never takes them.
+ */
+describe('a workspace that cannot be read', () => {
+  async function store(
+    profiles: readonly { name: string; members?: readonly string[] }[],
+  ): Promise<{ files: BlobStore; fail: (why: string | null) => void }> {
+    const base = createMemoryBlobStore();
+    const put = (key: string, text: string) =>
+      base.put(key, new TextEncoder().encode(text), { contentType: 'application/yaml' });
+
+    await put(CONNECTIONS_FILE, connectionsYaml());
+    for (const profile of profiles) {
+      await put(
+        layout.profileConfig(profile.name),
+        profileYaml(profile.name, { members: profile.members ?? [] }),
+      );
+    }
+
+    let why: string | null = null;
+    const files: BlobStore = {
+      ...base,
+      async get(key) {
+        if (why !== null) throw new Error(why);
+        return base.get(key);
+      },
+      async list(prefix) {
+        if (why !== null) throw new Error(why);
+        return base.list(prefix);
+      },
+    };
+
+    return {
+      files,
+      fail: (next) => {
+        why = next;
+      },
+    };
+  }
+
+  test('serves the last good answer, and says so', async () => {
     let clock = 1_000;
     const stale: string[] = [];
-    const root = await workspace([{ name: 'personal', members: [ONE] }]);
-    const members = workspaceMembers(root, { now: () => clock, onStale: (r) => stale.push(r) });
+    const { files, fail } = await store([{ name: 'personal', members: [ONE] }]);
+    const members = workspaceMembers('gs://your-bucket', {
+      files,
+      now: () => clock,
+      onStale: (reason) => stale.push(reason),
+    });
+
+    expect(await members.profilesFor(ONE)).toEqual(['personal']);
+
+    fail('503 from the bucket');
+    clock += MEMBERS_TTL_MS;
+
+    // Not knowing is answered with the last thing it did know. A blip must not
+    // read as "nobody is a member", which under an issued token would 401 every
+    // connected client at once — and their correct response to a 401 is to
+    // re-authorise, so the reply to a struggling bucket would be a stampede.
+    expect(await members.profilesFor(ONE)).toEqual(['personal']);
+    expect(stale).toEqual(['503 from the bucket']);
+  });
+
+  test('does not advance the clock on a failed pass, so recovery is immediate', async () => {
+    let clock = 1_000;
+    const stale: string[] = [];
+    const { files, fail } = await store([{ name: 'personal', members: [ONE] }]);
+    const members = workspaceMembers('gs://your-bucket', {
+      files,
+      now: () => clock,
+      onStale: (reason) => stale.push(reason),
+    });
 
     await members.profilesFor(ONE);
     const good = members.stamp();
 
-    await writeFile(join(root, layout.profileConfig('personal')), 'contract: [unclosed\n');
+    fail('throttled');
     clock += MEMBERS_TTL_MS;
-    await members.profilesFor(ONE);
-    expect(stale).toHaveLength(1);
+    expect(await members.profilesFor(ONE)).toEqual(['personal']);
     expect(members.stamp()).toBe(good);
 
-    // Repaired, and named differently, so a pass that really ran is visible.
-    await writeProfileFixture(root, 'personal', profileYaml('personal', { members: [ONE, TWO] }));
-    expect([...(await members.profilesFor(ONE))].sort()).toEqual(['personal']);
-    expect(await members.profilesFor(TWO)).toEqual(['personal']);
+    // Recovered without waiting out another window: a failed pass that stamped
+    // the clock would hold the stale answer long after the cause had gone.
+    fail(null);
+    expect(await members.profilesFor(ONE)).toEqual(['personal']);
     expect(stale).toHaveLength(1);
-    expect(members.stamp()).not.toBe(good);
   });
 
-  test('an unreadable workspace with nothing known yet is thrown on, not answered', async () => {
-    // Fail closed at boot. The three per-request authenticators each catch and
-    // return `invalid`, so throwing is what closes the endpoint; answering
-    // "nobody is a member" would open it to nobody and log everybody out, which
-    // is the same event seen from the other side.
-    const root = await workspace([{ name: 'personal', members: [ONE] }]);
-    await writeFile(join(root, layout.profileConfig('personal')), 'contract: [unclosed\n');
+  test('stops serving a stale answer past the ceiling', async () => {
+    // Unbounded staleness is a revocation bypass however good the reason.
+    // Credentials revoked for the bucket, or a bucket deleted, fails every pass
+    // forever — and reach frozen forever is the bypass. Past the ceiling this
+    // throws and the authenticators' existing catch fails closed, which is
+    // visible and recoverable where twelve-hour-old permissions are neither.
+    let clock = 1_000;
+    const { files, fail } = await store([{ name: 'personal', members: [ONE] }]);
+    const members = workspaceMembers('gs://your-bucket', {
+      files,
+      now: () => clock,
+      onStale: () => {},
+    });
 
-    const members = workspaceMembers(root);
+    expect(await members.profilesFor(ONE)).toEqual(['personal']);
 
-    await expect(members.profilesFor(ONE)).rejects.toThrow();
+    fail('the bucket is gone');
+    clock += MEMBERS_TTL_MS;
+    expect(await members.profilesFor(ONE)).toEqual(['personal']);
+
+    clock += STALE_CEILING_MS;
+
+    await expect(members.profilesFor(ONE)).rejects.toThrow('the bucket is gone');
+  });
+
+  test('with nothing known yet is thrown on, not answered', async () => {
+    // Fail closed at boot. Answering "nobody is a member" would log everybody
+    // out, which is the same event seen from the other side.
+    const { files, fail } = await store([{ name: 'personal', members: [ONE] }]);
+    fail('no credentials for the bucket');
+
+    const members = workspaceMembers('gs://your-bucket', { files });
+
+    await expect(members.profilesFor(ONE)).rejects.toThrow('no credentials');
     expect(members.stamp()).toBeNull();
   });
 });
