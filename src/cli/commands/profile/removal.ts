@@ -242,9 +242,19 @@ export async function removalPlan(
 
     // `deploy` only: the schema folds the deprecated `cloudrun` block into it,
     // so the resolved config has one answer rather than two that could differ.
-    if (declared.deploy) {
+    //
+    // **And only when nothing is left to serve.** This fired on every removal
+    // from a deployed target, so removing one profile of six announced that
+    // "every call will fail" while the endpoint went on serving the other five
+    // — which it did, correctly, through the removal and after it. A warning
+    // that is false in the common case is one an operator learns to scroll
+    // past, and this is the same sentence as the removal's other false alarm:
+    // the one that read a successful removal as the endpoint refusing the
+    // config. `survivors` is the profiles that parsed and are staying, so an
+    // empty one is genuinely the last profile this service had.
+    if (declared.deploy && (options.survivors ?? []).length === 0) {
       warnings.push(
-        `Target "${name}" is deployed. The service will keep answering, and every call will fail, because what it served is gone. Tearing it down is not part of this.`,
+        `Target "${name}" is deployed, and this is the last profile it serves. The service will keep answering, and every call will fail, because what it served is gone. Tearing it down is not part of this.`,
       );
     }
   }

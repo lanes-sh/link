@@ -127,7 +127,16 @@ export async function revokeConnectionFrom(
   document.removeFrom(['grants'], at);
   await document.save();
 
-  return emit(flags.json, { profile: resolution.profile, target, connection: key }, () => {
+  // Published, for the same reason `grantConnectionTo` publishes — and more
+  // urgently. Widening that the endpoint has not heard about costs an agent one
+  // refusal it can retry; narrowing that it has not heard about keeps serving
+  // the grant this command says it took back. The two directions sat in one
+  // file with only one of them notifying, which made `revoke` the slowest path
+  // in the system and the only one whose slowness was a permission still in
+  // force. Same argument `policy deny` already states at its own call site.
+  const published = nextAfterEdit(await publishProfileEdit({ resolution, config, target }));
+
+  return emit(flags.json, { profile: resolution.profile, target, connection: key, published }, () => {
     announce(resolution);
     print(ok(`revoked ${style.bold(key)} from ${style.bold(resolution.profile)}`));
     print(
@@ -136,5 +145,6 @@ export async function revokeConnectionFrom(
           `      To remove the account itself: lanes link disconnect ${key}`,
       ),
     );
+    if (published) print(style.dim(`      ${published}`));
   });
 }

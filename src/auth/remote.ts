@@ -12,11 +12,18 @@ import type { OidcVerifier } from './oidc.ts';
 /**
  * The three ways a remote client's token becomes a principal.
  *
- * A token this endpoint issued now carries *who completed the flow* and which
- * profiles named them, so it resolves to a member principal (ADR-060). Both were
- * the owner until 0.8.0, on the reading that there is one person behind an
- * endpoint — which stopped being true the moment a profile could declare
- * somebody else may consume it.
+ * A token this endpoint issued carries *who completed the flow*, and the
+ * profiles that name them are resolved per request from the declared config, so
+ * it resolves to a member principal (ADR-060, amended by ADR-083). Both were the
+ * owner until 0.8.0, on the reading that there is one person behind an endpoint
+ * — which stopped being true the moment a profile could declare somebody else
+ * may consume it.
+ *
+ * **All four resolve membership the same way now**, which is what ADR-060's own
+ * revocation paragraph already claimed and only one of them did. A static token
+ * had no mint to be resolved at, so it always read the files; an issued token
+ * had one and read it once. The asymmetry was not a design, it was an accident
+ * of which credential arrived first.
  *
  * **A token without a subject is refused** (ADR-079). It used to resolve to the
  * owner, so that a token minted before 0.8.0 kept working until it expired
@@ -47,10 +54,16 @@ import type { OidcVerifier } from './oidc.ts';
 export class IssuedTokenAuthenticator implements Authenticator {
   readonly #store: OAuthStore;
   readonly #profile: string;
+  readonly #profilesFor: (subject: string) => Promise<readonly string[]>;
 
-  constructor(store: OAuthStore, profile: string) {
+  constructor(
+    store: OAuthStore,
+    profile: string,
+    profilesFor: (subject: string) => Promise<readonly string[]>,
+  ) {
     this.#store = store;
     this.#profile = profile;
+    this.#profilesFor = profilesFor;
   }
 
   async authenticate(header: string | null | undefined): Promise<AuthOutcome> {
@@ -70,22 +83,45 @@ export class IssuedTokenAuthenticator implements Authenticator {
     // name a person. ADR-079.
     if (record.subject === undefined) return { ok: false, reason: 'invalid' };
 
-    // The list resolved when the code was minted, not now. Re-reading it here
-    // would mean a profile edit silently ending a live session, which ADR-060
-    // deliberately does not do — so `profile members remove` stops the next
-    // sign-in and lets one already made run its course.
+    // **Resolved now, not at the mint** — which reverses what this comment used
+    // to defend (ADR-083 amends ADR-060). The stored `record.profiles` is still
+    // written and is no longer read: a browser session's reach was frozen when
+    // its code was minted and rode unchanged through thirty days of refresh, so
+    // a profile added after a client signed in could not be reached by it at
+    // all, and a member removed kept their reach for the full
+    // `access_token_ttl_minutes` — twelve hours by default, with no command
+    // anywhere in the CLI able to shorten it.
     //
-    // **Nothing closes that window**, and this comment used to say
-    // `lanes link token rotate` did. It does not: it rotates one API token row,
-    // needs an `--id`, and prints that browser clients are unaffected. No
-    // command in the CLI reaches `OAuthStore` at all. Until one does, the window
-    // is `access_token_ttl_minutes` — twelve hours by default — and the honest
-    // thing is to say so rather than to name a command that would report
-    // success.
-    return {
-      ok: true,
-      principal: memberPrincipal(record.subject, this.#profile, record.profiles ?? []),
-    };
+    // The old argument was that re-reading here would let a profile edit
+    // silently end a live session. That is now the point rather than the
+    // objection: a revocation that lands later than a grant is the security
+    // property failing, and this was the slowest path in the system.
+    let profiles: readonly string[];
+    try {
+      profiles = await this.#profilesFor(record.subject);
+    } catch {
+      // Fail closed, and kept structurally separate from the empty case below.
+      // `workspaceMembers` only throws when it has no last-known-good answer at
+      // all, so this is a boot against a workspace this process cannot reach —
+      // not a member list that came back empty.
+      return { ok: false, reason: 'invalid' };
+    }
+
+    // **Empty ends the session, and only here.** For the other three
+    // credentials an empty list has always been an ordinary non-error — a
+    // subject no profile names reaches nothing and is told so by a refusal
+    // (ADR-082) — and `remote.test.ts`, `index.test.ts`, `delegation.test.ts`
+    // and `visibility.test.ts` all pin that. An *issued* token is the one case
+    // where empty carries a second fact: `OAuthServer.callback` refuses to mint
+    // one for a member of nothing, so a token resolving to empty must have had
+    // its membership removed since. That is a revocation, and 401 is what tells
+    // the client to re-authorise and meet the mint's own explanation of why it
+    // cannot. A browser session is also the only one of the four that is a
+    // session at all; the others are long-lived machine credentials with nothing
+    // to end.
+    if (profiles.length === 0) return { ok: false, reason: 'invalid' };
+
+    return { ok: true, principal: memberPrincipal(record.subject, this.#profile, profiles) };
   }
 }
 

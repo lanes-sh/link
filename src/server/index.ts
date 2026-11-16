@@ -7,6 +7,7 @@ import { ANY_ORIGIN, corsAware, type CorsPolicy } from './cors.ts';
 import { isDashboardPath, readRoutes, type ReadDeps } from './read/routes.ts';
 import type { Generation } from './generation.ts';
 import type { Generations } from './generations.ts';
+import { staleness } from './staleness.ts';
 import {
   authRefusal,
   authenticateRequest,
@@ -60,6 +61,19 @@ export interface ServerOptions {
   /** Hostnames this endpoint answers to. See `./rebinding.ts`. */
   readonly allowedHostnames?: readonly string[] | undefined;
   /**
+   * The member resolver, for the digest of the declared config.
+   *
+   * Structural rather than the whole `WorkspaceMembers`, because this is the
+   * only half the request path wants. It runs a pass when the window has
+   * closed, rather than depending on which credential authenticated. Absent on
+   * a bind with no resolver, which behaves as before (`./staleness.ts`).
+   */
+  readonly members?: { digest(): Promise<string | null> } | undefined;
+  /** The digest the booted generation was built from. See `./staleness.ts`. */
+  readonly serving?: string | null | undefined;
+  /** The staleness guard's clock. A seam for the convergence tests; see `EndpointOptions`. */
+  readonly now?: (() => number) | undefined;
+  /**
    * Meter the surface that answers before authentication.
    *
    * A property of what this is bound to, exactly as `cors` and
@@ -103,46 +117,24 @@ export function isLoopback(host: string): boolean {
   return LOOPBACK.has(host);
 }
 
-/**
- * How often an unrecognised tool name may provoke a reload.
- *
- * The safety net below reloads when a call names a tool this endpoint does not
- * advertise, which is what a just-connected provider looks like to an instance
- * that missed the notify. An agent retrying a genuinely absent tool must not
- * turn that into a reload per call, so it is bounded.
- */
-const RELOAD_PROBE_MS = 10_000;
-
 export interface RequestHandler {
   fetch(request: Request): Promise<Response>;
   close(): Promise<void>;
 }
 
 export function createRequestHandler(options: ServerOptions): RequestHandler {
-  let probedAt = 0;
   const failedAuth = failedAuthLimiter();
   const unauthenticated = options.meterUnauthenticated ? unauthenticatedLimiter() : null;
 
-  /**
-   * Re-read the config because a call named a tool we do not serve.
-   *
-   * The notify (ADR-029) reaches one instance. A second instance that was warm
-   * when the operator connected an account keeps refusing it, which would make
-   * "connecting does not need a redeploy" true only sometimes — the worst of
-   * the three possible states, because nobody can reproduce it.
-   *
-   * So the error path closes it. A tool that appeared a moment ago is
-   * indistinguishable from a tool that never existed, and both arrive here; one
-   * reload tells them apart. Nothing on the success path pays for this.
-   */
-  const probeForNewConfig = async (): Promise<boolean> => {
-    const now = Date.now();
-    if (now - probedAt < RELOAD_PROBE_MS) return false;
-    probedAt = now;
-
-    const result = await options.generations.reload();
-    return result.reloaded;
-  };
+  // Both ways a warm instance catches up on config nobody told it about, over
+  // one clock so they cannot provoke two reloads for one request.
+  const stale = staleness({
+    generations: options.generations,
+    log: options.log,
+    ...(options.members ? { members: options.members } : {}),
+    ...(options.serving === undefined ? {} : { serving: options.serving }),
+    ...(options.now ? { now: options.now } : {}),
+  });
 
   return {
     async fetch(request) {
@@ -252,6 +244,14 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
         return Response.json(result);
       }
 
+      // After authentication, so an unverified caller cannot make this instance
+      // read its store, and after the `/reload` branch, so an explicit notify
+      // does not also pay for a digest comparison. Before `acquire()` is the
+      // load-bearing part: a request that provokes the reload is then evaluated
+      // against the config it provoked, which is the one thing the error-path
+      // probe below cannot do — it has to release and re-pin mid-flight.
+      await stale.catchUp();
+
       // A request works against one generation for its whole lifetime. Pinning
       // it here rather than reading `current` at each use is what makes a reload
       // landing mid-request invisible to this one: the config it is evaluated
@@ -307,7 +307,7 @@ export function createRequestHandler(options: ServerOptions): RequestHandler {
           if (!generation.knows(named)) {
             // Before recording it as a refusal: this instance may simply be
             // holding config older than the account the caller is naming.
-            if (await probeForNewConfig()) {
+            if (await stale.reload('unknown-tool')) {
               await options.generations.release(generation);
               generation = options.generations.acquire();
             }

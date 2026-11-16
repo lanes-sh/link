@@ -178,7 +178,7 @@ export {
   type FederationOptions,
 } from './lanes/federation.ts';
 export { matchesRegistered } from './oauth/redirects.ts';
-export { OAuthStore, hashToken, randomToken } from './oauth/store.ts';
+export { OAuthStore, hashToken, randomToken, type LiveSession } from './oauth/store.ts';
 export { OidcVerifier, type OidcVerifierOptions, type VerifiedSubject } from './oidc.ts';
 export { IssuedTokenAuthenticator, LanesKeyAuthenticator, OidcAuthenticator } from './remote.ts';
 export {

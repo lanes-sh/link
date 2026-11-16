@@ -178,7 +178,16 @@ export async function removeProfile(name: string, flags: RemoveFlags): Promise<v
   try {
     const resolution = { workspaceRoot: root, profile: name };
     const config = subject.config ?? undefined;
-    published = nextAfterEdit(await publishProfileEdit({ resolution, config, target }));
+    // `touched: []` because nothing should be open after this, and the check
+    // `missingFrom` performs is "is what I just published being served". For
+    // every other edit the answer is yes and a no is a provisioning fault worth
+    // reporting; for a removal the answer is no *and that is the success case*,
+    // so leaving it to default to the removed name told the operator the
+    // endpoint had refused their config and sent them to look for a
+    // "not serving" line that is never written. The notify itself still goes —
+    // it is what drops the profile from a warm instance — only the verification
+    // has nothing left to verify.
+    published = nextAfterEdit(await publishProfileEdit({ resolution, config, target, touched: [] }));
   } catch {
     // See above.
   }

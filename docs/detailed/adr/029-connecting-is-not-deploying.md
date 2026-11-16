@@ -1,6 +1,7 @@
 # ADR-029: Connecting is not deploying
 
-**Status:** accepted · **Amends** [ADR-004](004-declarative-config.md), [ADR-019](019-describing-setup-is-not-performing-it.md) · **Pays one cost listed by** [ADR-025](025-connecting-an-account-from-a-deployed-endpoint.md)
+**Status:** accepted, the poll rejected below added by
+[ADR-083](083-reach-is-resolved-per-request.md) · **Amends** [ADR-004](004-declarative-config.md), [ADR-019](019-describing-setup-is-not-performing-it.md) · **Pays one cost listed by** [ADR-025](025-connecting-an-account-from-a-deployed-endpoint.md)
 
 ## Context
 
@@ -116,3 +117,42 @@ config reload must not quietly undo it.
 
 **`target use` publishes nothing.** It rewrites which target this CLI addresses. No endpoint serves
 it.
+
+## Amended by ADR-083: the poll, on the terms this decision set
+
+The route stands and stays the fast path. What is added is the floor underneath it, and the
+argument is this decision's own: **"one notify reaches one instance"** is listed above as a thing
+this does not do, and the error path was offered as what closes it.
+
+That answer is sound for the case it was written for — a just-connected account, where a call names
+a tool this endpoint does not advertise — and it cannot reach most of the others. The probe fires
+only when `Generation.knows` misses, and `knows` asks about a tool *name*, a `lanes_tools_call`
+capability id, or a `lanes_tools_search` query. A member added or removed moves none of those.
+Neither does a grant narrowed, a policy denied, or a profile removed: the tool names are identical
+on both sides of every one of those edits. So for those rows the stated weakness is not a rare edge
+that traffic eventually papers over. It is the ordinary case, and the instance that missed the POST
+stays wrong indefinitely.
+
+**The poll priced above is not the poll that was added.** The rejection was costed as "a `list()` on
+the config prefix per interval per instance, forever, to catch an event that happens a few times a
+year", and every clause of that is still true of a listing. This does not list. Membership is
+resolved from the declared config on every authenticated request now
+([ADR-083](083-reach-is-resolved-per-request.md)), so the digest of what was read is already in
+hand and asking whether it moved is a string comparison. There is no listing on the hot path at
+all, and the one that discovers a profile which has *appeared* runs on a clock twelve times slower
+— that being a grant, the direction allowed to be slower.
+
+It is also lazy in the way this decision wanted: it rides a request, after authentication, so an
+idle instance pays nothing and "forever" is bounded by traffic rather than by a timer. The notify
+stays exact and free at rest.
+
+Two smaller things follow. Both triggers share one clock, so the bound named here applies to the
+digest as well as to an unrecognised tool name, and they cannot provoke two reloads for one
+request. And the digest check runs *before* the generation is pinned, which is the one thing the
+error path cannot do — it has to release and re-acquire mid-request, and a request that provokes a
+reload is now evaluated against the config it provoked.
+
+The precedent for paying a little at rest was already here: [ADR-014](014-owner-layer-is-managed.md)
+polls a skills store once per profile per two seconds and uses blob metadata as its change check.
+This is the cheaper half of that, for a change that happens a few times a year and must not be
+missed when it does.

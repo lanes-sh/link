@@ -87,10 +87,10 @@ export const SECTIONS: readonly Section[] = [
         description: 'name an account before authorising it, so its tools are advertised now and a client registered today does not have to be re-added after you connect it',
       },
       {
-        command: 'grant add <provider>.<id>',
+        command: 'grant <provider>.<id>',
         description: 'let a profile reach one, with nothing allowed yet',
       },
-      { command: 'grant remove <provider>.<id>' },
+      { command: 'revoke <provider>.<id>', description: 'take it back from this profile' },
       {
         command: 'start [--only]',
         description: 'reconcile and serve every profile on one endpoint',
@@ -194,6 +194,15 @@ export const SECTIONS: readonly Section[] = [
       },
       { command: 'token rotate [--id t] [--show]' },
       { command: 'token revoke --id <t>' },
+      {
+        command: 'session list [--json]',
+        description: 'browser sign-ins this endpoint is holding, and which client each one is',
+      },
+      {
+        command: 'session revoke --me|--subject <id> [--yes]',
+        description:
+          'end them now rather than waiting out the token. members remove decides the next sign-in; this ends the one already in progress',
+      },
     ],
   },
   {

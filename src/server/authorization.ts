@@ -92,7 +92,10 @@ export async function openAuthorization(
 
   return {
     surface: { server, issuer: (origin) => origin, mcpPath: MCP_PATH, target: primary.target },
-    authenticator: new IssuedTokenAuthenticator(store, profile),
+    // The same `members` the mint resolves through, two lines up. Passing one
+    // and not the other is how a session came to hold a reach its own endpoint
+    // disagreed with (ADR-083).
+    authenticator: new IssuedTokenAuthenticator(store, profile, members),
   };
 }
 
