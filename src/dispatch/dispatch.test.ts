@@ -298,7 +298,7 @@ describe('audit records every invocation', () => {
     const { dispatcher, audit } = harness();
     await dispatcher.invoke(call('example.echo', 'example.a', { message: 'hi' }));
 
-    const [event] = await audit.tail();
+    const [event] = (await audit.tail()).events;
     expect(event).toMatchObject({
       profile: 'personal',
       principal: 'personal:owner',
@@ -314,7 +314,7 @@ describe('audit records every invocation', () => {
     const { dispatcher, audit } = harness();
     await dispatcher.invoke(call('example.purge', 'example.b'));
 
-    const [event] = await audit.tail();
+    const [event] = (await audit.tail()).events;
     expect(event).toMatchObject({
       capability: 'example.purge',
       connection: 'example.b',
@@ -331,7 +331,7 @@ describe('audit records every invocation', () => {
     const outcome = await dispatcher.invoke(call('example.boom', 'example.c'));
     expect(outcome.ok).toBe(false);
 
-    const [event] = await audit.tail();
+    const [event] = (await audit.tail()).events;
     expect(event).toMatchObject({
       capability: 'example.boom',
       authorization: 'allowed', // it was permitted; the provider is what failed
@@ -347,7 +347,7 @@ describe('audit records every invocation', () => {
     await dispatcher.invoke(call('example.echo', 'example.a', { message: 'two' }));
     await dispatcher.invoke(call('example.set_note', 'example.b', { key: 'k', value: 'v' }));
 
-    expect(await audit.tail()).toHaveLength(3);
+    expect((await audit.tail()).events).toHaveLength(3);
   });
 
   test('records the client label without ever consulting it for authorization', async () => {
@@ -361,14 +361,14 @@ describe('audit records every invocation', () => {
     // The label is recorded for observability; it changed nothing about the
     // decision, which stayed a denial.
     expect(denied.ok).toBe(false);
-    expect((await audit.tail())[0]?.clientLabel).toBe('claude-code');
+    expect((await audit.tail()).events[0]?.clientLabel).toBe('claude-code');
   });
 
   test('carries provider annotations', async () => {
     const { dispatcher, audit } = harness();
     await dispatcher.invoke(call('example.set_note', 'example.a', { key: 'k', value: 'hello' }));
 
-    const [event] = await audit.tail();
+    const [event] = (await audit.tail()).events;
     expect(event?.arguments).toMatchObject({ _annotations: { bytes: 5 } });
   });
 });
@@ -380,7 +380,7 @@ describe('audit redaction', () => {
       call('example.set_note', 'example.a', { key: 'shopping', value: 'a private note' }),
     );
 
-    const [event] = await audit.tail();
+    const [event] = (await audit.tail()).events;
     expect(event?.arguments['key']).toBe('shopping');
     expect(event?.arguments['value']).toBe('<string:14>');
     expect(JSON.stringify(event?.arguments)).not.toContain('a private note');
@@ -392,7 +392,7 @@ describe('audit redaction', () => {
       call('example.set_note', 'example.b', { key: 'k', value: 'still private' }),
     );
 
-    const [event] = await audit.tail();
+    const [event] = (await audit.tail()).events;
     expect(JSON.stringify(event?.arguments)).not.toContain('still private');
   });
 
@@ -400,7 +400,7 @@ describe('audit redaction', () => {
     const { dispatcher, audit } = harness();
     await dispatcher.invoke(call('example.get_note', 'example.a', { key: 'sensitive-key' }));
 
-    const [event] = await audit.tail();
+    const [event] = (await audit.tail()).events;
     expect(event?.arguments['key']).toBe('<string:13>');
   });
 });
@@ -416,7 +416,7 @@ describe('rate limits', () => {
     expect(third.ok).toBe(false);
     if (!third.ok) expect(third.message).toMatch(/Rate limit exceeded/);
 
-    expect((await audit.tail()).at(-1)?.authorization).toBe('denied_rate_limited');
+    expect((await audit.tail()).events.at(-1)?.authorization).toBe('denied_rate_limited');
   });
 
   test('the per-connection budget protects a vendor quota independently', async () => {
@@ -495,7 +495,7 @@ describe('provider failure', () => {
     const after = await dispatcher.invoke(call('example.echo', 'example.a', { message: 'still up' }));
 
     expect(after.ok).toBe(true);
-    expect(await audit.tail()).toHaveLength(2);
+    expect((await audit.tail()).events).toHaveLength(2);
   });
 });
 

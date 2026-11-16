@@ -231,3 +231,35 @@ warm instance.
 `allowedConnections` and `mayReach` are untouched, and the test that normalises the supplied name
 out of the non-member and non-existent refusals and compares what is left passes unmodified. That
 was the condition on the whole change.
+
+## Amendment: the measurement the design turns on
+
+"The listing is on the slow clock because it is not cheap, and this is the one measurement the
+design turns on" was written without one. `INVENTORY_TTL_MS` was argued only in the relative —
+twelve times the hot clock, so that "the expensive listing stays rare" — and twelve times a number
+is not a price. `bun run inventory:cost` now takes it, against whatever workspace it is pointed at.
+
+Measured against a real deployed workspace: **149 objects under `profiles/`, four profiles, one
+page, 142 ms cold and ~74 ms warm.** At a sixty-second window that is 142 ms a minute per
+instance, which is a quarter of one percent of one instance doing nothing else.
+
+**So sixty seconds stands, and the reasoning behind it is the part that changes.** It was chosen as
+a multiple of the hot clock to keep an expensive call rare. At this size the call is not expensive,
+and the number is comfortable for a different reason: the slow clock is the floor under a notify
+that did not land, `/reload` is the fast path that normally carries it, and nothing is waiting on
+a profile appearing. The window is set by how long a *grant* may take to converge, not by what the
+listing costs — the listing is simply not the binding constraint at this scale.
+
+**What it scales with is pages, not profiles.** The prefix holds every profile's memory, assets,
+skills and entities, so the count grows with what the owner has stored. The adapter pages at a
+thousand objects per request, so this workspace's 149 is one round trip and the second arrives at a
+thousand. An install an order of magnitude larger should re-run the script before assuming this
+figure, which is why it is a script and not a sentence.
+
+**A warning the same measurement produced, one surface over.** The audit tail gained a profile
+predicate in 0.21.1, and a predicate on something only an object's *body* carries reads rows in
+order to discard them — one round trip each, sequentially, which was ten to fifteen seconds for
+twenty rows and a timeout for the default hundred. The listing priced here is cheap because it is
+one request returning many keys; reading those keys is a different cost and it is the one that
+bites. That walk now reads in batches, and its budget is set from this same arithmetic rather than
+from taste.

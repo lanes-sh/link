@@ -18,6 +18,7 @@ import {
   pair,
   plan,
   policyList,
+  policyRemove,
   policyRule,
   sessionList,
   sessionRevoke,
@@ -294,6 +295,20 @@ export async function run(argv: readonly string[]): Promise<void> {
             );
           }
           return policyRule(second, capability, {
+            ...global,
+            ...(typeof flags.connection === 'string' ? { connection: flags.connection } : {}),
+          });
+        }
+        case 'remove': {
+          const [capability] = rest;
+          if (!capability) {
+            throw new Error(
+              `Usage: ${PROGRAM} policy remove <capability> --connection <provider>.<id>\n` +
+                `  Removes the rule for that capability whichever sign it carries,\n` +
+                `  because "stop having an opinion about this" is what one means.`,
+            );
+          }
+          return policyRemove(capability, {
             ...global,
             ...(typeof flags.connection === 'string' ? { connection: flags.connection } : {}),
           });

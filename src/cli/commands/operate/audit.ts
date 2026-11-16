@@ -1,4 +1,4 @@
-import { announceWorkspace, print, style, table } from '../../output.ts';
+import { announceWorkspace, print, printable, style, table } from '../../output.ts';
 import { openWorkspaceRuntime, type GlobalFlags } from '../../runtime.ts';
 
 /** `lanes link audit tail` — the log the dispatcher writes, rendered for a terminal. */
@@ -21,13 +21,25 @@ export async function auditTail(
     // the middle of a document someone is pasting somewhere.
     if (!markdown) announceWorkspace(runtime.resolution);
 
-    const events = await runtime.audit.tail({
+    const page = await runtime.audit.tail({
       limit: flags.limit ?? 25,
       ...(flags.deniedOnly ? { deniedOnly: true } : {}),
+      // `audit` is a workspace-level command: the log is one chain covering
+      // every profile, so `--profile` narrows the rows rather than choosing
+      // which log to read. `selection.ts` has said so since contract 3 and
+      // nothing implemented it, which made the flag accepted and ignored —
+      // two profiles returned byte-identical rows and neither said which
+      // profile it was describing.
+      ...(flags.profile ? { profiles: [flags.profile] } : {}),
     });
+    const { events } = page;
 
     if (events.length === 0) {
-      print(markdown ? '_No audit events yet._' : style.dim('No audit events yet.'));
+      const scope = flags.profile ? ` for profile "${flags.profile}"` : '';
+      const nothing = page.complete
+        ? `No audit events yet${scope}.`
+        : `No audit events${scope} in the ${page.scanned} most recent entries.`;
+      print(markdown ? `_${nothing}_` : style.dim(nothing));
       return;
     }
 
@@ -38,20 +50,26 @@ export async function auditTail(
       // The workspace, not the profile. Contract 3 gave the workspace one
       // chain covering every profile in it, and a heading naming whichever
       // profile happened to open the store described a log that does not
-      // exist. Each row carries its own profile.
+      // exist. Each row carries its own profile, and now says so.
       print(`# Audit — ${runtime.resolution.target}\n`);
-      print('| Time | Result | Capability | Connection | Duration | Arguments |');
-      print('|---|---|---|---|---|---|');
+      print(
+        '| Time | Result | Profile | Principal | Client | Capability | Connection | Duration | Arguments |',
+      );
+      print('|---|---|---|---|---|---|---|---|---|');
       for (const event of events) {
         print(
           `| ${event.timestamp.toISOString()} ` +
             `| ${event.authorization} ` +
+            `| ${event.profile} ` +
+            `| ${event.principal} ` +
+            `| ${markdownCell(printable(event.clientLabel ?? '—'))} ` +
             `| \`${event.capability}\` ` +
             `| ${event.connection ?? ''} ` +
             `| ${event.durationMs}ms ` +
             `| ${markdownCell(JSON.stringify(event.arguments))} |`,
         );
       }
+      if (!page.complete) print(`\n_${truncationNote(page.scanned)}_`);
       return;
     }
 
@@ -59,15 +77,46 @@ export async function auditTail(
       events.map((event) => [
         style.dim(event.timestamp.toISOString().slice(11, 19)),
         event.authorization === 'allowed' ? style.green('allow') : style.red('deny '),
+        event.profile,
+        style.dim(shortPrincipal(event.principal, event.profile)),
+        style.dim(printable(event.clientLabel ?? '—', 14)),
         style.bold(event.capability),
         event.connection ?? '',
         style.dim(`${event.durationMs}ms`),
         style.dim(JSON.stringify(event.arguments)),
       ]),
     );
+
+    // A tail that stopped early has to say so. Without this the answer is
+    // indistinguishable from a complete one, which is the whole defect: asking
+    // for a hundred rows of one profile and being handed thirty reads exactly
+    // like "there are only thirty".
+    if (!page.complete) print(style.dim(`\n${truncationNote(page.scanned)}`));
   } finally {
     await runtime.close();
   }
+}
+
+function truncationNote(scanned: number): string {
+  return `scanned the ${scanned} most recent entries; older ones were not reached — narrow with --since, or raise --limit.`;
+}
+
+/**
+ * A principal, minus the part the row beside it already says.
+ *
+ * Every principal is scoped to a profile, so in a table that now carries a
+ * profile column the prefix is printed twice on every row — `personal` then
+ * `personal:owner`. The column exists to tell two callers apart, and the half
+ * that does that is the half after the colon.
+ *
+ * Only when it matches: a principal scoped to another profile keeps its prefix,
+ * because then the difference is the interesting part.
+ */
+function shortPrincipal(principal: string, profile: string): string {
+  const stripped = principal.startsWith(`${profile}:`)
+    ? principal.slice(profile.length + 1)
+    : principal;
+  return printable(stripped, 20);
 }
 
 /**

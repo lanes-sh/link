@@ -175,9 +175,9 @@ describe('a resource read is audited like every other invocation', () => {
   test('one event, naming the capability and the connection', async () => {
     await setNote('example.a', 'audited', 'secret content');
 
-    const before = (await owner.audit.tail({ capability: 'example.note' })).length;
+    const before = (await owner.audit.tail({ capability: 'example.note' })).events.length;
     await readResource('example://note/personal/a/audited');
-    const events = await owner.audit.tail({ capability: 'example.note' });
+    const events = (await owner.audit.tail({ capability: 'example.note' })).events;
 
     expect(events.length).toBe(before + 1);
 
@@ -192,7 +192,7 @@ describe('a resource read is audited like every other invocation', () => {
     await setNote('example.a', 'private', 'the body of the note');
     await readResource('example://note/personal/a/private');
 
-    const events = await owner.audit.tail({ capability: 'example.note' });
+    const events = (await owner.audit.tail({ capability: 'example.note' })).events;
 
     expect(JSON.stringify(events)).not.toContain('the body of the note');
   });
@@ -215,6 +215,6 @@ describe('a resource read is audited like every other invocation', () => {
     });
 
     expect(error).toBeDefined();
-    expect(await toolsOnly.audit.tail({ deniedOnly: true })).toEqual([]);
+    expect((await toolsOnly.audit.tail({ deniedOnly: true })).events).toEqual([]);
   });
 });

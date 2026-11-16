@@ -177,10 +177,8 @@ export const SECTIONS: readonly Section[] = [
         description: 'e.g. gmail.* or gmail.send_message. A rule lands in one grant, so two accounts can differ',
       },
       { command: 'policy deny  <capability> --connection <provider>.<id>' },
-      {
-        command: 'profile members list',
-        description: 'who may consume this profile, and who could',
-      },
+      { command: 'policy remove <capability> --connection <provider>.<id>', description: 'drops the rule whichever sign it carries — allow cannot undo a deny' },
+      { command: 'profile members list', description: 'who may consume this profile, and who could' },
       { command: 'profile members add <subject>|--me [--role owner|member]' },
       { command: 'profile members remove <subject>' },
       { command: 'token list [--json]', description: 'static tokens, and what each one reaches' },

@@ -101,11 +101,19 @@ export const MEMBERS_TTL_MS = 5_000;
 /**
  * The window a profile that has just appeared is discovered in.
  *
- * Twelve times the hot clock, deliberately. This bounds one direction only —
- * granting — and `profile add` publishes, so in practice the endpoint hears
- * about a new profile at once and this is the floor under a notify that did not
- * land, not the usual path. Any shorter and the expensive listing stops being
- * rare.
+ * Twelve times the hot clock. This bounds one direction only — granting — and
+ * `profile add` publishes, so in practice the endpoint hears about a new
+ * profile at once and this is the floor under a notify that did not land, not
+ * the usual path.
+ *
+ * It used to say "any shorter and the expensive listing stops being rare",
+ * which was a guess. Measured — `bun run inventory:cost`, against a real
+ * deployed workspace — the listing is 142 ms cold over 149 objects in one page,
+ * so at this window it costs a quarter of one percent of an instance. The
+ * number stands and its reason does not: what sets it is how long a grant may
+ * take to converge, not what the listing costs. See ADR-083's amendment, and
+ * re-run the script on a workspace an order of magnitude larger, because the
+ * cost scales with stored owner data and pages at a thousand objects.
  */
 export const INVENTORY_TTL_MS = 60_000;
 

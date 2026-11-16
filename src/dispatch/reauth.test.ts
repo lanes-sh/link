@@ -206,7 +206,7 @@ describe('a credential a person has to replace', () => {
     const { dispatcher, audit } = await ready(true);
     await dispatcher.invoke(call);
 
-    const events = await audit.tail({});
+    const events = (await audit.tail({})).events;
     expect(events[0]?.error?.kind).toBe('needs_reauth');
   });
 
@@ -216,7 +216,7 @@ describe('a credential a person has to replace', () => {
     const outcome = await dispatcher.invoke(call);
 
     expect(outcome.ok).toBe(true);
-    const events = await audit.tail({});
+    const events = (await audit.tail({})).events;
     expect(events[0]?.error).toBeUndefined();
     expect(events[0]?.status).toBe('ok');
   });

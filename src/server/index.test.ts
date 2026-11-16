@@ -472,8 +472,8 @@ describe('profiles are isolated', () => {
   });
 
   test("each profile's audit log contains only its own events", async () => {
-    const personalEvents = await personal.audit.tail({ limit: 100 });
-    const workEvents = await work.audit.tail({ limit: 100 });
+    const personalEvents = (await personal.audit.tail({ limit: 100 })).events;
+    const workEvents = (await work.audit.tail({ limit: 100 })).events;
 
     expect(personalEvents.every((event) => event.profile === 'personal')).toBe(true);
     expect(workEvents.every((event) => event.profile === 'work')).toBe(true);
@@ -497,7 +497,7 @@ describe('audit over the wire', () => {
         { profile: 'audited' },
       );
 
-      const [event] = await harness.audit.tail();
+      const [event] = (await harness.audit.tail()).events;
       expect(event).toMatchObject({
         profile: 'audited',
         provider: 'example',
@@ -530,7 +530,7 @@ describe('audit over the wire', () => {
         { profile: 'denials' },
       );
 
-      const denied = await harness.audit.tail({ deniedOnly: true });
+      const denied = (await harness.audit.tail({ deniedOnly: true })).events;
       expect(denied).toHaveLength(1);
       expect(denied[0]).toMatchObject({
         capability: 'example.set_note',
@@ -590,7 +590,7 @@ describe('audit over the wire', () => {
 
       // The same probe that produces a row for an envelope client produces one
       // here, spelled with the capability id rather than the wire name.
-      const denied = await harness.audit.tail({ deniedOnly: true });
+      const denied = (await harness.audit.tail({ deniedOnly: true })).events;
 
       expect(denied).toHaveLength(1);
       expect(denied[0]).toMatchObject({
@@ -619,8 +619,8 @@ describe('audit over the wire', () => {
         { profile: 'allowed' },
       );
 
-      expect(await harness.audit.tail({ deniedOnly: true })).toHaveLength(0);
-      expect(await harness.audit.tail()).toHaveLength(1);
+      expect((await harness.audit.tail({ deniedOnly: true })).events).toHaveLength(0);
+      expect((await harness.audit.tail()).events).toHaveLength(1);
     } finally {
       await harness.stop();
     }

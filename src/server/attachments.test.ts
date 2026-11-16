@@ -326,7 +326,7 @@ describe('the audit log', () => {
     // can post it outward. That belongs in the same log as the send.
     await stage(endpoint.server.url, { filename: 'contract.pdf' });
 
-    const events = await endpoint.audit.tail({ capability: 'attachments.stage' });
+    const events = (await endpoint.audit.tail({ capability: 'attachments.stage' })).events;
     const latest = events.find(
       (event) => (event.arguments as { filename?: string }).filename === 'contract.pdf',
     );

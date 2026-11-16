@@ -9,6 +9,7 @@ import {
   verifyChain,
   type AuditDraft,
   type AuditEvent,
+  type AuditPage,
   type AuditQuery,
   type AuditStore,
   type AuditVerification,
@@ -56,6 +57,39 @@ import type { BlobStore } from '#stores/blobs';
  * `verify` does not use this — it enumerates everything, because it must.
  */
 const TAIL_YEAR_WINDOW = 10;
+
+/**
+ * How many stored records one `tail` may read before it stops looking.
+ *
+ * The year window bounds the *listing*; this bounds the *reading*, and until
+ * there was a predicate on something only the body carries, nothing needed it.
+ * A key says when an event happened and nothing about whose profile it was, so
+ * narrowing to one profile cannot narrow the walk — a quiet profile in a busy
+ * workspace is found by reading past everybody else's rows. Unbounded, one
+ * request for a profile that has written nothing reads ten years of the log.
+ *
+ * So the walk stops, and `complete: false` says that it did. A short answer
+ * that cannot say it is short is the defect this whole change is about, and
+ * reproducing it one layer down would be its own joke.
+ *
+ * Set from a measurement rather than from taste, because the first guess at it
+ * was wrong by an order of magnitude. Five thousand objects read one at a time
+ * against a bucket is minutes, and the request this serves is answered inside
+ * one HTTP timeout or not at all. Read in batches (see `tail`) a thousand is
+ * roughly a second, which leaves room under that timeout for the listing and
+ * the response beside it.
+ */
+const SCAN_BUDGET = 1_000;
+
+/**
+ * How many objects one batch of the walk has in flight.
+ *
+ * The walk is latency-bound, not bandwidth-bound: an event is a few hundred
+ * bytes and a round trip is tens of milliseconds, so the whole cost is the
+ * number of times it waits. Thirty-two turns a thousand sequential waits into
+ * about thirty.
+ */
+const READ_BATCH = 32;
 
 const MARKER_PREFIX = 'runs.closed/';
 
@@ -122,14 +156,21 @@ export function createBlobAuditStore(options: BlobAuditOptions): AuditStore {
       );
     },
 
-    async tail(query: AuditQuery = {}): Promise<AuditEvent[]> {
+    async tail(query: AuditQuery = {}): Promise<AuditPage> {
       const limit = query.limit ?? 50;
+      const budget = query.budget ?? SCAN_BUDGET;
       const found: ChainedEvent[] = [];
+
+      // Records read, not records kept. The caller is being told how much of
+      // the log this answer speaks for, and a filtered walk reads far more
+      // than it returns — which is the whole reason the number is reported.
+      let scanned = 0;
+      let complete = true;
 
       const start = now().getUTCFullYear();
       const floor = query.since ? query.since.getUTCFullYear() : start - TAIL_YEAR_WINDOW;
 
-      for (let year = start; year >= floor && found.length < limit; year -= 1) {
+      for (let year = start; year >= floor && found.length < limit && complete; year -= 1) {
         const keys = (await storage.list(`${year}/`))
           .map((entry) => entry.key)
           .filter((key) => !key.startsWith(MARKER_PREFIX) && isOurs(key))
@@ -138,23 +179,60 @@ export function createBlobAuditStore(options: BlobAuditOptions): AuditStore {
           .sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
 
         let lastStamp: string | null = null;
+        let enough = false;
 
-        for (const key of keys) {
-          const stamp = stampOf(key);
+        // Read in ordered batches rather than one key at a time. A predicate on
+        // something only the body carries means the walk reads objects it will
+        // discard, and one round trip each is what that costs: against a bucket
+        // this took ten to fifteen seconds for twenty rows, and the default
+        // hundred exceeded the request timeout outright — correct, and too slow
+        // to use. Sequential was never a requirement; it was just what reading
+        // one key at a time looked like.
+        //
+        // Ordering is unchanged. The batch is a slice of the same descending
+        // key order and its results are examined in that order, so the limit
+        // and the mid-millisecond rule below see exactly the sequence they saw
+        // before. The cost is over-reading up to a batch at the boundary, which
+        // `scanned` counts honestly because it is paid.
+        // Advanced by what was actually taken, not by the batch size: the
+        // budget can cut a batch short, and stepping over the difference would
+        // skip keys and miss the next budget check at the same time.
+        let at = 0;
+        while (at < keys.length && !enough) {
+          // Bounds the fetch, not just the bookkeeping — a budget checked after
+          // the read would report the cost rather than cap it.
+          const room = budget - scanned;
+          if (room <= 0) {
+            complete = false;
+            break;
+          }
 
-          // Stop at the limit, but never mid-millisecond. Events sharing a
-          // timestamp sort by the random half of their id, so cutting inside
-          // one of those groups would keep an arbitrary subset of it — which
-          // is how a rate-limited call, answered in well under a millisecond,
-          // goes missing from the tail that exists to show it.
-          if (found.length >= limit && stamp !== lastStamp) break;
-          lastStamp = stamp;
+          const take = Math.min(READ_BATCH, room, keys.length - at);
+          const slice = keys.slice(at, at + take);
+          const bodies = await Promise.all(slice.map((key) => storage.get(key)));
+          scanned += take;
+          at += take;
 
-          const bytes = await storage.get(key);
-          if (bytes === null) continue;
+          for (const [offset, key] of slice.entries()) {
+            const stamp = stampOf(key);
 
-          const record = decodeEvent(bytes);
-          if (record && matches(record, query)) found.push(record);
+            // Stop at the limit, but never mid-millisecond. Events sharing a
+            // timestamp sort by the random half of their id, so cutting inside
+            // one of those groups would keep an arbitrary subset of it — which
+            // is how a rate-limited call, answered in well under a millisecond,
+            // goes missing from the tail that exists to show it.
+            if (found.length >= limit && stamp !== lastStamp) {
+              enough = true;
+              break;
+            }
+            lastStamp = stamp;
+
+            const bytes = bodies[offset];
+            if (bytes === null || bytes === undefined) continue;
+
+            const record = decodeEvent(bytes);
+            if (record && matches(record, query)) found.push(record);
+          }
         }
       }
 
@@ -167,7 +245,7 @@ export function createBlobAuditStore(options: BlobAuditOptions): AuditStore {
 
       // Collected newest-first so the limit keeps the most recent; presented
       // oldest-first, which is how a log is read.
-      return found.slice(0, limit).reverse().map(strip);
+      return { events: found.slice(0, limit).reverse().map(strip), complete, scanned };
     },
 
     async verify(): Promise<AuditVerification> {
@@ -204,6 +282,15 @@ function strip(record: ChainedEvent): AuditEvent {
 
 function matches(event: AuditEvent, query: AuditQuery): boolean {
   if (query.since && event.timestamp < query.since) return false;
+  // Inside `matches` rather than applied to the result, and that is the fix.
+  // The limit is spent during enumeration — see the guard above — so a
+  // predicate applied afterwards narrows an already-truncated set and returns
+  // one profile's share of the newest N instead of its own newest N.
+  //
+  // An empty array reaches here as a filter that matches nothing, which is
+  // deliberate: it is what a caller asking about a profile they may not reach
+  // is answered with. `query.profiles &&` is the guard, never `?.length`.
+  if (query.profiles && !query.profiles.includes(event.profile)) return false;
   if (query.provider && event.provider !== query.provider) return false;
   if (query.connection && event.connection !== query.connection) return false;
   if (query.capability && event.capability !== query.capability) return false;

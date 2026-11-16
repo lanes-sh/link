@@ -41,7 +41,10 @@ async function tail(root: string, config: Config) {
     root: resolved.workspaceRoot,
     target: 'local',
   };
-  return openAudit(await openStorage(input, await openSecrets(input))).tail({ limit: 50 });
+  const page = await openAudit(await openStorage(input, await openSecrets(input))).tail({
+    limit: 50,
+  });
+  return page.events;
 }
 
 afterAll(async () => {
@@ -105,7 +108,7 @@ describe('recordConfigChange', () => {
   };
     const store = openAudit(await openStorage(input, await openSecrets(input)));
 
-    expect((await store.tail({ limit: 50 })).map((event) => event.capability)).toEqual(
+    expect((await store.tail({ limit: 50 })).events.map((event) => event.capability)).toEqual(
       expect.arrayContaining(['config.profile.add', 'config.policy.allow']),
     );
 
