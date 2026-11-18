@@ -95,7 +95,7 @@
     "@modelcontextprotocol/server": "2.4.0",
     "@rgrove/parse-xml": "5.1.0",
     "mcp-from-openapi": "2.9.1",
-    "nodemailer": "10.4.0",
+    "nodemailer": "10.5.0",
     "postal-mime": "2.7.5",
     "yaml": "2.9.1",
     "zod": "4.6.7"
