@@ -8,7 +8,7 @@
         "@modelcontextprotocol/client": "2.4.0",
         "@modelcontextprotocol/core": "2.4.0",
         "@modelcontextprotocol/server": "2.4.0",
-        "@rgrove/parse-xml": "5.1.0",
+        "@rgrove/parse-xml": "5.2.0",
         "mcp-from-openapi": "2.9.1",
         "nodemailer": "10.4.0",
         "postal-mime": "2.7.5",
@@ -30,7 +30,7 @@
 
     "@modelcontextprotocol/server": ["@modelcontextprotocol/server@2.4.0", "", { "dependencies": { "@modelcontextprotocol/core": "2.4.0", "zod": "^4.2.0" } }, "sha512-rgR9yxSaAJ+bcsi/XroT/S2AfPiIWloXAnrdfYSCms9ivVju0ishu/wW0J21Ho6+ZOR1r7RyeRbjiRuF87ix5Q=="],
 
-    "@rgrove/parse-xml": ["@rgrove/parse-xml@5.1.0", "", {}, "sha512-ExwK7gowU5XT/WFC81o/Ou7Zvi9zQwW4SmxqFM6UaADOr7gC44BGwKSpGe20OyRD9EjwnT3d8n4qMbnAdlt8PQ=="],
+    "@rgrove/parse-xml": ["@rgrove/parse-xml@5.2.0", "", {}, "sha512-UDu4Ha/ZAEI0O/Vw869KWwMM0gksSO6GY217cPO9MsEeAq9Nkj3ISB5gVZZimoUAy0NOPurf4zTMNJg4njEz2w=="],
 
     "@types/bun": ["@types/bun@1.4.4", "", { "dependencies": { "bun-types": "1.4.4" } }, "sha512-9wkRDXUXK124pEnAutE6n/l18j+i9GC5IAHK8TmX/2nlySETmky0OU6yL5U8pW1AoKh++AN9auDCr647BfurjQ=="],
 
