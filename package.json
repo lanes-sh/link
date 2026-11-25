@@ -93,7 +93,7 @@
     "@modelcontextprotocol/client": "2.4.0",
     "@modelcontextprotocol/core": "2.4.0",
     "@modelcontextprotocol/server": "2.4.0",
-    "@rgrove/parse-xml": "5.1.0",
+    "@rgrove/parse-xml": "5.2.0",
     "mcp-from-openapi": "2.9.1",
     "nodemailer": "10.4.0",
     "postal-mime": "2.7.5",
